@@ -20,7 +20,7 @@ semantics, fix waits for owner approval; **fixed** = implemented and verified in
 | OF-06 | GPIO set-up | Pin mask left uninitialised for unhandled arguments | high | open |
 | OF-07 | Calibration | Save and load use different EEPROM locations in LowZ and BEEP | high | approval |
 | OF-08 | Calibration | Entering calibration mode erases six current-offset records without confirmation | high | approval |
-| OF-09 | Calibration | Current-extra store writes a value different from the one used in RAM | medium | approval |
+| OF-09 | Calibration | Current zeroing (long REL) stores only the last increment: a second zeroing is lost at the next mode/range change | medium | approval |
 | OF-10 | Bluetooth | Packet build and transmit are not synchronised; command echoes can interleave with status frames | medium | open |
 | OF-11 | Bluetooth | First frame after enabling BT can carry stale buffer contents | low | open |
 | OF-12 | Backup | `cal.bin` does not include the six current-offset records at EEPROM 0x4D0–0x4FF | medium | approval |
@@ -28,7 +28,7 @@ semantics, fix waits for owner approval; **fixed** = implemented and verified in
 | OF-14 | Measurement | HY3131 AD1 result decoded with the wrong two's-complement offset: negative codes read 1 LSB high, negative full scale reads as positive | low | open |
 | OF-15 | Measurement | Rounding to display counts truncates toward zero after adding 0.5: negative readings show one count too little in magnitude | medium | open |
 | OF-16 | Measurement | The HY3131 true-RMS result is read, square-rooted and averaged on every RMS interrupt, then never used | low | open |
-| OF-17 | Measurement | PEAK and the 1 kHz filter can be on together; the HY3131 then raises no serviced interrupt and the main reading never updates | medium | open |
+| OF-17 | Measurement | PEAK and the 1 kHz filter can be on together; the HY3131 then raises no serviced interrupt, the main display goes blank and stays blank | medium | open |
 | OF-18 | Measurement | PULSE width is computed from a duty cycle truncated to 0.1 %: shown in 5 digits but quantised to 0.1 % of the period, always rounded down | medium | open |
 | OF-19 | Measurement | TEMP re-converts its own previous result on every AD1 sample while MEM view is open; leaving the view shows a wrong temperature | low | open |
 | OF-20 | Measurement | BEEP overload limit inherits the OL-hysteresis flag of the previous mode (OL from 541.67 ohm instead of 550.00 ohm) | low | open |
@@ -36,6 +36,11 @@ semantics, fix waits for owner approval; **fixed** = implemented and verified in
 | OF-22 | Measurement | degC to degF takes the sign from bit 15 and negates with one's complement: up to 0.02 degF error, -40.0 degC shows -39.9 degF | low | open |
 | OF-23 | Settings | DIODE 15 V selection is written to EEPROM 0x12 and loaded at boot, then forced back to 3 V | low | open |
 | OF-24 | Measurement | Cold-junction conversion silently keeps the previous (or power-on zero) value for board temperatures below -20.0 degC | low | open |
+| OF-25 | Measurement | AC+DC: the sum of squares wraps at 2^32, so a large reading is shown as a small one, with no overload and no range change | high | open |
+| OF-26 | Measurement | 1 kHz filter: below 20 Hz, or while no frequency has been measured, the reading is ten times too large | medium | open |
+| OF-27 | Measurement | VA, mode 15 ranges 2/3 (0x20007FDF = 0): burden table read past the end of its rows; range 3 shows OFL for a valid voltage | medium | open |
+| OF-28 | Measurement | One smoothing state shared by two different quantities (AC+DC, burden display, VA): readings are averaged with the other quantity | low | open |
+| OF-29 | Measurement | DC VA burden correction depends on the sign: reversing the polarity changes the corrected magnitude | low | open |
 
 ## Details
 
@@ -49,6 +54,14 @@ Impact: reads an arbitrary table entry. Port: explicit "not found" handling.
 `FUN_0800AEE8`: for `param_2` outside 0..4 and 9 the default path (`0x0800AF0A b.n 0x0800B004`) writes
 neither r6 nor r7; case 9 writes r6 only (`0x0800AFEA`). Both are then stored to globals
 (`0x0800B00C str r7`, `0x0800B010 strb r6`). Port: defined values on every path.
+
+Further evidence: the case-9 path also runs with param_1 != 0, from the frequency counter (`0x0800AA00` → `frequency_select_range`)
+when the counter result is >= 10^9 mHz (1 MHz). That path stores the unset r7 to 0x20007D84, 0x20007E60 and 0x20007E64
+(`0x0800B014`..`0x0800B024`) and sets 0x20008047 = 1. `main` (0x08024B40..0x08024DDF) never writes r7 and the start-up
+code does not change it (executed from the reset vector to main entry), so r7 is the value present at reset entry,
+which this image does not define. Execution check, ACV range 0, 1.2 MHz counter result, input 10000 counts: r7 = 0 → 10000,
+r7 = 0x123 → 10249, r7 = 1000000 → -322535; at 90 kHz the result is 9534 for every r7. Impact: above 1 MHz the main AC
+reading carries a correction computed from an undefined frequency.
 
 ### OF-03 — unset register stored for out-of-range modes
 `FUN_0800CEFC` (`0x0800CF16 bhi 0x0800CF22` → `0x0800CF28 strb r7,[r0,r4]`) and `FUN_0800CFB0`
@@ -86,8 +99,14 @@ mention it. Port: to be decided with the owner.
 
 ### OF-09 — current-extra store value
 A long REL in modes 16..21 at range 0 stores `0x20007D64` to EEPROM (`FUN_080114BC`, called at
-`0x0801645C`) while RAM uses `0x20007D64 + 0x20007E0C`. Whether this is intended is not provable from
-the code. Port: to be decided with the owner.
+`0x0801645C`) while RAM uses `0x20007D64 + 0x20007E0C`. The loader `current_extra_load` (`FUN_08011448`, called from `0x0800D854` in every mode/range application)
+assigns the stored record to 0x20007E0C (`0x0801149E`..`0x080114A6`), it does not add to it. The long REL adds
+the reading to RAM (`0x08016436`..`0x08016448`, 0x20007E0C += 0x20007D64) but stores only the increment
+(`0x0801644A ldr r2` from 0x20007D64, `0x0801645C bl 0x080114BC`). Execution check (DCuA range 0, EEPROM record
+0x4D8): offset 25 counts → long REL → RAM 25, EEPROM A5/25, display 0; offset drifts to 35 → display 10 → long REL →
+RAM 35, EEPROM A5/10, display 0; mode/range application → RAM 10, display 25 with the input unchanged.
+Impact: after a second zeroing, the next mode or range change loses the earlier part of the zero.
+Port: store the accumulated offset; to be decided with the owner (EEPROM content).
 
 ### OF-10 — unsynchronised Bluetooth packet build/transmit
 The status packet buffer at 0x20007AE0 is built in the main loop (`0x08024C0C`) and transmitted from
@@ -156,9 +175,11 @@ Execution check (full emulator, ACV, 3 s after the keys): filter only — INTE 0
 218 AD1 decodes, 14 display updates; PEAK only — INTE 0x11, R29 0xC4, 57 services and 57 peak-routine calls;
 PEAK + filter (either key order) — INTE 0x11, R29 0x01, **0 services, 0 AD1 decodes, 0 peak calls, 0 display
 updates**, while the chip itself completed 1124 AD1 conversions.
-Impact: in ACV/ACmV, pressing PEAK with the 1 kHz filter on (or the reverse) leaves the main reading frozen in
-the state shown right after PEAK is pressed (LCD RAM identical to that state); it recovers only when one of the two is turned off
-or the mode is changed. Port: refuse the second key (or define a combined row) so that row and INTE always agree.
+Nothing sets 0x2000805D, so `autorange_step` never runs and the settle counter 0x20000238 set at mode
+application is never decremented; while it is non-zero `FUN_08016E08` calls `0x08019A98`, which draws five spaces
+(string 0x080291B0).
+End-to-end check in the emulator (ACV, 0 V input): after the 1 kHz long press the main digits read `0.0000`; 0.2 s after PEAK and still 3 s later only the decimal point of the main display is lit.
+Impact: two key presses (PEAK, long REL) in ACV/ACmV leave the main display blank and the meter stops measuring until PEAK or the filter is turned off or the mode is changed. Port: refuse the second key (or define a combined row) so that row and INTE always agree.
 
 ### OF-18 — PULSE width quantised to 0.1 % of the period
 `FUN_0800B6D4` computes duty = CTC / (T / 1000) with `udiv` (`0x0800B6DC`, `0x0800B6E6`), truncated, in units
@@ -253,3 +274,75 @@ at 0 degC; after warming to raw 3550 (CJ −661 µV) and cooling back to raw 365
 Impact: below the stated operating range (0–50 degC) and partly below the storage range (−20 degC), so low; but
 the error is silent and can reach the full cold-junction value (about 22 degC at power-up). Port: extend the
 conversion to the thermistor range or raise the existing cold-junction fault.
+
+### OF-25 — AC+DC sum of squares wraps at 2^32
+`FUN_0800A6A8` takes |AC| (0x20007E9C) and |DC| (0x20007EA0) and returns 100000 only when one of them is >= 60001
+(`0x0800A6E0 movw r1,#0xea61` .. `0x0800A6F4 blt`). Otherwise it forms a·a + b·b with 32-bit `muls`
+(`0x0800A70E`, `0x0800A722`) and `adds` (`0x0800A736`), converts the 32-bit result as unsigned
+(`0x0800A738 bl 0x08013ED8`), takes the square root (`0x0800A73C bl 0x08013EF4`) and stores the integer to 0x20007D64.
+When a² + b² >= 2^32 (combined value >= 65536 counts, both components below 60001) the sum wraps.
+Execution check: the function alone gives (50000, 50000) → 26552 (correct 70710), (46341, 46341) → 96 (correct 65536),
+(47000, 47000) → 11092 (correct 66468); (30000, 40000) → 50000 and (46340, 46340) → 65534 are correct.
+End to end (AC+DC entered by `0x0801472C`, mode set-up `0x0800D2D0`, counter result for 60 Hz through `0x0800AA00`,
+AD1 means through `0x080061E4`, alternating AC/DC phases): an AC component of 47000 counts plus a DC component of
+47000 counts shows 11092 at every display update in ranges 0, 1 and 2. `autorange_step` (`0x0800DE24`) executed
+afterwards leaves the range unchanged and 0x20008046 (overload) = 0; run with the correct value 66468 it moves range 0
+up to range 1.
+Impact: 4.7 V AC + 4.7 V DC displays 1.1092 V; 47 V AC + 47 V DC displays 11.092 V (true 66.47 V); 470 V AC + 470 V DC
+displays 110.92 V. A hazardous voltage is shown as a much smaller one, with no overload or range change.
+Port: 64-bit sum of squares; a combined value above the range limit ranges up or shows OFL.
+
+### OF-26 — 1 kHz filter: reading ten times too large below 20 Hz or with no frequency
+With the filter on (0x200080B9 = 1, modes 2 and 4) `cal_divide_by_gain` divides by g/10 (`0x0800F3F2`..`0x0800F40C`),
+so the count is ten times the unfiltered count. `0x08006D40` is meant to scale it back with a frequency table
+(coefficient about 1015/10000 at 20 Hz). For F < 20 Hz it returns the value unchanged (`0x08006D86 cmp r0,#0x14`,
+`0x08006D88 bge`, `0x08006D8A movs r0,r6`). F = 0 is the value after a mode application, before the first counter
+result. The per-sample path divides the same filtered value by 10 (`0x080084AC movs r1,#0xa`, `0x080084AE sdiv`).
+Execution check (mode set-up `0x0800D2D0`, counter through `0x0800AA00`, 12 means through `0x080061E4`, then
+`autorange_step` `0x0800DE24`), ACV, unfiltered input 10000 counts: filter off → 10000; filter on with F = 0, 15 Hz or
+19.5 Hz → 100000 and the range moves up (r0 → r1, r1 → r2); 20.5 Hz → 10150; 25 Hz → 10200; 60 Hz → 10590.
+ACV range 2, input 2300 counts (23.00 V): F = 0 or 10 Hz → 23000 (230.00 V), stays in range 2; 50 Hz → 2396.
+ACmV range 1, 2000 counts: F = 0 → 20000, 50 Hz → 2084.
+Impact: with the filter on, a signal below 20 Hz, or any signal before a frequency is measured, reads ten times
+too high (23 V shown as 230.00 V) or pushes the meter up a range. Port: apply the 1/10 scale on every path.
+
+### OF-27 — VA mode 15 ranges 2/3: burden table read past the end of its rows
+The burden correction `0x08008ED0` uses the table fetch `0x08009364` with 7 words per row for mode 15 range 2
+(0x080283C4) and range 3 (0x080284C0) when 0x20007FDF = 0, but its voltage column index reaches 7 for V >= 50001,
+so column 7 is read from the next row. When the jack code 0x200080CC is not 2 (codes 0 and 3 keep mode 15,
+`sense_pe10_pe11` 0x0801417C), the current row index is 8 and the last word read is past the table: for range 3 it is
+0x080285BC (value -1894527116), a word that `0x0800BD9A` uses as HY3131 configuration data (literal 0x0800C24C).
+Execution check, `0x08008ED0` alone with read tracing, mode 15 range 3, 0x200080CC = 0, I = 5000: V = 50000 → 50108;
+V = 50001 → 50109 (reads 0x080285BC); V = 52000 → 7693719; V = 55000 → -2315698. With 0x200080CC = 2: 52000 → 52087;
+with 0x20007FDF = 1: 52000 → 52129. Range 2 with 0x200080CC = 0 reads the first word of the next table (0x080284C0).
+Whole VA loop (`0x080061E4` per sample, `0x0800DCFC`, `0x08016D34`): ranging to range 3 (sub-range flags 0x200080C6 = 1,
+0x200080C7 = 1) and then a voltage of 52000 counts (52.000 V) with 5000 current counts gives 0x20007D7C = 7693719,
+voltage overload 0x200080CA = 1, and the main display draws only " OFL " (`0x080199B4`, 6 calls in 600 samples).
+With 49000 counts the same loop shows the normal value 49105.
+Impact: in VA range 3 a voltage between 50.001 V and 55.000 V, inside the range, is shown as overload; in range 2 the
+column-7 correction uses the wrong words. Port: tables with 8 columns or clamp the column index.
+
+### OF-28 — one smoothing state shared by two quantities
+`0x0800B754` keeps one history (0x20007DF8, 0x20008085, 0x20007238) and `0x08008344` one history (0x20007CD8, 0x20008084,
+0x200070A8); neither selects a state per caller. The history is only restarted when a new value differs from the
+last output by more than the threshold. Two different quantities pass through the same state: AC+DC DC phase
+(`0x0800B754`(D, 2, 2) from 0x08007714) and AC+DC combined value (`0x0800B754`(D, 20, 10) at `0x0800A65E`);
+AC VA voltage (0x08006AB2..0x08006ABA) and current (0x080068C8..0x080068D2) through `0x08008344`(D, 20, 10);
+DC VA voltage and current through `0x0800B754`; the current and burden-voltage values of the burden display.
+Execution check, AC+DC range 0, DC 20000 counts, 60 Hz: AC 600 → shows 20002 (true 20009); AC 850 → 20006 (true
+20018); AC 1000 → 20024 and AC 3000 → 20223 (outside the threshold, correct). Whole VA loop: DCuVA range 0, voltage
+10000 and current 10005 counts → current shown 10003; uVA range 0, voltage 10000 and current 10015 → current 10010
+and voltage 10064 after the burden correction (10055 in the first cycle, before any current value existed).
+Impact: when the two quantities are close, the steady reading is pulled toward the other one by up to about the
+threshold (12 counts in the AC+DC example). Port: one state per quantity.
+
+### OF-29 — DC VA burden correction depends on the sign
+`0x08008ED0` in mode 24 range 2 computes the correction from |V| and |I| (`0x08008F3A`..`0x08008F6E`). With
+0x20007FDF != 0 it is subtracted for negative V (`0x0800929A`..`0x080092AE`); with 0x20007FDF = 0 it is added to the
+signed V (`0x080092C2`..`0x080092CE`).
+Execution check, `0x08008ED0` alone, mode 24 range 2, 0x20007FDF = 0: (V, I) = (+20000, +3000) → +19931,
+(-20000, -3000) → -20069 with 0x200080CC = 2; +19669 / -20331 with 0x200080CC = 0. With 0x20007FDF = 1:
++19939 / -19939 and +19771 / -19771. In ranges 0, 1 and 3 negative V or I gets no correction at all
+(+20000 → +19976, -20000 → -20000 in range 0), so a sign difference exists there as well.
+Impact: reversing the polarity of the same DC VA measurement changes the shown voltage magnitude, by 138 to 662
+counts at 20000 counts (0.7 % to 3.3 %) in range 2. Port: apply the correction to the magnitude and restore the sign.
