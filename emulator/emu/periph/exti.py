@@ -56,9 +56,17 @@ class EXTI(Periph):
         self.event_hook = None          # event_hook(mask) called on every event pulse (WFE wake-up)
         self._gpios = {}                # port index -> GPIO model
         self._armed = set()             # IRQ numbers with a level poll scheduled
+        self._gen = 0                   # voids the level polls scheduled before a reset
         self.reset()
 
     def reset(self):
+        """Registers back to their reset values (RM0038 10.3.1 - 10.3.6).  The input levels of the internal lines 16..23
+        are driven by other peripherals (RTC, PVD, ...) that are not reset together with this block, so they are kept
+        (without a kept level the RTC would have to re-announce a flag that is still set); lines 0..15 are re-sampled
+        from the pins by resync()."""
+        internal = self._lvl[16:] if hasattr(self, '_lvl') else [0] * (N_LINES - 16)
+        self._gen += 1
+        self._armed.clear()
         self.imr = 0                    # RM0038 10.3.1: reset 0
         self.emr = 0                    # RM0038 10.3.2: reset 0
         self.rtsr = 0                   # RM0038 10.3.3: reset 0
@@ -66,7 +74,7 @@ class EXTI(Periph):
         self.swier = 0                  # RM0038 10.3.5: reset 0
         self.pr = 0                     # RM0038 10.3.6: reset value undefined, the model starts with 0
         self._event = 0                 # event pulses not yet consumed by pending_event()
-        self._lvl = [0] * N_LINES       # current input level of every line
+        self._lvl = [0] * 16 + internal  # current input level of every line
         self.resync()
 
     # ------------------------------------------------------------------ wiring
@@ -121,10 +129,13 @@ class EXTI(Periph):
     def _arm(self, irq):
         if irq not in self._armed:
             self._armed.add(irq)
-            self.m.schedule(_POLL_CYCLES, lambda: self._poll(irq))
+            gen = self._gen
+            self.m.schedule(_POLL_CYCLES, lambda: self._poll(irq, gen))
 
-    def _poll(self, irq):
+    def _poll(self, irq, gen):
         """PR drives the NVIC line as a level: re-pend after exception return if a PR bit is still set."""
+        if gen != self._gen:
+            return                              # scheduled before a reset
         self._armed.discard(irq)
         if not (self.pr & self._group(irq)):
             return

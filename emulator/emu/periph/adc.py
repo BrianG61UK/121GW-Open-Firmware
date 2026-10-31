@@ -168,6 +168,7 @@ class ADC(Periph):
         self._irq_armed = False
         self._irq_gen = 0
         self._clock_polling = False
+        self._poll_gen = 0                  # voids the ADCCLK poll scheduled before a reset
         self.reset()
 
     # ------------------------------------------------------------------ reset
@@ -177,6 +178,10 @@ class ADC(Periph):
         self.tok += 1
         self.r_ep += 1
         self.j_ep += 1
+        self._poll_gen += 1
+        self._clock_polling = False
+        self._irq_gen += 1                  # the level re-pend poll of the previous life is void
+        self._irq_armed = False
         self.flags = 0                      # SR bits that are flip-flops (AWD, EOC, JEOC, JSTRT, STRT, OVR)
         self.cr1 = self.cr2 = self.ccr = 0
         self.smpr = {SMPR0: 0, SMPR1: 0, SMPR2: 0, SMPR3: 0}
@@ -269,10 +274,12 @@ class ADC(Periph):
         if self._clock_polling or ((self.ccr >> 16) & 3) == 3:
             return
         self._clock_polling = True
-        gen = self._gen
-        self.m.schedule(CLOCK_POLL_CYCLES, lambda: self._clock_poll(gen))
+        gen, pgen = self._gen, self._poll_gen
+        self.m.schedule(CLOCK_POLL_CYCLES, lambda: self._clock_poll(gen, pgen))
 
-    def _clock_poll(self, gen):
+    def _clock_poll(self, gen, pgen):
+        if pgen != self._poll_gen:
+            return
         self._clock_polling = False
         if gen != self._gen:
             return

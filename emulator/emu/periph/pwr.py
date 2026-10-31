@@ -71,6 +71,7 @@ class PWR(Periph):
         self._vos_gen = 0
         self._reg_gen = 0
         self._vref_gen = 0
+        self._cwuf_gen = 0
         self._logged = set()
         self.cr = CR_RESET
         self.csr = CSR_RESET
@@ -114,6 +115,7 @@ class PWR(Periph):
         self._vos_gen += 1
         self._reg_gen += 1
         self._vref_gen += 1
+        self._cwuf_gen += 1                    # a CWUF clear scheduled before the reset must not touch the new WUF
         self.cr = CR_RESET
         if kind == 'por':
             self.csr = CSR_RESET
@@ -233,7 +235,13 @@ class PWR(Periph):
         if new & CR_CSBF:
             self.csr &= ~CSR_SBF
         if new & CR_CWUF:
-            self.m.schedule(2, lambda: setattr(self, 'csr', self.csr & ~CSR_WUF))
+            self._cwuf_gen += 1
+            g = self._cwuf_gen
+
+            def clear_wuf():
+                if g == self._cwuf_gen:
+                    self.csr &= ~CSR_WUF
+            self.m.schedule(2, clear_wuf)
         # LPSDSR cannot be reset while in low-power run mode (rm0038.txt:6232)
         if not (new & CR_LPSDSR) and (old & CR_LPRUN) and (old & CR_LPSDSR):
             new |= CR_LPSDSR

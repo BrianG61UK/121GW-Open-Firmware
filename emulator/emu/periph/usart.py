@@ -132,6 +132,11 @@ class _LevelIrq:
         if not self._armed:
             self._arm(self.MIN_POLL)
 
+    def reset(self):
+        """Cancel the re-pend poll (peripheral reset)."""
+        self._armed = False
+        self._gen += 1
+
     def _arm(self, interval):
         self._armed = True
         self._gen += 1
@@ -181,13 +186,15 @@ class USART(Periph):
         self.gtpr = 0
         self._sr_seen = 0               # SR value at the last SR read (for the read-SR-then-DR sequences)
         self._tx_busy = False           # shift register busy (data frame, idle preamble or break)
-        self._tx_gen = 0
+        # the generation counters only increase: an event scheduled before a reset must not match again
+        self._tx_gen = getattr(self, '_tx_gen', 0) + 1
         self._tx_preamble = False       # TE was set: an idle frame precedes the next data
         self._rx_q = []                 # words fed by the board side that have not started yet
         self._rx_busy = False
-        self._rx_gen = 0
+        self._rx_gen = getattr(self, '_rx_gen', 0) + 1
         self._rx_idle_armed = False
-        self._idle_gen = 0
+        self._idle_gen = getattr(self, '_idle_gen', 0) + 1
+        self._line_irq.reset()
         self._gate_logged = False
 
     # ------------------------------------------------------------------ configuration helpers

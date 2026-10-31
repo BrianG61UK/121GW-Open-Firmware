@@ -11,6 +11,7 @@ Execution model
   (Unicorn rejects WFE).
 """
 import struct
+from fractions import Fraction
 from unicorn import Uc, UcError, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_BLOCK, UC_HOOK_INTR, UC_HOOK_CODE, UC_HOOK_MEM_INVALID, UC_PROT_READ, UC_PROT_EXEC, UC_PROT_ALL
 from unicorn.arm_const import *
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB, CS_MODE_MCLASS
@@ -33,7 +34,9 @@ class Machine:
         self.uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)
         self.cs = Cs(CS_ARCH_ARM, CS_MODE_THUMB | CS_MODE_MCLASS)
         self.cycles = 0                       # virtual time in core clock cycles (1 instruction = 1 cycle)
-        self.sysclk_hz = sysclk_hz            # updated by the RCC model
+        self._sysclk_hz = sysclk_hz           # updated by the RCC model through the sysclk_hz property
+        self._clk_mark = (0, Fraction(0))     # (cycles, elapsed seconds) when the core clock last changed
+        self.clock_hooks = []                 # callables run after every core clock change (event re-timing)
         self.periphs = []                     # (base, end, model)
         self.events = []                      # (due_cycle, seq, callback)
         self._seq = 0
@@ -48,6 +51,7 @@ class Machine:
         self.reset_request = None
         self._in_slice = False
         self._slice_end = 0
+        self._stop_req = False                # slice stop requested by schedule(), carried out at the next block start
         self._map()
 
     # ---------------------------------------------------------------- memory
@@ -165,6 +169,10 @@ class Machine:
 
     # ---------------------------------------------------------------- time / events
     def _on_block(self, uc, addr, size, ud):
+        if self._stop_req:                    # stop before this block runs; it is counted when the slice resumes
+            self._stop_req = False
+            uc.emu_stop()
+            return
         n = self._blk.get(addr)
         if n is None:
             code = uc.mem_read(addr, size)
@@ -178,9 +186,29 @@ class Machine:
         self.events.append((due, self._seq, cb))
         self.events.sort()
         # an event created during a slice that falls due before the slice ends must not wait for
-        # the slice boundary: end the slice now so the run loop handles it on time
+        # the slice boundary: end the slice so the run loop handles it on time.  The stop is not issued here:
+        # schedule() is mostly called from inside a peripheral register access, and Unicorn re-executes a
+        # load/store that is stopped inside its MMIO callback (the access would reach the peripheral twice).
+        # The block hook stops at the next basic block start instead.
         if self._in_slice and due < self._slice_end:
-            self.uc.emu_stop()
+            self._stop_req = True
+
+    @property
+    def sysclk_hz(self):
+        return self._sysclk_hz
+
+    @sysclk_hz.setter
+    def sysclk_hz(self, hz):
+        self._clk_mark = (self.cycles, self.elapsed_s())   # close the time segment run at the old clock
+        self._sysclk_hz = hz
+        for hook in list(self.clock_hooks):
+            hook()
+
+    def elapsed_s(self):
+        """Emulated time in seconds (exact): the cycle count integrated over the core clock history.
+        Models on clocks that are independent of the core clock (RTC, external RTC chip) use this."""
+        c0, t0 = self._clk_mark
+        return t0 + Fraction(self.cycles - c0, self._sysclk_hz)
 
     def cycles_per_us(self):
         return self.sysclk_hz / 1_000_000
@@ -273,11 +301,30 @@ class Machine:
 
     # ---------------------------------------------------------------- run loop
     def reset(self):
-        sp, pc = struct.unpack('<II', self.uc.mem_read(FLASH_BASE, 8))
-        self.uc.reg_write(UC_ARM_REG_SP, sp)
-        self.uc.reg_write(UC_ARM_REG_XPSR, 1 << 24)
+        """Core reset (power-on or system reset): the CPU restarts from the vector table at 0x08000000 (boot from
+        flash).  PM0056 2.1.3 (Table 2, "Core register set summary") and 2.3.2 (Reset): MSP loaded from the first
+        word, PC from the reset vector, LR = 0xFFFFFFFF, PSR = 0x01000000 (Thread mode, T bit), PRIMASK, FAULTMASK,
+        BASEPRI and CONTROL = 0 (privileged Thread mode on the main stack).  R0-R12 and PSP have the reset value
+        "Unknown" in Table 2: they are left as they are.  Exceptions that were pending or active are dropped."""
+        uc = self.uc
+        sp, pc = struct.unpack('<II', uc.mem_read(FLASH_BASE, 8))
+        # the special registers can only be written from a privileged state, and a CONTROL.nPRIV = 1 left over from
+        # before the reset would refuse the write: go through Handler mode (privileged), then drop to Thread mode
+        uc.reg_write(UC_ARM_REG_XPSR, (1 << 24) | 1)
+        for reg in (UC_ARM_REG_CONTROL, UC_ARM_REG_PRIMASK, UC_ARM_REG_FAULTMASK, UC_ARM_REG_BASEPRI):
+            uc.reg_write(reg, 0)
+        uc.reg_write(UC_ARM_REG_XPSR, 1 << 24)
+        uc.reg_write(UC_ARM_REG_MSP, sp)
+        uc.reg_write(UC_ARM_REG_LR, 0xFFFFFFFF)
+        for reg in (UC_ARM_REG_CONTROL, UC_ARM_REG_PRIMASK, UC_ARM_REG_FAULTMASK, UC_ARM_REG_BASEPRI):
+            if uc.reg_read(reg):                       # never continue silently with a core that kept mask state
+                raise RuntimeError(f'core reset: special register {reg} did not clear')
+        if uc.reg_read(UC_ARM_REG_SP) != sp or uc.reg_read(UC_ARM_REG_XPSR) & 0x1FF:
+            raise RuntimeError('core reset: stack pointer or IPSR not restored')
         self.pc = pc | 1
         self.active.clear(); self.pending.clear()
+        self._resume = None
+        self._stop_req = False
 
     def run(self, max_cycles, slice_cycles=4000):
         end = self.cycles + max_cycles
@@ -292,6 +339,7 @@ class Machine:
             self._resume = None
             start = self.cycles
             self._slice_end = self.cycles + n
+            self._stop_req = False
             self._in_slice = True
             try:
                 self.uc.emu_start(self.pc, 0xFFFFFFFF, count=n)

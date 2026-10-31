@@ -13,6 +13,15 @@ class SCS:
         self.m = m
         m.nvic = self
         self.n_irq = n_irq
+        self.dbgmcu_cr = 0                 # DBGMCU_CR: reset by power-on reset only, "not reset by system reset" (RM0038 30.16.3)
+        self.reset()
+
+    def reset(self):
+        """Reset of the core peripherals, run at power-on and by every system reset (Machine.reset() resets the CPU
+        registers and the pending / active exception lists).  Reset values from PM0056: NVIC_ISERx / ICERx / ISPRx /
+        IPRx / IABRx 0 (4.3.2 - 4.3.7, Table 44), SCB_VTOR 0 (4.4.4), SCB_AIRCR 0xFA050000 so PRIGROUP 0 (4.4.5), SCB_SCR 0
+        (4.4.6), SCB_CCR 0x00000200 on STM32L (4.4.7), SCB_SHPR1..3 0 (4.4.8), STK_CTRL / STK_LOAD / STK_VAL 0
+        (4.5.1 - 4.5.3).  A running SysTick is stopped: its scheduled event is voided through the token."""
         self.iser = [0, 0]                 # interrupt enable bits (IRQ0..63)
         self.ipr = bytearray(64)           # IRQ priorities (8-bit fields, top 4 bits used)
         self.shpr = bytearray(16)          # system handler priorities indexed by exception number
@@ -20,7 +29,6 @@ class SCS:
         self.aircr_prigroup = 0
         self.ccr = 0x200                   # reset value 0x0000 0200 on STM32L (PM0056): STKALIGN = 1
         self.scr = 0
-        self.dbgmcu_cr = 0
         # SysTick
         self.st_ctrl = 0
         self.st_load = 0
@@ -100,7 +108,7 @@ class SCS:
         if off == 0xE018:
             return self._st_current()
         if off == 0xE01C:
-            return 0                                   # SysTick CALIB: TENMS not provided
+            return 0x00002328                          # STK_CALIB reset value (PM0056 4.5.4): NOREF 0, SKEW 0, TENMS 0x2328
         if off == 0xED04:                              # ICSR
             v = (self.m.active[-1] & 0x1FF) if self.m.active else 0
             if self.m.pending:

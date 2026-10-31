@@ -115,6 +115,11 @@ class _LevelIrq:
         if not self._armed:
             self._arm(self.MIN_POLL)
 
+    def reset(self):
+        """Cancel the re-pend poll (peripheral reset)."""
+        self._armed = False
+        self._gen += 1
+
     def _arm(self, interval):
         self._armed = True
         self._gen += 1
@@ -162,8 +167,11 @@ class LCD(Periph):
         self._udr_full = False                  # UDR requested while disabled: update all locations
         self._fcr_applied = 0                   # PS/DIV value in use by the frame generator
         self._duty_ncom = 4
-        self._gen = 0                           # invalidates scheduled frame events
-        self._fcr_gen = 0                       # invalidates scheduled FCR synchronisation events
+        # invalidate the scheduled frame / FCR synchronisation events of the previous life: the counters only ever
+        # increase, a reset to 0 would make an old event match again
+        self._gen = getattr(self, '_gen', 0) + 1
+        self._fcr_gen = getattr(self, '_fcr_gen', 0) + 1
+        self._irq.reset()
         self._t_next = Fraction(0)              # core cycle (exact) of the next frame boundary
         self._gate_logged = False
 

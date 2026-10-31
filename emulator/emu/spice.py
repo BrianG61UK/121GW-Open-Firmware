@@ -45,9 +45,11 @@ class Spice:
         n = len(self.out)
         if self.lib.ngSpice_Command(line.encode()) != 0:
             raise SpiceError(f'command failed: {line}')
-        errs = [l for l in self.out[n:] if l.startswith('stderr') and 'rror' in l]
+        # ngspice reports a failed analysis as 'stderr ... aborted' without the word 'error'
+        # (e.g. a noise input source without an AC value: "noise simulation(s) aborted")
+        errs = [l for l in self.out[n:] if l.startswith('stderr') and ('rror' in l or 'aborted' in l)]
         if errs:
-            raise SpiceError(f'{line}: ' + '; '.join(errs))
+            raise SpiceError(f'{line}: ' + '; '.join(self.out[n:][-3:]))
 
     def load(self, lines):
         """Load a netlist given as a list of lines (first line is the title, last '.end')."""
@@ -84,7 +86,8 @@ class Spice:
             return self._all_vectors()
 
     def noise(self, out_node, src, f_lo, f_hi, ref_node='0', points=20):
-        """Total output noise (V rms) at out_node, integrated f_lo..f_hi, input source src."""
+        """Total output noise (V rms) at out_node, integrated f_lo..f_hi, input source src (src must have an
+        AC value in the netlist, otherwise ngspice aborts the analysis)."""
         with self._lock:
             ref = '' if ref_node == '0' else f',{ref_node}'
             self.cmd(f'noise v({out_node}{ref}) {src.lower()} dec {points} {f_lo!r} {f_hi!r}')

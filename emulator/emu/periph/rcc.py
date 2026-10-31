@@ -17,6 +17,11 @@ Services offered to other models and to the machine core:
     fail_hse() / fail_lse()  clock security system events (RM0038 6.2.9 / 6.2.10)
     force_lsi()              the independent watchdog forces the LSI on (RM0038 6.2.12)
     rtc_reset_hooks          callables run when the RTC domain is reset (RM0038 6.1.3)
+    reset_hooks              {name: [callables]} run when the peripheral reset bit RCC_xxxRSTR of that name (as in
+                             clock_enabled, e.g. 'SDIO', 'DMA2') goes from 0 to 1
+    sdioclk_hz               SDIOCLK = PLL VCO / 2 while the PLL is locked, else 0 (RM0038 6.2.4)
+    rtc_clock_hz()           RTCCLK frequency reaching the RTC (0 = no clock, RM0038 6.3.14)
+    rtc_clock_hooks          callables run whenever rtc_clock_hz() may have changed
 """
 from .base import Periph
 
@@ -53,6 +58,10 @@ RESET_FLAGS = {
     'obl': 1 << 25,     # OBLRSTF
 }
 CSR_FLAG_MASK = 0xFE000000
+# Machine.request_reset() reason -> RESET_FLAGS key.  6.1.1 (Software reset): SYSRESETREQ in SCB_AIRCR forces the software
+# reset, flag SFTRSTF; 6.1.1 (Option byte loader reset): OBL_LAUNCH in FLASH_PECR, flag OBLRSTF.  The watchdog and the
+# low-power management resets have no model that could request them.
+REQUEST_KIND = {'AIRCR.SYSRESETREQ': 'sft', 'OBL_LAUNCH': 'obl'}
 CSR_POR_VALUE = 0x0C000000                # 6.3.14 "Power-on reset value", rm0038.txt:8612
 
 # RCC_CIR bits (6.3.4, rm0038.txt:7542): flags 7:0, enables 14:8, clear bits 23:16
@@ -111,6 +120,8 @@ class RCC(Periph):
         self.factory_hsical = hsical & 0xFF
         self.factory_msical = msical & 0xFF
         self.rtc_reset_hooks = []
+        self.reset_hooks = {}
+        self.rtc_clock_hooks = []
         self.lsi_forced = False
         self._logged = set()
         self._osc = {n: {'on': False, 'rdy': False, 'gen': 0, 'pending': False}
@@ -160,9 +171,11 @@ class RCC(Periph):
 
     # ------------------------------------------------------------------ reset
     def reset_for_request(self, why):
-        """Map the reason given to Machine.request_reset to a reset kind and apply it."""
-        kind = {'OBL_LAUNCH': 'obl', 'SYSRESETREQ': 'sft'}.get(why, 'pin')
-        self.reset(kind)
+        """Map the reason given to Machine.request_reset to a reset kind (REQUEST_KIND) and apply it.  A reason that is
+        not in the table is a programming error: raising keeps a wrong flag from being set silently."""
+        if why not in REQUEST_KIND:
+            raise ValueError(f'RCC: no reset flag defined for the reset request {why!r}')
+        self.reset(REQUEST_KIND[why])
 
     def reset(self, kind='por'):
         """System reset (kind in RESET_FLAGS other than 'por') or power-on reset ('por').
@@ -221,6 +234,7 @@ class RCC(Periph):
         # RCC_CSR system-reset values: LSION / LSIRDY are reset by system reset (6.3.14)
         self._osc['LSI'].update(on=self.lsi_forced, rdy=self.lsi_forced, pending=False)
         self._recalc_clock()
+        self._rtc_clock_changed()
 
     def _rtc_domain_reset(self):
         """RTC domain reset: power-on reset or RTCRST (6.1.3, 6.3.14 bits 8-11, 16-17, 22)."""
@@ -236,6 +250,7 @@ class RCC(Periph):
         lse['rdy'] = False
         for hook in self.rtc_reset_hooks:
             hook()
+        self._rtc_clock_changed()
 
     # ------------------------------------------------------------------ clock computation
     @property
@@ -251,6 +266,15 @@ class RCC(Periph):
             return 0
         src = self.hse_freq if self.pllsrc else HSI_HZ
         return src * PLL_MUL[self.pllmul] // PLL_DIV[self.plldiv]
+
+    @property
+    def sdioclk_hz(self):
+        """48 MHz SDIO clock: "SDIOCLK or USBCLK = PLLVCO/2", derived from the PLL VCO before the output divider
+        (6.2.4, rm0038.txt:6926).  It exists only while the PLL is running and locked (PLLRDY)."""
+        if not self._osc['PLL']['rdy'] or not self._pll_params_valid():
+            return 0
+        src = self.hse_freq if self.pllsrc else HSI_HZ
+        return src * PLL_MUL[self.pllmul] // 2
 
     def _source_hz(self, sel):
         return (self.msi_hz, HSI_HZ, self.hse_freq, self.pll_hz)[sel]
@@ -286,6 +310,18 @@ class RCC(Periph):
     @property
     def tim_clk2_hz(self):
         return self.pclk2_hz * (1 if PPRE_DIV[self.ppre2] == 1 else 2)
+
+    def rtc_clock_hz(self):
+        """RTCCLK frequency that reaches the RTC: 0 unless RTCEN = 1 and the selected oscillator is
+        ready (RTCSEL 01 LSE, 10 LSI, 11 HSE, 6.3.14)."""
+        src = {1: 'LSE', 2: 'LSI', 3: 'HSE'}.get(self.rtcsel)
+        if not self.rtcen or src is None or not self._osc[src]['rdy']:
+            return 0
+        return self.rtcclk_hz
+
+    def _rtc_clock_changed(self):
+        for hook in list(self.rtc_clock_hooks):
+            hook()
 
     @property
     def rtcclk_hz(self):
@@ -380,6 +416,7 @@ class RCC(Periph):
         if name in ('HSI', 'HSE'):
             self._pll_try_lock()
         self._try_switch()
+        self._rtc_clock_changed()
 
     def _osc_unready(self, name, gen):
         o = self._osc[name]
@@ -392,6 +429,7 @@ class RCC(Periph):
                 pll['rdy'] = False
             pll['pending'] = False
             pll['gen'] += 1
+        self._rtc_clock_changed()
 
     def _pll_src_name(self):
         return 'HSE' if self.pllsrc else 'HSI'
@@ -468,6 +506,7 @@ class RCC(Periph):
             if self.pllsrc:
                 pll['on'] = False
             self._recalc_clock()
+        self._rtc_clock_changed()
 
     def fail_lse(self):
         """LSE failure seen by the CSS on LSE (6.2.10, rm0038.txt:7063)."""
@@ -584,6 +623,8 @@ class RCC(Periph):
             self.apb1lpenr = new & APB1_MASK
         elif reg == 0x34:
             self._w_csr(new)
+        if reg in (0x00, 0x34):                            # RTCPRE, LSION, LSEON, RTCSEL, RTCEN, RTCRST
+            self._rtc_clock_changed()
 
     def _flitf_gate(self, old, new, current):
         """FLITFEN / FLITFLPEN / FLITFRST (bit 15) can be written only while the Flash is in power
@@ -594,7 +635,11 @@ class RCC(Periph):
 
     def _notify_resets(self, old, new, bits):
         """PWRRST is the only peripheral reset whose effect RM0038 defines in a model-visible way
-        (PWR_CR, 5.4.1 rm0038.txt:6241)."""
+        (PWR_CR, 5.4.1 rm0038.txt:6241).  Other models register callables in reset_hooks[name]."""
+        for b, n in bits:
+            if (new >> b & 1) and not (old >> b & 1):
+                for hook in self.reset_hooks.get(n, ()):
+                    hook()
         pwr = self._pwr()
         if pwr is None:
             return

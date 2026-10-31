@@ -117,6 +117,11 @@ class _LevelIrq:
         if not self._armed:
             self._arm(self.MIN_POLL)
 
+    def reset(self):
+        """Cancel the re-pend poll (peripheral reset)."""
+        self._armed = False
+        self._gen += 1
+
     def _arm(self, interval):
         self._armed = True
         self._gen += 1
@@ -202,7 +207,8 @@ class Tim(Periph):
         self._ratio = None              # timer clock / core clock, as Fraction
         self.origin = 0                 # core cycle at which CNT_EN rose
         self.ticks_done = 0             # CK_PSC clocks consumed since origin
-        self._gen = 0                   # invalidates scheduled events
+        self._gen = getattr(self, '_gen', 0) + 1    # invalidates scheduled events (never reset to 0: old events would match)
+        self._line_irq.reset()
         self._gate_logged = False
 
     # ------------------------------------------------------------------ small helpers

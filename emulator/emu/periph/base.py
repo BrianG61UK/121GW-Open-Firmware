@@ -14,7 +14,8 @@ Services available through self.m (the Machine, set by Machine.add_periph):
     self.m.log.append((cycles, s))   event log shown in the UI
     self.m._note(addr, 'R'|'W')      report an access the model does not implement (never ignore silently)
     self.m.uc                        Unicorn instance (e.g. to program flash/EEPROM bytes)
-    self.m.request_reset(why)        system reset
+    self.m.request_reset(why)        system reset: the run loop stops and Emulator.system_reset(why) resets the
+                                     machine in place (why must be a key of RCC.REQUEST_KIND)
 """
 
 
