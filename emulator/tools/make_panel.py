@@ -12,9 +12,9 @@ px = im.load()
 FACE = (68, 86, 98)                       # panel face colour (sampled)
 KNOB_C, KNOB_R = (347.0, 873.6), 167      # knob centre / radius (circle fit to the printed outline)
 HZ_DOT = (320, 688)                       # dial dot nearest to the printed pointer tip
-LCD = (110, 188, 590, 453)                # live LCD window
+LCD = (123, 188, 569, 443)                # LCD glass, inclusive (inside the black edge; walls and frame stay printed)
 d = ImageDraw.Draw(im)
-d.rounded_rectangle(LCD, radius=8, fill=(214, 222, 208))
+d.rounded_rectangle(LCD, radius=5, fill=(214, 222, 208))
 # printed pointer tip outside the knob: repaint only pointer pixels (neutral grey body or dark outline,
 # never the white label text or the dot) with the nearest face-coloured pixel of the same row
 def is_face(c):
