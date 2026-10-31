@@ -1100,10 +1100,11 @@ start 0x20001240; `.bss_port` inside RAM_PORT.
    <= 0x5A000; 73 vectors.
 2. Never-brick check at instruction level (`tools/check_image.py`, disassembles the linked ELF): for every load and
    store, the effective address is computed when the base register holds a known constant in the basic block (pool
-   literal, `movw`/`movt`, `adr`, add of constants); rejected: any effective address in 0x40023C10..0x40023C2F (PRGKEYR,
-   OPTKEYR, OBR, WRPR) or 0x1FF80000..0x1FF800FF, any store to program flash 0x08000000..0x0805FFFF, any access to the
-   FLASH block with a base plus non-zero offset or a register offset; any `movt` producing 0x1FF8 or a constant in
-   0x40023C10..0x40023C2F anywhere; aligned pool words with those values; the PRGKEY and OPTKEY values 0x8C9DAEBF,
+   literal, `movw`/`movt`, `adr`, add of constants); rejected: any effective address 0x40023C10 (PRGKEYR), 0x40023C14 (OPTKEYR)
+   or 0x40023C1C..0x40023C2F (OBR, WRPR; RM0038 3.9.10 register map: FLASH_SR at 0x40023C18 is not rejected, it is allowed in
+   NVM below) or 0x1FF80000..0x1FF800FF, any store to program flash 0x08000000..0x0805FFFF, any access to the
+   FLASH block with a base plus non-zero offset or a register offset; any `movt` producing 0x1FF8 or a constant equal to one
+   of the rejected FLASH addresses anywhere; aligned pool words with those values; the PRGKEY and OPTKEY values 0x8C9DAEBF,
    0x13141516, 0xFBEAD9C8, 0x24252627 as pool words or `movw`/`movt` pairs. Stores to PECR may only set PELOCK or clear
    FTDW (value analysis of the stored constant). Allowed only in the NVM objects: 0x08080000..0x08082FFF, 0x40023C04
    (PECR), 0x40023C0C (PEKEYR), 0x40023C18 (SR), 0x89ABCDEF, 0x02030405. FLASH_ACR 0x40023C00 only in the SYS clock object.
@@ -1903,6 +1904,10 @@ Exceptions decided by this design:
 | Symbol | Module | In | Out | Context | Called by | Purpose |
 |---|---|---|---|---|---|---|
 | `sys_reset` | SYS | - | does not return | reset | vector 1 | 3.2 steps 1..5 |
+| `cal_capture_cancel` | CAL | - | - | main | `meter_apply_mode_range` (MODE) | cancels a running capture with the refusal beep (OF-36) |
+| `nvm_read_block`, `nvm_restore_begin`, `nvm_restore_next`, `nvm_restore_verify` | NVM | see `src/nvm/nvm.s` headers | | main | CAL (cal.bin restore) | block read and the stepped RESTORE-class write session |
+| `calbin_start`, `calbin_step`, `calbin_result` | CAL | see `src/cal/calbin.s` headers | | main | power-on window (BOOTWIN), LOG/SD | cal.bin save/load as a state machine (IMP-06, OF-12) |
+| `bootwin_active` (byte) | CAL | - | - | main | UI | power-on window open |
 | `ble_tx_tick` | BLE | - | - (clobbers r0-r3) | TIM2 ISR | `isr_tim2` (SYS), every tick after the 500 ms block | starts a deferred status frame (NF-04, OF-10/11); alias of `ble_tx_kick` |
 | `lcd_commit_retry` | LCD | - | - | main (production) | `fn_08016D34` (UI) | repeats a deferred LCD commit (no busy-wait, IMP-01) |
 | `ui_blank_req` (byte, `.bss_port`) | UI | - | - | main | written by AR, MODE, MRES, MFRQ; read by `fn_08016E08` | main digits blank (1) or dashes (2), production only (OF-30, OF-32, OF-33) |
