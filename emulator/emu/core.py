@@ -7,8 +7,8 @@ Execution model
   (counted once per block start with Capstone), so the virtual clock is exact to the block.
 - Exception entry is done here (ARMv7-M: 8-word frame, EXC_RETURN in LR).  Exception return is the
   Unicorn M-class "exception exit" interrupt (intno 8): the frame is popped here and execution resumes.
-- WFI/WFE: a code hook on the instruction advances virtual time to the next event and skips it
-  (Unicorn rejects WFE).
+- WFI/WFE: Unicorn rejects them as invalid instructions; run() catches that and emulates the sleep (_sleep,
+  semantics in add_idle_hook), at no cost to code that does not sleep.
 """
 import struct
 from fractions import Fraction
@@ -41,6 +41,9 @@ class Machine:
         self.events = []                      # (due_cycle, seq, callback)
         self._seq = 0
         self.pending = set()                  # pending exception numbers (16+IRQ for interrupts)
+        self.event_reg = False                # WFE event register (PM0056 3.12.10): set on exception entry/return
+        self.idle = False                     # core asleep in WFI/WFE with nothing scheduled
+        self._wfi_hooked = set()              # WFI addresses with an idle hook (see _on_block)
         self.active = []                      # stack of active exception numbers
         self.unmodelled = {}                  # (addr, rw) -> first pc, count
         self.log = []                         # (cycle, text)
@@ -176,8 +179,21 @@ class Machine:
         n = self._blk.get(addr)
         if n is None:
             code = uc.mem_read(addr, size)
-            n = sum(1 for _ in self.cs.disasm(bytes(code), addr)) or 1
+            insns = list(self.cs.disasm(bytes(code), addr))
+            n = len(insns) or 1
             self._blk[addr] = n
+            # Unicorn executes WFI as a no-op: hook each WFI the first time its block is seen, flush the translated
+            # block so the hook takes effect, and restart the block (WFE raises an error instead, handled in run())
+            wfi = [i.address for i in insns if i.mnemonic == 'wfi' and i.address not in self._wfi_hooked]
+            if wfi:
+                for a in wfi:
+                    self._wfi_hooked.add(a)
+                    self.add_idle_hook(a, 'wfi')
+                uc.ctl_remove_cache(addr, addr + size)
+                del self._blk[addr]
+                self._resume = addr | 1
+                uc.emu_stop()
+                return
         self.cycles += n
 
     def schedule(self, delay_cycles, cb):
@@ -245,6 +261,7 @@ class Machine:
         return best
 
     def _enter(self, exc, pc):
+        self.event_reg = True                 # exception entry sets the event register (PM0056 3.12.10)
         uc = self.uc
         sp = uc.reg_read(UC_ARM_REG_SP)
         align = (sp & 4) and self.nvic.stkalign()
@@ -285,14 +302,42 @@ class Machine:
             self._stop_reason = f"CPU exception intno {intno} at pc 0x{pc:08X}"
             uc.emu_stop()
 
-    def add_idle_hook(self, addr):
-        """WFI/WFE at addr: advance time to the next event and skip the instruction."""
+    def add_idle_hook(self, addr, kind):
+        """WFI (kind 'wfi') or WFE (kind 'wfe') at addr.  Unicorn does not implement the sleep (it rejects WFE), so the
+        instruction is emulated here (PM0056 3.12.11 WFI, 3.12.10 WFE, 4.4.6 SCB_SCR):
+        - wake condition met: continue after the instruction.  WFI wakes on a pending, enabled exception, also while
+          PRIMASK masks it (the exception is then taken only when PRIMASK clears).  WFE wakes when the event register
+          is set (consumed), or on a pending, enabled exception, or with SCR.SEVONPEND on any pending interrupt.
+        - otherwise the core sleeps: virtual time jumps to the next scheduled event and the instruction is executed
+          again afterwards, so the wake condition is re-evaluated; with no event scheduled the slice ends (idle) and
+          the core stays at the instruction until an external input (key, dial) makes an exception pending."""
         def hook(uc, a, size, ud):
-            if self.events:
-                self.cycles = max(self.cycles, self.events[0][0])
-            self._resume = (a + size) | 1
+            self._resume = self._sleep(a, kind)
             uc.emu_stop()
         self.uc.hook_add(UC_HOOK_CODE, hook, begin=addr, end=addr)
+
+    def _sleep(self, a, kind):
+        """Execute WFI/WFE at a (semantics in add_idle_hook); returns the address to resume at (Thumb bit set)."""
+        if self._wake_ok(kind):
+            if kind == 'wfe':
+                self.event_reg = False
+            return (a + 2) | 1
+        if self.events:
+            self.cycles = max(self.cycles, self.events[0][0])
+        else:
+            self.idle = True
+        return a | 1
+
+    def _wake_ok(self, kind):
+        for e in self.pending:
+            if e < 16 or self.nvic is None or self.nvic.enabled(e):
+                return True
+        if kind == 'wfe':
+            if self.event_reg:
+                return True
+            if self.nvic is not None and self.nvic.scr & 0x10 and self.pending:   # SEVONPEND (SCR bit 4)
+                return True
+        return False
 
     def request_reset(self, why):
         self.reset_request = why
@@ -345,6 +390,16 @@ class Machine:
                 self.uc.emu_start(self.pc, 0xFFFFFFFF, count=n)
             except UcError as e:
                 pc = self.uc.reg_read(UC_ARM_REG_PC)
+                hw = int.from_bytes(self.uc.mem_read(pc & ~1, 2), 'little')
+                if hw in (0xBF30, 0xBF20):             # WFI / WFE: Unicorn rejects them; emulate the sleep here
+                    self._in_slice = False
+                    self.pc = self._sleep(pc & ~1, 'wfi' if hw == 0xBF30 else 'wfe')
+                    if self.cycles == start:
+                        self.cycles += 1
+                    if self.idle:
+                        self.idle = False
+                        break
+                    continue
                 self._stop_reason = f"{e} at pc 0x{pc:08X}"
                 break
             finally:
@@ -355,4 +410,7 @@ class Machine:
                 self.pc = self.uc.reg_read(UC_ARM_REG_PC) | 1
             if self.cycles == start:                   # no block executed (stopped at once)
                 self.cycles += 1
+            if self.idle:                              # asleep with nothing scheduled: give the caller back
+                self.idle = False                      # control; it supplies inputs and calls run() again
+                break
         return self._stop_reason
