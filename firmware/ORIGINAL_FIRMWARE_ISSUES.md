@@ -24,6 +24,7 @@ semantics, fix waits for owner approval; **fixed** = implemented and verified in
 | OF-10 | Bluetooth | Packet build and transmit are not synchronised; command echoes can interleave with status frames | medium | open |
 | OF-11 | Bluetooth | First frame after enabling BT can carry stale buffer contents | low | open |
 | OF-12 | Backup | `cal.bin` does not include the six current-offset records at EEPROM 0x4D0–0x4FF | medium | approval |
+| OF-13 | ADC | ADC sample-time register rewritten while the ADC is on, against the reference manual | low | open |
 
 ## Details
 
@@ -90,3 +91,11 @@ Port: build before the first transmit.
 `cal.bin` save/load (`FUN_0801CD14` / `FUN_0801CF06`) covers EEPROM 0x000–0x4AF only; the
 current-offset records at 0x4D0–0x4FF (read by `FUN_08011448`) are not included. Port: to be decided
 with the owner (extending the file changes the `cal.bin` format).
+
+### OF-13 — ADC sample time changed while the ADC is enabled
+RM0038 (rev. 15) section 12.15.6, ADC_SMPR3: "These bits must be written only when ADON=0."
+The channel-configuration routine writes ADC_SMPR3 (0x40012414) at `0x080201F0` while CR2.ADON = 1,
+every time the firmware switches between channel 4 (thermistor) and channel 5 (battery sense) via
+`FUN_080137B4` (returns at `0x080137EE` / `0x080137FE`); observed 20 times in 4 s of emulated running.
+Impact: behaviour outside the manufacturer's specification (the sample time may not take effect
+cleanly for the next conversion). Port: configure sample times once with ADON = 0.
