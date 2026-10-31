@@ -24,13 +24,24 @@ Default time tolerances (seconds), from the clocks the original firmware runs on
 Deviation allowlist (default file firmware/deviations.txt; format in emu/allowlist.py): every event of either run that
 matches an entry for its stream and scenario is removed from both runs before alignment, so a documented deviation does
 not count as a divergence; the report lists how many events each entry removed.  Fields per stream for the conditions:
-  lcd main sub on | gpio pin level | power pin level | spi dir addr data | uart_tx byte | eeprom offset old new |
+  lcd main sub on | gpio pin level | power pin level | spi dir addr data | uart_tx byte pos | eeprom offset old new |
   rtc text | sd_cmd kind index arg | sd_block dir lba | reset kind reason | fault text | assert line passed |
   eeprom_final offset | sd_files path | lcd_final main sub.
+'pos' of uart_tx is the index of the byte in its burst (bytes less than 2 ms apart; a BLE status frame is one burst,
+pos 0 = the start byte 0xF2, pos 18 = its checksum).
+Every compared stream (and assert) also has t, step, since and boot (emu/allowlist.py): the time, the scenario line of
+the latest step that acts on the meter, the seconds since it started and the seconds since the latest power-on or system
+reset, so that a deviation is tied to one scenario step or to the start-up (for example the stimulus that makes it
+visible) instead of to absolute times.
+The mask:lcd:sub and mask:lcd:main entries clear one display row of the matching LCD events before the comparison
+(fields as for lcd); see emu/allowlist.py.
 The safety_* entries of the same file are applied by the hardware-safety monitor (emu/safety.py), not here; the
 tolerance:<stream> entries widen the time tolerance of that stream for the matching scenarios (the report counts each
 use as one "removed" event of the entry).
 """
+import bisect
+import re
+
 from diff.trace import LcdDecoder
 from emu import allowlist
 
@@ -42,6 +53,7 @@ DEFAULT_TOL = {'lcd': 0.0139, 'assert': None}
 OTHER_TOL = 0.0101
 FINAL_STREAMS = ('eeprom_final', 'sd_files', 'lcd_final')
 NS = 1_000_000_000
+BURST_GAP_NS = 2_000_000                   # uart_tx bytes closer than this belong to one burst (19200 baud: 0.52 ms per byte)
 
 _LCD = None
 
@@ -53,9 +65,26 @@ def lcd_decoder():
     return _LCD
 
 
-def fields(stream, key, t_ns):
-    """Named fields of an event for allowlist conditions."""
+def timeline(events):
+    """(steps, boots) of a run: steps = (time ns, scenario line) of the steps that act on the meter, in order (the 'step'
+    events without wait, mark and expect, whose text starts with the step word); boots = times of the power-ons and
+    system resets (the 'reset' events other than power-off)."""
+    steps = [(ev[0], ev[2][0]) for ev in events
+             if ev[1] == 'step' and ev[2][1].split()[:1] not in (['wait'], ['mark'], ['expect'])]
+    boots = [ev[0] for ev in events if ev[1] == 'reset' and ev[2][0] != 'power-off']
+    return steps, boots
+
+
+def fields(stream, key, t_ns, tl=((), ()), pos=None):
+    """Named fields of an event for allowlist conditions; `tl` is timeline() of its run."""
+    steps, boots = tl
     f = {'t': t_ns / NS}
+    i = bisect.bisect_right(steps, (t_ns, float('inf'))) if steps else 0
+    f['step'], f['since'] = (steps[i - 1][1], (t_ns - steps[i - 1][0]) / NS) if i else (0, t_ns / NS)
+    j = bisect.bisect_right(boots, t_ns)
+    f['boot'] = (t_ns - boots[j - 1]) / NS if j else t_ns / NS
+    if pos is not None:
+        f['pos'] = pos
     if stream == 'lcd':
         main, sub, _ = lcd_decoder().text(key[1])
         f.update(on=int(key[0]), main=main, sub=sub)
@@ -83,9 +112,11 @@ def fields(stream, key, t_ns):
 
 
 # ---------------------------------------------------------------------------------------------- allowlist
-def load_allowlist(path):
-    """Entries of the deviation allowlist (emu/allowlist.py format); the safety_* entries are used by emu/safety.py."""
-    return [d for d in allowlist.load_allowlist(path, COMPARED + FINAL_STREAMS) if d.stream not in allowlist.SAFETY_STREAMS]
+def load_allowlist(path, build=None):
+    """Entries of the deviation allowlist (emu/allowlist.py format) for the candidate's build mode (baseline,
+    production or None); the safety_* entries are used by emu/safety.py."""
+    return [d for d in allowlist.load_allowlist(path, COMPARED + FINAL_STREAMS, build)
+            if d.stream not in allowlist.SAFETY_STREAMS]
 
 
 def tolerance_for(stream, scenario, devs, tol):
@@ -109,13 +140,17 @@ def split_streams(events):
     return out
 
 
-def _filter(stream, evs, devs, scenario):
+def _filter(stream, evs, devs, scenario, tl=((), ())):
     active = [d for d in devs if d.stream == stream and d.applies(scenario)]
     if not active:
         return evs, []
     keep, gone = [], []
+    pos, last = 0, None
     for ev in evs:
-        f = fields(stream, ev[2], ev[0])
+        if stream == 'uart_tx':                           # position of the byte in its burst (a BLE status frame is one)
+            pos = pos + 1 if last is not None and ev[0] - last < BURST_GAP_NS else 0
+            last = ev[0]
+        f = fields(stream, ev[2], ev[0], tl, pos if stream == 'uart_tx' else None)
         hit = next((d for d in active if d.match(f)), None)
         if hit is None:
             keep.append(ev)
@@ -123,6 +158,55 @@ def _filter(stream, evs, devs, scenario):
             hit.removed += 1
             gone.append(ev)
     return keep, gone
+
+
+def _row_masks(group):
+    """Per LCD word, the bit mask of the segments of one display row: group 'lcd:sub' or 'lcd:main'."""
+    dec = lcd_decoder()
+    pre, sign = ('sub', 'Sub-') if group == 'lcd:sub' else ('seg', 'Seg-')
+    rx = re.compile(pre + r'[1-5](?:[a-g]|dp)')
+    masks = [0] * 8
+    for (w, b), names in dec.bit_names.items():
+        if any(rx.fullmatch(n) or n == sign for n in names) and w < 8:
+            masks[w] |= 1 << b
+    return masks
+
+
+_ROW_MASKS = {}
+
+
+def row_mask(group):
+    if group not in _ROW_MASKS:
+        _ROW_MASKS[group] = _row_masks(group)
+    return _ROW_MASKS[group]
+
+
+def _masked_key(key, masks):
+    return (key[0], tuple(w & ~masks[i] if i < 8 else w for i, w in enumerate(key[1])))
+
+
+def _mask_lcd(evs, devs, scenario, tl=((), ())):
+    """LCD events with the rows of the matching mask entries (mask:lcd:sub, mask:lcd:main) cleared in their key; an event
+    that then equals the event before it (only the cleared row changed) is dropped."""
+    active = [d for d in devs if d.stream.startswith('mask:lcd') and d.applies(scenario)]
+    if not active:
+        return evs
+    out = []
+    for ev in evs:
+        f = fields('lcd', ev[2], ev[0], tl)
+        masks = [0] * 8
+        for d in active:
+            if d.match(f):
+                d.removed += 1
+                masks = [a | b for a, b in zip(masks, row_mask(d.stream[5:]))]
+        if not any(masks):
+            out.append(ev)
+            continue
+        ev = (ev[0], ev[1], _masked_key(ev[2], masks), ev[3])
+        if out and out[-1][2] == ev[2]:
+            continue                                      # only the cleared row changed: no change of what is compared
+        out.append(ev)
+    return out
 
 
 def compare_stream(stream, a, b, tol, end_a, end_b):
@@ -175,6 +259,15 @@ def compare_final(fa, fb, devs, scenario):
         ta, tb = dec.text(fa['lcd'][1]), dec.text(fb['lcd'][1])
         hit = next((d for d in act if d.stream == 'lcd_final' and d.match({'main': ta[0], 'sub': ta[1]})
                     and d.match({'main': tb[0], 'sub': tb[1]})), None)
+        masked = [[0] * 8, [0] * 8]
+        for side, (txt, fr) in enumerate(((ta, fa['lcd']), (tb, fb['lcd']))):
+            for d in act:
+                if d.stream.startswith('mask:lcd') and d.match({'main': txt[0], 'sub': txt[1], 'on': int(fr[0])}):
+                    masked[side] = [x | y for x, y in zip(masked[side], row_mask(d.stream[5:]))]
+        if not hit and (any(masked[0]) or any(masked[1])):
+            both = [x | y for x, y in zip(*masked)]
+            if _masked_key(fa['lcd'], both) == _masked_key(fb['lcd'], both):
+                hit = next(d for d in act if d.stream.startswith('mask:lcd'))
         if hit:
             hit.removed += 1
         else:
@@ -190,8 +283,11 @@ def compare(ra, rb, devs=(), tol=None, streams=COMPARED):
     sa, sb = split_streams(ra['events']), split_streams(rb['events'])
     per = {}
     for s in streams:
-        a, _ = _filter(s, sa.get(s, []), devs, scenario)
-        b, _ = _filter(s, sb.get(s, []), devs, scenario)
+        stA, stB = timeline(ra['events']), timeline(rb['events'])
+        a, _ = _filter(s, sa.get(s, []), devs, scenario, stA)
+        b, _ = _filter(s, sb.get(s, []), devs, scenario, stB)
+        if s == 'lcd':
+            a, b = _mask_lcd(a, devs, scenario, stA), _mask_lcd(b, devs, scenario, stB)
         t = tolerance_for(s, scenario, devs, tol)
         d = compare_stream(s, a, b, t, ra['end_ns'], rb['end_ns'])
         if d:

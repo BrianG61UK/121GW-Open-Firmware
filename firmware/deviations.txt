@@ -36,6 +36,7 @@ OF-12  assert        calbin_save  line == 14
 OF-17  lcd           peak_with_filter_of17  t in 12.0..1000.0
 OF-17  spi           peak_with_filter_of17  t in 12.0..1000.0
 OF-17  gpio          peak_with_filter_of17  t in 12.0..1000.0
+OF-17  lcd_final     peak_with_filter_of17  any
 
 # OF-11: the first status frame after the BLE transfer is switched on is built before it is sent (v2.05 can send the
 # previous buffer, analysis/ble_packet.md section 2).  In the BLE scenarios the long PEAK press starts at 3.0 s and the
@@ -43,7 +44,216 @@ OF-17  gpio          peak_with_filter_of17  t in 12.0..1000.0
 OF-11  uart_tx       ble_*  t in 3.0..4.5
 
 # OF-10: command echoes are queued between status frames instead of being sent at once into a running frame.  The
-# injected frame of ble_key_injection, ble_bad_key_frame and ble_set_clock arrives at 5.5 s; the echo and the frame
-# around it fall within 5.5..6.6 s (one 50-tick frame period plus an echo of 5 or 15 bytes at 19200 baud).
+# injected frame of ble_key_injection and ble_set_clock arrives at 5.5 s; the echo and the frame around it fall within
+# 5.5..6.6 s (one 50-tick frame period plus an echo of 5 or 15 bytes at 19200 baud).  ble_bad_key_frame has no entry:
+# its key pairs differ, so v2.05 sends no echo (analysis/ble_packet.md section 6).
 OF-10  uart_tx       ble_key_injection  t in 5.5..6.6
 OF-10  uart_tx       ble_set_clock      t in 5.5..6.6
+
+# =====================================================================================================================
+# Entries for the deviations of firmware/DESIGN.md sections 10 and 11 that the scenarios of emulator/diff/scenarios make
+# observable.  Evidence for each: the v2.05 reference run and the runs of the baseline build (make LOOP_V205=1) and of the
+# production build (make) of the port over the 93 scenarios, HY3131 noise off, and the document or source line named on
+# the entry.  Use:
+#   python -I emulator/diff/run.py --ref EEVBlog2_05.bin --cand <image> --eeprom <file> --no-noise --build baseline|production
+# --no-noise: a timing shift below 1 us changes the noise drawn for a conversion (firmware/requests/W7_to_W10.md item 3).
+# --build: entries tagged "build == production" are used only for the production build (emu/allowlist.py).
+# Deviations with no entry are listed at the end of this file with the reason.
+# =====================================================================================================================
+
+# HW-04 (board_gpio_init, firmware/src/brd/board.s 55..130; DESIGN 4.2, 10): the port writes each pin's output level before
+# MODER and configures the pins port by port, v2.05 writes MODER first (every pin first drives 0, then its level) and
+# interleaves the ports.  Cold boot, power cycle and MCU reset: in the gpio stream the pins that end at 1 (PD0 PD1 PD7
+# PC11 PF4 PF5 PA12) lose their transient 0 and the whole burst comes in another order (PE15 and backlight swap).
+# The burst is the application's GPIO set-up 0.035..0.037 s after power-on (the bootloader's own pin events at 0.002 s
+# are identical).  Pins of the burst whose events are identical and in order (ble_supply PH2 PA11 PF8) stay compared.
+HW-04  gpio   *  pin ~ "PD[017]" and boot in 0.03..0.045
+HW-04  gpio   *  pin == PE15 and boot in 0.03..0.045
+HW-04  gpio   *  pin == backlight and boot in 0.03..0.045
+HW-04  gpio   *  pin == PC11 and boot in 0.03..0.045
+HW-04  gpio   *  pin ~ "PF[45]" and boot in 0.03..0.045
+HW-04  gpio   *  pin == PA12 and boot in 0.03..0.045
+HW-04  power  *  pin == PD1 and boot in 0.03..0.045
+
+# HW-06 (firmware/src/brd/frontend.s 635): leaving the DIODE 15 V source the port writes PF6 low first, then PE15 high;
+# v2.05 writes PE15 high first (3 instructions before PF6 low).  diode_range: the second RANGE press (line 13) leaves 15 V.
+HW-06  gpio   diode_range  step == 13 and pin == PE15 and level == 1
+HW-06  gpio   diode_range  step == 13 and pin == PF6 and level == 0
+
+# OF-14 + OF-15 (ORIGINAL_FIRMWARE_ISSUES.md): a negative DC reading is decoded 1 LSB high (OF-14) and rounded toward zero
+# (OF-15), so v2.05 shows -1.2344 for -1.2345 V and -47.999 for -48.0 V, the port the exact value; the intermediate
+# frames of the mean that straddles the step carry a negative value too.  Every LCD event whose main display is
+# negative, after the start-up phase (the lamp test at power-on draws "-8.8.8.8.8").
+OF-14+OF-15  lcd  dc*_values  main ~ "-*" and boot in 0.5..1e9
+OF-14+OF-15  lcd  ua_values   main ~ "-*" and boot in 0.5..1e9
+OF-14+OF-15  lcd  lowz_values main ~ "-*" and boot in 0.5..1e9
+OF-14+OF-15  lcd_final  lowz_values  main ~ "-*"
+# AC+DC with a negative DC component (acdc_values line 12: dc=-2.0): the combined value is built from the DC phase, so the
+# steady reading differs in the last digit (v2.05 2.2359, port 2.2360); OF-28 (shared smoothing state) acts on the same
+# value.
+OF-14+OF-15+OF-28  lcd  acdc_values  step == 12 and main ~ "2.2*"
+
+# OF-21 (FUN_08018AD8, 0x08018AF4..0x08018B0C): the board temperature on the secondary display is rounded on the wrong digit
+# in v2.05 (boot_v: v2.05 shows 27.0, the port 27.1 for the same ADC value).  Persistent in every frame that shows it, so the secondary
+# display is not compared while it shows a temperature; the main display and the annunciators are.
+OF-21  mask:lcd:sub  *  sub ~ "*c"
+# The same rounding on the main display in TEMP mode and OF-24 (cold-junction value kept below -20.0 degC in v2.05, the
+# existing fault path in the port; temp_values line 19 drives the board to -22 degC): the main display is not compared in
+# the TEMP steps (lines 11..19).
+OF-21  mask:lcd:main  temp_values  step in 11..17
+OF-21+OF-24  mask:lcd:main  temp_values  step == 19
+OF-21+OF-24  lcd_final  temp_values  main ~ "-*"
+# BLE frames carry the same temperature: sub value low byte (pos 12) and the checksum (pos 18, XOR of the other bytes,
+# analysis/ble_packet.md sections 3 and 5) differ by the 0.1 degC.
+OF-21  uart_tx  ble_*  pos == 12
+OF-21  uart_tx  ble_*  pos == 18
+
+# OF-18 (FUN_0800B6D4 / 0x0800B080): the pulse width is computed from a duty truncated to 0.1 % in v2.05 (1 kHz, 25 %
+# shows 0.2499 ms) and from the counts in the port (0.2500 ms).  freq_values: PULSE mode from line 13 (MODE press) to
+# the DUTY mode of line 17; the first DUTY frame still shows the width in the new unit (0249.9 / 0250.0).
+OF-18  lcd  freq_values  step in 13..17 and main ~ "0*"
+
+# OF-33 (cap.s 474): the CAP timeout range jump draws the old count with the new decimal point for one update in v2.05;
+# the port blanks across the jump.  cap_values: the jumps made by the inputs of lines 14 (1.0000) and 16 (9999).  The
+# baseline run shows the same frames as v2.05 here, so the entry currently removes identical frames from both runs.
+OF-33  lcd  cap_values  step == 14 and since in 0.9..1.1 and main == "1.0000"
+OF-33  lcd  cap_values  step == 16 and since in 1.7..2.0 and main ~ "*9999"
+
+# IMP-05 (analysis/autorange_and_scheduler.md section 9): setup item 10 in BEEP steps REL through DN 1 .. UP300 (16 codes)
+# instead of the four v2.05 codes; from code 0 (DN 30, EEPROM 0x014 = 0) one REL gives DN 50 (code 7) where v2.05 gives
+# UP 30 (code 1).  setup_beep_threshold.
+IMP-05  lcd         setup_beep_threshold  sub ~ "[DU][NP]*"
+IMP-05  lcd_final   setup_beep_threshold  sub ~ "[DU][NP]*"
+IMP-05  eeprom        setup_beep_threshold  offset == 0x14
+IMP-05  eeprom_final  setup_beep_threshold  offset == 0x14
+
+# OPT-01 + OPT-08 (DESIGN 11; src/cal/cache.s, nvm_read_block): start-up differs in time.  Measured on boot_v: the application's
+# GPIO burst comes 0.54 ms earlier (RAM init by copy instead of lz77, OPT-01), the first HY3131 write 1.24 ms later (the
+# 1280-byte calibration cache is loaded before it, OPT-08: +1.78 ms).  The LCD-paced baseline loop then runs 1.07..1.24 ms
+# later than v2.05's, so an event that the main loop produces falls one LCD frame (13.84 ms, 72 Hz) later or earlier when
+# its trigger lies near a pass boundary: measured differences of lcd and gpio events in the 93 baseline runs cluster at
+# +1.1, +14.9 and -12.8 ms.  Tolerance = one frame + the shift + 0.4 ms.
+OPT-01+OPT-08  tolerance:lcd    *  0.0155
+OPT-01+OPT-08  tolerance:gpio   *  0.0155
+OPT-01+OPT-08  tolerance:power  *  0.0155
+
+# NF-11 (DESIGN 3.4, 6.7): the time page (setup page 7) is drawn by the main loop on a request of the TIM2 handler, v2.05
+# draws from the handler.  The blinking separator and the page changes reach the glass up to three LCD frames later
+# (measured: 42.6 ms, setup_time / setup_navigate_dcv, 3 x 13.84 ms + 1.1 ms).
+NF-11  tolerance:lcd  setup_time          0.045
+NF-11  tolerance:lcd  setup_navigate_dcv  0.045
+
+# OPT-03 (nvm/flash.s 272..294): an EEPROM byte that already holds the value is not programmed again, so the changed byte
+# of a restore is committed earlier.  calbin_load: v2.05 writes the 17 bytes 0x000..0x010 before the changed byte 0x010
+# at 2 x 3.28 ms each (emu/periph/flash.py TPROG_US_DEFAULT = 3280): 111 ms at most (measured: 92 ms earlier).
+OPT-03  tolerance:eeprom  calbin_load  0.115
+
+
+# =====================================================================================================================
+# Production build (make, LOOP_V205=0): entries tagged "build == production".  DESIGN 3.5, 6.12, 7.1, 10; the
+# differences of IMP-01..IMP-06 are timing, event counts and transient values, so they are allowed as windows after the
+# scenario step that causes them (field step / since, emu/allowlist.py); what lies outside the windows, the writes of the
+# HY3131 configuration (the safety monitor additionally checks each against the v2.05 whitelist), the keys, buzzer,
+# EEPROM, SD card and BLE streams and the final state, stays compared.  A comparison of settled values within a
+# tolerance cannot be written in this format (the lcd events of a response are allowed as a whole).
+# =====================================================================================================================
+
+# IMP-02 (DESIGN 7.1, ARS 6): the main loop runs during the 2 s power-on window, the dial's mode is applied at once (front-end
+# pins at 0.12 s instead of 2.148 s), the reading is on the main display and the version "U-205" on the secondary display.
+# The scenario assertion "expect lcd main U-2.05" (line 9 of boot_*, 7 of boot_lowz and sysreset_running, 10 of
+# powercycle_quick) describes v2.05.  Key actions in the window (buzzer, backlight) stay compared.
+IMP-02  assert  boot_[!l]*          build == production and line == 9
+IMP-02  assert  boot_lowz           build == production and line == 7
+IMP-02  assert  sysreset_running    build == production and line == 7
+IMP-02  assert  powercycle_quick    build == production and line == 10
+IMP-02  lcd     *  build == production and boot in 0.09..2.7
+IMP-02  spi     *  build == production and boot in 0.06..2.7
+IMP-02  gpio    *  build == production and boot in 0.1..2.2 and pin != buzzer and pin != backlight and pin != supply and pin != ble_supply
+IMP-02  power   *  build == production and boot in 0.1..2.2 and pin ~ "P[EF]*"
+
+# IMP-06 (DESIGN 3.5, 6.13): per-event read sets of the HY3131 (AD1 3 bytes, INTF/INTE, R41, counter registers) instead of the
+# 52-byte burst from register 0 at every event, and every conversion is serviced (dcv_values: 2391 events against 2014,
+# acv_values 5301 against 1905), so the read frames and the INTF clear after each event (write of 00 to 0x1E) differ in
+# shape and number.  The configuration writes (0x1B, 0x1E pairs, 0x20 rows) stay compared.
+IMP-06  spi  *  build == production and dir == R
+IMP-06  spi  *  build == production and dir == W and addr == 30 and data ~ "00"
+
+# OF-30 (src/mres/lowz.s 175..205): LowZ shows five dashes from the moment a mean exceeds the threshold until the AC/DC decision,
+# then the value; v2.05 shows 0.0 for 1.1..2.4 s and lights the HV symbol up to 1.58 s late.  lowz_values: 230 V AC at
+# line 8 (v2.05 shows the value after 1.69 s), -12 V DC at line 12 (1.86 s).
+OF-30  lcd  lowz_values  build == production and step == 8 and since in 0..2.6
+OF-30  lcd  lowz_values  build == production and step == 12 and since in 0..2.4
+
+# OF-32 (src/ar/arfast.s 55, ui/refresh.s 609): BEEP draws the zeroed value at mode entry ("  0.00" for about 0.2 s) in
+# v2.05, the port blanks the main digits until the first valid result.  Outside the power-on window (IMP-02 above).
+OF-32  lcd  *  build == production and main == "  0.00" and boot in 2.7..1e9
+
+# IMP-01 + IMP-03 + IMP-04 + IMP-06 (DESIGN 10; ARS 5, 7, 8): every conversion is averaged and serviced, the range is chosen
+# from the first conversions and applied at once, the main digits are blank until the first value after a change from
+# 4 clean samples (ARS 5.2 P5), so after each scenario step that changes the input, the dial or the mode the lcd frames
+# (partial means, blank frames, the settled value 0.1..0.3 s earlier) and the range-change writes of the HY3131
+# (counter registers 0x1B, interrupt enable 0x1E pairs, rows 0x20: in dcv_values 7 rows against 5, written 0.02 s
+# after the step against 0.2..0.3 s) differ.  The longest response of v2.05 in these scenarios is 3.99 s (acv_values
+# line 18, AC ranges); the window is 4.1 s.  Measurement scenarios only; setup, power-on, BLE, logging and card scenarios
+# keep the lcd compared.
+IMP-01+IMP-03+IMP-04+IMP-06  lcd  *_values  build == production and boot in 2.7..1e9 and since in 0..4.1
+IMP-01+IMP-03+IMP-04+IMP-06  lcd  autorange_dcv  build == production and boot in 2.7..1e9 and since in 0..4.1
+IMP-01+IMP-03+IMP-04+IMP-06  lcd  filter_1khz_acv  build == production and boot in 2.7..1e9 and since in 0..4.1
+IMP-01+IMP-03+IMP-04+IMP-06  lcd  peak_*  build == production and boot in 2.7..1e9 and since in 0..4.1
+IMP-01+IMP-03+IMP-04+IMP-06  lcd  mode_cycle_*  build == production and boot in 2.7..1e9 and since in 0..4.1
+IMP-01+IMP-03+IMP-04+IMP-06  lcd  range_*  build == production and boot in 2.7..1e9 and since in 0..4.1
+IMP-01+IMP-03+IMP-04+IMP-06  lcd  rel_dcv  build == production and boot in 2.7..1e9 and since in 0..4.1
+IMP-01+IMP-03+IMP-04+IMP-06  lcd  minmax_dcv  build == production and boot in 2.7..1e9 and since in 0..4.1
+IMP-01+IMP-03+IMP-04+IMP-06  lcd  hold_sequence_dcv  build == production and boot in 2.7..1e9 and since in 0..4.1
+IMP-01+IMP-03+IMP-04+IMP-06  lcd  diode_range  build == production and boot in 2.7..1e9 and since in 0..4.1
+IMP-01+IMP-03+IMP-04+IMP-06  lcd  dial_sweep  build == production and boot in 2.7..1e9 and since in 0..4.1
+IMP-01+IMP-03+IMP-04+IMP-06  lcd  ohm_r6_marker_set  build == production and boot in 2.7..1e9 and since in 0..4.1
+IMP-01  spi  *_values  build == production and dir == W and addr in 27..32 and boot in 2.7..1e9 and since in 0..4.1
+IMP-01  spi  autorange_dcv  build == production and dir == W and addr in 27..32 and boot in 2.7..1e9 and since in 0..4.1
+IMP-01  spi  filter_1khz_acv  build == production and dir == W and addr in 27..32 and boot in 2.7..1e9 and since in 0..4.1
+IMP-01  spi  peak_*  build == production and dir == W and addr in 27..32 and boot in 2.7..1e9 and since in 0..4.1
+IMP-01  spi  mode_cycle_*  build == production and dir == W and addr in 27..32 and boot in 2.7..1e9 and since in 0..4.1
+IMP-01  spi  range_*  build == production and dir == W and addr in 27..32 and boot in 2.7..1e9 and since in 0..4.1
+IMP-01  spi  diode_range  build == production and dir == W and addr in 27..32 and boot in 2.7..1e9 and since in 0..4.1
+IMP-01  spi  dial_sweep  build == production and dir == W and addr in 27..32 and boot in 2.7..1e9 and since in 0..4.1
+IMP-01  spi  burden_dca  build == production and dir == W and addr in 27..32 and boot in 2.7..1e9 and since in 0..4.1
+IMP-01  spi  ohm_r6_marker_set  build == production and dir == W and addr in 27..32 and boot in 2.7..1e9 and since in 0..4.1
+
+# IMP-06 + IMP-01 (DESIGN 3.5, 10): the production loop is not paced by the LCD frame, so events that the main loop
+# produces (EEPROM saves after a key, card traffic, buzzer and front-end pins) come earlier.  Largest differences
+# measured over the 93 scenarios of the production build: eeprom 193.4 ms earlier (poweron_setup_year), sd_block 209.8 ms
+# earlier (mem_logging_sd), gpio 267.9 ms earlier / 71.8 ms later (dca_values / hold_sequence_dcv), lcd 220.3 ms earlier
+# (ble_bad_key_frame; the +1094 ms of the battery symbol in battery_low is not covered and stays a divergence).
+IMP-06  tolerance:lcd       *  0.23 and build == production
+IMP-06  tolerance:eeprom    *  0.2 and build == production
+IMP-06  tolerance:sd_block  *  0.22 and build == production
+IMP-06  tolerance:sd_cmd    *  0.22 and build == production
+IMP-01+IMP-06  tolerance:gpio   *  0.28 and build == production
+IMP-01+IMP-06  tolerance:power  *  0.28 and build == production
+# OF-11 (production): the first status frame is sent when the transfer is switched on (3.543 s) where v2.05 waits for the next
+# 50-tick boundary (4.025 s), so every later frame is 0.48 s earlier as well; the frames are paired in order.
+OF-11  tolerance:uart_tx  ble_*  0.5 and build == production
+
+# =====================================================================================================================
+# Deviations of firmware/DESIGN.md sections 10 and 11 and of ORIGINAL_FIRMWARE_ISSUES.md (OF-01 .. OF-51) with no entry,
+# and why (no scenario of emulator/diff/scenarios makes them observable, or the port keeps the v2.05 behaviour).
+# =====================================================================================================================
+# Reached by no scenario with a different result: OF-01 (the failing search of FUN_08007D1E runs 78 times in
+#   ohm_r6_marker_set, the display is identical), OF-02 (needs a counter result above 1 MHz), OF-03 (the helpers are called
+#   only for modes 13..15 and 22..24), OF-04 (range byte above 3), OF-05 (contrast outside 10..17 at FUN_0801B77A), OF-06
+#   (pin mask), OF-07, OF-09, OF-36, OF-37 = NF-07 and NF-08 (calibration capture, LowZ / BEEP / current-zero keys: no
+#   scenario), OF-19 (TEMP in MEM view), OF-20 (BEEP after an overload in another mode), OF-22 (degF), OF-25 (no scenario
+#   reaches 65536 counts of AC+DC), OF-26 (filter_1khz_acv: 50 Hz input, v2.05 and the baseline both show 1.0000), OF-27, OF-29
+#   (va_values: no lcd divergence; positive current, no column 7), OF-34 (no range change while the BLE transfer runs),
+#   OF-38 = NF-17 (contrast 10 / 11), OF-42 (no multi-sector read), OF-43 (no key held for 3.1 s), NF-04 (no BLE during card
+#   access), NF-09, NF-16, NVM-1, NVM-2 (no EEPROM write with a low battery), HW-08, OF-40.
+# Not visible in a compared stream or inside the tolerances: OF-13, NF-01 = OF-39, NF-02, NF-03, NF-12, NF-13, NF-14, NF-15,
+#   NF-18, HW-02, HW-03 (the pins PF0..PF2, PB6, PB7 and PC13 are not in the gpio stream, emu/diff/trace.py EXCLUDED_PINS),
+#   HW-01 (the rtc write frames equal v2.05's, each 0.1 ms longer: setup_date 12 frames, +1.2 .. +1.6 ms), HW-05 (the
+#   frames equal the v2.05 frames), HW-07 (the LCD model never withholds a flag), OF-16 / OPT-02 (the baseline still reads the
+#   RMS result; in production the read sets are IMP-06), OPT-04, OPT-06, OPT-07.
+# Noise only: OF-35.  With the HY3131 noise off the logged value equals the displayed mean for a steady input (mem_logging_sd:
+#   the blocks written to the card are identical in v2.05 and the baseline); with noise on the data blocks 2066..2071
+#   differ, together with the shift of the noise draws, so the two causes cannot be told apart and no entry is written.
+# Not run: NF-05, NF-06 (STOP and wake: apo_timing_wake and apo_disabled are long scenarios, not in the 93).
+# No deviation (v2.05 behaviour kept): OF-44 .. OF-51.

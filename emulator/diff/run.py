@@ -1,7 +1,7 @@
 """Differential test of a candidate firmware image against the original v2.05 image in the emulator.
 
     python -I emulator/diff/run.py --ref EEVBlog2_05.bin --cand <image> --eeprom <file> [--scenario name|all]
-                                   [--report out.md]
+                                   [--build baseline|production] [--report out.md]
     python -I emulator/diff/run.py --self-test --ref EEVBlog2_05.bin --eeprom <file>
     python -I emulator/diff/run.py --mutation-check --ref EEVBlog2_05.bin --eeprom <file>
     python -I emulator/diff/run.py --make-whitelist --ref EEVBlog2_05.bin --eeprom <file>
@@ -21,6 +21,9 @@ runs go as fast as the emulator executes.
                 (emu/safety.py) in learning mode and writes emulator/diff/hy3131_whitelist.
 --safety-check  runs boot_v on the reference image (no violation allowed) and on one-change copies of it
                 (SAFETY_MUTATIONS), each of which must trip its hardware-safety check.
+--build         the build mode of the candidate (baseline = LOOP_V205=1, production = LOOP_V205=0, firmware/DESIGN.md 3.5):
+                allowlist entries tagged "build == ..." (emu/allowlist.py) are used only for the same build; without
+                the option they are not used, so a candidate is compared as strictly as possible.
 Hardware safety: every run is watched by emu/safety.py (attached by app.Emulator.build); a violation stops that run
 and fails the comparison, and the power stream (supply / enable outputs) is compared with the reference run.
 Image arguments that are not an existing path are looked up in --inputs (default inputs/binaries of the project).
@@ -44,6 +47,7 @@ if EMU not in sys.path:
 
 from diff import scenario as scen          # noqa: E402
 from diff import compare as cmpm           # noqa: E402
+from emu import allowlist                  # noqa: E402
 
 MUTATION_ADDR = 0x0801A856                 # movs r4, #0xCD in FUN_0801A854 (version splash)
 MUTATION_ORIG = bytes([0xCD, 0x24])        # Thumb encoding of movs r4, #0xCD
@@ -141,7 +145,7 @@ def make_report(scenarios, results, comparisons, args, ref, cand, devs, title):
     L.append(f'- noise {"off" if args.no_noise else f"on, seed {args.seed}"}; front end: calibrated; compared streams: {", ".join(cmpm.COMPARED)} and the final state')
     tol = ', '.join(f'{s} {t}' for s, t in sorted(args.tol.items())) or 'defaults (compare.py)'
     L.append(f'- time tolerances: {tol}')
-    L.append(f'- deviation allowlist: {args.deviations or "none"} ({len(devs)} entries)')
+    L.append(f'- deviation allowlist: {args.deviations or "none"} ({len(devs)} entries; candidate build: {args.build or "not given, build-tagged entries not used"})')
     L.append('')
     L.append('| scenario | flags | emulated s | wall s ref / cand | result | first divergence | assertions failed ref / cand (allowlist not applied) |')
     L.append('|---|---|---|---|---|---|---|')
@@ -253,7 +257,7 @@ def make_report(scenarios, results, comparisons, args, ref, cand, devs, title):
 
 
 def do_compare(scenarios, ref, cand, args, title):
-    devs = cmpm.load_allowlist(args.deviations) if args.deviations else []
+    devs = cmpm.load_allowlist(args.deviations, args.build) if args.deviations else []
     ee_hash = sha256(args.eeprom)
     workdir = tempfile.mkdtemp(prefix='eev-diff-', dir=args.workdir)
     t0 = time.time()
@@ -473,6 +477,9 @@ def main(argv=None):
     ap.add_argument('--inputs', default=os.path.join(ROOT, 'inputs', 'binaries'),
                     help='directory with bootloader.bin and option.bytes (and images given by name)')
     ap.add_argument('--deviations', help='deviation allowlist (default firmware/deviations.txt when it exists)')
+    ap.add_argument('--build', choices=allowlist.BUILDS,
+                    help='build mode of the candidate (baseline = LOOP_V205=1, production = LOOP_V205=0): selects the '
+                         'allowlist entries tagged "build == ..." (none are used when not given)')
     ap.add_argument('--tol', action='append', metavar='STREAM=SECONDS', help='time tolerance of a stream')
     ap.add_argument('--seed', type=int, default=1, help='HY3131 noise seed used for every run (default 1)')
     ap.add_argument('--no-noise', action='store_true',

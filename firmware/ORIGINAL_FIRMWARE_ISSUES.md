@@ -551,7 +551,7 @@ EEPROM 11, after power-up 14. Saved 12 -> after power-up 12 (control).
 Impact: the two faintest contrast settings offered by the editor last only until the next power-up; the EEPROM keeps
 10/11 while the display uses 14, without any indication. The code does not show whether the boot limit is meant as a
 recovery from an unreadably faint setting.
-Port: switch `SET_ACCEPT_CONTRAST_10_11` (default 0 keeps the v2.05 behaviour; 1 restores 10 and 11) (NF-17).
+Port: contrast 10 and 11 are accepted at power-up (switch `SET_ACCEPT_CONTRAST_10_11`, default 1; NF-17).
 
 ### OF-39 — uninitialised word ORed into ADC_CR2
 `FUN_08013DD4` builds the ADC_InitTypeDef on the stack (`sub sp,#0x1c`) and writes [sp+0], [sp+4], [sp+5], [sp+0xC],

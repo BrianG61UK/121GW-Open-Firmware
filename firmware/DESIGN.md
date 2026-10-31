@@ -1163,9 +1163,13 @@ routine tests and the scenarios that cover the changed module are rerun; one ful
 
 ### 9.5 Deviation allowlist
 
-`firmware/deviations.txt`: one entry per expected divergence in the format of `emulator/diff/compare.py`. That format
-accepts OF-<number> references only (compare.py); the other prefixes (NF-, HW-, NVM-, IMP-, OPT-) need the format
-extension of 13.1 (W10) or their addition to `ORIGINAL_FIRMWARE_ISSUES.md` (Q7).
+`firmware/deviations.txt`: one entry per expected divergence, in the format of `emulator/emu/allowlist.py` (all prefixes
+OF-, NF-, HW-, NVM-, IMP-, OPT-; several references joined by `+` for one event; condition fields `t`, `step`, `since`,
+`boot` and, for uart_tx, `pos`; the clause `build == baseline|production` restricts an entry to one build mode and is
+selected with `emulator/diff/run.py --build`; `mask:lcd:sub` / `mask:lcd:main` entries leave one display row out of the
+LCD comparison; `tolerance:<stream>` entries widen a time tolerance). The file ends with the list of deviations that no
+scenario makes observable. Candidate runs use `--no-noise` (a timing shift below 1 us changes the noise drawn for a
+conversion).
 
 ---
 
