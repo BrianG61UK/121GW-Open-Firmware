@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>121GW emulator</title>
+<style>
+  html, body { height:100%; } body { margin:0; box-sizing:border-box; height:100vh; overflow:hidden; background:#16181b; color:#dfe3e6; font:13px/1.35 -apple-system, Helvetica, Arial, sans-serif; display:flex; gap:18px; padding:16px; }
+  /* Front panel: the meter drawing (695 x 1338 px) with live elements placed in its pixel coordinates. */
+  #panel { position:relative; height:min(calc(100vh - 32px), calc((100vw - 470px) * 1338 / 695)); width:auto; aspect-ratio:695/1338; flex:none; background:url(/assets/panel.png) center/100% 100% no-repeat; }
+  .abs { position:absolute; }
+  #lcd { background:#b3bdab; border-radius:6px; overflow:hidden; box-shadow:inset 0 2px 6px #0006; transition:background .2s; }
+  #lcd.backlight { background:#c9e8c1; box-shadow:inset 0 0 30px #a6ff9c; }
+  #lcd.off { background:#9aa394; }
+  #glass { position:absolute; left:3.5%; right:3.5%; top:4.5%; bottom:4.5%; }
+  #lcd img { position:absolute; inset:0; width:100%; height:100%; opacity:0; filter:brightness(0.05); }
+  #lcd.ghost img { opacity:.06; }
+  #lcd img.on { opacity:.92 !important; }
+  #lcd img.unproven.show { opacity:.5 !important; filter:sepia(1) hue-rotate(-50deg) saturate(6); }
+  .hot { cursor:pointer; border-radius:22px; }
+  .hot:hover { box-shadow:0 0 0 2px #ffffff55; }
+  .hot.down { background:#ffffff33; }
+  #knob { overflow:visible; pointer-events:none; }
+  .dot { cursor:pointer; border-radius:50%; }
+  .dot:hover { box-shadow:0 0 0 3px #ffffff66; }
+  .jack { cursor:pointer; border-radius:50%; }
+  .jack:hover { box-shadow:0 0 0 3px #ffffff55; }
+  .jack.plugged { background:radial-gradient(circle,#cfd3d6 0 34%,#1b1d1f 35% 48%,#c62626 49% 64%,#0000 65%); }
+  #side { flex:1; min-width:420px; overflow:auto; display:flex; flex-direction:column; gap:12px; }
+  .panel { background:#1f2327; border:1px solid #2c3237; border-radius:10px; padding:10px 12px; }
+  .panel h3 { margin:0 0 6px; font-size:13px; color:#9fb4c6; font-weight:600; }
+  #status span { display:inline-block; margin-right:14px; }
+  .led { display:inline-block; width:10px; height:10px; border-radius:50%; background:#333; vertical-align:-1px; margin-right:4px; }
+  .led.on { background:#ffd23f; box-shadow:0 0 8px #ffd23f; }
+  #matrix { font:10px/12px Menlo, monospace; white-space:pre; overflow-x:auto; }
+  #log { font:11px/14px Menlo, monospace; height:300px; overflow:auto; white-space:pre; color:#c7d0d6; }
+  .ctl button { background:#2b3238; color:#e6eaee; border:1px solid #3a434a; border-radius:6px; padding:4px 10px; margin-right:6px; cursor:pointer; }
+  label { margin-right:12px; } input[type=range] { width:160px; vertical-align:middle; }
+</style>
+</head>
+<body>
+<div id="panel">
+  <div id="lcd" class="abs off"><div id="glass"></div></div>
+  <svg id="knob" class="abs" viewBox="0 0 695 1338" preserveAspectRatio="none" style="inset:0;width:100%;height:100%">
+    <defs>
+      <radialGradient id="kg" cx="50%" cy="45%" r="55%"><stop offset="0" stop-color="#2a2d30"/><stop offset="1" stop-color="#121416"/></radialGradient>
+    </defs>
+    <circle cx="347" cy="873.6" r="176" fill="#0c0d0e"/>
+    <circle cx="347" cy="873.6" r="168" fill="url(#kg)"/>
+    <g id="ridges"></g>
+    <g id="pointer">
+      <path d="M 347 696 L 371 762 L 371 1018 L 347 1034 L 323 1018 L 323 762 Z" fill="#2e3236" stroke="#000" stroke-width="3"/>
+      <rect x="340" y="734" width="14" height="40" rx="4" fill="#f2f2f2" stroke="#000" stroke-width="2"/>
+    </g>
+  </svg>
+</div>
+<div id="side">
+  <div class="panel ctl"><h3>Emulator</h3>
+    <button id="run">Pause</button><button id="reset">Power cycle</button>
+    <label><input type="checkbox" id="ghost"> ghost unlit segments</label>
+    <label><input type="checkbox" id="unproven"> show unproven glass elements</label>
+    <div style="margin-top:6px">
+      <label>PA5 battery sense <input type="range" id="PA5" min="0" max="3.3" step="0.01"> <span id="PA5v"></span> V</label>
+      <label>PA4 thermistor <input type="range" id="PA4" min="0" max="3.3" step="0.01"> <span id="PA4v"></span> V</label>
+    </div>
+    <div id="status" style="margin-top:8px"></div>
+  </div>
+  <div class="panel"><h3>LCD RAM (COM &#215; SEG, raw — independent of the glass map)</h3><div id="matrix"></div></div>
+  <div class="panel"><h3>Event log</h3><div id="log"></div></div>
+</div>
+<script>
+const PW = 695, PH = 1338;
+const panel = document.getElementById('panel');
+function place(el, x0, y0, x1, y1) {
+  el.style.left = (x0 / PW * 100) + '%'; el.style.top = (y0 / PH * 100) + '%';
+  el.style.width = ((x1 - x0) / PW * 100) + '%'; el.style.height = ((y1 - y0) / PH * 100) + '%';
+}
+const post = c => fetch('/input', {method:'POST', body:JSON.stringify(c)});
+// LCD window (measured on the drawing) and glass layers (MIT, official 121GW app)
+const lcd = document.getElementById('lcd'), glass = document.getElementById('glass'); place(lcd, 112, 186, 588, 456);
+let bits = {}; const imgs = {};
+const unproven = ['TEST','BarTick0_0','DC+AC','Segs_unA','SubAC','SubDC','SubS','Subn'];
+function addImg(n, unp) {
+  const im = document.createElement('img'); im.src = '/assets/lcd/' + encodeURIComponent(n) + '.svg';
+  if (unp) im.className = 'unproven'; glass.appendChild(im); imgs[n] = im;
+}
+fetch('/assets/lcd_bits.json').then(r => r.json()).then(j => { bits = j; new Set(Object.values(j).flat()).forEach(n => addImg(n, false)); });
+document.getElementById('ghost').onchange = e => lcd.classList.toggle('ghost', e.target.checked);
+document.getElementById('unproven').onchange = e => { for (const n of unproven) { if (!imgs[n]) addImg(n, true); imgs[n].classList.toggle('show', e.target.checked); } };
+// keys (pill areas measured on the drawing); hold = long press, timed by the firmware
+const KEYS = [['RANGE',112,518,220,568],['HOLD',236,518,342,568],['REL',357,518,462,568],['PEAK',478,518,586,568],
+              ['MODE',112,592,220,642],['MINMAX',236,592,342,642],['MEM',357,592,462,642],['SETUP',478,592,586,642]];
+const keyEls = {};
+for (const [k, x0, y0, x1, y1] of KEYS) {
+  const b = document.createElement('div'); b.className = 'abs hot'; b.title = k; place(b, x0, y0, x1, y1);
+  b.onmousedown = () => post({key:k, down:true});
+  b.onmouseup = b.onmouseleave = () => b.classList.contains('down') && post({key:k, down:false});
+  panel.appendChild(b); keyEls[k] = b;
+}
+// dial: dot positions on the drawing; pointer angle from the knob centre (347,873.6), fitted to the printed knob outline
+const DOTS = [[162,843,-80.6],[181,787,-62.4],[216,738,-44.0],[265,705,-25.9],[320,688,-8.3],
+              [378,687,9.4],[435,704,27.4],[482,736,44.5],[518,786,62.9],[536,844,81.1]];
+const NAMES = ['OFF','Low Z','V','mV / Temp','Hz ms%','Ω / beep / diode / cap','mVA / VA','µA / µVA','A / mA','OFF'];
+DOTS.forEach(([x, y], i) => { const d = document.createElement('div'); d.className = 'abs dot'; d.title = NAMES[i];
+  place(d, x - 26, y - 26, x + 26, y + 26); d.onclick = () => post({dial:i}); panel.appendChild(d); });
+const ridges = document.getElementById('ridges');
+for (let a = 0; a < 360; a += 30) {
+  const r = a * Math.PI / 180, x = 347 + 148 * Math.sin(r), y = 873.6 - 148 * Math.cos(r);
+  const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', 13); c.setAttribute('fill', '#1d2023'); c.setAttribute('stroke', '#050606'); c.setAttribute('stroke-width', 2);
+  ridges.appendChild(c);
+}
+const pointer = document.getElementById('pointer');
+// jacks (centres measured on the drawing)
+const JACKS = [['A',163,1183],['mA',313,1183],['COM',462,1183],['V',532,1053]]; const jackEls = {};
+for (const [j, x, y] of JACKS) { const e = document.createElement('div'); e.className = 'abs jack'; e.title = j + ' jack';
+  place(e, x - 36, y - 36, x + 36, y + 36); e.onclick = () => post({jack:j, plugged:!e.classList.contains('plugged')}); panel.appendChild(e); jackEls[j] = e; }
+// analog inputs
+for (const p of ['PA5','PA4']) { const s = document.getElementById(p); s.oninput = () => { document.getElementById(p+'v').textContent = (+s.value).toFixed(2); post({analog:p, volts:+s.value}); }; }
+let analogInit = false;
+document.getElementById('run').onclick = e => post({run: e.target.textContent === 'Resume'});
+document.getElementById('reset').onclick = () => post({reset:true});
+async function tick() {
+  try {
+    const s = await (await fetch('/state')).json();
+    lcd.classList.toggle('off', !s.lcd_on); lcd.classList.toggle('backlight', !!s.backlight);
+    const lit = new Set();
+    for (let w = 0; w < 8; w++) for (let b = 0; b < 32; b++) if (s.lcd[w] >>> b & 1) for (const n of (bits['w'+w+'b'+b] || [])) lit.add(n);
+    for (const n in imgs) if (!imgs[n].classList.contains('unproven')) imgs[n].classList.toggle('on', s.lcd_on && lit.has(n));
+    let mt = '      SEG 0         10        20        30        40\n';
+    for (let c = 0; c < 4; c++) { let row = 'COM' + c + '  ';
+      for (let seg = 0; seg < 44; seg++) { const w = 2 * c + (seg >> 5), b = seg & 31; row += (s.lcd[w] >>> b & 1) ? '█' : '·'; }
+      mt += row + '\n'; }
+    document.getElementById('matrix').textContent = mt;
+    document.getElementById('status').innerHTML =
+      `<span>${s.running ? 'running' : 'paused'}</span><span>t = ${(s.time_ms/1000).toFixed(3)} s</span>` +
+      `<span>clock ${(s.sysclk/1e6).toFixed(3)} MHz</span><span><i class="led ${s.buzzer?'on':''}"></i>buzzer</span>` +
+      `<span><i class="led ${s.backlight?'on':''}"></i>backlight</span><span>dial: ${NAMES[s.dial]}</span><span>unmodelled accesses: ${s.unmodelled}</span>` +
+      (s.stop ? `<br><b style="color:#ff6b6b">stopped: ${s.stop}</b>` : '');
+    document.getElementById('run').textContent = s.running ? 'Pause' : 'Resume';
+    pointer.setAttribute('transform', `rotate(${DOTS[s.dial][2]} 347 873.6)`);
+    for (const k in keyEls) keyEls[k].classList.toggle('down', s.keys.includes(k));
+    for (const j in jackEls) jackEls[j].classList.toggle('plugged', s.jacks.includes(j));
+    if (!analogInit && s.analog) { for (const p of ['PA5','PA4']) { document.getElementById(p).value = s.analog[p]; document.getElementById(p+'v').textContent = s.analog[p].toFixed(2); } analogInit = true; }
+    const lg = document.getElementById('log'), atEnd = lg.scrollTop + lg.clientHeight >= lg.scrollHeight - 4;
+    lg.textContent = s.log.join('\n'); if (atEnd) lg.scrollTop = lg.scrollHeight;
+  } catch (e) {}
+  setTimeout(tick, 100);
+}
+tick();
+</script>
+</body>
+</html>
