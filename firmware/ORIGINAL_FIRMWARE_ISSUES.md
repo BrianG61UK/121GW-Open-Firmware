@@ -6,7 +6,8 @@ Reference image: `EEVBlog2_05.bin`, SHA-256 `8f885f12f567c2cccd9862d9fe26f127e2a
 Every entry is proven from the original machine code; addresses are instruction addresses in that image
 and can be checked with any disassembler. "Port" describes what this firmware does instead.
 Status: **open** = documented, fix not yet implemented; **approval** = touches calibration/EEPROM
-semantics, fix waits for owner approval; **fixed** = implemented and verified in the emulator.
+semantics, fix waits for owner approval; **by design** = documented, judged intended, behaviour kept;
+**fixed** = implemented and verified in the emulator.
 
 ## Summary
 
@@ -18,12 +19,12 @@ semantics, fix waits for owner approval; **fixed** = implemented and verified in
 | OF-04 | Multiplier path | Unset register passed to a float multiply for mode byte > 3 | medium | open |
 | OF-05 | Mode helper | Unset register passed on for modes outside the handled set | low | open |
 | OF-06 | GPIO set-up | Pin mask left uninitialised for unhandled arguments | high | open |
-| OF-07 | Calibration | Save and load use different EEPROM locations in LowZ and BEEP | high | approval |
-| OF-08 | Calibration | Entering calibration mode erases six current-offset records without confirmation | high | approval |
-| OF-09 | Calibration | Current zeroing (long REL) stores only the last increment: a second zeroing is lost at the next mode/range change | medium | approval |
+| OF-07 | Calibration | Calibration save in LowZ and BEEP overwrites the ACV record area, which those modes never load | high | open |
+| OF-08 | Calibration | Entering calibration mode clears the six user current-zero records without confirmation or mention in the manual | low | by design |
+| OF-09 | Calibration | Current zeroing (long REL) stores only the last increment: a second zeroing is lost at the next mode/range change | medium | open |
 | OF-10 | Bluetooth | Packet build and transmit are not synchronised; command echoes can interleave with status frames | medium | open |
 | OF-11 | Bluetooth | First frame after enabling BT can carry stale buffer contents | low | open |
-| OF-12 | Backup | `cal.bin` does not include the six current-offset records at EEPROM 0x4D0–0x4FF | medium | approval |
+| OF-12 | Backup | `cal.bin` does not include the six user current-zero records at EEPROM 0x4D0–0x4FF | low | by design |
 | OF-13 | ADC | ADC sample-time register rewritten while the ADC is on, against the reference manual | low | open |
 | OF-14 | Measurement | HY3131 AD1 result decoded with the wrong two's-complement offset: negative codes read 1 LSB high, negative full scale reads as positive | low | open |
 | OF-15 | Measurement | Rounding to display counts truncates toward zero after adding 0.5: negative readings show one count too little in magnitude | medium | open |
@@ -89,13 +90,15 @@ The loader (`FUN_0801167C`) reads LowZ from table `T[1]+0x30` (or `T[2]+0x30` de
 and BEEP from `T[9]+0x10`, but the writer (`FUN_08011B40`) has no special case for those modes and
 writes `T[0]+16·range` (= 0x30, the ACV record area) and `T[10]+16·range` (0x120).
 Impact: calibrating in LowZ overwrites ACV calibration; a LowZ/BEEP calibration is not the record that
-is later loaded. Port: to be decided with the owner (fixing changes stored calibration semantics).
+is later loaded. Port: a calibration save in LowZ or BEEP is refused (refusal beep, no EEPROM write); both modes
+keep using the records they already load, so no calibration record can be overwritten from these modes.
 
 ### OF-08 — calibration mode erases current-offset records without confirmation
 Power-on, then MODE, then REL within the start-up window enters calibration mode and immediately calls
 `FUN_0801150E` (`0x0800EAF6`), which rewrites the six records at EEPROM 0x4D0, 0x4D8, 0x4E0, 0x4E8,
 0x4F0, 0x4F8 (marker 0xA5 + value 0). There is no confirmation step, and the user manual does not
-mention it. Port: to be decided with the owner.
+mention it. The six records are the user current-zero offsets set by a long REL (OF-09), not factory calibration;
+clearing them when the factory calibration mode starts is a reasonable design. Port: unchanged behaviour.
 
 ### OF-09 — current-extra store value
 A long REL in modes 16..21 at range 0 stores `0x20007D64` to EEPROM (`FUN_080114BC`, called at
@@ -106,7 +109,7 @@ the reading to RAM (`0x08016436`..`0x08016448`, 0x20007E0C += 0x20007D64) but st
 0x4D8): offset 25 counts → long REL → RAM 25, EEPROM A5/25, display 0; offset drifts to 35 → display 10 → long REL →
 RAM 35, EEPROM A5/10, display 0; mode/range application → RAM 10, display 25 with the input unchanged.
 Impact: after a second zeroing, the next mode or range change loses the earlier part of the zero.
-Port: store the accumulated offset; to be decided with the owner (EEPROM content).
+Port: store the accumulated offset (same location and format; approved by the owner).
 
 ### OF-10 — unsynchronised Bluetooth packet build/transmit
 The status packet buffer at 0x20007AE0 is built in the main loop (`0x08024C0C`) and transmitted from
@@ -119,8 +122,8 @@ Port: build before the first transmit.
 
 ### OF-12 — incomplete calibration backup
 `cal.bin` save/load (`FUN_0801CD14` / `FUN_0801CF06`) covers EEPROM 0x000–0x4AF only; the
-current-offset records at 0x4D0–0x4FF (read by `FUN_08011448`) are not included. Port: to be decided
-with the owner (extending the file changes the `cal.bin` format).
+current-offset records at 0x4D0–0x4FF (read by `FUN_08011448`) are not included. The omitted records are user current-zero offsets (OF-09), not calibration, so leaving them out of a calibration
+backup is defensible and keeps the file compatible with v2.05. Port: unchanged format.
 
 ### OF-13 — ADC sample time changed while the ADC is enabled
 RM0038 (rev. 15) section 12.15.6, ADC_SMPR3: "These bits must be written only when ADON=0."
