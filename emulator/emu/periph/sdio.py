@@ -469,9 +469,12 @@ class SDIO(Periph):
         self._changed()
 
     def _card_log(self):
-        for t in self.card.log:
+        card = self.card                                    # the socket can be emptied (set_card(None)) at any time
+        if card is None:
+            return
+        for t in card.log:
             self.m.log.append((self.m.cycles, f"SD card: {t}"))
-        self.card.log.clear()
+        card.log.clear()
 
     def _cmd_sent(self, tl):
         idx, arg, wr = self._cur

@@ -1,0 +1,87 @@
+# fe_levels.txt - steady-state levels of the twelve front-end control pins per mode, transcribed from the v2.05
+# drivers (DESIGN.md 4.4, 9.3 item 3).  Checked against `brd_fe_table` of the linked ELF by tools/check_gpio.py.
+#
+# Source: analysis/decompile/EEVBlog2_05_listing.asm, FUN_0800FBE8 (0x0800FBE8..0x0800FC44) calling, in this order,
+# FUN_0800FE00, FUN_0800FC60, FUN_0800FD30, FUN_0800FDD0, FUN_0800FD80, FUN_0800FDB0, FUN_0800FE14, FUN_0800FE74.
+# Every driver ends in a BSRR halfword store: the pool word of the store selects the port and the direction
+# (v2.05 literal pool 0x08010448..0x08010480; RM0038 8.4.7 GPIOx_BSRR: low half sets, high half resets):
+#   0x40020C18 GPIOD set, 0x40020C1A GPIOD reset, 0x40021818 GPIOF set, 0x4002181A GPIOF reset,
+#   0x40020818 GPIOC set, 0x4002081A GPIOC reset, 0x40021018 GPIOE set, 0x4002101A GPIOE reset,
+#   0x40020018 GPIOA set, 0x4002001A GPIOA reset, 0x40021418 GPIOH set, 0x4002141A GPIOH reset.
+# The mode argument is reduced with uxtb before every comparison (0x0800FBF6 and the uxtb in each driver).
+#
+# Rules read from the listing (H = pin set high, L = low):
+#   PD0, PF4, PF5  FUN_0800FC60.  Mode in {0, 2, 4, 13, 14, 15, 16, 18, 20} (compares 0x0800FC62..0x0800FC94, branch
+#                  to 0x0800FC96): if mode is 2 or 4 and the byte 0x200080B9 (pool 0x0800FE0C) equals 1
+#                  (0x0800FC98..0x0800FCA8): PD0 L (0x0800FCB0), PF4 L (0x0800FCB8, GPIOF reset), PF5 H
+#                  (0x0800FCC0, GPIOF set); every other mode of the set: PD0 L (0x0800FCCA), PF4 H (0x0800FCD2),
+#                  PF5 L (0x0800FCDA).  Every other mode (0x0800FCDE): PD0 H (0x0800FCE4), PF4 H (0x0800FCEC),
+#                  PF5 H (0x0800FCF4).
+#   PC11           FUN_0800FC60: mode 9 -> L (0x0800FD04, GPIOC reset), else H (0x0800FD10, GPIOC set).
+#   PD7            FUN_0800FC60: mode 2 -> L (0x0800FD1E, GPIOD reset), else H (0x0800FD28, GPIOD set).
+#   PE15, PF6      FUN_0800FD30: mode 11 and the byte 0x200080B3 (pool 0x0801044C) not zero (0x0800FD32..0x0800FD3E):
+#                  PE15 L (0x0800FD48), PF6 H (0x0800FD50).  Otherwise PE15 L if mode is 4 (0x0800FD62) else H
+#                  (0x0800FD6E), then PF6 L (0x0800FD76).
+#   PA12           FUN_0800FDD0: mode 6, 7 or 8 -> L (0x0800FDEA, GPIOA reset), else H (0x0800FDF6).
+#   PA11           FUN_0800FD80: mode 14 or 15 -> L (0x0800FD94), else H (0x0800FDA0).
+#   PH2            FUN_0800FDB0: mode 5 -> H (0x0800FDBC, GPIOH set), else L (0x0800FDC6).
+#   PE12           FUN_0800FE14: mode in {13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24} (compares
+#                  0x0800FE16..0x0800FE58) -> H (0x0800FE64, GPIOE set), else L (0x0800FE70).
+#   PE5            FUN_0800FE74: mode in {16..21} (0x0800FE76..0x0800FE96): the range argument (uxtb r1) equal to 0
+#                  -> H (0x0800FEA4), else L (0x0800FEB0); mode in {13, 14, 15, 22, 23, 24} (0x0800FEB4..0x0800FED4):
+#                  the byte 0x200080C7 (pool 0x08010480) equal to 0 -> H (0x0800FEE6), else L (0x0800FEF0); any other
+#                  mode -> H (0x0800FEFA).
+# FUN_0800FE00 (PD1) writes 0x0002 to GPIOD set in every call (0x0800FE06): PD1 is H in every mode and is not a column.
+# FUN_0800FBE8 stores 0 to 0x200080B3 at 0x0800FC0A before it calls FUN_0800FD30 (0x0800FC10); the diode column is
+# therefore meaningful for the callers that reach FUN_0800FD30 directly (0x0800EA4E, FUN_080159C8), as DESIGN.md 4.4 states.
+#
+# File format.  Blank lines and lines starting with # are ignored.  One rule per line:
+#   row <mode|other> filter=<0|1|*> diode=<0|1|*> range0=<0|1|*> c7=<0|1|*>  <twelve levels>
+# - <mode> is 0..24; `other` stands for every mode above 24 (the v2.05 default branches; brd_fe_table row 25).
+# - filter = 1 when byte 0x200080B9 equals 1; diode = 1 when byte 0x200080B3 is not 0; range0 = 1 when the range
+#   argument is 0; c7 = 1 when byte 0x200080C7 is not 0 (the index fields of brd_fe_table, src/brd/frontend.s).
+# - `*` means the rule holds for both values of that field.  Every (row, filter, diode, range0, c7) combination must be
+#   covered by exactly one rule.
+# - The twelve levels are, in this order, PD0 PC11 PF4 PF5 PE15 PF6 PA12 PH2 PE12 PE5 PD7 PA11 (DESIGN.md 4.4 column
+#   order; bit 0 to bit 11 of a brd_fe_table word), each H or L.
+row 0     filter=* diode=* range0=* c7=*  LHHLHLHLLHHH
+row 1     filter=* diode=* range0=* c7=*  HHHHHLHLLHHH
+row 2     filter=0 diode=* range0=* c7=*  LHHLHLHLLHLH
+row 2     filter=1 diode=* range0=* c7=*  LHLHHLHLLHLH
+row 3     filter=* diode=* range0=* c7=*  HHHHHLHLLHHH
+row 4     filter=0 diode=* range0=* c7=*  LHHLLLHLLHHH
+row 4     filter=1 diode=* range0=* c7=*  LHLHLLHLLHHH
+row 5     filter=* diode=* range0=* c7=*  HHHHHLHHLHHH
+row 6     filter=* diode=* range0=* c7=*  HHHHHLLLLHHH
+row 7     filter=* diode=* range0=* c7=*  HHHHHLLLLHHH
+row 8     filter=* diode=* range0=* c7=*  HHHHHLLLLHHH
+row 9     filter=* diode=* range0=* c7=*  HLHHHLHLLHHH
+row 10    filter=* diode=* range0=* c7=*  HHHHHLHLLHHH
+row 11    filter=* diode=0 range0=* c7=*  HHHHHLHLLHHH
+row 11    filter=* diode=1 range0=* c7=*  HHHHLHHLLHHH
+row 12    filter=* diode=* range0=* c7=*  HHHHHLHLLHHH
+row 13    filter=* diode=* range0=* c7=0  LHHLHLHLHHHH
+row 13    filter=* diode=* range0=* c7=1  LHHLHLHLHLHH
+row 14    filter=* diode=* range0=* c7=0  LHHLHLHLHHHL
+row 14    filter=* diode=* range0=* c7=1  LHHLHLHLHLHL
+row 15    filter=* diode=* range0=* c7=0  LHHLHLHLHHHL
+row 15    filter=* diode=* range0=* c7=1  LHHLHLHLHLHL
+row 16    filter=* diode=* range0=0 c7=*  LHHLHLHLHLHH
+row 16    filter=* diode=* range0=1 c7=*  LHHLHLHLHHHH
+row 17    filter=* diode=* range0=0 c7=*  HHHHHLHLHLHH
+row 17    filter=* diode=* range0=1 c7=*  HHHHHLHLHHHH
+row 18    filter=* diode=* range0=0 c7=*  LHHLHLHLHLHH
+row 18    filter=* diode=* range0=1 c7=*  LHHLHLHLHHHH
+row 19    filter=* diode=* range0=0 c7=*  HHHHHLHLHLHH
+row 19    filter=* diode=* range0=1 c7=*  HHHHHLHLHHHH
+row 20    filter=* diode=* range0=0 c7=*  LHHLHLHLHLHH
+row 20    filter=* diode=* range0=1 c7=*  LHHLHLHLHHHH
+row 21    filter=* diode=* range0=0 c7=*  HHHHHLHLHLHH
+row 21    filter=* diode=* range0=1 c7=*  HHHHHLHLHHHH
+row 22    filter=* diode=* range0=* c7=0  HHHHHLHLHHHH
+row 22    filter=* diode=* range0=* c7=1  HHHHHLHLHLHH
+row 23    filter=* diode=* range0=* c7=0  HHHHHLHLHHHH
+row 23    filter=* diode=* range0=* c7=1  HHHHHLHLHLHH
+row 24    filter=* diode=* range0=* c7=0  HHHHHLHLHHHH
+row 24    filter=* diode=* range0=* c7=1  HHHHHLHLHLHH
+row other filter=* diode=* range0=* c7=*  HHHHHLHLLHHH

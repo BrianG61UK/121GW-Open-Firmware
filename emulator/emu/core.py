@@ -43,6 +43,7 @@ class Machine:
         self.pending = set()                  # pending exception numbers (16+IRQ for interrupts)
         self.event_reg = False                # WFE event register (PM0056 3.12.10): set on exception entry/return
         self.idle = False                     # core asleep in WFI/WFE with nothing scheduled
+        self._asleep_at = None                # address of the WFI / WFE the core sleeps at (see _sleep)
         self._wfi_hooked = set()              # WFI addresses with an idle hook (see _on_block)
         self.active = []                      # stack of active exception numbers
         self.unmodelled = {}                  # (addr, rw) -> first pc, count
@@ -55,6 +56,8 @@ class Machine:
         self._in_slice = False
         self._slice_end = 0
         self._stop_req = False                # slice stop requested by schedule(), carried out at the next block start
+        self.mpu_hold = False                 # an access cancelled by the MPU model (scs.py): MMIO callbacks do nothing
+        self._fault = None                    # (exception number, return address) of a synchronous fault, entered next
         self._map()
 
     # ---------------------------------------------------------------- memory
@@ -87,6 +90,8 @@ class Machine:
         return int.from_bytes(self.eeprom[off:off + size], 'little')
 
     def _ee_write(self, uc, off, size, value, ud):
+        if self.mpu_hold:
+            return
         if self.flash_ctl is None:
             self._note(EEPROM_BASE + off, 'W'); return
         self.flash_ctl.cpu_store(EEPROM_BASE + off, value, size)
@@ -110,6 +115,8 @@ class Machine:
         self.unmodelled[k][1] += 1
 
     def _pread(self, uc, off, size, ud):
+        if self.mpu_hold:
+            return 0
         addr = PERIPH_BASE + off
         b, mdl = self._find(addr)
         if mdl is None:
@@ -117,6 +124,8 @@ class Machine:
         return mdl.read(addr - b, size) & ((1 << (8 * size)) - 1)
 
     def _pwrite(self, uc, off, size, value, ud):
+        if self.mpu_hold:
+            return
         addr = PERIPH_BASE + off
         b, mdl = self._find(addr)
         if mdl is None:
@@ -143,6 +152,8 @@ class Machine:
         return (v >> bit) & 1
 
     def _bb_write(self, uc, off, size, value, base):
+        if self.mpu_hold:
+            return
         a, bit = self._bb_access(base, off, size)
         if base == BB_SRAM:
             v = int.from_bytes(self.uc.mem_read(a, size), 'little')
@@ -155,16 +166,22 @@ class Machine:
             self._pwrite(uc, a - PERIPH_BASE, size, v, None)
 
     def _scs_read(self, uc, off, size, ud):
+        if self.mpu_hold:
+            return 0
         if self.nvic is None:
             self._note(SCS_BASE + off, 'R'); return 0
         return self.nvic.read(off, size)
 
     def _scs_write(self, uc, off, size, value, ud):
+        if self.mpu_hold:
+            return
         if self.nvic is None:
             self._note(SCS_BASE + off, 'W'); return
         self.nvic.write(off, value, size)
 
     def _on_invalid(self, uc, access, addr, size, value, ud):
+        if self.nvic is not None and self.nvic.fault_pending:   # the MPU model cancelled this access (scs.py)
+            return False
         pc = uc.reg_read(UC_ARM_REG_PC)
         self.log.append((self.cycles, f"INVALID access type {access} at 0x{addr:08X} size {size} pc 0x{pc:08X}"))
         self._stop_reason = f"invalid memory access 0x{addr:08X} at pc 0x{pc:08X}"
@@ -176,6 +193,8 @@ class Machine:
             self._stop_req = False
             uc.emu_stop()
             return
+        if self.nvic is not None and self.nvic.mpu.ctrl & 1 and self.nvic.mpu.block_check(addr, size):
+            return                            # MPU: instruction fetch violation (or block cut at the violating instruction)
         n = self._blk.get(addr)
         if n is None:
             code = uc.mem_read(addr, size)
@@ -269,7 +288,9 @@ class Machine:
         vals = [uc.reg_read(r) for r in FRAME_REGS]
         vals[6] = pc & ~1
         vals[7] = (vals[7] | (1 << 24)) | ((1 << 9) if align else 0)
-        uc.mem_write(sp, struct.pack('<8I', *vals))
+        bad = self.nvic.mpu.frame_violation(sp, exc)      # MPU: frame not writable -> MSTKERR (PM0056 4.4.10)
+        if bad is None:
+            uc.mem_write(sp, struct.pack('<8I', *vals))
         uc.reg_write(UC_ARM_REG_SP, sp)
         uc.reg_write(UC_ARM_REG_LR, 0xFFFFFFF9)       # return to Thread/Handler mode, main stack
         self.pending.discard(exc)
@@ -279,11 +300,18 @@ class Machine:
         vtor = self.nvic.vtor
         handler = struct.unpack('<I', uc.mem_read(vtor + 4 * exc, 4))[0]
         self.cycles += 12                              # Cortex-M3 exception entry latency
+        if bad is not None:
+            self.nvic.stacking_fault(handler | 1, bad)
         return handler | 1
 
     def _on_intr(self, uc, intno, ud):
         if intno == 8:                                 # EXCP_EXCEPTION_EXIT (EXC_RETURN branch)
             sp = uc.reg_read(UC_ARM_REG_SP)
+            if self.nvic is not None and self.nvic.mpu.frame_read_violation(sp) is not None:
+                self._stop_reason = (f"MPU: exception return frame at 0x{sp:08X} violates the region map "
+                                     f"(MUNSTKERR is not modelled, emu/scs.py)")
+                uc.emu_stop()
+                return
             vals = struct.unpack('<8I', uc.mem_read(sp, 32))
             for r, v in zip(FRAME_REGS, vals):
                 if r != UC_ARM_REG_PC:
@@ -310,7 +338,10 @@ class Machine:
           is set (consumed), or on a pending, enabled exception, or with SCR.SEVONPEND on any pending interrupt.
         - otherwise the core sleeps: virtual time jumps to the next scheduled event and the instruction is executed
           again afterwards, so the wake condition is re-evaluated; with no event scheduled the slice ends (idle) and
-          the core stays at the instruction until an external input (key, dial) makes an exception pending."""
+          the core stays at the instruction until an external input (key, dial) makes an exception pending.  An
+          exception taken while the core sleeps there returns to the instruction AFTER the WFI / WFE (the exception
+          that wakes the core is entered with the next instruction as return address, PM0056 3.12.11); run() does that
+          with `_asleep_at`."""
         def hook(uc, a, size, ud):
             self._resume = self._sleep(a, kind)
             uc.emu_stop()
@@ -318,10 +349,12 @@ class Machine:
 
     def _sleep(self, a, kind):
         """Execute WFI/WFE at a (semantics in add_idle_hook); returns the address to resume at (Thumb bit set)."""
+        self._asleep_at = None
         if self._wake_ok(kind):
             if kind == 'wfe':
                 self.event_reg = False
             return (a + 2) | 1
+        self._asleep_at = a
         if self.events:
             self.cycles = max(self.cycles, self.events[0][0])
         else:
@@ -338,6 +371,11 @@ class Machine:
             if self.nvic is not None and self.nvic.scr & 0x10 and self.pending:   # SEVONPEND (SCR bit 4)
                 return True
         return False
+
+    def _take_fault(self):
+        """Collect a synchronous fault raised by the MPU model (scs.py): cancel the access and queue the exception."""
+        if self.nvic is not None and self.nvic.fault_pending:
+            self._fault = self.nvic.take_fault()
 
     def request_reset(self, why):
         self.reset_request = why
@@ -368,6 +406,7 @@ class Machine:
             raise RuntimeError('core reset: stack pointer or IPSR not restored')
         self.pc = pc | 1
         self.active.clear(); self.pending.clear()
+        self._asleep_at = None
         self._resume = None
         self._stop_req = False
 
@@ -375,9 +414,21 @@ class Machine:
         end = self.cycles + max_cycles
         while self.cycles < end and self._stop_reason is None and self.reset_request is None:
             self._run_events()
+            if self._fault is not None:                # synchronous fault of the MPU model: taken before anything else
+                exc, rpc = self._fault
+                self._fault = None
+                self.pc = self._enter(exc, rpc)
+                self._take_fault()                     # a stacking fault of this entry
+                continue
             exc = self._can_take()
             if exc is not None:
+                if self._asleep_at is not None and (self.pc & ~1) == self._asleep_at:
+                    self.pc = (self._asleep_at + 2) | 1        # woken by this exception: it returns past the WFI / WFE
+                self._asleep_at = None
                 self.pc = self._enter(exc, self.pc)
+                self._take_fault()
+                if self._fault is not None:            # stacking fault of this entry: enter it before the handler runs
+                    continue
             n = slice_cycles
             if self.events:
                 n = max(1, min(n, self.events[0][0] - self.cycles))
@@ -389,11 +440,23 @@ class Machine:
             try:
                 self.uc.emu_start(self.pc, 0xFFFFFFFF, count=n)
             except UcError as e:
-                pc = self.uc.reg_read(UC_ARM_REG_PC)
-                hw = int.from_bytes(self.uc.mem_read(pc & ~1, 2), 'little')
-                if hw in (0xBF30, 0xBF20):             # WFI / WFE: Unicorn rejects them; emulate the sleep here
+                if self.nvic is not None and self.nvic.fault_pending:   # access cancelled by the MPU model: not an error
                     self._in_slice = False
-                    self.pc = self._sleep(pc & ~1, 'wfi' if hw == 0xBF30 else 'wfe')
+                    self._take_fault()
+                    continue
+                pc = self.uc.reg_read(UC_ARM_REG_PC)
+                # WFI / WFE: Unicorn rejects them.  Unicorn 2.1.4 reports the error with PC already past the instruction
+                # (the failing WFE of v2.05 at 0x080207F6 is reported at 0x080207F8), an older one at the instruction
+                # itself: the halfword at PC is tried first, then the one before it
+                wfx = None
+                for cand in (pc & ~1, (pc & ~1) - 2):
+                    hw = int.from_bytes(self.uc.mem_read(cand, 2), 'little')
+                    if hw in (0xBF30, 0xBF20):
+                        wfx = (cand, hw)
+                        break
+                if wfx is not None:                    # emulate the sleep here
+                    self._in_slice = False
+                    self.pc = self._sleep(wfx[0], 'wfi' if wfx[1] == 0xBF30 else 'wfe')
                     if self.cycles == start:
                         self.cycles += 1
                     if self.idle:
@@ -404,6 +467,9 @@ class Machine:
                 break
             finally:
                 self._in_slice = False
+            if self.nvic is not None and self.nvic.fault_pending:
+                self._take_fault()                     # MPU fault raised in this slice
+                continue
             if self._resume is not None:
                 self.pc = self._resume
             else:
