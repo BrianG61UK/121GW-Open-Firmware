@@ -42,6 +42,12 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-27 | Measurement | VA, mode 15 ranges 2/3 (0x20007FDF = 0): burden table read past the end of its rows; range 3 shows OFL for a valid voltage | medium | open |
 | OF-28 | Measurement | One smoothing state shared by two different quantities (AC+DC, burden display, VA): readings are averaged with the other quantity | low | open |
 | OF-29 | Measurement | DC VA burden correction depends on the sign: reversing the polarity changes the corrected magnitude | low | open |
+| OF-30 | Measurement | LowZ shows "0.0" V for 1.1 to 2.4 s each time a voltage appears at the input (100 V, 230 V, 600 V tested), before the real value | high | open |
+| OF-31 | Main loop | LCD update busy-wait in every display commit paces the main loop to the LCD frame: AD1 conversions beyond about 72 per second are dropped and the CPU never sleeps while measuring | low | open |
+| OF-32 | Display | BEEP and FREQ draw the zeroed value at mode entry: "0.00" ohm with open or connected leads, "0.000" Hz with a signal present | low | open |
+| OF-33 | Measurement | CAP timeout range jump draws the old count with the new range's decimal point and the old unit for one display update ("10.000" nF becomes "1.0000" nF) | low | open |
+| OF-34 | Bluetooth | Status frames built during a range change report value 0, no overload, in the new range, with no flag that the value is invalid | low | open |
+| OF-35 | Logging | Log records store the single per-sample value 0x20007D68, not the averaged value that is displayed | low | open |
 
 ## Details
 
@@ -352,3 +358,108 @@ Execution check, `0x08008ED0` alone, mode 24 range 2, 0x20007FDF = 0: (V, I) = (
 (+20000 → +19976, -20000 → -20000 in range 0), so a sign difference exists there as well.
 Impact: reversing the polarity of the same DC VA measurement changes the shown voltage magnitude, by 138 to 662
 counts at 20000 counts (0.7 % to 3.3 %) in range 2. Port: apply the correction to the magnitude and restore the sign.
+
+### OF-30 — LowZ shows "0.0" V while a voltage is present
+`0x08006558` (called from `main` at `0x08024B86` in mode 0) takes threshold 100 counts (10.0 V) when 0x20008099 = 0
+and 30 counts when it is 1 (`0x08006564`, `0x0800656A`). For |D| above the threshold or overload, while 0x20008099 = 0,
+it stores 0 to the displayed value 0x20007D64 (`0x080065FA movs r0,#0`, `0x08006600 str`) and counts 0x2000023A down;
+only when that counter reaches 0 (fifth such mean) is 0x20008099 set (`0x0800661A`..`0x08006620`). Every mean within
+the threshold reloads 0x2000023A = 5 and clears 0x20008099 (`0x08006594`..`0x080065A2`), and every fifth one toggles
+the AC/DC state 0x20008098 and re-applies the mode (`0x080065C4`..`0x080065E6`, `bl 0x0800D2D0`), which loads settle
+counter 5 (DC) or 3 (AC) (`FUN_0800DB48`). Mode 0 is exempt from the settle blank (`0x08016FE2`..`0x08016FEA`, cmp of
+0x2000803C), so the forced 0 is drawn as a value ("   0.0", annunciators LowZ and V, no AC/DC annunciator). The
+apply also zeroes 0x20007D64 (`0x0800D57C`).
+Execution check (main digits and all LCD annunciators sampled every 5 ms; write trace of 0x20007D64): dial V -> LowZ
+with 100 V DC present: "0.0" from 0.114 s to 1.400 s after the dial change (1.29 s), five zero stores by `0x08006600`
+at 0.284..1.152 s, each right after the mean wrote 1000; HV symbol at 0.960 s; bargraph moves at 0.309 s. With
+230 V AC 50 Hz present: "0.0" from 0.114 s to 2.247 s (2.13 s; DC state first, toggle to AC at 0.887 s, re-apply);
+HV symbol at 1.583 s. Power-on in LowZ with 100 V DC / 230 V AC / 600 V DC: "0.0" for at least 0.9 s, HV symbol
+0.85 s / 1.46 s / 0.85 s after the first "0.0". Meter already in LowZ at 0 V (it cycles DC/AC and re-applies every
+5..7 means), voltage then applied at 12 different phases each: 230 V AC: "0.0" for 1.15..2.24 s; 100 V DC:
+1.17..1.70 s; -100 V DC: 1.14..1.72 s; 24 V AC: 1.15..2.38 s (no HV symbol). The HV symbol appeared before the digits
+in every trial with 100 V or more. 8.0 V DC is shown as "0.0" indefinitely; 11.0 V DC is shown after the same delay.
+Impact: in the mode used to check whether a conductor is live, the main display reads "0.0 V" for 1.1 to 2.4 s after
+the probes touch 100..600 V; until the HV symbol appears (up to 1.58 s in the trials) nothing but the bargraph
+indicates the voltage. A user who reads the digits early can take a live conductor for dead. The times are firmware
+times on an ideal front end; real settling can only lengthen them. The dead band below about 10 V (reading 0.0) is
+covered by the manual's "not designed to be operated at low voltages (below 12V)" and is not part of this issue.
+Port: while the LowZ detector has not confirmed a voltage, blank the main digits (or show dashes) instead of a
+numeric 0.0.
+
+### OF-31 — main loop paced by the LCD update busy-wait
+`lcd_commit_shadow` (`0x0801B304`) waits before every RAM write until LCD_SR.UDR clears: `0x0801B336 movs r0,#4`,
+`0x0801B338 bl 0x08020492`, `0x0801B33E bne 0x0801B336`; `0x08020492` reads LCD_SR (literal `0x080204B8` =
+0x40002408) and tests the mask in r0 (bit 2 = UDR, RM0038 16.5.3). UDR is cleared by hardware only at the next frame,
+so each commit after a previous commit blocks for up to one LCD frame. The only path that skips the wait is
+`0x0801B326 beq` / `0x0801B328 bl 0x0801B396` (partial commit), taken when 0x20007FE1 is clear, 0x20008053 is clear
+and auto-hold stage 2 (0x20008050) is set. LCD clock: `0x0801BFBC movs.w r0,#0x20000`, `0x0801BFC0 bl 0x0801FF34`
+writes RCC_CSR.RTCSEL = 10 (LSI). The only WFI/WFE in the image (`0x080207F2` wfi, `0x080207F6` wfe, also no 32-bit
+encodings) are in the STOP entry `0x080207CC` with SCR.SLEEPDEEP set (`0x080207E4`), called only from
+`enter_stop_and_reinit` (`0x08024EE4`), which `main` reaches only when 0x2000803A is set (`0x08024DD0`..`0x08024DDA`).
+Execution check (hooks at `0x08024B6A` poll call, `0x0801B304`, `0x0801B32E`..`0x0801B340` wait, `0x0800614E` HY3131
+service; 2 s each, frame 72.27 Hz for FCR 0x00C05440 with LSI 37 kHz): BEEP 10 ohm: 72.5 commits/s, 665 ms/s inside
+the wait, 72.5 HY3131 services/s for 641.5 AD1 conversions/s (89 % dropped), median main pass 13.84 ms. OHM 1 kohm:
+72.0 services/s for 320.5 conversions/s, 679 ms/s waiting. DCV 1 V: 71.0 commits/s, 597 ms/s waiting, 69.5 services/s
+for 77.0 conversions/s (10 % dropped). No partial commit occurred in these runs.
+Impact: the 16-sample mean takes 16 x 13.84 = 221 ms on every configuration row faster than the frame rate (BEEP row:
+25 ms possible), so update rate, range-change time and continuity digit response are set by the LCD frame, not by the
+HY3131. 60 to 68 % of the active time is spent spinning instead of sleeping. Displayed values are not wrong: dropped
+conversions are simply not averaged. The frame rate depends on the LSI frequency, which the STM32L151 datasheet
+(Table 31) specifies as 26 to 56 kHz (typ 38 kHz), i.e. 51 to 109 Hz frame rate with this FCR value; the 72 Hz
+figure is the emulator's nominal 37 kHz and differs from meter to meter. This is a throughput, latency and power
+issue, not a measurement error.
+Port: LCD commit without the UDR busy-wait (write only when UDR is clear, otherwise retry on the next pass), WFI at
+the end of each pass, woken by the interrupts v2.05 already enables.
+
+### OF-32 — BEEP and FREQ draw the zeroed value at mode entry
+`FUN_0800DB48` loads settle counter 0x20000238 = 0 for BEEP (`0x0800DC1E cmp r0,#0xa` .. `0x0800DC28 strb`) and for
+FREQ/PULSE/DUTY (`0x0800DBC6`..`0x0800DBDA`, value 0), and the apply zeroes 0x20007D64 (`0x0800D57C`), 0x20007D68
+(`0x0800D584`) and 0x20007D70 (`0x0800D31E`). With the counter 0 and 0x2000805C clear the blank branch
+(`0x08016FCE`..`0x08016FE0`) is not taken and the display draws 0x20007D64 = 0 until the first result.
+Execution check: OHM -> BEEP (MODE) with 100 ohm: "  0.00" ohm from 0.082 s to 0.290 s after the key release, then
+"100.00"; with open leads: "  0.00" from 0.054 s to 0.261 s, then " OFL"; the buzzer stayed off in both runs.
+DCV -> Hz (dial) with 1 kHz: " 0.000" Hz from 0.119 s to 0.561 s, then "1.0000" kHz. With no signal "0.000" Hz is
+the correct final reading.
+Impact: for about 0.2 s (BEEP) and 0.44 s (FREQ) a valid-looking reading of zero is shown; in BEEP open leads briefly
+read as a short. Cosmetic; no false continuity tone. Times are firmware times (lower bound).
+Port: blank until the first result after an apply.
+
+### OF-33 — CAP timeout jump draws the old count in the new range
+The CAP counter timeout `FUN_0800B540` (called from `hy3131_poll`, `0x08006148`) in auto range sets 0x2000803D to 2
+or 5 (`0x0800B5AE`, `0x0800B5C0`), 0x2000804A = 0 and 0x2000804B = 1 (`0x0800B5D8`); it does not set 0x2000805C.
+The display stage of the same pass therefore draws the old 0x20007D64 with the new range's decimal point before
+`meter_apply_mode_range` zeroes it (`0x0800D57C`).
+Execution check (LCD sampled every 2 ms): 10 nF -> 10 uF: range 0 -> 2 at 1.514 s, LCD "1.0000" with the nF
+annunciator from 1.526 s to 1.539 s, then blank with the uF annunciator, final " 9.999" uF at 2.923 s.
+10 nF -> 1 mF: "1.0000" nF from 2.006 s to 2.034 s. 0x20007D70 (BLE value) was already 0 in that window.
+Impact: one wrong reading (count 10 000 shown as 1.0000 nF instead of 10.000 nF) visible for one or two LCD frames
+(13..28 ms). Cosmetic.
+Port: set the display-blank flag on the timeout jump, as `autorange_step` does.
+
+### OF-34 — Bluetooth frames report 0 during a range change
+`meter_apply_mode_range` stores 0 to 0x20007D70 (`0x0800D318 movs r0,#0`, `0x0800D31E str`); the frame builder
+(`0x0800C5DA`, built 10 TIM2 ticks before each 50-tick transmit) takes bytes 7..8 and the two top bits of byte 5 from
+|0x20007D70| and byte 6 from 0x2000803D (range) and 0x20008048 (overload) (`0x0800C5E8`..`0x0800C6A8`). No byte
+carries the settle counter 0x20000238 or the blank flag 0x2000805C, so a receiver cannot tell the zero from a reading.
+Execution check (USART2 output decoded, BT on by long PEAK): DCV 0.1 V -> 500 V: frames at 0.432 s (mode 1, range 1,
+value 0, ovl 0) and 0.934 s (range 2, value 0) while the LCD was blank, then 50000 from 1.437 s. 500 V -> 0.1 V:
+frame at 0.940 s (range 0, value 0), then 1000.
+Impact: a logging app records 0 V (in the new range) for every frame that falls inside a range change (DCV about
+0.47 s per change, one frame every 0.501 s). Not every change produces such a frame.
+Port: mark frames built while the display is blank, or repeat the last valid value.
+
+### OF-35 — log records hold the per-sample value
+`FUN_08010908` (called from `log_compose_mode_range` `0x080105D2`) stores to the record value 0x20007D28 the
+per-sample value 0x20007D68 (`0x080109B2`, `0x080109CC`, `0x080109DC`) in all modes except 5, 6, 7, 8, 9 and 12, which
+use the displayed mean 0x20007D64 (`0x0801097A`..`0x080109A4`). 0x20007D68 is written on every AD1 sample
+(`0x080064D6`, hy3131_modes_misc.md). The record is copied by `FUN_0801217C` (reads 0x20007D28 at `0x080121CC`).
+Execution check (SD image attached, logging started by long MEM, noise on, seed 3, hook at `0x0801217C`): DCV 1 V,
+display steady "1.0000": logged 9999, 10000 and 10001. Step 1 V -> 4 V: the record at +0.17 s holds 39999 while the
+display shows the mixed mean "1.9375".
+Impact: the stored reading is one unaveraged sample (for uncorrelated noise, four times the noise of the 16-sample
+mean shown on the display) and can differ from what was on the display at that moment. This may be
+intended; it is recorded because the log does not say so. Range changes do not occur during normal logging: starting
+a log saves and forces range_manual (0x20008043 = 0x20008042, 0x20008042 = 1 at `0x08010A1A`..`0x08010A2C`, skipped
+only with auto-hold stage 2 set); execution confirmed "auto" goes off and a 40 V step in DCV range 0 is logged as OL
+(0x7FFFFFFF, flags 0xA0).
+Port: log the displayed (averaged) value.
