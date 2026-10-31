@@ -1212,7 +1212,7 @@ a build switch, default stated; required = forced by a non-negotiable requiremen
 | NF-14 | faults | fault handlers hang with outputs as they were | safe outputs, power-down, STOP, reset on wake (4.7) | fix | SYS |
 | NF-15 | HY3131 | mode > 24 would send uninitialised bytes (0x0800BA2E, 0x0800BF06; unreachable as traced) | bounds check, no write | fix | HY |
 | NF-16 | calibration | a capture could complete in PULSE/DUTY (UNPROVEN) | switch, default refuse | switch | CAL, NVM |
-| NF-17 | settings | the setup editor stores contrast 10..17 (0x08015B64, 0x08015B8E, save 0x08015BB2) but boot keeps only 12..17 (0x08011264..0x0801127C), so 10 and 11 become 14 after power-up | switch `SET_ACCEPT_CONTRAST_10_11`, default 0 = v2.05 (Q11) | switch | SET |
+| NF-17 | settings | the setup editor stores contrast 10..17 (0x08015B64, 0x08015B8E, save 0x08015BB2) but boot keeps only 12..17 (0x08011264..0x0801127C), so 10 and 11 become 14 after power-up | switch `SET_ACCEPT_CONTRAST_10_11`, default 1 (decision 12.2 Q11) | switch | SET |
 | HW-01 | RTC bus | PB7 push-pull while the NJU6350 drives DATA | open-drain with pull-up, released from command bit 4 until CE low | fix | RTC, BRD |
 | HW-02 | power-down | HY bus driven high into a possibly unpowered HY3131 after PE9 low | HY bus analog before PE9 low | fix | BRD |
 | HW-03 | wake | HY bus driven about 0.3 ms after PE9 high | HY bus configured last, plus `HY_VDD_SETTLE_US` (default 0, Q3) | fix | BRD |
@@ -1222,7 +1222,7 @@ a build switch, default stated; required = forced by a non-negotiable requiremen
 | HW-07 | LCD | unbounded waits on LCD_SR | bounded | fix | LCD |
 | HW-08 | buzzer | TIM3 can raise PE7 after power-down cleared it (reachability UNPROVEN) | buzzer state cleared first | fix | BZB, PWR |
 | NVM-1 | EEPROM | sticky FLASH error blocks all writes until reset | flags cleared per attempt, read-back verify | fix | NVM |
-| NVM-2 | EEPROM | writes regardless of battery state; BOR off; a byte write erases its word first | switch `NVM_REFUSE_LOW_BATTERY`, default 0 = v2.05: with 1 NVM refuses writes while the low-battery flag of `adc_ch5_process` is set (Q10) | switch | NVM |
+| NVM-2 | EEPROM | writes regardless of battery state; BOR off; a byte write erases its word first | switch `NVM_REFUSE_LOW_BATTERY`, default 1 (decision 12.2 Q10): with 1 NVM refuses writes while the low-battery flag of `adc_ch5_process` is set (Q10) | switch | NVM |
 | OF-30 | LowZ | forced "0.0" V for 1.1..2.4 s when a voltage appears (detector 0x08006558 stores 0 for the first five means above threshold), HV symbol up to 1.58 s late | the moment a mean exceeds the LowZ threshold: HV symbol where v2.05 would light it for that value, dashes on the main digits until the AC/DC decision, then the value; AC/DC selection otherwise as v2.05 | fix (owner decision) | MRES, UI, LCD |
 | OF-31 | main loop | LCD busy-wait paces the loop; conversions beyond about 72/s dropped; CPU never sleeps | production loop mode (IMP-06); baseline mode keeps v2.05's loop for verification | fix | SYS, LCD |
 | OF-32 | display | BEEP and FREQ draw the zeroed value at mode entry | blank until the first valid value | fix | UI, MRES, MFRQ |
@@ -1903,6 +1903,10 @@ Exceptions decided by this design:
 | Symbol | Module | In | Out | Context | Called by | Purpose |
 |---|---|---|---|---|---|---|
 | `sys_reset` | SYS | - | does not return | reset | vector 1 | 3.2 steps 1..5 |
+| `ble_tx_tick` | BLE | - | - (clobbers r0-r3) | TIM2 ISR | `isr_tim2` (SYS), every tick after the 500 ms block | starts a deferred status frame (NF-04, OF-10/11); alias of `ble_tx_kick` |
+| `lcd_commit_retry` | LCD | - | - | main (production) | `fn_08016D34` (UI) | repeats a deferred LCD commit (no busy-wait, IMP-01) |
+| `ui_blank_req` (byte, `.bss_port`) | UI | - | - | main | written by AR, MODE, MRES, MFRQ; read by `fn_08016E08` | main digits blank (1) or dashes (2), production only (OF-30, OF-32, OF-33) |
+| `lcd_init_fault` (byte, `.bss_port`) | LCD | - | - | main | set by `lcd_init` | 1 if `lcd_init` gave up waiting for LCD_SR.ENS or RDY (HW-07) |
 | `sys_main` | SYS | - | does not return | main | `sys_reset` | 3.2 step 5, main loop 3.5 |
 | `sys_system_init` | SYS | - | - | main | `sys_main`, `enter_stop_and_reinit` | replaces `FUN_0801BE76` without the option-byte block |
 | `sys_clock_select` | SYS | r0 = 0 run (MSI range 6), 1 SD (HSE if it starts) | - | main | LOG (log write), CAL (cal.bin save/load) | replaces `FUN_0801BF1A` (callers 0x0801CD38, 0x0801CF14, 0x0801D1B2 and the switch-backs 0x0801CEFC, 0x0801D068, 0x0801D372); bounded waits |
