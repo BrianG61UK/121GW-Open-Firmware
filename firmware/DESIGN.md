@@ -1295,7 +1295,8 @@ New optimisations are added here before they are implemented; anything that chan
   prefixes and the allowlist format accepts all prefixes.
 - Q8: required before the image is flashed to a meter: full EEPROM dump 0x08080000..0x08082FFF and cal.bin save
   before flashing, first power-on on batteries (a current-limited bench supply in place of the batteries is optional), APO/wake test, EEPROM dump after and compared; the test
-  procedure goes in `firmware/HARDWARE_TEST.md` (written with the release, approved by the owner).
+  procedure goes in `firmware/HARDWARE_TEST.md`: a concise checklist for the EEVblog hardware test on his own meter,
+  written with the release, including the list of intended deviations.
 - Q9: fix all three: NF-07 (`CAL_FIX_SETUP_FALLTHROUGH` = 1), NF-08 (`CAL_CANCEL_ON_MODE_CHANGE` = 1),
   NF-10 (`CAL_FIX_MARKER26_RAM` = 1).
 - Q10 (NVM-2): EEPROM writes are refused while the low-battery flag is set (refusal beep). Reason: BOR is off and a
