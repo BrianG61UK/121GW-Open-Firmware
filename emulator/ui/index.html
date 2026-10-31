@@ -8,7 +8,7 @@
   /* Front panel: the meter drawing (695 x 1338 px) with live elements placed in its pixel coordinates. */
   #panel { position:relative; height:min(calc(100vh - 32px), calc((100vw - 470px) * 1338 / 695)); width:auto; aspect-ratio:695/1338; flex:none; background:url(/assets/panel.png) center/100% 100% no-repeat; }
   .abs { position:absolute; }
-  #lcd { background:#b3bdab; border-radius:6px; overflow:hidden; box-shadow:inset 0 2px 6px #0006; transition:background .2s; }
+  #lcd { background:#b3bdab; border-radius:1.66% / 3.01%; overflow:hidden; box-shadow:inset 0 2px 6px #0006; transition:background .2s; }
   #lcd.backlight { background:#c9e8c1; box-shadow:inset 0 0 30px #a6ff9c; }
   #lcd.off { background:#9aa394; }
   #glass { position:absolute; left:3.5%; right:3.5%; top:4.5%; bottom:4.5%; }
@@ -75,8 +75,8 @@ function place(el, x0, y0, x1, y1) {
   el.style.width = ((x1 - x0) / PW * 100) + '%'; el.style.height = ((y1 - y0) / PH * 100) + '%';
 }
 const post = c => fetch('/input', {method:'POST', body:JSON.stringify(c)});
-// LCD window (measured on the drawing) and glass layers (MIT, official 121GW app)
-const lcd = document.getElementById('lcd'), glass = document.getElementById('glass'); place(lcd, 112, 186, 588, 456);
+// LCD window: the opening blanked by tools/make_panel.py (glass x 110..590, y 188..453 inclusive; radius 8) and glass layers (MIT, official 121GW app)
+const lcd = document.getElementById('lcd'), glass = document.getElementById('glass'); place(lcd, 110, 188, 591, 454);
 let bits = {}; const imgs = {};
 const unproven = ['TEST','BarTick0_0','DC+AC','Segs_unA','SubAC','SubDC','SubS','Subn'];
 function addImg(n, unp) {
