@@ -26,6 +26,8 @@ semantics, fix waits for owner approval; **fixed** = implemented and verified in
 | OF-12 | Backup | `cal.bin` does not include the six current-offset records at EEPROM 0x4D0–0x4FF | medium | approval |
 | OF-13 | ADC | ADC sample-time register rewritten while the ADC is on, against the reference manual | low | open |
 | OF-14 | Measurement | HY3131 AD1 result decoded with the wrong two's-complement offset: negative codes read 1 LSB high, negative full scale reads as positive | low | open |
+| OF-15 | Measurement | Rounding to display counts truncates toward zero after adding 0.5: negative readings show one count too little in magnitude | medium | open |
+| OF-16 | Measurement | The HY3131 true-RMS result is read, square-rooted and averaged on every RMS interrupt, then never used | low | open |
 
 ## Details
 
@@ -111,3 +113,26 @@ Impact: every negative conversion is 1 LSB too close to zero (on DCV one display
 on DCmV range 0 about 6 LSB, so the error enters the 16-sample mean as a small positive bias on
 negative readings), and the negative full-scale code 0x800000 is taken as +8388608.
 Port: sign-extend bit 23.
+
+### OF-15 — negative readings rounded the wrong way
+`cal_divide_by_gain` (`0x0800F3B8`) converts the gain-scaled float to double (`0x0800F420 bl 0x08013168`),
+adds 0.5 (`0x0800F424`/`0x0800F426`: r2:r3 = 0x00000000:0x3FE00000 = 0.5, `bl 0x080131B8`) and converts to
+integer with `bl 0x080132A0`. Executing these three helpers from the original image proves the conversion
+truncates toward zero: −12344.6 + 0.5 = −12344.1 → **−12344** (correct: −12345); −12344.4 → **−12343**
+(correct: −12344); +12344.6 → 12345 (correct). Adding 0.5 and truncating rounds only positive values;
+for negative values it shifts every result one count toward zero.
+Impact: in the emulator with exact calibration, −1.2345 V displays `-1.2344`, −12.345 mV displays
+`-12.344`, −0.5 mV displays `-0.0004`; a real unit with the same calibration shows the same.
+Together with OF-14 every negative DC reading is biased toward zero. Port: round half away from zero.
+
+### OF-16 — true-RMS result computed and discarded
+On every HY3131 RMS interrupt the handler at `0x08008208` assembles RMS<39:8> (`0x0800827C`), stores
+`(int)sqrt(x) << 3` at 0x20007DE0 and a copy at 0x20007D78, and keeps a 4-sample average at 0x20007DE8 with
+ready flag 0x20008082 (`0x080082D4`). The per-mode consumers it then calls (`0x0800A5B2`, `0x0800A5BA`,
+`0x0800A7F8`, `0x0800A7FA`) are bare `bx lr` returns, and each of the result words has exactly one
+literal-pool reference, inside this handler. Dynamic check in the emulator (ACV range 0, PEAK on, 20 s,
+375 RMS interrupts, read watchpoints installed before the first instruction): 0x20007DE0/0x20007DE4 are read
+only by the handler itself (pcs 0x08008218, 0x08008224, 0x080082EE, 0x08008314); 0x20007D78,
+0x20007DE8..0x20007DEB and 0x20008082 are never read.
+Impact: about 19 SPI bursts, double-precision square roots and averages per second of wasted CPU time and
+SPI traffic in AC modes. Port: do not enable or service the RMS interrupt unless a feature uses it.
