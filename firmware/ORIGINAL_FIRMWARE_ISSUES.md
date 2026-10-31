@@ -19,7 +19,7 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-04 | Multiplier path | Unset register passed to a float multiply for mode byte > 3 | medium | open |
 | OF-05 | Mode helper | Unset register passed on for modes outside the handled set | low | open |
 | OF-06 | GPIO set-up | Pin mask left uninitialised for unhandled arguments | high | open |
-| OF-07 | Calibration | Calibration save in LowZ and BEEP overwrites the ACV record area, which those modes never load | high | open |
+| OF-07 | Calibration | LowZ calibration would write the ACV range-0 record, which LowZ never loads (reachable through OF-36); BEEP shares OHM range 1's record 0x120 | medium | open |
 | OF-08 | Calibration | Entering calibration mode clears the six user current-zero records without confirmation or mention in the manual | medium | open |
 | OF-09 | Calibration | Current zeroing (long REL) stores only the last increment: a second zeroing is lost at the next mode/range change | medium | open |
 | OF-10 | Bluetooth | Packet build and transmit are not synchronised; command echoes can interleave with status frames | medium | open |
@@ -48,6 +48,12 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-33 | Measurement | CAP timeout range jump draws the old count with the new range's decimal point and the old unit for one display update ("10.000" nF becomes "1.0000" nF) | low | open |
 | OF-34 | Bluetooth | Status frames built during a range change report value 0, no overload, in the new range, with no flag that the value is invalid | low | open |
 | OF-35 | Logging | Log records store the single per-sample value 0x20007D68, not the averaged value that is displayed | low | open |
+| OF-36 | Calibration | A running offset/gain capture is not cancelled by a mode or range change; it completes in the new mode/range and is written to that mode/range's EEPROM record | high | open |
+| OF-37 | Calibration | SETUP short in calibration mode continues into the MEM-short code: refusal beep after a started offset capture; in an AC band slot 2 is overwritten from the slot-1 reading | medium | open |
+| OF-38 | Settings | Contrast 10 and 11 can be selected and are saved to EEPROM 0x1A, but power-up accepts only 12..17 and replaces them with 14 | low | open |
+| OF-39 | ADC | ADC_Init passes an uninitialised stack word that is ORed unmasked into ADC_CR2 (value: core register r6 as left at reset) | low | open |
+| OF-40 | Power-down | The TIM2 jack-warning beep can set the buzzer output again after power-down has cleared it (chirp of about 69 ms after the "-oFF-" beep) | low | open |
+| OF-41 | Display | Setup page 7 (time): the TIM2 handler converts and draws the time through the same digit globals and text buffer the main loop uses for the reading; the reading shows wrong digits for about 0.22 s | low | open |
 
 ## Details
 
@@ -91,13 +97,27 @@ that is not 0/1/2/4/8/0x10/0x20/0x40/0x80 the pin-mask word at `[sp]` is never w
 initialisation (`0x0801BD60 ldr r6,[r1,#0]`). Impact: arbitrary GPIO pins can be reconfigured.
 Port: mask always initialised.
 
-### OF-07 — calibration save/load location mismatch (LowZ, BEEP)
-The loader (`FUN_0801167C`) reads LowZ from table `T[1]+0x30` (or `T[2]+0x30` depending on a flag)
-and BEEP from `T[9]+0x10`, but the writer (`FUN_08011B40`) has no special case for those modes and
-writes `T[0]+16·range` (= 0x30, the ACV record area) and `T[10]+16·range` (0x120).
-Impact: calibrating in LowZ overwrites ACV calibration; a LowZ/BEEP calibration is not the record that
-is later loaded. Port: a calibration save in LowZ or BEEP is refused (refusal beep, no EEPROM write); both modes
-keep using the records they already load, so no calibration record can be overwritten from these modes.
+### OF-07 — LowZ calibration writes the ACV record; BEEP shares OHM range 1's record
+LowZ: the loader `FUN_0801167C` reads mode 0 from table[2] + 0x30 = 0x60 (ACV range-3 record) when 0x20008098 != 0
+and from table[1] + 0x30 = 0xA0 (DCV range-3 record) otherwise (`0x080117B2`..`0x080117E6`), matching the HY3131 rows
+LowZ uses (ACV/DCV row 3, `0x0800BA30`). The writer `FUN_08011B40` has no mode-0 case and writes table[0] + 16 * range
+= 0x30 + 16 * range (`0x08011C1C`..`0x08011C4C`; R+4 for the gain, `0x08011CB0`..`0x08011CD8`), i.e. the ACV range-0
+record, which LowZ never loads. A calibration cannot be started in LowZ (`FUN_08015728` refuses mode 0,
+`0x0801572C`..`0x08015748`; SETUP refused at `0x08014DC6`), so the write happens only when a capture started in another
+mode completes after switching to LowZ (OF-36). Execution check: offset capture started in DCV, dial to LowZ ->
+EEPROM 0x30 = 0x000019B5 (factory 0x00004D8F); a SETUP press in LowZ gives the refusal beep and writes nothing.
+BEEP: writer and loader agree. The writer uses table[10] + 16 * range = 0x120 (range 0), the loader table[9] + 0x10
+= 0x120 (`0x0801184A`..`0x08011866`). 0x120 is also OHM range 1's record (table[9] + 16), so a BEEP calibration
+replaces the OHM range-1 calibration and the reverse. The two HY3131 rows differ only in byte 2 (BEEP 0x08029150:
+0x10, OHM range 1 0x080285D0: 0x13). Execution check: BEEP and OHM range 1 both read 0x120/0x124 at apply; a BEEP
+offset calibration (0 ohm) writes 0x120 = 0x00000147, the value already stored for OHM range 1. Whether the sharing is
+intended is not shown by the code.
+Impact: ACV range-0 calibration can be overwritten from LowZ (through OF-36). Recalibrating BEEP or OHM range 1 also
+changes the other.
+Port: calibration saves in LowZ and in BEEP are refused (refusal beep, no EEPROM write); both keep using the
+records they load. BEEP is refused because it runs a different HY3131 row (byte 2 0x10 instead of 0x13) yet would
+overwrite OHM range 1's record; OHM range 1 is calibrated in OHM. OF-36 (capture cancelled on a mode or range change)
+closes the LowZ path.
 
 ### OF-08 — calibration mode erases current-offset records without confirmation
 Power-on, then MODE, then REL within the start-up window enters calibration mode and immediately calls
@@ -463,3 +483,120 @@ a log saves and forces range_manual (0x20008043 = 0x20008042, 0x20008042 = 1 at 
 only with auto-hold stage 2 set); execution confirmed "auto" goes off and a 40 V step in DCV range 0 is logged as OL
 (0x7FFFFFFF, flags 0xA0).
 Port: log the displayed (averaged) value.
+
+### OF-36 — calibration capture completes in the mode/range that is active at its end
+`FUN_08015768` sets 0x2000808C (offset) or 0x2000808E (gain) and the countdown 0x20008095; a mode or range change
+(cal-mode RANGE `FUN_08014796`, MODE, dial, then `meter_apply_mode_range`) leaves them set (execution check below).
+Each measurement path that runs with a flag set adds its own mean and, at 0, writes through `cal_record_write`
+(`0x08011B40`) to table[mode] + 16 * range of the mode/range current at that moment (DC offset: `FUN_0800EF44`,
+`0x0800F01A`). The start refusals of `FUN_08015728` (modes 0, 7, 8; 6, 11, 12 above range 1) are not applied at
+completion.
+Execution check (calibration mode, offset capture started by SETUP in DCV range 0 with 0 V, change made at count
+12..9): RANGE -> completes in DCV range 1, writes 0x80..0x83 = 0x0000010E (270; a capture made entirely in range 1
+gives 0x163 = 355, the factory value). Dial to LowZ -> completes in mode 0 (whose own start is refused), writes the ACV
+range-0 offset 0x30 = 0x000019B5 (factory 0x00004D8F). Dial to mV -> DCmV range 0 offset 0xB0 = 0xFFFFFE82 (factory
+0xFFFFFDAC). Dial to BEEP -> 0x120 = 0x0000001A (factory 0x147; 0x120 is also the OHM range-1 record). MODE to ACV ->
+completes in the AC offset path: "OFF-E" shown, RAM 0x20007E08 only. Dial to Hz -> the capture never completes and
+"-O-11" stays on the display. After the DCmV case, normal power-up with the front end kept at factory calibration:
+DCmV range 0 reads "-0.034" mV at 0 mV and "9.965" mV at 10 mV (factory record: "0.000", "10.000").
+Impact: a range or mode change during the about 4 s of a capture silently stores a mixed or foreign mean as the
+calibration of another mode or range, including ones the firmware refuses to calibrate directly; the error appears
+in normal use (shown: 34 counts in DCmV range 0). Only calibration mode is affected.
+Port: switch `CAL_CANCEL_ON_MODE_CHANGE` (default 1: a mode or range apply cancels a pending capture with the refusal
+beep) (NF-08).
+
+### OF-37 — SETUP short in calibration mode falls into the MEM-short code
+In the SETUP short branch (`0x08014D66`), calibration mode calls `FUN_08015728(0)` and `FUN_08015768(0)`
+(`0x08014DCE`); only a return of 2 ends the branch (`0x08014DD6`, refusal beep). Any other result branches to the
+MEM-short case (`0x08014DD4 bne 0x08014DEE`, also the target of `0x08014C56`). There, with the power-on window over and
+calibration mode set: if 0x2000808C | 0x2000808E != 0 the refusal beep `FUN_0800EE6C` is called (`0x08014E40` ->
+`0x08014E68`), which is the normal outcome right after a started offset capture (808C = 1). If `FUN_08015768(0)`
+returned 1 (AC band reading: `FUN_0800F13C` set 0x2000809C and started no capture), the MEM code calls
+`FUN_08015728(1)` and `FUN_08015768(1)` (`0x08014E44`, `0x08014E54`), which sets 0x2000809D for the same reading;
+`FUN_08007532` then writes slot 1 (R'+8, D-5000) and slot 2 (R'+0xA, D-50000) through `FUN_0800F8E4`, slot 2 clamped
+to 0 outside -20000..20000 (`FUN_080119F4`).
+Execution check: DCV range 0, 0 V, beeper on: SETUP -> 808C = 1, refusal beep called from `0x08014E68`
+(two 49 ms PE7 pulses at 0.19 s and 0.29 s; a REL short gives the accept beep, one 99 ms pulse); the capture still
+counts down "-O-16".."-O-01", shows "OFF-E" and writes EEPROM 0x70..0x73. ACV range 2, 50.50 V at 10 kHz, EEPROM
+0x58..0x5B preset to 0064 012C: one SETUP press -> 0x2000809C = 0x2000809D = 1, `FUN_0800F8E4(1, 5050)` and
+`FUN_0800F8E4(2, 5050)`, EEPROM 0x58 = 0x0032 (slot 1) and 0x5A = 0x0000 (slot 2, was 0x012C); accept beeps from
+`0x08014E62` and after each slot write.
+Impact: a technician hears the error pattern for a correct offset start; re-calibrating only slot 1 of an AC band
+(ACV/ACmV, ACuA/ACmA range 1) destroys the slot-2 correction unless the MEM step is repeated afterwards.
+Port: switch `CAL_FIX_SETUP_FALLTHROUGH` (default 1: SETUP ends after its own action with the accept beep) (NF-07).
+
+### OF-38 — contrast 10 and 11 saved but not restored at power-up
+The setup editor `FUN_08015B54` (item 4 "Lcd-n") steps the contrast byte 0x20000237 up with wrap 17 -> 10
+(`0x08015B64 cmp r0,#0x11`, `0x08015B68 movs r0,#0xa`) and down with wrap 10 -> 17 (`0x08015B8E cmp r0,#0xa`,
+`0x08015B92 movs r0,#0x11`), applies it live (`0x08015BBE bl lcd_init`) and saves it with the long SETUP
+(`0x08015BB2 bl 0x08011294` -> EEPROM 0x1A). The power-up loader `FUN_08011258` keeps the EEPROM value only for
+12..17 (`0x08011264 cmp r4,#0xc` / `blt`, `0x0801126A cmp r4,#0x12` / `bge`) and otherwise stores 14
+(`0x08011276 movs r0,#0xe`, `0x0801127C strb`).
+Execution check (EEPROM 0x1A = 15 initially; long SETUP, REL steps, long SETUP, then power cycle): saved 10 -> EEPROM
+0x1A = 10, LCD_FCR CC = 0 before the power cycle; after it 0x20000237 = 14, CC = 4, page shows "Lcd-4". Saved 11 ->
+EEPROM 11, after power-up 14. Saved 12 -> after power-up 12 (control).
+Impact: the two faintest contrast settings offered by the editor last only until the next power-up; the EEPROM keeps
+10/11 while the display uses 14, without any indication. The code does not show whether the boot limit is meant as a
+recovery from an unreadably faint setting.
+Port: switch `SET_ACCEPT_CONTRAST_10_11` (default 0 keeps the v2.05 behaviour; 1 restores 10 and 11) (NF-17).
+
+### OF-39 — uninitialised word ORed into ADC_CR2
+`FUN_08013DD4` builds the ADC_InitTypeDef on the stack (`sub sp,#0x1c`) and writes [sp+0], [sp+4], [sp+5], [sp+0xC],
+[sp+0x10] and [sp+0x14] (`0x08013DE0`..`0x08013DF8`), never the 32-bit field at [sp+8] (ExternalTrigConvEdge).
+`FUN_080200B4` reads it without a mask and ORs it into CR2 (`0x080200DC ldr r5,[r1,#8]`, `0x080200DE orrs`,
+`0x080200E8 str r3,[r0,#8]`); the mask `0xC0FFF7FD` at `0x080200D2` only clears old CR2 bits. The slot was last
+written by the `push {r4-r7}` of `gpio_init` (`0x0801BD48`) called from `gpio_init_analog` (`0x0801C480`, also
+`0x0801C45E`), so it holds r6 of the caller. Both callers of the init chain (`main` `0x08024B4E`, wake
+`0x08024EEE`) run with the r6 that `main` received: `main` (0x08024B40..0x08024DDF) never writes r6, and the bootloader
+and the C start-up (`cmain` 0x0802910C) leave it as at reset. PM0056 Table 2 gives R0..R12 the reset value "unknown".
+Later CR2 accesses are read-modify-write only (`0x0802010A`/`0x08020114` ADON, `0x080202EA` SWSTART), so the bits
+stay for the whole session and are ORed in again at every wake.
+Execution check: core registers set to 0xA5A5000n before the reset vector: [sp+8] = 0xA5A50006 at `0x080200DC` and
+CR2 written 0xA5A50006 (boot; random RAM fill does not change it, r6 = 0 gives CR2 = 0, which is the emulator's normal
+case, as at the wake call). r6 = 0x00000800 (CR2.ALIGN): ADC results left-aligned; setup page 1 shows battery "9.9"
+instead of "5.9" (0x20007FBA = 105 instead of 59) and page 0 the board temperature "0.0" instead of "27.0".
+r6 = 0x2, 0x4, 0x10, 0x20 or 0x30000000 (CONT, CFG, DELS, EXTEN) gave no visible change in the emulator.
+r6 = 0xFFFFFFFF behaves as ALIGN.
+Impact: latent; correct whenever the CPU starts with r6 bit 11 clear. If it is set, the battery voltage (low-battery
+indication) and the board temperature (cold junction) are wrong until a power-on that starts with a different r6.
+Reserved CR2 bits (31, 23, 15:12, 7, 3) can also be written, against RM0038.
+Port: the field is initialised to 0 (software trigger, as used via SWSTART `0x080202EA`) (NF-01).
+
+### OF-40 — TIM2 jack-warning beep re-arms the buzzer during power-down
+`enter_stop_and_reinit` (`0x08024ECA`) ends the 1 s "-oFF-" beep with PE7 low (`0x08024F34`), then
+`power_down_peripherals` sets PE7 low again (`0x0801C58C`), but TIM2 and TIM3 keep running until `0x0801C92E`
+(`0x0801C936` TIM2 CEN = 0, `0x0801C94E` TIM3 clock off), called after it at `0x0801C528`. No `cpsid` exists in the
+image. In that window the TIM2 handler's 50-tick block (counter 0x20007F04, `0x0802461C`) calls
+`pe7_on_with_timeout(500)` (`0x0802469A`..`0x0802469E`, sets PE7 at `0x0800EEE4`) when 0x20008077 toggles to 1 and
+0x20008076 | 0x200080B2 != 0 (jack warning). The window lasts from `0x0801C58C` to the next LCD frame boundary
+(LCD disable wait in `FUN_0801C908`), 4.5 to 13.9 ms in the runs; the TIM2 period is 10.02 ms and the window starts
+right after a tick, so only windows above 10.02 ms can contain one. PE7 is not left high into STOP: `0x0801CA22`
+sets all GPIOE pins to analog before the `wfe` (`0x080207F6`). The TIM3 repeat path (`0x080247D4`) needs a repeat
+count 0x2000807A pending at power-down; its only writer `FUN_0800EE7A` reloads the APO counter (`0x0800EE88`
+`bl 0x0800ED26`), and it was not reproduced.
+Execution check (DCV, plug in the A jack -> " LEAd" and the 0.5 s on / 0.5 s off warning; APO request 0x2000803A set
+from a write hook on 0x20007F04 to choose the TIM2 phase, which in use drifts freely against the RTC second that
+triggers APO; 73 runs): window above 10.02 ms in 37 runs; with the jack-warning tick inside the window (2 runs):
+PE7 set by the TIM2 handler (pc `0x0800EEE4`, IPSR 44) 10.02 ms after `0x0801C58C`, TIM2 stopped at 12.17 ms, PE7 high
+until its pin went analog at 79.2 ms. In the other runs, and in 40 runs with the APO countdown itself as trigger, PE7 stayed low from `0x0801C58C` until
+the pins went analog.
+Impact: occasionally, with a lead in a current jack at auto power-off, a second buzzer chirp of about 69 ms follows
+the power-off beep. Whether the sounder is still powered at that moment (PE9 is cleared at `0x0801C618`, about the
+time the timers stop) is not known from the documents.
+Port: TIM2 and TIM3 update interrupts are disabled before the buzzer state is cleared and PE7 set low (HW-08).
+
+### OF-41 — time page drawn from the TIM2 handler through the main loop's digit buffers
+When setup item 0x20008037 = 7, the TIM2 handler's 50-tick block toggles 0x200080D5 and calls `FUN_0801896C(1)`
+(`0x080246D2`..`0x080246FC`) -> `FUN_080188A0`, which converts the time with `FUN_0801B090` (digit globals
+0x20007DB0..0x20007DC0), writes the text buffer 0x20007C30 and draws it (`0x08018942 bl 0x08019AE0`) and commits
+(`0x08018954 bl 0x0801B304`). The main loop draws the reading with the same routine and buffers
+(`lcd_show_value_pos5_9` `0x08017100`: `0x08017156 bl 0x0801B090`, `0x0801715E bl 0x0801B130`, `0x08017168 bl
+0x08019AE0`) without masking interrupts. A TIM2 tick between `0x08017156` and the draw makes main draw the time digits
+or a mixture into the reading.
+Execution check (DCV 1.2345 V, setup page 7; to bring the two events together the 0.5 s counter 0x20007F04 was preset
+to 49 at each `0x08017156`, which in use meet at random; 90 s): 6 nested calls, 5 visible: main display "1.2-28",
+"1.2 28", "1.2348", "1.1 29" (and one frame "1.23?5"), each for 16 LCD frames (about 0.22 s), then "1.2345" again.
+Without the preset (20 s, 40 handler draws, 88 main draws of about 160 us) no overlap occurred.
+Impact: on the time setup page the main reading can briefly show wrong digits (estimated from the measured window:
+about 4.4 draws/s x 160 us, i.e. roughly 0.07 % of the half-second ticks). Cosmetic, transient.
+Port: the handler only sets a request; main draws the page (NF-11).

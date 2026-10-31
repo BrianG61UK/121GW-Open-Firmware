@@ -1303,6 +1303,10 @@ New optimisations are added here before they are implemented; anything that chan
   byte write erases and rewrites its whole word, so a supply loss during the write could corrupt neighbouring
   calibration bytes.
 - Q11 (NF-17): contrast 10 and 11 are accepted at boot (what the editor offers and saves).
+- Verification of the NF items (2026-10-31): NF-07 is OF-37, NF-08 is OF-36, NF-17 is OF-38 in
+  `ORIGINAL_FIRMWARE_ISSUES.md` (confirmed by execution). NF-10 is refuted: the only write of marker 0x26 / RAM flag
+  0x20007FE0 (0x0800F8AE..0x0800F8B8) is in the AC gain completion FUN_0800F7B8, which never runs in mode 9; switch
+  `CAL_FIX_MARKER26_RAM` is removed and that code is ported as in v2.05. BEEP calibration stays refused (OF-07).
 - Q12: MPU guard added (switch `MPU_GUARD`), enabled once W10 has added the MPU to the emulator and it is tested.
 
 ---
