@@ -25,6 +25,7 @@ semantics, fix waits for owner approval; **fixed** = implemented and verified in
 | OF-11 | Bluetooth | First frame after enabling BT can carry stale buffer contents | low | open |
 | OF-12 | Backup | `cal.bin` does not include the six current-offset records at EEPROM 0x4D0–0x4FF | medium | approval |
 | OF-13 | ADC | ADC sample-time register rewritten while the ADC is on, against the reference manual | low | open |
+| OF-14 | Measurement | HY3131 AD1 result decoded with the wrong two's-complement offset: negative codes read 1 LSB high, negative full scale reads as positive | low | open |
 
 ## Details
 
@@ -99,3 +100,14 @@ every time the firmware switches between channel 4 (thermistor) and channel 5 (b
 `FUN_080137B4` (returns at `0x080137EE` / `0x080137FE`); observed 20 times in 4 s of emulated running.
 Impact: behaviour outside the manufacturer's specification (the sample time may not take effect
 cleanly for the next conversion). Port: configure sample times once with ADON = 0.
+
+### OF-14 — wrong two's-complement decode of the HY3131 AD1 result
+The HY3131 AD1 result is a signed 24-bit two's-complement value, 0x7FFFFF maximum and 0x800000 minimum
+(HY3131 datasheet, register AD1_DATA). The decode routine at `0x080062F8` assembles the three bytes, then
+keeps every code `<= 0x800000` as positive (`0x0800631E cmp.w r2,#0x800000`, `0x08006322 bls`) and
+otherwise returns `-(0xFFFFFF - code)` (`0x08006324 mvns r2,#0xff000000` = 0x00FFFFFF,
+`0x0800632E subs`, `0x08006332 rsbs`), i.e. `code - 0xFFFFFF`. The correct value is `code - 0x1000000`.
+Impact: every negative conversion is 1 LSB too close to zero (on DCV one display count is about 62 LSB,
+on DCmV range 0 about 6 LSB, so the error enters the 16-sample mean as a small positive bias on
+negative readings), and the negative full-scale code 0x800000 is taken as +8388608.
+Port: sign-extend bit 23.
