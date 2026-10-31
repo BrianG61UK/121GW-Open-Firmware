@@ -230,6 +230,14 @@ FUNC sys_main
     ldrb r1, [r1]
     tst r0, r1
     beq .Lmain_step11
+    .if LOOP_V205 == 0
+    @ IMP-06 (W8_to_W1.md item 3): while the step-12 write machine is between two attempts (log_write_state != 0)
+    @ no record is taken.  In v2.05 the loop is frozen during a write, so no record is taken then either; taking
+    @ records between attempts could wrap the 60-slot ring over rows that are still pending.
+    ldr r0, =log_write_state
+    ldrb r0, [r0]
+    cbnz r0, .Lmain_step11                  @ a write is in progress: skip the record
+    .endif
     bl fn_08010B64
 .Lmain_step11:
     @ step 11: BLE command received
@@ -239,10 +247,29 @@ FUNC sys_main
     bl fn_0800C332                          @ 0x08024D56
 .Lmain_step12:
     @ step 12: SD log write
+    .if LOOP_V205 == 0
+    @ IMP-06 (LOG, W8_to_W1.md item 3): the write is a state machine, one v2.05 session attempt (log_session_once) per
+    @ pass, so a failing card no longer blocks the loop for up to 40 attempts in a row.  The attempt order, the retry
+    @ counts and the error handling below are v2.05's (0x08024D5A..0x08024D7C).  The request flag 0x2000801C stays
+    @ set while the machine is busy and is cleared when the write is done, as v2.05 clears it after the call.
+    ldr r0, =log_write_state
+    ldrb r0, [r0]
+    cbnz r0, .Lmain_s12_step                @ a write is in progress: its next attempt
+    ldr r0, =v_2000801C
+    ldrb r0, [r0]
+    cbz r0, .Lmain_step13                   @ no write requested
+    bl log_write_start                      @ arm the machine: first series of 20 attempts
+.Lmain_s12_step:
+    bl log_write_step                       @ r0 = 0 busy (continue on the next pass), 1 done
+    cbz r0, .Lmain_step13
+    ldr r0, =log_write_result
+    ldrb r0, [r0]                           @ 0 written, 1 failed (v2.05 r0 of 0x08024D62)
+    .else
     ldr r0, =v_2000801C
     ldrb r0, [r0]
     cbz r0, .Lmain_step13
     bl fn_0801D126                          @ 0x08024D62, r0 = error
+    .endif
     cbz r0, .Lmain_s12_clear
     movs r0, #0
     ldr r1, =v_20007FE1

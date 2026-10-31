@@ -29,9 +29,27 @@ Stimulus (set_stimulus): {'kind': k, 'value': x, 'ac': bool, 'freq': Hz, 'duty':
     kind 'degC'   thermocouple (hot junction) temperature
     kind 'diode'  forward voltage of the device under test in volts
     kind 'VA'     voltage `value` and current 'amps' at the same time (both RMS with ac)
+    kind 'open'   test leads open, nothing connected (the default): every field except 'board' is ignored; what
+                  the meter then sees per mode is listed at OPEN_LEADS below
     duty          high fraction of the signal at the counter input (default 0.5)
     board         board temperature at the cold junction (degC); the application derives the PA4 thermistor
                   voltage from it.  None: the board temperature follows the PA4 voltage.
+
+Environment (set_environment), NOT part of the meter: mains pickup on the open V jack.  An open-circuit source of
+'pickup_v' V rms at 'pickup_hz' (50 or 60 Hz) behind a coupling capacitance 'coupling_pf' (a stray capacitance from
+the test leads and V jack to mains wiring; environment choice) drives the V jack against the meter's input
+impedance to COM (input_impedance(), netlist parts per dial position); 'drift' is the depth of the slow amplitude
+variation (a lead or a hand moving near the wiring; environment model, seeded from the chip seed).  pickup_v = 0 is a
+shielded / pickup-free environment.  ENV_DEFAULT holds the defaults, all of them environment choices.  A connected
+stimulus shunts the pickup by its source impedance: ideal sources (V, VA, Hz) are 0 ohm, so the pickup at the jack
+is 0; a resistor ('ohm') or capacitor ('F') is in parallel with the input impedance; 'degC' (thermocouple) and
+'diode' are taken as 0 ohm; 'A' leaves the V jack open (the current modes do not use it).  Where the pickup acts:
+  AC rows (ACV, ACmV, LowZ AC variant, AC VA voltage channel): through the AD8436 path; the reading is its RMS
+  counter inputs: CNT (FREQ / PULSE / DUTY) and the PB<4> comparator (ACV / ACmV) toggle only when the pickup swing
+  at the pin crosses both thresholds (counter_input)
+  DC rows: not applied.  The DCV, LowZ DC, DCmV / TEMP and DC VA rows set AD1CHOP = 1x (spec 3), whose response to
+  an AC input the datasheet does not state (DS p30 (2); emu/hy3131.py module docstring: the comb itself is sinc^2,
+  DS p30 figure).
 
 Noise (both backends, per AD1 conversion, drawn by the chip with its seedable RNG):
 - Reference: ADR3412 output noise density 0.6 uV/sqrt(Hz) typ at 1 kHz (ADR3412 Table 3), integrated over the
@@ -46,6 +64,7 @@ Noise (both backends, per AD1 conversion, drawn by the chip with its seedable RN
 """
 import math
 import os
+import random
 import struct
 
 from .hy3131 import AD1_SCALE, AD1_MAX
@@ -58,6 +77,7 @@ NOISE_COUNTS = 0.5             # display counts sigma per AD1 sample: design cho
 RAM_MODE, RAM_RANGE = 0x2000803C, 0x2000803D       # meter_mode, meter_range
 RAM_LOWZ_AC = 0x20008098                           # LowZ variant flag: 0 = DC chain (spec 4.2, 5.1)
 CAL_TABLE = 0x08028EE8                             # u16 table[mode] of EEPROM record bases (FW 0x0801167C)
+V205_BASE = 0x08006000                             # load address of the reference v2.05 application image
 
 MODE_NAMES = ['LowZ', 'DCV', 'ACV', 'DCmV', 'ACmV', 'TEMP', 'FREQ', 'PULSE', 'DUTY', 'OHM', 'BEEP', 'DIODE',
               'CAP', 'uVA', 'mVA', 'VA', 'ACuA', 'DCuA', 'ACmA', 'DCmA', 'ACA', 'DCA', 'DCuVA', 'DCmVA',
@@ -73,8 +93,9 @@ DERIVED = {
     0: ('V', {0: (1, 1.0)}),                                                        # LowZ DC variant only
 }
 # Conditions the calibrated backend still cannot derive, by firmware mode (shown in the UI as the status reason).
-_AC_IN_DC = ('AC stimulus in DC mode {}: the AD1 comb-filter response to AC is not specified by the datasheet (DS p13 '
-             'gives NMRR at 5/10 sps only); a reading of the DC component is stated only for the DCV rows (acc 10.4)')
+_AC_IN_DC = ('AC stimulus in DC mode {}: the AD1 comb is sinc^2 (DS p30 figure), but this row sets AD1CHOP = 1x and '
+             'the chopped response to AC is not stated (DS p30 (2)); a reading of the DC component is stated only for '
+             'the DCV rows (acc 10.4)')
 UNSUPPORTED_WHY = {m: _AC_IN_DC.format(MODE_NAMES[m]) for m in (3, 17, 19, 21, 22, 23, 24)}
 for _m in (2, 4):
     UNSUPPORTED_WHY[_m] = (f'{MODE_NAMES[_m]} PEAK with a DC component: the AD2 input path (OP1O against PB<3>) and '
@@ -87,7 +108,58 @@ BD_LEAD_WHY = ('bdOn burden-voltage channel: the manual measures it through an e
 # FREQ: the counter is digital; the chip model implements the datasheet counter (DS p36-37) and the firmware
 # formula is spec 4.3.  The front end presents the stimulus frequency at the selected counter input.
 COUNTER_MODES = {6}
-STIM_KINDS = ('V', 'ohm', 'A', 'Hz', 'F', 'degC', 'diode', 'VA')     # module docstring
+STIM_KINDS = ('open', 'V', 'ohm', 'A', 'Hz', 'F', 'degC', 'diode', 'VA')     # module docstring
+
+# ---- environment: mains pickup (module docstring).  ENVIRONMENT CHOICES, not meter properties. ----
+# 230 V rms (a mains voltage) coupled through 0.02 pF gives 14.5 mV rms at a 10 MOhm input at 50 Hz; drift 0.3 =
+# +-30 % slow amplitude variation with periods of 3..40 s.  All four values are environment choices.
+ENV_DEFAULT = {'pickup_hz': 50.0, 'pickup_v': 230.0, 'coupling_pf': 0.02, 'drift': 0.3}
+DRIFT_PERIODS_S = (3.0, 40.0)                        # environment choice: range of the drift periods
+
+# ---- V jack input impedance to COM per dial position (analysis/frontend_netlist.md section 5 and 6.2) ----
+# Printed values; switch resistances (DS p12/p23: 40..300 ohm) and the semiconductor clamps (MOV1..3, D13, Q3/Q5,
+# D7/D8: no device data, NET 7.6) are left out; AGND = COM (NET 7.1, agnd_tie).  The TEMP_OL branch of the mV / Temp
+# position (R35 1M to U16 Z, R113 + R114 20M to VDD) is left out: the U16 state per mode is not proven (NET 6.1).
+R_SERIES = 1.2e3 + 1e3                               # PTC3 1.2K + R16 1K, JACK_V -> N_R16_2
+R11 = 10e6                                           # N_R16_2 -> HY_PA8
+R9, C13 = 30e3, 6e-12                                # N_R16_2 -> HY_PA9 (in series)
+R32, C30 = 1e3, 27e-9                                # HY_PA1 / HY_PA0 -> HY_RLU (FB rows: FS0, FS1)
+TAP = {7: (1.11e6, 0.0), 6: (101e3, 36e-12 + 560e-12), 5: (10e3, 750e-12 + 5.6e-9), 4: (1e3, 10e-9 + 56e-9)}
+#     PA7: R13           PA6: R15, C19 + C20          PA5: R21, C22 + C23          PA4: R26, C24 + C26 (caps to COM)
+R_LOWZ = 1.5e3 + 1.5e3                               # PTC1 + PTC2 to COM (row 1)
+R82, C32, R45 = 100.0, 2.2e-6, 1e6                   # Hz row: R_RLD - R82 - U9 Y/X1 - C32 - HY_CNT - R45 to COM
+# ---- counter inputs (thresholds relative to the rest level of the pin) ----
+# CNT: DS p13 guaranteed input levels high >= 2.4 V, low <= 1.3 V (VDD 3.6 V test condition); C32 / R45 hold CNT at
+# COM = AGND = VSSA + 0.5 (VDDA - VSSA) (R31 0xC0 in the FREQ row, DS p22) = 1.8 V above VSS at 3.6 V.  The supply
+# voltage is not in the supplied documents (NET 7.9), so these levels are UNPROVEN numerically.  Model choice: the
+# pin toggles when the swing reaches both guaranteed levels: +0.6 V / -0.5 V.
+CNT_UP, CNT_DN = 0.6, 0.5
+# PB<4> comparator (ACV / ACmV rows, R20 = 0xF6: ENCMP, SCMPI = 111 PB<4>; R21 = 0xDD: VRH = AGNDP<1>, VRL =
+# AGNDN<1>, DS p26): AGND +- 2/120 (REFO - AGND) (DS p22 K2 table), REFO = PB<6> (SREFO = 1) = ADR3412 1.2 V
+# -> +-20 mV.  PB<4> = OP1O through C51 1uF / R78 1M (0.16 Hz high pass, taken as 1 at 50/60 Hz); OP1 gain 1 + R24
+# 90K / R25 10K = 10 with OPS1 = 1 (R25 0x41 / 0x43), 1 with OPS1 = 0 (0x40); OP1+ = SENSE (ACV, R32 0x38: tap of the
+# divider) or RLU = RLD (ACmV, R32 0x3A: the jack through R_SERIES).  The latch logic of CMPH / CMPL ("delay and
+# latch", DS p26) is not described; model choice as for CNT: both thresholds must be crossed.
+CMP_TH = 2.0 / 120.0 * 1.2
+
+# ---- what the meter sees with the leads open, by firmware mode (shown as the status note) ----
+OPEN_LEADS = {
+    'volt_dc': 'leads open: input held at COM by the input resistance (R11 10M and the divider); DC reading = chip '
+               'noise and offset; mains pickup not applied in this DC row (AD1CHOP = 1x, DS p30 (2))',
+    'volt_ac': 'leads open: AD8436 path reads the RMS of the mains pickup at the V jack (environment)',
+    'counter': 'leads open: no counter edges unless the pickup swing crosses the input thresholds',
+    'ohm': 'leads open: R -> infinity, no current through the reference resistor (VR -> 0), the AD1 code saturates '
+           '(DS p18 (1)); firmware range / OL logic 0x0800DE24',
+    'diode': 'leads open: the jack sits at the source open-circuit voltage, MAN diode table 1.4 mA (3 V) / 7 mA (15 V) '
+             'x the nominal 2.2 kOhm series resistance = 3.08 V / 15.4 V (MAN p50-51, nominal values)',
+    'cap': 'leads open: C = 0, the unit presents its calibration zero (X = offset of the EEPROM record); physical '
+           'CAP method UNPROVEN (misc 5.5)',
+    'current': 'leads open: no current through the shunt; reading = chip noise and offset',
+}
+OPEN_TEMP_WHY = ('TEMP with an open thermocouple: the input then depends on whether U16 connects TEMP_OL (R113 + R114 '
+                 '20M to VDD, R35 1M) to the input; the TEMP_CTL level per mode and the HEF4053 select polarity are '
+                 'not in the supplied documents (analysis/frontend_netlist.md 6.1)')
+DIODE_VOC = (1.4e-3 * 2.2e3, 7e-3 * 2.2e3)          # MAN diode table x nominal 2.2 kOhm (3 V mode, 15 V mode)
 
 # ---- calibrated backend: firmware RAM read (never written), sections of spec / misc / acc as cited ----
 # Calibration data is taken from the EEPROM with the record rules of 0x0801167C (spec 5.1, acc 5.1, 7.7, VA.3, misc
@@ -211,12 +283,28 @@ class _Base:
         self.chip = None
         self.board = None              # emu.board.Board, set by the application (dial position)
         self.noise_counts = noise_counts
-        self.stim = {'kind': 'V', 'value': 0.0, 'ac': False, 'freq': 0.0, 'duty': 0.5, 'width': 0.0, 'dc': 0.0,
+        self.stim = {'kind': 'open', 'value': 0.0, 'ac': False, 'freq': 0.0, 'duty': 0.5, 'width': 0.0, 'dc': 0.0,
                      'amps': 0.0, 'board': None}
         self.stim_epoch = 0.0          # chip time at which the current signal started (counter edge phase)
+        # Hardware truth: the calibration the physical front end actually has.  It is a frozen copy of the EEPROM taken
+        # when the emulator starts (or an image given with --hw-cal), never the live EEPROM: the firmware may rewrite its
+        # records, and a corrupted record must then show up as a wrong reading, exactly as on a real meter.
+        self.hw_cal = None
+        # The inverse chains reproduce v2.05's arithmetic, so their tables (record-base table, correction tables) are
+        # read from the reference v2.05 image, never from the emulated flash: a replacement firmware places its own
+        # tables elsewhere.  Set by the application; falls back to the emulated flash if absent.
+        self.v205_image = None
+        self.env = dict(ENV_DEFAULT)   # environment: mains pickup (module docstring)
+        self._drift = ()               # drift terms (weight, period s, phase rad), drawn in attach()
 
     def attach(self, chip):
+        """Connect the chip; the environment's drift terms are drawn from an RNG derived from the chip seed, so a
+        seeded run is deterministic (seed None: nondeterministic, as the chip's noise)."""
         self.chip = chip
+        seed = getattr(chip, 'seed', None)
+        r = random.Random(f'mains-pickup-environment/{seed}') if seed is not None else random.Random()
+        self._drift = tuple((r.uniform(0.5, 1.0), r.uniform(*DRIFT_PERIODS_S), r.uniform(0.0, 2.0 * math.pi))
+                            for _ in range(3))
 
     def set_stimulus(self, s):
         """Validate and store the stimulus (module docstring); notify the chip (a waiting counter may start, the
@@ -229,6 +317,8 @@ class _Base:
               'freq': float(s.get('freq', 0.0) or 0.0), 'duty': float(s.get('duty', 0.5)),
               'width': float(s.get('width', 0.0) or 0.0), 'dc': float(s.get('dc', 0.0) or 0.0),
               'amps': float(s.get('amps', 0.0) or 0.0), 'board': None if b is None else float(b)}
+        if kind == 'open':             # nothing connected: the other fields have no meaning
+            st.update(value=0.0, ac=False, freq=0.0, duty=0.5, width=0.0, dc=0.0, amps=0.0)
         if kind == 'Hz':
             st['ac'], st['freq'] = True, st['value']
         if kind in ('ohm', 'F', 'degC', 'diode', 'Hz'):
@@ -259,6 +349,165 @@ class _Base:
                 self.stim_epoch = self.chip.now_s()  # a new signal starts now; same signal keeps its phase
             self.chip.input_changed()
 
+    # ------------------------------------------------------------------ environment: mains pickup
+    def set_environment(self, e):
+        """Validate and store environment settings (module docstring, ENV_DEFAULT); keys left out keep their value.
+        A counter waiting for edges re-evaluates its input."""
+        unknown = set(e) - set(ENV_DEFAULT)
+        if unknown:
+            raise ValueError(f'unknown environment setting(s): {", ".join(sorted(unknown))}')
+        env = dict(self.env)
+        env.update({k: float(v) for k, v in e.items()})
+        if not all(math.isfinite(v) for v in env.values()):
+            raise ValueError('environment values must be finite numbers')
+        if env['pickup_hz'] not in (50.0, 60.0):
+            raise ValueError('mains frequency must be 50 or 60 Hz')
+        if env['pickup_v'] < 0:
+            raise ValueError('pickup source voltage must not be negative (0 = shielded / off)')
+        if env['coupling_pf'] <= 0:
+            raise ValueError('coupling capacitance must be above 0 pF')
+        if not 0.0 <= env['drift'] < 1.0:
+            raise ValueError('drift depth must be at least 0 and below 1')
+        self.env = env
+        if self.chip is not None:
+            self.chip.input_changed()
+
+    def _drift_factor(self, t):
+        """Slow amplitude variation 1 + drift * (weighted mean of three sines with the periods / phases drawn in
+        attach()); stays within 1 +- drift.  Environment model."""
+        d = self.env['drift']
+        if not d or not self._drift:
+            return 1.0
+        s = sum(w * math.sin(2.0 * math.pi * t / per + ph) for w, per, ph in self._drift)
+        return 1.0 + d * s / sum(w for w, _, _ in self._drift)
+
+    def _network(self, f):
+        """V jack network of the firmware's present configuration row at f Hz (analysis/frontend_netlist.md
+        section 5 and the 6.2 switch table; parts at the constants above), or None where the V jack is not part of
+        the measurement or no impedance is derived:
+            {'row': text, 'z': impedance JACK_V -> COM, 'node': V(N_R16_2) / V(JACK_V),
+             'sense': V(SENSE) / V(N_R16_2) or None, 'cnt': V(HY_CNT) / V(N_R16_2) or None}
+        Rows: DCV / LowZ DC / AC+DC DC phase: R11 to the P bus with the range tap PA7 / PA6 / PA5 / PA4 to RLU =
+        AGND (SMODE5), PA9 on FB (R9 + C13 to PA0 / PA1 -> RLU).  ACV / AC VA voltage: PA8 and PA9 on the P bus
+        (R11 || R9 + C13), tap PA6 / PA5 / PA4 / PA4 (peak rows PA7 / PA6 / PA5 / PA4).  LowZ adds PTC1 + PTC2 at
+        the jack (row 1).  mV / Temp rows: PA8 on the P bus tied to AGND (SGND): R11 to COM.  ACmV peak rows close no
+        PA switch: no resistive path (only the clamps, no device data) -> None.  Hz rows: R11 + R13 (PA7) with the
+        PA9 / FB branch, and R82 - C32 - R45 to COM (U9 X = X1; inferred from the counter working through CNT, the
+        only path to C32).  OHM / BEEP / DIODE / CAP and the current rows: None (the pickup is not used there)."""
+        mode, rng = self.fw_mode_range()
+        r8 = self._ram8
+        w = 2.0 * math.pi * f
+
+        def cap(c):
+            return 1.0 / (1j * w * c)
+
+        def par(*zs):
+            return 1.0 / sum(1.0 / z for z in zs)
+
+        def tap(pa):
+            r, c = TAP[pa]
+            return par(r, cap(c)) if c else complex(r)
+        fb_branch = lambda fs0: R9 + cap(C13) + (par(R32, cap(C30)) if fs0 else R32)
+        lowz = False
+        sense = cnt = None
+        acdc_dc = mode == 2 and r8(RAM_ACDC) and r8(RAM_ACDC_PHASE)
+        peak = r8(RAM_PEAK) == 1 and r8(RAM_FILTER) == 0
+        if mode == 1 or acdc_dc or (mode == 0 and not r8(RAM_LOWZ_AC)):
+            if rng > 3:
+                return None
+            pa = 4 if mode == 0 else (7, 6, 5, 4)[rng]
+            top = R11 + tap(pa)
+            node, sense, lowz = par(top, fb_branch(True)), tap(pa) / top, mode == 0
+            row = f'DC divider R11 10M / PA{pa} tap'
+        elif mode == 0:                                  # LowZ AC variant: P bus PA4, PA8; FB PA1, PA9
+            top = R11 + tap(4)
+            node, sense, lowz = par(top, fb_branch(False)), tap(4) / top, True
+            row = 'LowZ AC: PTC1 + PTC2 load, R11 10M / PA4 tap'
+        elif mode == 2 or (mode in (13, 14, 15) and r8(RAM_C6) <= 2):
+            if mode == 2:
+                if rng > 3:
+                    return None
+                pa = ((7, 6, 5, 4) if peak and not r8(RAM_ACDC) else (6, 5, 4, 4))[rng]
+            else:
+                pa = (6, 5, 4)[r8(RAM_C6)]
+            top = par(R11, R9 + cap(C13)) + tap(pa)
+            node, sense = top, tap(pa) / top
+            row = f'AC divider R11 10M || R9 + C13 / PA{pa} tap'
+        elif mode in (3, 5) or (mode == 4 and not peak):
+            node = complex(R11)
+            row = 'mV / Temp: R11 10M to AGND (SGND)'
+        elif mode in (6, 7, 8):
+            node = par(R11 + tap(7), fb_branch(True), R82 + cap(C32) + R45)
+            cnt = R45 / (R82 + cap(C32) + R45)
+            row = 'Hz: R11 + R13, R82 - C32 2.2u - R45 1M (CNT)'
+        else:
+            return None
+        z = R_SERIES + node
+        if lowz:
+            z = par(z, R_LOWZ)
+        return {'row': row, 'z': z, 'node': node / (R_SERIES + node), 'sense': sense, 'cnt': cnt}
+
+    def _source_impedance(self, f):
+        """Impedance the connected stimulus puts across the V jack (module docstring): None = nothing (open
+        leads; 'A', which enters through a current jack), 0 = ideal source."""
+        st = self.stim
+        if st['kind'] in ('open', 'A'):
+            return None
+        if st['kind'] == 'ohm':
+            return complex(st['value'])
+        if st['kind'] == 'F':
+            return 1.0 / (2j * math.pi * f * st['value']) if st['value'] > 0 else None
+        return 0j
+
+    def pickup(self, t=None):
+        """Mains pickup at the V jack now: {'v_rms': volts at JACK_V (None: not derived for this row), 'net':
+        _network() result}.  V = pickup_v * drift * |Zl / (Zl + Zc)|, Zc = 1 / (j 2 pi f C) the coupling
+        capacitance, Zl = the input impedance in parallel with the stimulus' source impedance."""
+        e = self.env
+        net = self._network(e['pickup_hz'])
+        if net is None:
+            return {'v_rms': None, 'net': None}
+        if e['pickup_v'] <= 0:
+            return {'v_rms': 0.0, 'net': net}
+        zl = net['z']
+        zs = self._source_impedance(e['pickup_hz'])
+        if zs is not None:
+            zl = 0j if zs == 0 else 1.0 / (1.0 / zl + 1.0 / zs)
+        zc = 1.0 / (2j * math.pi * e['pickup_hz'] * e['coupling_pf'] * 1e-12)
+        if t is None:
+            t = self.chip.now_s() if self.chip is not None else 0.0
+        return {'v_rms': e['pickup_v'] * self._drift_factor(t) * abs(zl / (zl + zc)), 'net': net}
+
+    def _pickup_counter(self, source, t):
+        """Counter input signal from the mains pickup, or None (module constants CNT_UP / CNT_DN / CMP_TH).
+        CNT: jack -> N_R16_2 -> C32 / R45 (Hz rows).  CMP:PB4: OP1O through C51 / R78; OP1+ per SOP1P (R32 bits 2:0,
+        DS p25: 000 SENSE, 010 RLU), gain 1 + R24 / R25 = 10 when OPS<1> = 1 (R25 bit 0), else 1: with that reading
+        the OP1O full scale is 0.5 V in every ACV / ACmV row (spec 3 rows), which is the evidence for the polarity.
+        Duty: CNT rises at +CNT_UP and falls at -CNT_DN of the sine; the comparator's symmetric thresholds give 0.5."""
+        pk = self.pickup(t)
+        v = pk['v_rms']
+        if not v or pk['net'] is None:
+            return None
+        a = v * math.sqrt(2.0) * abs(pk['net']['node'])  # peak volts at N_R16_2
+        f = self.env['pickup_hz']
+        if source == 'CNT':
+            if pk['net']['cnt'] is None:
+                return None
+            a *= abs(pk['net']['cnt'])
+            if a < CNT_UP:
+                return None
+            duty = (math.pi + math.asin(CNT_DN / a) - math.asin(CNT_UP / a)) / (2.0 * math.pi)
+            return f, duty, self.stim_epoch
+        if source == 'CMP:PB4' and self.chip is not None:
+            sop1p = self.chip.reg[0x32] & 0x07
+            if sop1p == 0 and pk['net']['sense'] is not None:
+                a *= abs(pk['net']['sense'])
+            elif sop1p != 2:                             # 010 RLU = RLD = N_R16_2 (SMODE4, row 3); others: none
+                return None
+            a *= 10.0 if self.chip.reg[0x25] & 0x01 else 1.0
+            return (f, 0.5, self.stim_epoch) if a >= CMP_TH else None
+        return None
+
     # firmware state, read-only (spec 5.2: follow meter_mode / meter_range at each conversion)
     def _ram8(self, a):
         """One byte of emulated RAM (read only)."""
@@ -268,16 +517,26 @@ class _Base:
         """Firmware mode and range bytes (meter_mode 0x2000803C, meter_range 0x2000803D)."""
         return self._ram8(RAM_MODE), self._ram8(RAM_RANGE)
 
+    def _ref(self, a, n):
+        """n bytes at address a of the reference v2.05 application image (or the emulated flash without one)."""
+        img = self.v205_image
+        if img is None:
+            return bytes(self.m.uc.mem_read(a, n))
+        o = a - V205_BASE
+        if not 0 <= o <= len(img) - n:
+            raise ValueError(f'reference image read outside the v2.05 image: 0x{a:08X}')
+        return img[o:o + n]
+
     def cal_record(self, mode, rng):
         """EEPROM record (offset i32, gain g) of mode/range: R = u16 table 0x08028EE8[mode] + 16 * range,
         LowZ DC uses table[1] + 0x30 (FW 0x080117B2..0x080117E6); offset = BE i32 at R, g = BE u32 at R + 4 /
         1e6 (FW 0x08011890..0x0801190A, spec 5.1).  Only called for the modes in DERIVED.  EEPROM is read, never
         written."""
         if mode == 0:
-            base = struct.unpack('<H', self.m.uc.mem_read(CAL_TABLE + 2, 2))[0] + 0x30
+            base = struct.unpack('<H', self._ref(CAL_TABLE + 2, 2))[0] + 0x30
         else:
-            base = struct.unpack('<H', self.m.uc.mem_read(CAL_TABLE + 2 * mode, 2))[0] + 16 * rng
-        ee = self.m.eeprom
+            base = struct.unpack('<H', self._ref(CAL_TABLE + 2 * mode, 2))[0] + 16 * rng
+        ee = self.hw_ee
         off = struct.unpack('>i', bytes(ee[base:base + 4]))[0]
         gu = struct.unpack('>I', bytes(ee[base + 4:base + 8]))[0]
         g = struct.unpack('<f', struct.pack('<f', struct.unpack('<f', struct.pack('<f', float(gu)))[0] / 1e6))[0]
@@ -303,18 +562,20 @@ class _Base:
         if st['kind'] != want:
             return False, f'stimulus kind {st["kind"]} does not apply to {MODE_NAMES[mode]} (needs {want})', mode, rng
         if st['ac']:
-            return False, (f'AC stimulus in DC mode {MODE_NAMES[mode]}: the AD1 comb-filter response to AC is not '
-                           'specified by the datasheet (DS p13 gives NMRR at 5/10 sps only)'), mode, rng
+            return False, (f'AC stimulus in DC mode {MODE_NAMES[mode]}: the AD1 comb is sinc^2 (DS p30 figure), but '
+                           'the DC rows set AD1CHOP = 1x, whose chopped response to AC is not stated (DS p30 (2))'), \
+                mode, rng
         return True, '', mode, rng
 
     def counter_input(self, source, t):
         """Signal at the counter input: the stimulus frequency and duty when the stimulus has a frequency.
-        The conditioning between the jack and the CNT pin / comparator input PB<4> (amplitude, comparator
-        thresholds SCMPRH/SCMPRL, DS p26) is not modelled: any non-zero signal toggles the input."""
+        For a stimulus signal the conditioning between the jack and the CNT pin / comparator input PB<4>
+        (amplitude, comparator thresholds SCMPRH/SCMPRL, DS p26) is not modelled: any non-zero signal toggles the
+        input.  Without a stimulus signal the mains pickup is the input, with the thresholds of _pickup_counter."""
         st = self.stim
         if st['ac'] and st['freq'] > 0:
             return st['freq'], st['duty'], self.stim_epoch
-        return None
+        return self._pickup_counter(source, t)
 
     def raw_per_count(self, mode, rng):
         """Raw AD1 LSB per display count = gain g of the active record (spec 6); 0 where no record applies."""
@@ -334,11 +595,21 @@ class _Base:
         """Input-node noise in volts; only the netlist backend computes one (thermal noise)."""
         return 0.0
 
+    @property
+    def hw_ee(self):
+        """EEPROM bytes that describe the physical front end (hw_cal), falling back to the live EEPROM."""
+        return self.hw_cal if self.hw_cal is not None else self.m.eeprom
+
     def status(self):
         """Backend, firmware mode/range and support state for the UI."""
         ok, why, mode, rng = self.support()
+        pk = self.pickup()
+        net = pk['net']
         return {'backend': self.kind, 'mode': mode, 'mode_name': MODE_NAMES[mode] if mode < len(MODE_NAMES) else '?',
-                'range': rng, 'supported': ok, 'reason': why}
+                'range': rng, 'supported': ok, 'reason': why,
+                'environment': dict(self.env),
+                'pickup': {'v_rms_at_jack': pk['v_rms'], 'input_ohms': abs(net['z']) if net else None,
+                           'network': net['row'] if net else 'V jack not part of this measurement / not derived'}}
 
 
 class CalibratedFrontend(_Base):
@@ -361,7 +632,7 @@ class CalibratedFrontend(_Base):
 
     def __init__(self, machine, noise_counts=NOISE_COUNTS):
         super().__init__(machine, noise_counts)
-        self._flash = {}                # (address, words) -> tuple of i32 read from the application image
+        self._flash = {}                # (address, words) -> tuple of i32 read from the reference v2.05 image
         self._cache = {}                # inverse searches keyed by all their inputs
         self.pa4 = None                 # (volts, VREF+) last applied to ADC channel 4 (PA4 thermistor), set by the app
         self._gain = 0.0                # gain of the active chain (noise scaling)
@@ -374,23 +645,23 @@ class CalibratedFrontend(_Base):
         """n little-endian i32 words of a flash table (cached; the application image does not change)."""
         k = (a, n)
         if k not in self._flash:
-            self._flash[k] = struct.unpack(f'<{n}i', self.m.uc.mem_read(a, 4 * n))
+            self._flash[k] = struct.unpack(f'<{n}i', self._ref(a, 4 * n))
         return self._flash[k]
 
     def _ee_s16(self, a):
-        return struct.unpack('>h', bytes(self.m.eeprom[a:a + 2]))[0]
+        return struct.unpack('>h', bytes(self.hw_ee[a:a + 2]))[0]
 
     def _ee_i32(self, a):
-        return struct.unpack('>i', bytes(self.m.eeprom[a:a + 4]))[0]
+        return struct.unpack('>i', bytes(self.hw_ee[a:a + 4]))[0]
 
     def _table(self, m):
         """u16 record base table 0x08028EE8[m] (index 25 = the peak record, misc 7.3)."""
-        return struct.unpack('<H', self.m.uc.mem_read(CAL_TABLE + 2 * m, 2))[0]
+        return struct.unpack('<H', self._ref(CAL_TABLE + 2 * m, 2))[0]
 
     def _ee_rec(self, base, div=1e6):
         """(offset, g): offset = i32 BE at base, g = (float)(u32 BE at base + 4) / div in float32 (spec 5.1,
         0x08011890..0x0801190A)."""
-        off, gu = struct.unpack('>iI', bytes(self.m.eeprom[base:base + 8]))
+        off, gu = struct.unpack('>iI', bytes(self.hw_ee[base:base + 8]))
         return off, _f32(_i2f(gu) / div)
 
     def _cal(self, mode, rng):
@@ -425,7 +696,7 @@ class CalibratedFrontend(_Base):
         """Current zero offset 0x20007E0C as current_extra_load (0x08011448) sets it: the i32 BE after the marker
         0xA5 of the mode's record (EEPROM 0x4D0..0x4FF), modes 16..21 range 0 only; otherwise 0 (acc 7.7)."""
         a = EE_CUR_ZERO.get(mode)
-        if a is None or rng != 0 or self.m.eeprom[a] != 0xA5:
+        if a is None or rng != 0 or self.hw_ee[a] != 0xA5:
             return 0
         return self._ee_i32(a + 1)
 
@@ -502,9 +773,8 @@ class CalibratedFrontend(_Base):
         return tab[k] + (tab[k + 1] - tab[k]) * (u - k)
 
     # ------------------------------------------------------------------ quantities at the jacks
-    def _parts(self, value):
+    def _parts(self, value, st):
         """(AC RMS part, DC part) of a V or A stimulus value: AC stimulus = sine of RMS `value` plus 'dc' (V only)."""
-        st = self.stim
         if st['ac']:
             return value, (st['dc'] if st['kind'] == 'V' else 0.0)
         return 0.0, value
@@ -849,16 +1119,61 @@ class CalibratedFrontend(_Base):
         if mode >= len(MODE_NAMES):
             p['why'] = f'firmware mode {mode} unknown'
             return p
+        st, note = self._seen(mode, rng)
+        if st is None:
+            p['why'] = note
+            self._gain = 0.0
+            return p
+        p['st'] = st
         try:
-            getattr(self, PLAN_OF[mode])(p, mode, rng, self.stim)
+            getattr(self, PLAN_OF[mode])(p, mode, rng, st)
         except ZeroDivisionError:
             p['ok'], p['why'] = False, 'calibration record has gain 0 (EEPROM record empty)'
+        if note and p['ok']:
+            p['why'] = note + ('; ' + p['why'] if p['why'] else '')
         self._gain = p['gain']
         return p
 
+    def _seen(self, mode, rng):
+        """(stimulus as the meter's input sees it, note) for the firmware's present mode; (None, reason) where it is
+        not derived.  A connected stimulus is returned unchanged: its source impedance shunts the pickup (module
+        docstring), to 0 for the ideal V / VA sources the AC rows need.  Leads open (OPEN_LEADS): V modes read the
+        pickup RMS in the AC rows and 0 V in the DC rows; OHM / BEEP an infinite resistance; DIODE the source
+        open-circuit voltage; CAP 0 F; currents 0 A; VA the pickup on the voltage channel (AC rows) and 0 A; TEMP is
+        not derived (OPEN_TEMP_WHY); the counter modes keep kind 'open' (counter_input supplies the pickup)."""
+        st = self.stim
+        if st['kind'] != 'open':
+            return st, ''
+        r8 = self._ram8
+        base = dict(st, value=0.0, ac=False, freq=0.0, duty=0.5, width=0.0, dc=0.0, amps=0.0)
+        f = self.env['pickup_hz']
+        if mode in (1, 3) or (mode == 0 and not r8(RAM_LOWZ_AC)) or mode in (22, 23, 24):
+            return dict(base, kind='VA' if mode >= 22 else 'V'), OPEN_LEADS['volt_dc']
+        if mode in (0, 2, 4, 13, 14, 15):
+            kind = 'V' if mode <= 4 else 'VA'
+            v = self.pickup()['v_rms']
+            if v is None:
+                return dict(base, kind=kind), ('leads open: no resistive input path in this row (only the clamps, '
+                                               'no device data), mains pickup not derived and not applied')
+            if not v:
+                return dict(base, kind=kind), OPEN_LEADS['volt_ac'] + ' (pickup off)'
+            return dict(base, kind=kind, value=v, ac=True, freq=f), OPEN_LEADS['volt_ac'] + f' ({v * 1e3:.3f} mV rms)'
+        if mode == 5:
+            return None, OPEN_TEMP_WHY
+        if mode in (6, 7, 8):
+            return base, ''                          # _plan_counter writes the note
+        if mode in (9, 10):
+            return dict(base, kind='ohm', value=math.inf), OPEN_LEADS['ohm']
+        if mode == 11:
+            return dict(base, kind='diode', value=DIODE_VOC[1 if r8(RAM_DIODE15) else 0]), OPEN_LEADS['diode']
+        if mode == 12:
+            return dict(base, kind='F'), OPEN_LEADS['cap']
+        return dict(base, kind='A'), OPEN_LEADS['current']
+
     def _need(self, p, kind):
-        if self.stim['kind'] != kind:
-            p['why'] = f'stimulus kind {self.stim["kind"]} does not apply to {MODE_NAMES[p["mode"]]} (needs {kind})'
+        st = p.get('st', self.stim)
+        if st['kind'] != kind:
+            p['why'] = f'stimulus kind {st["kind"]} does not apply to {MODE_NAMES[p["mode"]]} (needs {kind})'
             return False
         return True
 
@@ -880,6 +1195,10 @@ class CalibratedFrontend(_Base):
         """FREQ / PULSE / DUTY: no AD1; the counter input carries the stimulus signal (spec 4.3, misc 5)."""
         if st['ac'] and st['freq'] > 0:
             p.update(ok=True, why='counter input driven at the stimulus frequency')
+        elif st['kind'] == 'open':
+            sig = self._pickup_counter('CNT', self.chip.now_s() if self.chip is not None else 0.0)
+            p.update(ok=True, why=(f'mains pickup toggles CNT at {sig[0]:g} Hz' if sig else
+                                   'no counter edges: firmware timeout path (misc 5, 0x0802442E..0x080244C4)'))
         else:
             p['why'] = f'{MODE_NAMES[mode]} needs a stimulus with a frequency (kind Hz, or AC with freq)'
 
@@ -931,6 +1250,11 @@ class CalibratedFrontend(_Base):
             p['why'] = f'OHM range {rng} unknown'
             return
         d = st['value'] * 10.0 ** e
+        if not math.isfinite(d):                    # leads open: the code saturates in the chip (OPEN_LEADS['ohm'])
+            if not g:
+                raise ZeroDivisionError
+            p.update(ok=True, raw=math.inf, gain=g)
+            return
         if (mode == 9 and rng in (5, 6) and self._ram8(RAM_R6FLAG) == 0 and self._ram8(RAM_CALMODE) == 0):
             d = self._ohm_target(rng, d)
         self._set_dc(p, d, off, g)
@@ -951,7 +1275,7 @@ class CalibratedFrontend(_Base):
         """DCV, DCmV, LowZ (both variants), ACV (normal, 1 kHz filter, PEAK, AC+DC phases), ACmV."""
         if not self._need(p, 'V'):
             return
-        ac, dc = self._parts(st['value'])
+        ac, dc = self._parts(st['value'], st)
         r8 = self._ram8
         e = VOLT_EXP[mode].get(rng)
         if e is None:
@@ -1001,7 +1325,7 @@ class CalibratedFrontend(_Base):
         if amps is None:
             p['why'] = note
             return
-        ac, dc = self._parts(amps)
+        ac, dc = self._parts(amps, st)
         is_ac = mode in (16, 18, 20)
         if not is_ac and st['ac']:
             p['why'] = UNSUPPORTED_WHY[mode]
@@ -1143,6 +1467,8 @@ class NetlistFrontend(_Base):
     A changed dial row, register decode or line state reloads the deck (about 15 ms).  The stimulus is applied with
     'alter' (DC) or, for an AC stimulus, written into the source lines (sine) of a reloaded deck.
       V      vstim = value (DC) between JACK_V and COM through rstim = 1 uohm (source resistance: design choice)
+      diode  as V with vstim = value: the device under test is represented by its forward voltage at the meter's
+             test current, which is how the stimulus is defined (module docstring); no diode model is involved
       ohm    vstim = 0, rstim = value
       A      current source into the current jack: istim_a when board.jacks holds 'A', otherwise istim_ma; the
              V jack is open (rstim = 1e12 ohm)
@@ -1153,9 +1479,10 @@ class NetlistFrontend(_Base):
              (1 / rate) are returned.  Frequencies above AC_FMAX are not offered (run time).
     The AD1 reads the internal nodes ad1p / ad1n / ad1rh / ad1rl of the HY3131 model (after the input
     multiplexer, the pre-filter and the SAD1I selection; reference multiplexers), returned under the pin names
-    of the selection (sel['fp'], ...).  Not offered (reason in support()): stimulus kinds F, degC, diode (no
-    netlist part represents them: capacitance mode needs the HY3131 MOS current source, the thermocouple EMF is a
-    firmware table, the diode under test has no model), configurations that use the HY3131 OP3 / MOS current
+    of the selection (sel['fp'], ...).  Not offered (reason in support()): stimulus kinds F and degC (capacitance
+    mode needs the HY3131 MOS current source; the thermocouple EMF is the firmware table 0x08025CF8 and the cold
+    junction is the board temperature, neither of which is a netlist part; a thermocouple can be applied as kind V
+    with its EMF), configurations that use the HY3131 OP3 / MOS current
     source path (SVSO2, SCP, SCN; DS p23, no device data) and the internal temperature sensor (SAD1I = 1x).
     Noise: ngspice noise analysis at the operating point, input source vstim, integrated over 0.1 Hz .. rate / 2
     (band: design choice): vin_sigma between ad1p and ad1n (thermal noise of the resistors, the ADR3412 and
@@ -1353,7 +1680,7 @@ class NetlistFrontend(_Base):
             a = 0.0 if st['ac'] else st['value']
         elif k == 'VA':
             a = 0.0 if st['ac'] else st['amps']
-        vs = v if k in ('V', 'VA') else 0.0
+        vs = v if k in ('V', 'VA', 'diode') else 0.0
         rs = max(st['value'], 1e-6) if k == 'ohm' else (1e12 if k == 'A' else 1e-6)
         jack = self._jack()
         return (('vstim', 'dc', float(vs)), ('rstim', '', float(rs)),
@@ -1389,10 +1716,10 @@ class NetlistFrontend(_Base):
             if st['ac'] and st['freq'] > 0:
                 return True, 'counter input driven at the stimulus frequency', mode, rng
             return False, 'FREQ needs a stimulus with a frequency (kind Hz, or AC with freq)', mode, rng
-        if st['kind'] not in ('V', 'ohm', 'A', 'VA'):
+        if st['kind'] not in ('V', 'ohm', 'A', 'VA', 'diode'):
             return False, (f'netlist backend: stimulus kind {st["kind"]} has no netlist representation (capacitance '
-                           'needs the HY3131 MOS current source, thermocouple EMF and diode under test have no '
-                           'model)'), mode, rng
+                           'needs the HY3131 MOS current source; a thermocouple can be applied as kind V with its '
+                           'EMF)'), mode, rng
         if st['ac'] and not 0 < st['freq'] <= self.AC_FMAX:
             return False, f'netlist backend: AC stimulus needs 0 < freq <= {self.AC_FMAX:g} Hz', mode, rng
         if self.chip is not None:
@@ -1494,6 +1821,18 @@ class NetlistFrontend(_Base):
                 self._fail(f'noise: {e}')
                 return 0.0
         return self._cache[key]
+
+    # DC AD1 modes whose record is table[mode] + 16 x range with g in raw LSB per display count (spec 5.1, 5.4;
+    # DCV, DCmV, TEMP, OHM, DIODE, DCuA, DCmA, DCA): the converter noise NOISE_COUNTS applies there as in the
+    # calibrated backend; the AC, LowZ, BEEP and VA chains switch records by firmware flags (CalibratedFrontend._cal)
+    # and keep the _Base rule.
+    RECORD_MODES = (1, 3, 5, 9, 11, 17, 19, 21)
+
+    def raw_per_count(self, mode, rng):
+        """Raw AD1 LSB per display count: gain g of the EEPROM record of mode / range for RECORD_MODES, else _Base."""
+        if mode in self.RECORD_MODES:
+            return self.cal_record(mode, rng)[2]
+        return super().raw_per_count(mode, rng)
 
     def _vin_sigma(self, sel):
         return self._noise_between('ad1p', 'ad1n', sel)

@@ -134,7 +134,7 @@ FUNC sense_pe10_pe11
 .Ljs_swap_dca:
     ldr r0, =meter_mode                 @ 08014220
     ldrb r0, [r0]                       @ 08014224
-    cmp r0, #0x15                       @ 08014226
+    cmp r0, #0x15                       @ 08014226 mode 21 DCA
     bne .Ljs_swap_va                    @ 08014228
     ldr r0, =jack_ma_selected           @ 0801422A
     ldrb r0, [r0]                       @ 0801422E
@@ -153,7 +153,7 @@ FUNC sense_pe10_pe11
 .Ljs_swap_va:
     ldr r0, =meter_mode                 @ 08014242
     ldrb r0, [r0]                       @ 08014246
-    cmp r0, #0xF                        @ 08014248
+    cmp r0, #0xF                        @ 08014248 mode 15 VA
     bne .Ljs_swap_dcva                  @ 0801424A
     ldr r0, =jack_ma_selected           @ 0801424C
     ldrb r0, [r0]                       @ 08014250
@@ -172,7 +172,7 @@ FUNC sense_pe10_pe11
 .Ljs_swap_dcva:
     ldr r0, =meter_mode                 @ 08014264
     ldrb r0, [r0]                       @ 08014268
-    cmp r0, #0x18                       @ 0801426A
+    cmp r0, #0x18                       @ 0801426A mode 24 DCVA
     bne .Ljs_swap_acma                  @ 0801426C
     ldr r0, =jack_ma_selected           @ 0801426E
     ldrb r0, [r0]                       @ 08014272
@@ -191,7 +191,7 @@ FUNC sense_pe10_pe11
 .Ljs_swap_acma:
     ldr r0, =meter_mode                 @ 08014286
     ldrb r0, [r0]                       @ 0801428A
-    cmp r0, #0x12                       @ 0801428C
+    cmp r0, #0x12                       @ 0801428C mode 18 ACmA
     bne .Ljs_swap_dcma                  @ 0801428E
     ldr r0, =jack_ma_selected           @ 08014290
     ldrb r0, [r0]                       @ 08014294
@@ -210,7 +210,7 @@ FUNC sense_pe10_pe11
 .Ljs_swap_dcma:
     ldr r0, =meter_mode                 @ 080142A8
     ldrb r0, [r0]                       @ 080142AC
-    cmp r0, #0x13                       @ 080142AE
+    cmp r0, #0x13                       @ 080142AE mode 19 DCmA
     bne .Ljs_swap_mva                   @ 080142B0
     ldr r0, =jack_ma_selected           @ 080142B2
     ldrb r0, [r0]                       @ 080142B6
@@ -229,7 +229,7 @@ FUNC sense_pe10_pe11
 .Ljs_swap_mva:
     ldr r0, =meter_mode                 @ 080142CA
     ldrb r0, [r0]                       @ 080142CE
-    cmp r0, #0xE                        @ 080142D0
+    cmp r0, #0xE                        @ 080142D0 mode 14 mVA
     bne .Ljs_swap_dcmva                 @ 080142D2
     ldr r0, =jack_ma_selected           @ 080142D4
     ldrb r0, [r0]                       @ 080142D8
@@ -248,7 +248,7 @@ FUNC sense_pe10_pe11
 .Ljs_swap_dcmva:
     ldr r0, =meter_mode                 @ 080142EC
     ldrb r0, [r0]                       @ 080142F0
-    cmp r0, #0x17                       @ 080142F2
+    cmp r0, #0x17                       @ 080142F2 mode 23 DCmVA
     bne .Ljs_swap_done                  @ 080142F4
     ldr r0, =jack_ma_selected           @ 080142F6
     ldrb r0, [r0]                       @ 080142FA
@@ -292,19 +292,19 @@ FUNC sense_pe10_pe11
 .Ljs_warn_code12:
     ldr r0, =meter_mode                 @ 08014332
     ldrb r0, [r0]                       @ 08014336
-    cmp r0, #0x12                       @ 08014338
+    cmp r0, #0x12                       @ 08014338 mode 18 ACmA
     beq .Ljs_0801435A                   @ 0801433A
     ldr r0, =meter_mode                 @ 0801433C
     ldrb r0, [r0]                       @ 08014340
-    cmp r0, #0x14                       @ 08014342
+    cmp r0, #0x14                       @ 08014342 mode 20 ACA
     beq .Ljs_0801435A                   @ 08014344
     ldr r0, =meter_mode                 @ 08014346
     ldrb r0, [r0]                       @ 0801434A
-    cmp r0, #0x13                       @ 0801434C
+    cmp r0, #0x13                       @ 0801434C mode 19 DCmA
     beq .Ljs_0801435A                   @ 0801434E
     ldr r0, =meter_mode                 @ 08014350
     ldrb r0, [r0]                       @ 08014354
-    cmp r0, #0x15                       @ 08014356
+    cmp r0, #0x15                       @ 08014356 mode 21 DCA
     bne .Ljs_08014364                   @ 08014358
 @ reached from 0801433A beq (equal / zero) after cmp r0, #0x12
 @              and from 08014344 beq (equal / zero) after cmp r0, #0x14
@@ -319,19 +319,19 @@ FUNC sense_pe10_pe11
 .Ljs_08014364:
     ldr r0, =meter_mode                 @ 08014364
     ldrb r0, [r0]                       @ 08014368
-    cmp r0, #0xE                        @ 0801436A
+    cmp r0, #0xE                        @ 0801436A mode 14 mVA
     beq .Ljs_0801438C                   @ 0801436C
     ldr r0, =meter_mode                 @ 0801436E
     ldrb r0, [r0]                       @ 08014372
-    cmp r0, #0xF                        @ 08014374
+    cmp r0, #0xF                        @ 08014374 mode 15 VA
     beq .Ljs_0801438C                   @ 08014376
     ldr r0, =meter_mode                 @ 08014378
     ldrb r0, [r0]                       @ 0801437C
-    cmp r0, #0x17                       @ 0801437E
+    cmp r0, #0x17                       @ 0801437E mode 23 DCmVA
     beq .Ljs_0801438C                   @ 08014380
     ldr r0, =meter_mode                 @ 08014382
     ldrb r0, [r0]                       @ 08014386
-    cmp r0, #0x18                       @ 08014388
+    cmp r0, #0x18                       @ 08014388 mode 24 DCVA
     bne .Ljs_08014396                   @ 0801438A
 @ reached from 0801436C beq (equal / zero) after cmp r0, #0xE
 @              and from 08014376 beq (equal / zero) after cmp r0, #0xF
@@ -345,19 +345,19 @@ FUNC sense_pe10_pe11
 .Ljs_08014396:
     ldr r0, =meter_mode                 @ 08014396
     ldrb r0, [r0]                       @ 0801439A
-    cmp r0, #0x10                       @ 0801439C
+    cmp r0, #0x10                       @ 0801439C mode 16 ACuA
     beq .Ljs_080143BE                   @ 0801439E
     ldr r0, =meter_mode                 @ 080143A0
     ldrb r0, [r0]                       @ 080143A4
-    cmp r0, #0x11                       @ 080143A6
+    cmp r0, #0x11                       @ 080143A6 mode 17 DCuA
     beq .Ljs_080143BE                   @ 080143A8
     ldr r0, =meter_mode                 @ 080143AA
     ldrb r0, [r0]                       @ 080143AE
-    cmp r0, #0xD                        @ 080143B0
+    cmp r0, #0xD                        @ 080143B0 mode 13 uVA
     beq .Ljs_080143BE                   @ 080143B2
     ldr r0, =meter_mode                 @ 080143B4
     ldrb r0, [r0]                       @ 080143B8
-    cmp r0, #0x16                       @ 080143BA
+    cmp r0, #0x16                       @ 080143BA mode 22 DCuVA
     bne .Ljs_080143D4                   @ 080143BC
 @ reached from 0801439E beq (equal / zero) after cmp r0, #0x10
 @              and from 080143A8 beq (equal / zero) after cmp r0, #0x11

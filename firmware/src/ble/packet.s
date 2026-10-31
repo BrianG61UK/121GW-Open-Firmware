@@ -70,34 +70,22 @@
 @ ble_value_valid - is the main value fit to be sent?
 @ Replaces : nothing in v2.05 (new, OF-34)
 @ In       : -
-@ Out      : r0 = 1 value valid, 0 invalid (range change in progress)
-@ Clobbers : r0, r1, flags
+@ Out      : r0 = 1 the main digits show a reading, 0 they are blank or show dashes (frame is held back)
+@ Clobbers : r0 (ui_value_valid clobbers r0 only)
 @ Context  : main only
-@ RAM      : reads v_20000238 (settle counter), v_2000805C (blank flag), meter_mode
-@ Spec     : analysis/autorange_and_scheduler.md 2.4 and 5.2 P7; ORIGINAL_FIRMWARE_ISSUES.md OF-34
-@ Note     : The rule is the display blanking rule of FUN_08016E08 (0x08016FCE..0x08016FF4): the main digits are
-@            blank while the settle counter 0x20000238 or the blank flag 0x2000805C is non-zero, except in mode 0
-@            (LowZ).  A frame built in that state would report the zeroed value 0x20007D70.  The extra blanking
-@            of OF-30/32/33 (LowZ, BEEP, FREQ, CAP) is owned by UI; see firmware/requests/W9_to_W3.md.
+@ RAM      : none directly (ui_value_valid reads ui_blank_req, meter_mode, the settle counter 0x20000238 and the
+@            blank flag 0x2000805C)
+@ Spec     : analysis/autorange_and_scheduler.md 2.4 and 5.2 P7; ORIGINAL_FIRMWARE_ISSUES.md OF-34; reply
+@            firmware/requests/W3_to_W9.md item 1
+@ Note     : Tail branch to ui_value_valid (UI, src/ui/refresh.s), so the frame follows exactly what the main digits
+@            show: v2.05 blanking rule of FUN_08016E08 (0x08016FCE..0x08016FF4: settle counter or blank flag non-zero,
+@            except in mode 0) plus the blanking of OF-30, OF-32 and OF-33 (LowZ dashes, BEEP and FREQ before the
+@            first result, CAP range jump) that only UI knows.  A frame built while the value is blank would report
+@            the zeroed value 0x20007D70.
 @ -----------------------------------------------------------------------------
 FUNC ble_value_valid
-    ldr r0, =v_20000238                     @ settle counter after an apply (u8)
-    ldrb r0, [r0]
-    ldr r1, =v_2000805C                     @ display blank flag (u8)
-    ldrb r1, [r1]
-    orrs r0, r0, r1
-    beq .Lvv_valid                          @ both zero: the value is a reading
-    ldr r1, =meter_mode
-    ldrb r1, [r1]
-    cmp r1, #0
-    beq .Lvv_valid                          @ LowZ is exempt from the blanking (0x08016FE2..0x08016FEA)
-    movs r0, #0                             @ blank phase: invalid
-    bx lr
-.Lvv_valid:
-    movs r0, #1
-    bx lr
+    b ui_value_valid                        @ tail call: r0 = 1 reading, 0 blank (returns to the caller of this routine)
 ENDFUNC ble_value_valid
-    .ltorg
 
 @ -----------------------------------------------------------------------------
 @ fn_0800C53A - frame bytes 1..4: date code YYMM and the ID number digits

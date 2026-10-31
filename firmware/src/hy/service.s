@@ -114,7 +114,12 @@ FUNC hy3131_service_irq
     ldr r0, =v_2000807F                @ 0x080061AE pool 0x08006CFC = 0x2000807F
     ldrb r0, [r0, #0]                  @ 0x080061B2
     lsls r0, r0, #27                   @ 0x080061B4  mask bit 4 = RMSF
+.if MAC_RMS_SERVICE
+    bpl .L080061BC                     @ 0x080061B6  MAC_RMS_SERVICE = 1 (differential builds): the v2.05 call of the RMS event routine
+    bl fn_08008208                     @ 0x080061B8  (the register mirror holds registers 0x09..0x0D from the burst above)
+.else
     @ RMSF (mask bit 4): serviced by the INTF clear above, OF-16 (v2.05 called FUN_08008208 here, 0x080061B8)
+.endif
 .L080061BC:                              @ reached from 0x080061B6 bpl
     ldr r0, =v_2000807E                @ 0x080061BC pool 0x08006AE0 = 0x2000807E
     ldrb r0, [r0, #0]                  @ 0x080061C0
@@ -153,7 +158,7 @@ ENDFUNC hy3131_service_irq
 @   AD1F         registers 0x00..0x02 (AD1 data, read by FUN_080062F8)
 @   peak gate    registers 0x0E..0x13 (PKHMIN, PKHMAX, read by FUN_0800A7FC)
 @   CTF          registers 0x14..0x1D (CTSTA, whose read clears CTBOV, DS p36, then CTC, CTB, CTA read by FUN_0800AB48)
-@ The RMS block 0x09..0x0D is not read (OF-16); AD2 0x03..0x05, LPF 0x06..0x08 and 0x21..0x28, 0x2A..0x33 have no reader.
+@ The RMS block 0x09..0x0D is not read (OF-16; only with MAC_RMS_SERVICE = 1 the block is read and fn_08008208 called); AD2 0x03..0x05, LPF 0x06..0x08 and 0x21..0x28, 0x2A..0x33 have no reader.
 @ -----------------------------------------------------------------------------
 FUNC hy3131_service_irq
     push {r4, lr}
@@ -191,7 +196,19 @@ FUNC hy3131_service_irq
     bl hy_read_frame                        @ mirror[0..2] = AD1 result
     bl ad1_ready_dispatch
 .Lps_nad1:
+.if MAC_RMS_SERVICE
+    ldr r0, =v_2000807F
+    ldrb r0, [r0]
+    lsls r0, r0, #27                        @ mask bit 4 = RMSF
+    bpl .Lps_normsf
+    movs r0, #0x09
+    movs r1, #5
+    bl hy_read_frame                        @ mirror[0x09..0x0D] = RMS (read by fn_0800827C), MAC_RMS_SERVICE = 1 only
+    bl fn_08008208                          @ v2.05 0x080061B8
+.Lps_normsf:
+.else
     @ RMSF (mask bit 4): nothing to do beyond the INTF clear, OF-16
+.endif
     ldr r0, =v_2000807E
     ldrb r0, [r0]
     lsls r0, r0, #29                        @ R29 bit 2 = ENPKH
@@ -244,10 +261,13 @@ FUNC ad1_ready_dispatch
     str r0, [r1, #0]                   @ 0x080061FA  0x20007D74 = latest sample (all modes)
 .if LOOP_V205 == 0
     @ IMP-01 (production): before the conversion is accumulated, the auto-ranged DC modes judge the calibrated per-sample value (ar_sample, AR); r0 = 1: this
-    @ conversion belongs to the settling after an apply (or an apply is pending) and is discarded - neither accumulated nor handled (MDC mdc_sample_precheck)
-    bl mdc_sample_precheck
+    @ conversion belongs to the settling after an apply (or an apply is pending) and is discarded - neither accumulated nor handled (MDC mdc_sample_precheck
+    @ for the DC modes, MAC mac_sample_precheck for the AC modes; each returns 0 at once for a mode it does not judge)
+    bl mdc_sample_precheck                  @ auto-ranged DC modes 1, 3, 9, 17, 19, 21: r0 = 1 discard
+    cbnz r0, 2f
+    bl mac_sample_precheck                  @ AC modes 2, 4, 16, 18, 20 (W6, src/mac/sample.s; the mode sets are disjoint): r0 = 1 discard
     cbz r0, 1f
-    movs r0, #0
+2:  movs r0, #0
     ldr r1, =v_20008081
     strb r0, [r1]                           @ no mean completed by a discarded conversion
     pop {r0, pc}

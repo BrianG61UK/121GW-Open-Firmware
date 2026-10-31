@@ -42,6 +42,9 @@ FUNC enter_stop_and_reinit
     .else
     bl bzb_off_beep_start
 .Lesr_beep:
+    bl lcd_commit_retry                     @ IMP-06: fn_08017092 commits twice in a row, so the "-oFF-" commit finds UDR still set and
+                                            @ is deferred; this loop never reaches fn_08016D34, so it repeats the commit itself
+                                            @ (W3_to_W1.md item 8); without this call the screen stays blank during the beep
     wfi                                     @ IMP-06: sleep until the next interrupt (TIM2 sets the 10 ms flag)
     bl bzb_off_beep_step                    @ r0 = 1 after 100 ticks, PE7 low again
     cmp r0, #0

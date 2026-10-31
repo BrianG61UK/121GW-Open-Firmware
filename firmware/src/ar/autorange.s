@@ -48,7 +48,7 @@ FUNC autorange_step
 @ CAP with a manual range and an overload: keep it (a manual timeout overload), clear the settle count and blank
     ldr r0, =meter_mode                 @ 0800DE26
     ldrb r0, [r0]                       @ 0800DE2A
-    cmp r0, #0xC                        @ 0800DE2C
+    cmp r0, #0xC                        @ 0800DE2C mode 12 CAP
     bne .Lar_0800DE52                   @ 0800DE2E
     ldr r0, =range_manual               @ 0800DE30
     ldrb r0, [r0]                       @ 0800DE34
@@ -70,39 +70,39 @@ FUNC autorange_step
 .Lar_0800DE52:
     ldr r0, =meter_mode                 @ 0800DE52
     ldrb r0, [r0]                       @ 0800DE56
-    cmp r0, #6                          @ 0800DE58
+    cmp r0, #6                          @ 0800DE58 mode 6 FREQ
     beq .Lar_0800DEB4                   @ 0800DE5A
     ldr r0, =meter_mode                 @ 0800DE5C
     ldrb r0, [r0]                       @ 0800DE60
-    cmp r0, #7                          @ 0800DE62
+    cmp r0, #7                          @ 0800DE62 mode 7 PULSE
     beq .Lar_0800DEB4                   @ 0800DE64
     ldr r0, =meter_mode                 @ 0800DE66
     ldrb r0, [r0]                       @ 0800DE6A
-    cmp r0, #8                          @ 0800DE6C
+    cmp r0, #8                          @ 0800DE6C mode 8 DUTY
     beq .Lar_0800DEB4                   @ 0800DE6E
     ldr r0, =meter_mode                 @ 0800DE70
     ldrb r0, [r0]                       @ 0800DE74
-    cmp r0, #0xD                        @ 0800DE76
+    cmp r0, #0xD                        @ 0800DE76 mode 13 uVA
     beq .Lar_0800DEB4                   @ 0800DE78
     ldr r0, =meter_mode                 @ 0800DE7A
     ldrb r0, [r0]                       @ 0800DE7E
-    cmp r0, #0xE                        @ 0800DE80
+    cmp r0, #0xE                        @ 0800DE80 mode 14 mVA
     beq .Lar_0800DEB4                   @ 0800DE82
     ldr r0, =meter_mode                 @ 0800DE84
     ldrb r0, [r0]                       @ 0800DE88
-    cmp r0, #0xF                        @ 0800DE8A
+    cmp r0, #0xF                        @ 0800DE8A mode 15 VA
     beq .Lar_0800DEB4                   @ 0800DE8C
     ldr r0, =meter_mode                 @ 0800DE8E
     ldrb r0, [r0]                       @ 0800DE92
-    cmp r0, #0x16                       @ 0800DE94
+    cmp r0, #0x16                       @ 0800DE94 mode 22 DCuVA
     beq .Lar_0800DEB4                   @ 0800DE96
     ldr r0, =meter_mode                 @ 0800DE98
     ldrb r0, [r0]                       @ 0800DE9C
-    cmp r0, #0x17                       @ 0800DE9E
+    cmp r0, #0x17                       @ 0800DE9E mode 23 DCmVA
     beq .Lar_0800DEB4                   @ 0800DEA0
     ldr r0, =meter_mode                 @ 0800DEA2
     ldrb r0, [r0]                       @ 0800DEA6
-    cmp r0, #0x18                       @ 0800DEA8
+    cmp r0, #0x18                       @ 0800DEA8 mode 24 DCVA
     beq .Lar_0800DEB4                   @ 0800DEAA
     movs r0, #0                         @ 0800DEAC
     ldr r1, =ar_overload                @ 0800DEAE
@@ -149,27 +149,27 @@ FUNC autorange_step
 .Lar_0800DEFA:
     ldr r0, =meter_mode                 @ 0800DEFA
     ldrb r0, [r0]                       @ 0800DEFE
-    cmp r0, #0xD                        @ 0800DF00
+    cmp r0, #0xD                        @ 0800DF00 mode 13 uVA
     beq .Lar_0800DF36                   @ 0800DF02
     ldr r0, =meter_mode                 @ 0800DF04
     ldrb r0, [r0]                       @ 0800DF08
-    cmp r0, #0xE                        @ 0800DF0A
+    cmp r0, #0xE                        @ 0800DF0A mode 14 mVA
     beq .Lar_0800DF36                   @ 0800DF0C
     ldr r0, =meter_mode                 @ 0800DF0E
     ldrb r0, [r0]                       @ 0800DF12
-    cmp r0, #0xF                        @ 0800DF14
+    cmp r0, #0xF                        @ 0800DF14 mode 15 VA
     beq .Lar_0800DF36                   @ 0800DF16
     ldr r0, =meter_mode                 @ 0800DF18
     ldrb r0, [r0]                       @ 0800DF1C
-    cmp r0, #0x16                       @ 0800DF1E
+    cmp r0, #0x16                       @ 0800DF1E mode 22 DCuVA
     beq .Lar_0800DF36                   @ 0800DF20
     ldr r0, =meter_mode                 @ 0800DF22
     ldrb r0, [r0]                       @ 0800DF26
-    cmp r0, #0x17                       @ 0800DF28
+    cmp r0, #0x17                       @ 0800DF28 mode 23 DCmVA
     beq .Lar_0800DF36                   @ 0800DF2A
     ldr r0, =meter_mode                 @ 0800DF2C
     ldrb r0, [r0]                       @ 0800DF30
-    cmp r0, #0x18                       @ 0800DF32
+    cmp r0, #0x18                       @ 0800DF32 mode 24 DCVA
     bne .Lar_0800DF38                   @ 0800DF34
 @ reached from 0800DF02 beq (equal / zero) after cmp r0, #0xD
 @              and from 0800DF0C beq (equal / zero) after cmp r0, #0xE
@@ -183,15 +183,15 @@ FUNC autorange_step
 .Lar_0800DF38:
     ldr r0, =meter_mode                 @ 0800DF38
     ldrb r0, [r0]                       @ 0800DF3C
-    cmp r0, #6                          @ 0800DF3E
+    cmp r0, #6                          @ 0800DF3E mode 6 FREQ
     beq .Lar_0800DF56                   @ 0800DF40
     ldr r0, =meter_mode                 @ 0800DF42
     ldrb r0, [r0]                       @ 0800DF46
-    cmp r0, #7                          @ 0800DF48
+    cmp r0, #7                          @ 0800DF48 mode 7 PULSE
     beq .Lar_0800DF56                   @ 0800DF4A
     ldr r0, =meter_mode                 @ 0800DF4C
     ldrb r0, [r0]                       @ 0800DF50
-    cmp r0, #8                          @ 0800DF52
+    cmp r0, #8                          @ 0800DF52 mode 8 DUTY
     bne .Lar_thresholds                 @ 0800DF54
 @ reached from 0800DF40 beq (equal / zero) after cmp r0, #6
 @              and from 0800DF4A beq (equal / zero) after cmp r0, #7
@@ -206,7 +206,7 @@ FUNC autorange_step
 .Lar_thresholds:
     ldr r0, =meter_mode                 @ 0800DF60
     ldrb r0, [r0]                       @ 0800DF64
-    cmp r0, #0xB                        @ 0800DF66
+    cmp r0, #0xB                        @ 0800DF66 mode 11 DIODE
     bne .Lar_0800DF72                   @ 0800DF68
     ldr r0, =ar_full_scale              @ 0800DF6A
     ldr r0, [r0]                        @ 0800DF6C
@@ -244,7 +244,7 @@ FUNC autorange_step
 .Lar_0800DFA2:
     ldr r0, =meter_mode                 @ 0800DFA2
     ldrb r0, [r0]                       @ 0800DFA6
-    cmp r0, #0xC                        @ 0800DFA8
+    cmp r0, #0xC                        @ 0800DFA8 mode 12 CAP
     bne .Lar_0800DFC4                   @ 0800DFAA
     ldr r0, =meter_range                @ 0800DFAC
     ldrb r0, [r0]                       @ 0800DFB0
@@ -269,11 +269,11 @@ FUNC autorange_step
 .Lar_0800DFD0:
     ldr r0, =meter_mode                 @ 0800DFD0
     ldrb r0, [r0]                       @ 0800DFD4
-    cmp r0, #0x14                       @ 0800DFD6
+    cmp r0, #0x14                       @ 0800DFD6 mode 20 ACA
     beq .Lar_0800DFE4                   @ 0800DFD8
     ldr r0, =meter_mode                 @ 0800DFDA
     ldrb r0, [r0]                       @ 0800DFDE
-    cmp r0, #0x15                       @ 0800DFE0
+    cmp r0, #0x15                       @ 0800DFE0 mode 21 DCA
     bne .Lar_0800DFF2                   @ 0800DFE2
 @ reached from 0800DFD8 beq (equal / zero) after cmp r0, #0x14
 .Lar_0800DFE4:
@@ -334,7 +334,7 @@ FUNC autorange_step
 .Lar_noranging:
     ldr r0, =meter_mode                 @ 0800E044
     ldrb r0, [r0]                       @ 0800E048
-    cmp r0, #5                          @ 0800E04A
+    cmp r0, #5                          @ 0800E04A mode 5 TEMP
     bne .Lar_0800E086                   @ 0800E04C
     ldr r0, =ar_tc_flag                 @ 0800E04E
     ldrb r0, [r0]                       @ 0800E052
@@ -392,19 +392,19 @@ FUNC autorange_step
     beq .Lar_overload                   @ 0800E0AA
     ldr r0, =meter_mode                 @ 0800E0AC
     ldrb r0, [r0]                       @ 0800E0B0
-    cmp r0, #6                          @ 0800E0B2
+    cmp r0, #6                          @ 0800E0B2 mode 6 FREQ
     beq .Lar_overload                   @ 0800E0B4
     ldr r0, =meter_mode                 @ 0800E0B6
     ldrb r0, [r0]                       @ 0800E0BA
-    cmp r0, #7                          @ 0800E0BC
+    cmp r0, #7                          @ 0800E0BC mode 7 PULSE
     beq .Lar_overload                   @ 0800E0BE
     ldr r0, =meter_mode                 @ 0800E0C0
     ldrb r0, [r0]                       @ 0800E0C4
-    cmp r0, #8                          @ 0800E0C6
+    cmp r0, #8                          @ 0800E0C6 mode 8 DUTY
     beq .Lar_overload                   @ 0800E0C8
     ldr r0, =meter_mode                 @ 0800E0CA
     ldrb r0, [r0]                       @ 0800E0CE
-    cmp r0, #0xC                        @ 0800E0D0
+    cmp r0, #0xC                        @ 0800E0D0 mode 12 CAP
     beq .Lar_overload                   @ 0800E0D2
 
 @ below the top range: the OHM direction guard (fn_0800E2A0(1)) may veto; else range + 1, apply request,
@@ -468,7 +468,7 @@ FUNC autorange_step
     beq .Lar_latch                      @ 0800E154
     ldr r0, =meter_mode                 @ 0800E158
     ldrb r0, [r0]                       @ 0800E15C
-    cmp r0, #9                          @ 0800E15E
+    cmp r0, #9                          @ 0800E15E mode 9 OHM
     bne .Lar_latch                      @ 0800E160
     ldr r0, =meter_range                @ 0800E162
     ldrb r0, [r0]                       @ 0800E166
@@ -500,7 +500,7 @@ FUNC autorange_step
     beq .Lar_under                      @ 0800E19E
     ldr r0, =meter_mode                 @ 0800E1A0
     ldrb r0, [r0]                       @ 0800E1A4
-    cmp r0, #9                          @ 0800E1A6
+    cmp r0, #9                          @ 0800E1A6 mode 9 OHM
     bne .Lar_under                      @ 0800E1A8
     ldr r0, =meter_range                @ 0800E1AA
     ldrb r0, [r0]                       @ 0800E1AE
@@ -543,7 +543,7 @@ FUNC autorange_step
     bne .Lar_latch                      @ 0800E1FA
     ldr r0, =meter_mode                 @ 0800E1FC
     ldrb r0, [r0]                       @ 0800E200
-    cmp r0, #0xC                        @ 0800E202
+    cmp r0, #0xC                        @ 0800E202 mode 12 CAP
     bne .Lar_0800E21C                   @ 0800E204
     ldr r0, =meter_range                @ 0800E206
     ldrb r0, [r0]                       @ 0800E20A
@@ -639,7 +639,7 @@ FUNC fn_0800E2A0
     bne .L800e2a0_0800E2C0              @ 0800E2B4
     ldr r0, =meter_mode                 @ 0800E2B6
     ldrb r0, [r0]                       @ 0800E2BA
-    cmp r0, #9                          @ 0800E2BC
+    cmp r0, #9                          @ 0800E2BC mode 9 OHM
     beq .L800e2a0_0800E2CC              @ 0800E2BE
 @ reached from 0800E2B4 bne (not equal / non-zero) after cmp r0, #0
 .L800e2a0_0800E2C0:

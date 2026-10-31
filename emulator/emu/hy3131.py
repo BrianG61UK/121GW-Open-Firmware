@@ -68,6 +68,24 @@ Converters
   parameter (default 0).  Input/reference buffers and the pre-filter (SFT1, DS p28) have no DC effect in this
   model (no input current, no settling).  A configuration change takes effect at the next conversion (comb-filter
   settling is not modelled).
+  Digital filter (DS p30 block diagram of 13.1, read on a 600 dpi render): the 1-bit output of the AD1 modulator
+  enters a block labelled "Comb Filter" with superscript 2, set by AD1OSR, whose output is the 24-bit result; the
+  AD2 / AD3 blocks on DS p32 carry superscript 3.  The modulator samples at AD1CLK = FSYSCLK / 30 (DS p31 (10)) and
+  the output rate is AD1CLK / OSR1 (DS p31 (11)), so the comb decimates by OSR1.  A second-order comb (sinc^2)
+  decimating by R = OSR1 has the triangular impulse response of length 2R - 1 modulator samples and
+      H(f) = [sin(pi f R / AD1CLK) / (R sin(pi f / AD1CLK))]^2,  linear phase, delay (R - 1) / AD1CLK,
+  i.e. nulls at every multiple of the output rate.  Each conversion is that filter's output for the input waveform
+  over its window (_ad1_ac).  Model limits, stated as such: the modulator's signal transfer function is not given by
+  the datasheet and is taken as 1 (model choice; the frequencies applied here, mains pickup at 50/60 Hz, are below
+  1/2700 of AD1CLK); the scale is the DC transfer of DS p31.  The NMRR figures of DS p13 (120 dB at 5 sps, 75 dB at
+  10 sps, 50/60 Hz +-1 Hz) neither confirm nor contradict the order: sinc^2 gives infinite rejection at exactly 50
+  and 60 Hz at both rates and 68.8..72.6 dB at +-1 Hz at both rates; no sinc^N gives the 45 dB difference between
+  the two rates at the same offset (computed for N = 1, 2, 3), so the test conditions behind those figures are not
+  those of a bare comb.  With AD1CHOP = 1x the datasheet says only that the ADC "switches input signal based on OSR
+  configured time" and the output rate is "one time slower" (DS p30 (2)): how the chopped phases combine through the
+  comb is not stated, so an AC component is NOT converted in that state (the conversion carries the DC part and
+  reports 'ac_error' in snapshot()).  The firmware's DCV, LowZ DC, DCmV / TEMP, OHM, BEEP, DIODE, DC current and DC VA
+  rows all set AD1CHOP = 2 or 3 (spec 3); only CAP r3 / r4 (AD1 on PB<2>) and the AC rows (PB<7>) use 0.
 - AD2 (DS p32-33) runs at FAD2CLK / OSR2 with FAD2CLK = FSYSCLK / 2 or / 4 (SAD2CLK); LPF and RMS at the AD2 rate /
   OSR4 (DS p34).  The datasheet gives no AD2 transfer function and no high-pass filter specification for the RMS
   input (DS p34 "data that passed High Pass Filter"), so the AD2, LPF and RMS data are NOT modelled: AD2F, LPFF
@@ -82,6 +100,8 @@ Analog interface: a front-end provider object (emu/frontend.py) supplies
     pins(sel, t) -> {pin name: volts}   voltages at the pins selected by the multiplexers (sel), at chip time t
     noise(sel) -> {'vin_sigma': V, 'vref_sigma': V, 'code_sigma': raw LSB, 'raw_per_count': raw LSB}
     counter_input(source, t) -> None or (frequency Hz, duty 0..1, epoch s)
+    ac_components(sel, t) -> [(peak volts at FP - FN, frequency Hz, phase rad), ...]   optional: sine components
+                             v(t') = peak sin(2 pi f t' + phase) added to the DC input, converted by _ad1_ac
 Noise is drawn per conversion from a seedable random.Random (deterministic runs: pass seed).
 """
 import math
@@ -137,6 +157,7 @@ class HY3131:
         self.m = machine
         self.g = gpio_f
         self.frontend = frontend
+        self.seed = seed                # kept so that other models (front-end environment) can derive their own RNG
         self.rng = random.Random(seed)
         self.noise = noise
         self.chop_rate_divisor = chop_rate_divisor
@@ -451,6 +472,34 @@ class HY3131:
             return None
         return pins[name]
 
+    def ad1_comb_gain(self, f, osr=None):
+        """|H(f)| of the AD1 sinc^2 comb at the present (or the given) OSR1 (module docstring, DS p30, p31 (10),
+        (11)).  1 at DC; 0 at every multiple of the output rate AD1CLK / OSR1."""
+        r = osr or OSR1[self.reg[R22] & 0x07]
+        x = math.pi * f / (self.f_sys / 30.0)
+        s = math.sin(x)
+        if abs(s) < 1e-300:                         # f = k * AD1CLK: the comb passes it like DC
+            return 1.0
+        return (math.sin(r * x) / (r * s)) ** 2
+
+    def _ad1_ac(self, sel, t, info):
+        """Contribution of the front end's AC components to the conversion completing at chip time t: the sinc^2
+        comb output over its window, sum of peak |H(f)| sin(2 pi f (t - (R - 1) / AD1CLK) + phase) (module
+        docstring).  With AD1CHOP = 1x nothing is added and the reason goes to info['ac_error']."""
+        fn = getattr(self.frontend, 'ac_components', None)
+        comps = fn(sel, t) if fn is not None else None
+        if not comps:
+            return 0.0
+        if sel['chop'] & 0x02:
+            info['ac_error'] = ('AC component not converted: AD1CHOP = 1x, the chopped comb response is not stated '
+                                '(DS p30 (2))')
+            return 0.0
+        r = OSR1[self.reg[R22] & 0x07]
+        tc = t - (r - 1) / (self.f_sys / 30.0)      # centre of the triangular window (linear-phase delay)
+        v = sum(a * self.ad1_comb_gain(f, r) * math.sin(2.0 * math.pi * f * tc + ph) for a, f, ph in comps)
+        info['ac'] = v
+        return v
+
     def _ad1_done(self, gen):
         """One AD1 conversion completed: compute the code, store AD1<23:0>, raise AD1F (DS p31 (12), (13))."""
         if gen != self.gen_ad1:
@@ -471,6 +520,7 @@ class HY3131:
                 info['error'] = 'zero reference'
         else:
             vin, vr = vals[0] - vals[1], vals[2] - vals[3]
+            vin += self._ad1_ac(sel, t, info)
             nz = self.frontend.noise(sel) if self.noise else {}
             if nz.get('vin_sigma'):
                 vin += self.rng.gauss(0.0, nz['vin_sigma'])
@@ -711,6 +761,7 @@ class HY3131:
             'ad1_sps': (1.0 / self.ad1_period) if self.ad1_period else 0.0,
             'ad1_code': a.get('code'), 'ad1_error': a.get('error'),
             'ad1_sel': a.get('sel'),
+            'ad1_ac_volts': a.get('ac'), 'ad1_ac_error': a.get('ac_error'),
             'lpf_rms_hz': (1.0 / self.lpf_period) if self.lpf_period else 0.0,
             'counter': self.ctr_state, 'counter_info': self.ctr_info,
             'events': dict(self.counts),

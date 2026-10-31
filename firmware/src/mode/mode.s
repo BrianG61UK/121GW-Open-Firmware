@@ -48,7 +48,7 @@ FUNC meter_apply_mode_range
     movs r4, r0                         @ 0800D2D2
     ldr r0, =meter_mode                 @ 0800D2D4
     ldrb r0, [r0]                       @ 0800D2D6
-    cmp r0, #9                          @ 0800D2D8
+    cmp r0, #9                          @ 0800D2D8 mode 9 OHM
     bne .Lap_0800D2F8                   @ 0800D2DA
     ldr r0, =meter_range                @ 0800D2DC
     ldrb r0, [r0]                       @ 0800D2E0
@@ -105,7 +105,7 @@ FUNC meter_apply_mode_range
 @ ACV with AC+DC: clear the AC and DC components 0x20007E9C / 0x20007EA0
     ldr r0, =meter_mode                 @ 0800D350
     ldrb r0, [r0]                       @ 0800D352
-    cmp r0, #2                          @ 0800D354
+    cmp r0, #2                          @ 0800D354 mode 2 ACV
     bne .Lap_0800D372                   @ 0800D356
     ldr r0, =acdc_active                @ 0800D358
     ldrb r0, [r0]                       @ 0800D35C
@@ -149,7 +149,7 @@ FUNC meter_apply_mode_range
     strb r0, [r1]                       @ 0800D3AC
     ldr r0, =meter_mode                 @ 0800D3AE
     ldrb r0, [r0]                       @ 0800D3B0
-    cmp r0, #0xB                        @ 0800D3B2
+    cmp r0, #0xB                        @ 0800D3B2 mode 11 DIODE
     bne .Lap_0800D3C0                   @ 0800D3B4
     movs r0, #1                         @ 0800D3B6
     ldr r1, =range_manual               @ 0800D3B8
@@ -178,7 +178,7 @@ FUNC meter_apply_mode_range
 @ starts at range 6 (the highest, 50 Mohm); every other mode starts at range 0
     ldr r0, =meter_mode                 @ 0800D3E6
     ldrb r0, [r0]                       @ 0800D3E8
-    cmp r0, #2                          @ 0800D3EA
+    cmp r0, #2                          @ 0800D3EA mode 2 ACV
     bne .Lap_0800D3F8                   @ 0800D3EC
     ldr r0, =acdc_active                @ 0800D3EE
     ldrb r0, [r0]                       @ 0800D3F2
@@ -188,7 +188,7 @@ FUNC meter_apply_mode_range
 .Lap_0800D3F8:
     ldr r0, =meter_mode                 @ 0800D3F8
     ldrb r0, [r0]                       @ 0800D3FA
-    cmp r0, #4                          @ 0800D3FC
+    cmp r0, #4                          @ 0800D3FC mode 4 ACmV
     bne .Lap_0800D41E                   @ 0800D3FE
 @ reached from 0800D3F6 beq (equal / zero) after cmp r0, #0
 .Lap_0800D400:
@@ -210,7 +210,7 @@ FUNC meter_apply_mode_range
 .Lap_0800D41E:
     ldr r0, =meter_mode                 @ 0800D41E
     ldrb r0, [r0]                       @ 0800D420
-    cmp r0, #9                          @ 0800D422
+    cmp r0, #9                          @ 0800D422 mode 9 OHM
     bne .Lap_0800D43A                   @ 0800D424
     ldr r0, =mode_cal_mode              @ 0800D426
     ldrb r0, [r0]                       @ 0800D42A
@@ -284,11 +284,11 @@ FUNC meter_apply_mode_range
     strb r0, [r1]                       @ 0800D4AA
     ldr r0, =meter_mode                 @ 0800D4AC
     ldrb r0, [r0]                       @ 0800D4AE
-    cmp r0, #2                          @ 0800D4B0
+    cmp r0, #2                          @ 0800D4B0 mode 2 ACV
     beq .Lap_0800D4C4                   @ 0800D4B2
     ldr r0, =meter_mode                 @ 0800D4B4
     ldrb r0, [r0]                       @ 0800D4B6
-    cmp r0, #4                          @ 0800D4B8
+    cmp r0, #4                          @ 0800D4B8 mode 4 ACmV
     beq .Lap_0800D4C4                   @ 0800D4BA
     movs r0, #0                         @ 0800D4BC
     ldr r1, =filter_1khz                @ 0800D4BE
@@ -298,7 +298,7 @@ FUNC meter_apply_mode_range
 .Lap_0800D4C4:
     ldr r0, =meter_mode                 @ 0800D4C4
     ldrb r0, [r0]                       @ 0800D4C6
-    cmp r0, #2                          @ 0800D4C8
+    cmp r0, #2                          @ 0800D4C8 mode 2 ACV
     beq .Lap_0800D4D4                   @ 0800D4CA
     movs r0, #0                         @ 0800D4CC
     ldr r1, =acdc_active                @ 0800D4CE
@@ -313,7 +313,7 @@ FUNC meter_apply_mode_range
     strb r0, [r1]                       @ 0800D4E2
     ldr r0, =meter_mode                 @ 0800D4E4
     ldrb r0, [r0]                       @ 0800D4E6
-    cmp r0, #2                          @ 0800D4E8
+    cmp r0, #2                          @ 0800D4E8 mode 2 ACV
     bne .Lap_0800D4F6                   @ 0800D4EA
     ldr r0, =acdc_active                @ 0800D4EC
     ldrb r0, [r0]                       @ 0800D4F0
@@ -323,7 +323,7 @@ FUNC meter_apply_mode_range
 .Lap_0800D4F6:
     ldr r0, =meter_mode                 @ 0800D4F6
     ldrb r0, [r0]                       @ 0800D4F8
-    cmp r0, #4                          @ 0800D4FA
+    cmp r0, #4                          @ 0800D4FA mode 4 ACmV
     beq .Lap_0800D506                   @ 0800D4FC
     movs r0, #0                         @ 0800D4FE
     ldr r1, =peak_hold                  @ 0800D500
@@ -374,7 +374,7 @@ FUNC meter_apply_mode_range
     bl fn_0800D80C                      @ 0800D55C
     ldr r0, =meter_mode                 @ 0800D560
     ldrb r0, [r0]                       @ 0800D562
-    cmp r0, #9                          @ 0800D564
+    cmp r0, #9                          @ 0800D564 mode 9 OHM
     bne .Lap_clear_reading              @ 0800D566
     ldr r0, =meter_range                @ 0800D568
     ldrb r0, [r0]                       @ 0800D56C
@@ -455,7 +455,7 @@ FUNC load_full_scale
 @ DIODE (mode 11): the table entry is range 0 (3 V) or range 1 (15 V) by the 15 V flag, whatever meter_range is
     ldr r0, =meter_mode                 @ 0800D5F4
     ldrb r0, [r0]                       @ 0800D5F8
-    cmp r0, #0xB                        @ 0800D5FA
+    cmp r0, #0xB                        @ 0800D5FA mode 11 DIODE
     bne .L800d5f4_0800D63A              @ 0800D5FC
     ldr r0, =mode_diode_15v             @ 0800D5FE
     ldrb r0, [r0]                       @ 0800D602
@@ -572,7 +572,7 @@ FUNC fn_0800D81E
     bne .L800d81e_0800D870              @ 0800D85C
     ldr r0, =meter_mode                 @ 0800D85E
     ldrb r0, [r0]                       @ 0800D862
-    cmp r0, #6                          @ 0800D864
+    cmp r0, #6                          @ 0800D864 mode 6 FREQ
     beq .L800d81e_0800D870              @ 0800D866
     movs r1, #0                         @ 0800D868
     movs r0, #6                         @ 0800D86A
@@ -587,23 +587,23 @@ FUNC fn_0800D81E
     bne .L800d81e_0800D8AC              @ 0800D874
     ldr r0, =meter_mode                 @ 0800D876
     ldrb r0, [r0]                       @ 0800D87A
-    cmp r0, #0x10                       @ 0800D87C
+    cmp r0, #0x10                       @ 0800D87C mode 16 ACuA
     beq .L800d81e_0800D8A8              @ 0800D87E
     ldr r0, =meter_mode                 @ 0800D880
     ldrb r0, [r0]                       @ 0800D884
-    cmp r0, #0x12                       @ 0800D886
+    cmp r0, #0x12                       @ 0800D886 mode 18 ACmA
     beq .L800d81e_0800D8A8              @ 0800D888
     ldr r0, =meter_mode                 @ 0800D88A
     ldrb r0, [r0]                       @ 0800D88E
-    cmp r0, #0x14                       @ 0800D890
+    cmp r0, #0x14                       @ 0800D890 mode 20 ACA
     beq .L800d81e_0800D8A8              @ 0800D892
     ldr r0, =meter_mode                 @ 0800D894
     ldrb r0, [r0]                       @ 0800D898
-    cmp r0, #2                          @ 0800D89A
+    cmp r0, #2                          @ 0800D89A mode 2 ACV
     beq .L800d81e_0800D8A8              @ 0800D89C
     ldr r0, =meter_mode                 @ 0800D89E
     ldrb r0, [r0]                       @ 0800D8A2
-    cmp r0, #4                          @ 0800D8A4
+    cmp r0, #4                          @ 0800D8A4 mode 4 ACmV
     bne .L800d81e_0800D8AC              @ 0800D8A6
 @ reached from 0800D87E beq (equal / zero) after cmp r0, #0x10
 @              and from 0800D888 beq (equal / zero) after cmp r0, #0x12
@@ -619,7 +619,7 @@ FUNC fn_0800D81E
     bne .L800d81e_0800D8C0              @ 0800D8B0
     ldr r0, =meter_mode                 @ 0800D8B2
     ldrb r0, [r0]                       @ 0800D8B6
-    cmp r0, #0                          @ 0800D8B8
+    cmp r0, #0                          @ 0800D8B8 mode 0 LowZ
     bne .L800d81e_0800D8C0              @ 0800D8BA
     bl fn_08011AA4                      @ 0800D8BC
 @ reached from 0800D8B0 bne (not equal / non-zero) after cmp r4, #1
@@ -648,27 +648,27 @@ FUNC fn_0800DB48
 @ current modes (0x10..0x15) with the burden option: 3, or 0 while the VA channel is the voltage channel
     ldr r0, =meter_mode                 @ 0800DB48
     ldrb r0, [r0]                       @ 0800DB4A
-    cmp r0, #0x10                       @ 0800DB4C
+    cmp r0, #0x10                       @ 0800DB4C mode 16 ACuA
     beq .L800db48_0800DB78              @ 0800DB4E
     ldr r0, =meter_mode                 @ 0800DB50
     ldrb r0, [r0]                       @ 0800DB52
-    cmp r0, #0x12                       @ 0800DB54
+    cmp r0, #0x12                       @ 0800DB54 mode 18 ACmA
     beq .L800db48_0800DB78              @ 0800DB56
     ldr r0, =meter_mode                 @ 0800DB58
     ldrb r0, [r0]                       @ 0800DB5A
-    cmp r0, #0x14                       @ 0800DB5C
+    cmp r0, #0x14                       @ 0800DB5C mode 20 ACA
     beq .L800db48_0800DB78              @ 0800DB5E
     ldr r0, =meter_mode                 @ 0800DB60
     ldrb r0, [r0]                       @ 0800DB62
-    cmp r0, #0x11                       @ 0800DB64
+    cmp r0, #0x11                       @ 0800DB64 mode 17 DCuA
     beq .L800db48_0800DB78              @ 0800DB66
     ldr r0, =meter_mode                 @ 0800DB68
     ldrb r0, [r0]                       @ 0800DB6A
-    cmp r0, #0x13                       @ 0800DB6C
+    cmp r0, #0x13                       @ 0800DB6C mode 19 DCmA
     beq .L800db48_0800DB78              @ 0800DB6E
     ldr r0, =meter_mode                 @ 0800DB70
     ldrb r0, [r0]                       @ 0800DB72
-    cmp r0, #0x15                       @ 0800DB74
+    cmp r0, #0x15                       @ 0800DB74 mode 21 DCA
     bne .L800db48_0800DB9E              @ 0800DB76
 @ reached from 0800DB4E beq (equal / zero) after cmp r0, #0x10
 @              and from 0800DB56 beq (equal / zero) after cmp r0, #0x12
@@ -701,7 +701,7 @@ FUNC fn_0800DB48
 .L800db48_0800DB9E:
     ldr r0, =meter_mode                 @ 0800DB9E
     ldrb r0, [r0]                       @ 0800DBA0
-    cmp r0, #2                          @ 0800DBA2
+    cmp r0, #2                          @ 0800DBA2 mode 2 ACV
     bne .L800db48_0800DBB0              @ 0800DBA4
     movs r0, #3                         @ 0800DBA6
     ldr r1, =mode_settle                @ 0800DBA8
@@ -711,7 +711,7 @@ FUNC fn_0800DB48
 .L800db48_0800DBB0:
     ldr r0, =meter_mode                 @ 0800DBB0
     ldrb r0, [r0]                       @ 0800DBB2
-    cmp r0, #4                          @ 0800DBB4
+    cmp r0, #4                          @ 0800DBB4 mode 4 ACmV
     bne .L800db48_0800DBC2              @ 0800DBB6
     movs r0, #4                         @ 0800DBB8
     ldr r1, =mode_settle                @ 0800DBBA
@@ -721,15 +721,15 @@ FUNC fn_0800DB48
 .L800db48_0800DBC2:
     ldr r0, =meter_mode                 @ 0800DBC2
     ldrb r0, [r0]                       @ 0800DBC4
-    cmp r0, #6                          @ 0800DBC6
+    cmp r0, #6                          @ 0800DBC6 mode 6 FREQ
     beq .L800db48_0800DBDA              @ 0800DBC8
     ldr r0, =meter_mode                 @ 0800DBCA
     ldrb r0, [r0]                       @ 0800DBCC
-    cmp r0, #7                          @ 0800DBCE
+    cmp r0, #7                          @ 0800DBCE mode 7 PULSE
     beq .L800db48_0800DBDA              @ 0800DBD0
     ldr r0, =meter_mode                 @ 0800DBD2
     ldrb r0, [r0]                       @ 0800DBD4
-    cmp r0, #8                          @ 0800DBD6
+    cmp r0, #8                          @ 0800DBD6 mode 8 DUTY
     bne .L800db48_0800DBE4              @ 0800DBD8
 @ reached from 0800DBC8 beq (equal / zero) after cmp r0, #6
 @              and from 0800DBD0 beq (equal / zero) after cmp r0, #7
@@ -742,7 +742,7 @@ FUNC fn_0800DB48
 .L800db48_0800DBE4:
     ldr r0, =meter_mode                 @ 0800DBE4
     ldrb r0, [r0]                       @ 0800DBE6
-    cmp r0, #9                          @ 0800DBE8
+    cmp r0, #9                          @ 0800DBE8 mode 9 OHM
     bne .L800db48_0800DC1A              @ 0800DBEA
     ldr r0, =meter_range                @ 0800DBEC
     ldrb r0, [r0]                       @ 0800DBEE
@@ -772,7 +772,7 @@ FUNC fn_0800DB48
 .L800db48_0800DC1A:
     ldr r0, =meter_mode                 @ 0800DC1A
     ldrb r0, [r0]                       @ 0800DC1C
-    cmp r0, #0xA                        @ 0800DC1E
+    cmp r0, #0xA                        @ 0800DC1E mode 10 BEEP
     bne .L800db48_0800DC2C              @ 0800DC20
     movs r0, #0                         @ 0800DC22
     ldr r1, =mode_settle                @ 0800DC24
@@ -782,7 +782,7 @@ FUNC fn_0800DB48
 .L800db48_0800DC2C:
     ldr r0, =meter_mode                 @ 0800DC2C
     ldrb r0, [r0]                       @ 0800DC2E
-    cmp r0, #1                          @ 0800DC30
+    cmp r0, #1                          @ 0800DC30 mode 1 DCV
     bne .L800db48_0800DC3E              @ 0800DC32
     movs r0, #2                         @ 0800DC34
     ldr r1, =mode_settle                @ 0800DC36
@@ -792,7 +792,7 @@ FUNC fn_0800DB48
 .L800db48_0800DC3E:
     ldr r0, =meter_mode                 @ 0800DC3E
     ldrb r0, [r0]                       @ 0800DC40
-    cmp r0, #3                          @ 0800DC42
+    cmp r0, #3                          @ 0800DC42 mode 3 DCmV
     bne .L800db48_0800DC50              @ 0800DC44
     movs r0, #1                         @ 0800DC46
     ldr r1, =mode_settle                @ 0800DC48
@@ -802,7 +802,7 @@ FUNC fn_0800DB48
 .L800db48_0800DC50:
     ldr r0, =meter_mode                 @ 0800DC50
     ldrb r0, [r0]                       @ 0800DC52
-    cmp r0, #0                          @ 0800DC54
+    cmp r0, #0                          @ 0800DC54 mode 0 LowZ
     bne .L800db48_0800DC6C              @ 0800DC56
     ldr r0, =v_20008098                 @ 0800DC58
     ldrb r0, [r0]                       @ 0800DC5C
@@ -817,7 +817,7 @@ FUNC fn_0800DB48
 .L800db48_0800DC6C:
     ldr r0, =meter_mode                 @ 0800DC6C
     ldrb r0, [r0]                       @ 0800DC6E
-    cmp r0, #0xC                        @ 0800DC70
+    cmp r0, #0xC                        @ 0800DC70 mode 12 CAP
     bne .L800db48_cap_check             @ 0800DC72
     ldr r0, =meter_range                @ 0800DC74
     ldrb r0, [r0]                       @ 0800DC76
@@ -832,7 +832,7 @@ FUNC fn_0800DB48
 .L800db48_cap_check:
     ldr r0, =meter_mode                 @ 0800DC86
     ldrb r0, [r0]                       @ 0800DC88
-    cmp r0, #0xC                        @ 0800DC8A
+    cmp r0, #0xC                        @ 0800DC8A mode 12 CAP
     bne .L800db48_0800DCA8              @ 0800DC8C
     ldr r0, =meter_range                @ 0800DC8E
     ldrb r0, [r0]                       @ 0800DC90
@@ -852,7 +852,7 @@ FUNC fn_0800DB48
 .L800db48_0800DCA8:
     ldr r0, =meter_mode                 @ 0800DCA8
     ldrb r0, [r0]                       @ 0800DCAA
-    cmp r0, #0xC                        @ 0800DCAC
+    cmp r0, #0xC                        @ 0800DCAC mode 12 CAP
     bne .L800db48_default3              @ 0800DCAE
     ldr r0, =meter_range                @ 0800DCB0
     ldrb r0, [r0]                       @ 0800DCB2
@@ -879,7 +879,7 @@ FUNC fn_0800DB48
 .L800db48_after:
     ldr r0, =meter_mode                 @ 0800DCCA
     ldrb r0, [r0]                       @ 0800DCCC
-    cmp r0, #2                          @ 0800DCCE
+    cmp r0, #2                          @ 0800DCCE mode 2 ACV
     bne .L800db48_0800DCE2              @ 0800DCD0
     ldr r0, =acdc_active                @ 0800DCD2
     ldrb r0, [r0]                       @ 0800DCD4
@@ -893,7 +893,7 @@ FUNC fn_0800DB48
 .L800db48_0800DCE2:
     ldr r0, =meter_mode                 @ 0800DCE2
     ldrb r0, [r0]                       @ 0800DCE4
-    cmp r0, #2                          @ 0800DCE6
+    cmp r0, #2                          @ 0800DCE6 mode 2 ACV
     bne .L800db48_0800DCFA              @ 0800DCE8
     ldr r0, =peak_hold                  @ 0800DCEA
     ldrb r0, [r0]                       @ 0800DCEC

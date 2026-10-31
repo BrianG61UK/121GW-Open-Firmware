@@ -4,9 +4,9 @@
 
 # HW-04: the GPIO output level is written before MODER, so the port drives PD1 and PE9 from "not driven" straight to 1
 # where v2.05 first drives them to 0 (0x0801C08A, 0x0801C0C2) and then to 1 (0x0801C094, 0x0801C0CE).  Cold boot and
-# wake from STOP (firmware/requests/W1_to_W10.md item 3; W10_to_W1.md item 3 for the wake step with PE9=Z).
+# wake from STOP (firmware/requests/W1_to_W10.md item 3).  The wake step "PD1 Z -> 1 with PE9=Z,PD1=Z" needs no entry:
+# v2.05 makes it itself at wake (GPIO_Init at 0x0801BD86 with the PD1 output bit already set; whitelist 'power' line).
 HW-04  safety_power  *  pins == PD1 and old == Z and new == 1 and ctx == PE9=1,PD1=Z
-HW-04  safety_power  *  pins == PD1 and old == Z and new == 1 and ctx == PE9=Z,PD1=Z
 HW-04  safety_power  *  pins == PE9 and old == Z and new == 1 and ctx == PE9=Z,PD1=1
 
 # OF-08: calibration-mode entry (MODE at power-on, then REL) does not rewrite the six user-zero records 0x4D0..0x4FC;

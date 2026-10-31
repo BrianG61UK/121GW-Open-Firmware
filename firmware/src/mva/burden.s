@@ -33,7 +33,7 @@
 @            writes 0x20007CDC, 0x20007CE0, 0x20007CE4, 0x20007CE8, 0x20007CEC, 0x20007CF0, 0x20007CF4, 0x20007CF8,
 @            0x20007CFC, 0x20007D00, 0x20007D04
 @ Spec     : analysis/hy3131_modes_ac_current.md 12 (VA.5); ORIGINAL_FIRMWARE_ISSUES.md OF-29
-@ Deviation: OF-29 (mode 24: correction computed on the magnitudes and applied to the magnitude, for every range and both pf8_flag values); D00 is not computed when the current is ignored (flag set), so T1[8], the word after the threshold row, is not read (v2.05 read it and discarded the result)
+@ Deviation: OF-29 (mode 24: correction computed on the magnitudes and applied to the magnitude, for every range and both pf8_flag values when V and I have the same sign, and in range 2 for every sign combination; V and I of opposite signs outside range 2 keep the v2.05 result, no correction, because no table exists for them); D00 is not computed when the current is ignored (flag set), so T1[8], the word after the threshold row, is not read (v2.05 read it and discarded the result)
 @ -----------------------------------------------------------------------------
 FUNC fn_08008ED0
     push {r4, r5, r6, r7, r8, sb, sl, lr} @ 08008ED0
@@ -65,14 +65,15 @@ FUNC fn_08008ED0
     movw r0, #0xea61                     @ 08008F1C  60001
     cmp sl, r0                           @ 08008F20
     bge .Lmva_burden_correct_exit        @ 08008F22  if va_voltage >= (signed) 60001
-    @ mode 24: work on |V| and |I|; b2 = 1 when V and I have opposite signs (only the range 2 tables use b2). OF-29: v2.05 did this in range 2 only and skipped the correction for a negative V or I in the other ranges
+    @ mode 24: work on |V| and |I|; b2 = 1 when V and I have opposite signs (only the range 2 tables use b2). OF-29: v2.05 did this in range 2 only and skipped the correction for a negative V or I in the other ranges; the port does it in every range for V and I of the same sign (and in range 2 for every sign combination)
     ldr r0, =meter_mode                  @ 08008F26
     ldrb r0, [r0]                        @ 08008F2A  r0 = meter_mode (u8)
     cmp r0, #0x18                        @ 08008F2C
     bne .Lmva_burden_correct_pos         @ 08008F2E  if meter_mode != 24
     @ ---- v2.05 0x08008F30..0x08008F38 replaced (see Deviation in the header) ----
     @ OF-29: v2.05 branched to the plain handling here unless meter_range == 2.  Mode 24 now takes the
-    @ magnitude path in every range: the correction is computed on |V| and |I| and added to |V|.
+    @ magnitude path in every range (V and I of opposite signs outside range 2 excepted, see .Lmva_burden_correct_abs):
+    @ the correction is computed on |V| and |I| and added to |V|.
     cmp sb, #0                           @ 08008F3A
     bpl .Lmva_burden_correct_b2b         @ 08008F3E  if sb >= 0
     cmp sl, #0                           @ 08008F40
@@ -87,6 +88,15 @@ FUNC fn_08008ED0
     movs r0, #1                          @ 08008F56
     movs r5, r0                          @ 08008F58
 .Lmva_burden_correct_abs:   @ absolute values
+    @ OF-29 scope: only the range 2 tables have a variant for V and I of opposite signs (b2, pf8_flag = 1, table 0x08028064);
+    @ for the other ranges no table exists for that case, so the v2.05 result is kept there: no correction
+    @ (v2.05 0x08008F70..0x08008F7C left the routine for a negative V or I)
+    cbz r5, 1f                              @ V and I have the same sign (or one of them is zero)
+    ldr r0, =meter_range
+    ldrb r0, [r0]                           @ r0 = meter_range (u8)
+    cmp r0, #2
+    bne .Lmva_burden_correct_exit           @ opposite signs outside range 2: va_voltage stays as measured
+1:
     cmp sb, #0                           @ 08008F5A
     bpl .Lmva_burden_correct_absv        @ 08008F5E  if sb >= 0
     rsbs sb, sb, #0                      @ 08008F60  sb = -sb

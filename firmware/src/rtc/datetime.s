@@ -643,8 +643,9 @@ ENDFUNC fn_080188A0
 @ RAM      : reads rtc_edit, rtc_hour, rtc_hour_edit, rtc_minute, rtc_minute_edit
 @ Deviation: OF-41/NF-11: v2.05 calls this from the TIM2 handler (0x080246FC); the port calls it from the main loop
 @            when rtc_blink_request is set (loop step 4)
-@ Note     : Draws the live time while rtc_blink_phase is 0 and the edit buffers (rtc_hour_edit, rtc_minute_edit)
-@            while it is non-zero, so the digits blink while the page is being edited.
+@ Note     : Draws the edit buffers (rtc_hour_edit, rtc_minute_edit) while the edit mode rtc_edit is non-zero and the
+@            live time (rtc_hour, rtc_minute) otherwise, through fn_080188A0; the colon between hours and minutes is
+@            shown in one phase of rtc_blink_phase (toggled by the TIM2 handler) and hidden in the other.
 @ -----------------------------------------------------------------------------
 FUNC fn_0801896C
     push {r4, lr}                           @ 0801896C

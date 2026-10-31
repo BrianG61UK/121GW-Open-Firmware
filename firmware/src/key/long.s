@@ -233,11 +233,11 @@ FUNC handle_pg8_15_long_press
 .Llp_080163A6:
     ldr r0, =meter_mode                 @ 080163A6
     ldrb r0, [r0]                       @ 080163AA
-    cmp r0, #2                          @ 080163AC
+    cmp r0, #2                          @ 080163AC mode 2 ACV
     beq .Llp_rel_filter                 @ 080163AE
     ldr r0, =meter_mode                 @ 080163B0
     ldrb r0, [r0]                       @ 080163B4
-    cmp r0, #4                          @ 080163B6
+    cmp r0, #4                          @ 080163B6 mode 4 ACmV
     bne .Llp_rel_current                @ 080163B8
 
 @ ACV or ACmV: with AC+DC on the filter cannot be used
@@ -276,27 +276,27 @@ FUNC handle_pg8_15_long_press
 .Llp_rel_current:
     ldr r0, =meter_mode                 @ 080163F0
     ldrb r0, [r0]                       @ 080163F4
-    cmp r0, #0x10                       @ 080163F6
+    cmp r0, #0x10                       @ 080163F6 mode 16 ACuA
     beq .Llp_rel_zero                   @ 080163F8
     ldr r0, =meter_mode                 @ 080163FA
     ldrb r0, [r0]                       @ 080163FE
-    cmp r0, #0x12                       @ 08016400
+    cmp r0, #0x12                       @ 08016400 mode 18 ACmA
     beq .Llp_rel_zero                   @ 08016402
     ldr r0, =meter_mode                 @ 08016404
     ldrb r0, [r0]                       @ 08016408
-    cmp r0, #0x14                       @ 0801640A
+    cmp r0, #0x14                       @ 0801640A mode 20 ACA
     beq .Llp_rel_zero                   @ 0801640C
     ldr r0, =meter_mode                 @ 0801640E
     ldrb r0, [r0]                       @ 08016412
-    cmp r0, #0x11                       @ 08016414
+    cmp r0, #0x11                       @ 08016414 mode 17 DCuA
     beq .Llp_rel_zero                   @ 08016416
     ldr r0, =meter_mode                 @ 08016418
     ldrb r0, [r0]                       @ 0801641C
-    cmp r0, #0x13                       @ 0801641E
+    cmp r0, #0x13                       @ 0801641E mode 19 DCmA
     beq .Llp_rel_zero                   @ 08016420
     ldr r0, =meter_mode                 @ 08016422
     ldrb r0, [r0]                       @ 08016426
-    cmp r0, #0x15                       @ 08016428
+    cmp r0, #0x15                       @ 08016428 mode 21 DCA
     bne .Llp_rel_refuse                 @ 0801642A
 
 @ user zero += reading (RAM 0x20007E0C), then store the new user zero in the EEPROM record of this mode
@@ -395,7 +395,7 @@ FUNC handle_pg8_15_long_press
     beq .Llp_0801650C                   @ 080164D6
     ldr r0, =meter_mode                 @ 080164D8
     ldrb r0, [r0]                       @ 080164DC
-    cmp r0, #9                          @ 080164DE
+    cmp r0, #9                          @ 080164DE mode 9 OHM
     bne .Llp_080164FE                   @ 080164E0
     ldr r0, =meter_range                @ 080164E2
     ldrb r0, [r0]                       @ 080164E6

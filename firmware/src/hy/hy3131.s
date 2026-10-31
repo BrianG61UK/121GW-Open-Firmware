@@ -62,11 +62,12 @@ ENDFUNC hy_check_mode_range
 @ Out      : r0 = 0 applied, 1 refused (bounds, DESIGN.md 4.1 item 2; v2.05 returns nothing)
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main only
-@ RAM      : none directly
-@ Spec     : analysis/hy3131_model.md 3; DESIGN.md 4.1
-@ Deviation: NF-15
+@ RAM      : production: writes mdc_first_mean
+@ Spec     : analysis/hy3131_model.md 3; DESIGN.md 4.1; analysis/autorange_and_scheduler.md 5.2 P5
+@ Deviation: NF-15, IMP-01
 @ v2.05 order kept: configuration row, interrupt enable, counter restart (0x0800B982, 0x0800B98A, 0x0800B98E).  A refused step
-@ ends the sequence: no INTE or counter write follows a row that was not written.
+@ ends the sequence: no INTE or counter write follows a row that was not written.  Production: a completed sequence arms
+@ mdc_first_mean (IMP-01 P5: first displayed value of the new configuration from a short mean, MDC).
 @ -----------------------------------------------------------------------------
 FUNC fn_0800B974
     push {r3, r4, r5, lr}              @ 0x0800B974
@@ -84,6 +85,11 @@ FUNC fn_0800B974
     bl hy3131_set_irq_enable                @ v2.05 0x0800B98A: INTF = 0, INTE per mode
     cbnz r0, .Lap_refused
     bl hy3131_counter_restart               @ v2.05 0x0800B98E: counter off, preset, counter on
+.if LOOP_V205 == 0
+    movs r0, #1
+    ldr r1, =mdc_first_mean
+    strb r0, [r1]                           @ IMP-01 P5: the first value after this configuration is a short mean (MDC ad1_accumulate_average)
+.endif
     movs r0, #0
     pop {r3, r4, r5, pc}
 .Lap_refused:
@@ -1052,6 +1058,14 @@ ENDFUNC hy3131_counter_restart
 .if LOOP_V205
 @ -----------------------------------------------------------------------------
 @ hy_counter_restart_step (baseline) - nothing is ever pending: the restart ran to completion inside the call
+@ Replaces : new (the production variant below finishes a split restart; v2.05 has no such step)
+@ In       : -
+@ Out      : r0 = 1 (idle)
+@ Clobbers : r0
+@ Context  : main only (hy3131_poll does not call it in the baseline)
+@ RAM      : none
+@ Spec     : DESIGN.md 3.5, 6.13
+@ Deviation: none (baseline keeps the v2.05 blocking restart)
 @ -----------------------------------------------------------------------------
 FUNC hy_counter_restart_step
     movs r0, #1                             @ 1 = done / idle

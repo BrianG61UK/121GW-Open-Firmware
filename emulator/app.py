@@ -32,6 +32,7 @@ from emu.periph.rtc import RTC
 from emu.nju6350 import NJU6350
 from emu.hy3131 import HY3131
 from emu.frontend import make_frontend, FrontendUnavailable
+from emu.safety import Safety
 
 APP_BASE = 0x08006000
 
@@ -59,8 +60,12 @@ class Emulator:
     sdcard_path = None
     sdcard_mb = 512
 
-    def __init__(self, inputs, app=None, eeprom=None, speed=1.0):
+    def __init__(self, inputs, app=None, eeprom=None, speed=1.0, hw_cal=None):
         self.inputs = inputs
+        # physical calibration of the emulated front end (frontend._Base.hw_cal): the EEPROM as first loaded, or the
+        # image given here (raw bytes from EEPROM offset 0), kept across power cycles and firmware EEPROM writes
+        self.hw_cal = None
+        self.hw_cal_path = hw_cal
         self.app_path = app or os.path.join(inputs, 'EEVBlog2_05.bin')
         self.eeprom_path = eeprom
         self.speed = speed                  # 1.0 = real time
@@ -137,8 +142,12 @@ class Emulator:
             self.frontend = make_frontend('calibrated', m)
         self.hy = HY3131(m, self.gpio['F'], self.frontend, seed=self.hy_seed, noise=self.hy_noise)
         self.frontend.attach(self.hy)
-        self.stimulus = getattr(self, 'stimulus', {'kind': 'V', 'value': 0.0, 'ac': False, 'freq': 0.0})
+        # default: test leads open; the environment (mains pickup, emu/frontend.py ENV_DEFAULT) is not part of the
+        # meter, and both live across power cycles like the stimulus
+        self.stimulus = getattr(self, 'stimulus', {'kind': 'open'})
         self.frontend.set_stimulus(self.stimulus)
+        self.environment = getattr(self, 'environment', dict(self.frontend.env))
+        self.frontend.set_environment(self.environment)
         if hasattr(self.frontend, 'set_pa4'):        # board temperature <-> PA4 thermistor (frontend.py)
             self.frontend.set_pa4(self.analog['PA4'], self.adc.vref_volts)
         # images
@@ -148,6 +157,14 @@ class Emulator:
         if self.eeprom_path:
             m.load(EEPROM_BASE, open(self.eeprom_path, 'rb').read())
         self.flash.reset()
+        if self.hw_cal is None:                 # first build: the physical calibration is the EEPROM as loaded
+            hw = bytearray(m.eeprom)
+            if self.hw_cal_path:
+                img = open(self.hw_cal_path, 'rb').read()
+                hw[:len(img)] = img[:len(hw)]
+            self.hw_cal = bytes(hw)
+        self.frontend.hw_cal = self.hw_cal
+        self.frontend.v205_image = open(os.path.join(self.inputs, 'EEVBlog2_05.bin'), 'rb').read()
         # board
         self.board = Board(self.gpio)
         self.board.keys = set(self.board_state['keys'])
@@ -155,6 +172,7 @@ class Emulator:
         self.board.jacks = set(self.board_state['jacks'])
         self.board.apply()
         self.frontend.board = self.board            # dial position for the netlist backend's rotary row
+        self.safety = Safety(self)                  # hardware-safety monitor (emu/safety.py), stops the run on damage
         m.reset()
 
     def power_cycle(self):
@@ -261,18 +279,23 @@ class Emulator:
                 'unmodelled': len(m.unmodelled),
                 'analog': self.analog,
                 'stimulus': self.frontend.stim,
+                'environment': dict(self.frontend.env),
                 'frontend': dict(self.frontend.status(), error=self.frontend_error),
                 'hy3131': self.hy.snapshot(),
                 'sdcard': self.sd_snapshot(),
                 'stop': m._stop_reason,
+                'safety': list(self.safety.violations),
                 'log': [f'{c / max(1, m.sysclk_hz) * 1000:10.3f} ms  {t}' for c, t in m.log[-200:]],
             }
 
     def command(self, c):
         """One UI / test command (ui/server.py POST /input).  'input' sets the stimulus at the jacks:
-        {'kind': 'V' | 'A' | 'ohm' | 'Hz' | 'F' | 'degC' | 'diode' | 'VA', 'value': x, 'ac': bool, 'freq': Hz,
-         'duty': 0..1, 'width': s, 'dc': V, 'amps': A, 'board': degC or None}
-        (meaning of each field: emu/frontend.py module docstring).  A 'board' temperature also sets the PA4
+        {'kind': 'open' | 'V' | 'A' | 'ohm' | 'Hz' | 'F' | 'degC' | 'diode' | 'VA', 'value': x, 'ac': bool,
+         'freq': Hz, 'duty': 0..1, 'width': s, 'dc': V, 'amps': A, 'board': degC or None}
+        (meaning of each field: emu/frontend.py module docstring; 'open' = test leads open, the default).
+        'environment' sets the mains pickup around the meter (environment, not meter; emu/frontend.py ENV_DEFAULT):
+        {'pickup_hz': 50 | 60, 'pickup_v': V rms of the open-circuit source (0 = shielded / off), 'coupling_pf': pF,
+         'drift': 0..<1}; keys left out keep their value.  A 'board' temperature also sets the PA4
         thermistor voltage; an 'analog' PA4 command sets the voltage directly and the board temperature follows it.
         Currents flow only through a plugged current jack ('jack' command, A or mA)."""
         with self.lock:
@@ -308,6 +331,9 @@ class Emulator:
                     self.analog['PA4'] = v
                     self.adc.set_channel_volts(4, v)
                     self.frontend.set_pa4(v, self.adc.vref_volts)
+            elif 'environment' in c:
+                self.frontend.set_environment(c['environment'])
+                self.environment = dict(self.frontend.env)
             elif 'sdcard' in c:
                 self.set_sdcard(c['sdcard'])
             elif 'speed' in c:
@@ -320,6 +346,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--inputs', default=os.path.join(HERE, '..', 'inputs', 'binaries'))
     ap.add_argument('--app'); ap.add_argument('--eeprom')
+    ap.add_argument('--hw-cal', help='EEPROM image describing the physical calibration of the front end '
+                    '(default: the EEPROM as loaded at start)')
     ap.add_argument('--port', type=int, default=8121)
     ap.add_argument('--speed', type=float, default=1.0)
     ap.add_argument('--no-ui', action='store_true')
@@ -329,7 +357,7 @@ def main():
     a = ap.parse_args()
     Emulator.frontend_kind = a.frontend
     Emulator.sdcard_path, Emulator.sdcard_mb = a.sdcard, a.sdcard_mb
-    emu = Emulator(a.inputs, a.app, a.eeprom, a.speed)
+    emu = Emulator(a.inputs, a.app, a.eeprom, a.speed, hw_cal=a.hw_cal)
     if not a.no_ui:
         from ui.server import serve
         serve(emu, a.port)

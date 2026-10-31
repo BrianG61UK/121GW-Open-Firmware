@@ -54,6 +54,7 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-39 | ADC | ADC_Init passes an uninitialised stack word that is ORed unmasked into ADC_CR2 (value: core register r6 as left at reset) | low | open |
 | OF-40 | Power-down | The TIM2 jack-warning beep can set the buzzer output again after power-down has cleared it (chirp of about 69 ms after the "-oFF-" beep) | low | open |
 | OF-41 | Display | Setup page 7 (time): the TIM2 handler converts and draws the time through the same digit globals and text buffer the main loop uses for the reading; the reading shows wrong digits for about 0.22 s | low | open |
+| OF-42 | SD card | The disk read routine `FUN_08023F7E` reads one sector whatever sector count the file system asks for; no v2.05 caller asks for more than one | low | open |
 
 ## Details
 
@@ -600,3 +601,20 @@ Without the preset (20 s, 40 handler draws, 88 main draws of about 160 us) no ov
 Impact: on the time setup page the main reading can briefly show wrong digits (estimated from the measured window:
 about 4.4 draws/s x 160 us, i.e. roughly 0.07 % of the half-second ticks). Cosmetic, transient.
 Port: the handler only sets a request; main draws the page (NF-11).
+
+### OF-42 — disk read ignores the sector count
+`FUN_08023F7E` (disk_read, FatFs `disk_read(drv, buff, sector, count)`) moves its fourth argument into r6 at `0x08023F8A`
+and never uses it again (`0x08023F8C`..`0x08023FB4`): it issues one block read (`FUN_08022FCE`, CMD16 + CMD17 for
+`sector << 9`), polls the card state (`FUN_0802268A`, at most 0x4E20 times) and returns 0 or 2, whatever the count.
+The FatFs read routine `FUN_08021D72` (f_read) passes a count above 1 when the caller's request holds whole sectors:
+`0x08021E4E` r8 = bytes >> 9, clamped to the sectors left in the cluster (`0x08021E58`..`0x08021E72`), passed in r3 at
+`0x08021E74`..`0x08021E80`. With such a count only the first sector arrives; f_read then advances its file pointer
+and its destination by 0x200 x count (`0x08021EBE`..`0x08021EC6`, then the loop tail `0x08021F48`), so the rest of the caller's buffer keeps its old content and the call reports
+success.
+Not visible in v2.05: every other caller passes 1 (`0x08020C4A`, `0x080216B8`, `0x08021A76`, `0x08021EFE`,
+`0x08022106`, `0x080223EC`), and the f_read callers ask for at most 0x200 bytes (cal.bin loop `0x0801CDC2`, `0x0801CE26`,
+`0x0801CF56`, `0x0801CFAC` and the remainders `0x0801CE94`, `0x0801D00C`; log verification `0x0801F706`..`0x0801F71E`).
+Impact: none in v2.05; a future caller reading 1024 bytes or more in one f_read from a sector-aligned position would
+get one correct sector and stale data after it.
+Port: `disk_read` reads `count` sectors in turn (CMD16 + CMD17 + status poll each, as `disk_write` writes them) and stops at the
+first failure; with count 1 it is the v2.05 routine (deviation OF-42, module SD).

@@ -39,7 +39,7 @@ FUNC cycle_mode_on_bit0
 @ LowZ (0) has no cycle and TEMP/BEEP/... follow the ladder below
     ldr r0, =meter_mode                 @ 08014508
     ldrb r0, [r0]                       @ 0801450C
-    cmp r0, #1                          @ 0801450E
+    cmp r0, #1                          @ 0801450E mode 1 DCV
     beq .L8014500_08014576              @ 08014510
     bcc .L8014500_after                 @ 08014512
     cmp r0, #3                          @ 08014516
@@ -328,15 +328,15 @@ FUNC cycle_mode_on_bit0
     strb r0, [r1]                       @ 080146BC
     ldr r0, =meter_mode                 @ 080146BE
     ldrb r0, [r0]                       @ 080146C2
-    cmp r0, #6                          @ 080146C4
+    cmp r0, #6                          @ 080146C4 mode 6 FREQ
     beq .L8014500_080146DC              @ 080146C6
     ldr r0, =meter_mode                 @ 080146C8
     ldrb r0, [r0]                       @ 080146CC
-    cmp r0, #7                          @ 080146CE
+    cmp r0, #7                          @ 080146CE mode 7 PULSE
     beq .L8014500_080146DC              @ 080146D0
     ldr r0, =meter_mode                 @ 080146D2
     ldrb r0, [r0]                       @ 080146D6
-    cmp r0, #8                          @ 080146D8
+    cmp r0, #8                          @ 080146D8 mode 8 DUTY
     bne .L8014500_080146E4              @ 080146DA
 @ reached from 080146C6 beq (equal / zero) after cmp r0, #6
 @              and from 080146D0 beq (equal / zero) after cmp r0, #7
@@ -724,23 +724,23 @@ FUNC fn_08019DA2
 .L8019da2_08019DCE:
     ldr r1, =meter_mode                 @ 08019DCE
     ldrb r1, [r1]                       @ 08019DD2
-    cmp r1, #0xB                        @ 08019DD4
+    cmp r1, #0xB                        @ 08019DD4 mode 11 DIODE
     beq .L8019da2_08019E00              @ 08019DD6
     ldr r1, =meter_mode                 @ 08019DD8
     ldrb r1, [r1]                       @ 08019DDC
-    cmp r1, #0xA                        @ 08019DDE
+    cmp r1, #0xA                        @ 08019DDE mode 10 BEEP
     beq .L8019da2_08019E00              @ 08019DE0
     ldr r1, =meter_mode                 @ 08019DE2
     ldrb r1, [r1]                       @ 08019DE6
-    cmp r1, #5                          @ 08019DE8
+    cmp r1, #5                          @ 08019DE8 mode 5 TEMP
     beq .L8019da2_08019E00              @ 08019DEA
     ldr r1, =meter_mode                 @ 08019DEC
     ldrb r1, [r1]                       @ 08019DF0
-    cmp r1, #0                          @ 08019DF2
+    cmp r1, #0                          @ 08019DF2 mode 0 LowZ
     beq .L8019da2_08019E00              @ 08019DF4
     ldr r1, =meter_mode                 @ 08019DF6
     ldrb r1, [r1]                       @ 08019DFA
-    cmp r1, #8                          @ 08019DFC
+    cmp r1, #8                          @ 08019DFC mode 8 DUTY
     bne .L8019da2_08019E06              @ 08019DFE
 @ reached from 08019DD6 beq (equal / zero) after cmp r1, #0xB
 @              and from 08019DE0 beq (equal / zero) after cmp r1, #0xA

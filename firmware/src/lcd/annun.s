@@ -2226,8 +2226,9 @@ ENDFUNC fn_0801A81C
 @ In       : -
 @ Out      : -   (sets the commit request 0x2000805B)
 @ Context  : main only; called by the short-press handler (RANGE key in the power-on window, DESIGN.md 7.1)
-@ RAM      : lcd_shadow words 0, 2, 4, 6 = 0xFFFFFFFF; words 1, 3, 5, 7 |= 0xFFF
+@ RAM      : lcd_shadow words 0, 2, 4, 6 = 0xFFFFFFFF; words 1, 3, 5, 7 |= 0xFFF; ui_lamp_test = 1 (production)
 @ Spec     : analysis/lcd_map.md 5 (the only code that lights the unmapped glass elements)
+@ Deviation: IMP-02 (production: ui_lamp_test keeps the display refresh from overwriting the lamp test while the window is open)
 @
 @ Clobbers : r0, r1 (v2.05 regeffects.txt)
 @ -----------------------------------------------------------------------------
@@ -2271,6 +2272,11 @@ FUNC fn_0801A89C
     movs r0, #1                              @ 0801A90C
     ldr r1, =v_2000805B                      @ 0801A90E &LCD commit request
     strb r0, [r1, #0]                        @ 0801A912
+    .if LOOP_V205 == 0
+    ldr r1, =ui_lamp_test
+    strb r0, [r1]                            @ production (IMP-02): the refresh must not draw over the lamp test until the power-on
+                                             @ window closes (ui_bootwin_gate); the baseline loop does not refresh during the window
+    .endif
     bx lr                                    @ 0801A914
 ENDFUNC fn_0801A89C
     .ltorg

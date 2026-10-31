@@ -34,7 +34,8 @@ lcd_last:
 @ lcd_last_valid: 1 while lcd_last equals LCD_RAM0..7; cleared by lcd_init and by a partial commit
 lcd_last_valid:
     .space 1
-@ lcd_commit_pending: 1 while a commit was deferred because UDR was still set (production); cleared by a commit
+@ lcd_commit_pending: nonzero while a commit was deferred because UDR was still set (production); 1 = a partial commit is
+@ owed (the retry decides again), 2 = a full commit is owed (the retry stays full); cleared by a commit
 lcd_commit_pending:
     .space 1
 @ lcd_init_fault: 1 if lcd_init gave up waiting for ENS or RDY (HW-07); 0 otherwise.  Read by the tests.
@@ -56,11 +57,20 @@ lcd_init_fault:
 @            0x20008053 (cleared by a full commit), lcd_last, lcd_last_valid, lcd_commit_pending (production)
 @ Spec     : analysis/lcd_map.md 1 (word i -> LCD_RAM 0x40002414 + 4i, partial commit rule); RM0038 16.5.3 (UDR)
 @ Deviation: HW-07 (the UDR wait is bounded by LCD_WAIT_POLLS; on a timeout nothing is written), IMP-06 / OF-31
-@            (production: no wait; a commit that finds UDR set is deferred and repeated by lcd_commit_retry; the
-@            words are written only if they differ from the last committed copy)
+@            (production: no wait; a commit that finds UDR set is deferred and repeated by lcd_commit_retry, a deferred full
+@            commit stays a full commit; the words are written only if they differ from the last committed copy)
 @ -----------------------------------------------------------------------------
 FUNC lcd_commit_shadow
     push {r4, lr}                            @ 0801B304 r4 = HW-07 poll budget in the baseline build (v2.05: push {r7, lr})
+    .if LOOP_V205 == 0
+    @ production: a full commit that was deferred (lcd_commit_pending = 2) stays a full commit at the retry.  The partial
+    @ rule below reads state that can change between the deferral and the retry (logging flag 0x20007FE1 cleared); a switch
+    @ to the partial commit would drop the non-bargraph shadow changes of the deferred commit, which v2.05 commits at once.
+    ldr r0, =lcd_commit_pending
+    ldrb r0, [r0]
+    cmp r0, #2
+    beq .L0801B32E                           @ full commit owed: skip the partial rule
+    .endif
     @ partial rule (analysis/lcd_map.md 1): r0 = hold_stage2 AND NOT 0x20007FE1; r1 = NOT 0x20008053; partial commit when both are non-zero
     ldr r0, =hold_stage2                     @ 0801B306 &hold_stage2
     ldrb r0, [r0, #0]                        @ 0801B30A
@@ -80,7 +90,6 @@ FUNC lcd_commit_shadow
 .L0801B32E:
     .if LOOP_V205
     @ baseline (LOOP_V205 = 1): v2.05 sequence with a bounded UDR wait (HW-07)
-.L0801B32E:                                @ reached from 0801B326 beq (equal / zero)
     movs r0, #0                              @ 0801B32E
     ldr r1, =v_20008053                      @ 0801B330 &force-full-commit flag
     strb r0, [r1, #0]                        @ 0801B334
@@ -140,9 +149,9 @@ FUNC lcd_commit_shadow
     bl lcd_commit_words                     @ write the words if they changed, request the update
     b .L0801B394
 .Lcs_defer:
-    movs r0, #1
+    movs r0, #2
     ldr r1, =lcd_commit_pending
-    strb r0, [r1]                           @ a commit is owed
+    strb r0, [r1]                           @ a full commit is owed (2): the retry does not apply the partial rule again
     .endif
 
 .L0801B394:                                @ reached from 0801B32C b; falls in
@@ -1134,17 +1143,18 @@ ENDFUNC lcd_commit_words
 @ In       : -
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags (tail call of lcd_commit_shadow)
-@ Context  : main only; called at the start of every display refresh (fn_08016D34).  A loop that stays blocking in production
+@ Context  : main only; called in every display refresh (fn_08016D34) and in the "-oFF-" beep loop of enter_stop_and_reinit.  A loop that stays blocking in production
 @            mode and does not pass through fn_08016D34 must call it in its polling loop, otherwise a deferred commit waits
 @            until that loop ends (requests W3_to_W7.md item 4, W3_to_W1.md item 8)
 @ RAM      : reads lcd_commit_pending
+@ Spec     : DESIGN.md 3.5 (production loop: commit deferred while UDR is set, never waits); RM0038 16.5.3 (UDR)
 @ Deviation: IMP-06
 @ -----------------------------------------------------------------------------
 FUNC lcd_commit_retry
     ldr r0, =lcd_commit_pending
     ldrb r0, [r0]
     cbz r0, .Lcr_none                       @ nothing owed
-    b lcd_commit_shadow                     @ tail call: decides partial or full again and defers again if UDR is still set
+    b lcd_commit_shadow                     @ tail call: repeats the owed kind (a full commit stays full), defers again if UDR is still set
 .Lcr_none:
     bx lr
     .ltorg

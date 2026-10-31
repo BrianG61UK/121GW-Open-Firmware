@@ -21,6 +21,9 @@
     .include "config.inc"
 
 
+    .equ MDC_NFIRST, 4                      @ samples in the first displayed mean after a change (ARS 5.2 P5, N_first = 4)
+    .equ MDC_FIRST_MASK, (1<<1)|(1<<2)|(1<<3)|(1<<4)|(1<<9)|(1<<10)|(0x3F<<16)   @ modes 1, 2, 3, 4, 9, 10 and the currents 16..21
+
     .section .text.mdc.ad1, "ax", %progbits
 
 @ -----------------------------------------------------------------------------
@@ -62,13 +65,17 @@ ENDFUNC fn_080062F8
 @ Out      : r0 = 1 a mean was completed (0x20007DD4), 0 otherwise
 @ Clobbers : r0-r3, r12, flags (r4 preserved)
 @ Context  : main only
-@ RAM      : reads  mdc_ohm_samples, 0x2000803C meter_mode, 0x2000803D meter_range, 0x20007DD0, 0x20008080
-@            writes 0x20007DD0, 0x20007DD4, 0x20008080
-@ Spec     : analysis/hy3131_model.md 4.1 (N), hy3131_modes_misc.md 2
-@ Deviation: IMP-03 (OHM block size, production only)
+@ RAM      : reads  mdc_ohm_samples, 0x2000803C meter_mode, 0x2000803D meter_range, 0x20007DD0, 0x20008080, production: mdc_first_mean,
+@            0x20000238, 0x200080BA, 0x2000808A, 0x200080A5
+@            writes 0x20007DD0, 0x20007DD4, 0x20008080, production: mdc_first_mean
+@ Spec     : analysis/hy3131_model.md 4.1 (N), hy3131_modes_misc.md 2; analysis/autorange_and_scheduler.md 5.2 P5, 7, 8.2
+@ Deviation: IMP-03 (OHM block size, production only), IMP-04 (BEEP block of 64, production only), IMP-01 (first mean, production only)
 @ N = 16 for every mode except OHM (mode 9): v2.05 8 samples (range 5: 1 sample).  Sum and mean are signed 32-bit; the mean is
 @ sum / count with SDIV (truncation toward zero).  Production: N for OHM ranges 0..6 = 8, 8, 32, 16, 16, 1, 8 (mdc_ohm_samples).
 @ The block time is then 100 ms (r0, r1), 100 ms (r2, r3, r4) and 200 ms / 200 ms (r5, r6) at the row rates of hy3131_model.md 3.
+@ Production, BEEP (mode 10): N = 64 (100 ms at the 640 sps row, ARS 8.2); v2.05 N = 16.
+@ Production, IMP-01 P5: when fn_0800B974 has armed mdc_first_mean and the count reaches MDC_NFIRST = 4 in an eligible mode with the v2.05 settle count at 0,
+@ the mean of those 4 samples is published (r0 = 1) without ending the block; see .Lac_early.
 @ -----------------------------------------------------------------------------
 FUNC ad1_accumulate_average
     push {r4}                          @ 0x08006342
@@ -104,7 +111,11 @@ FUNC ad1_accumulate_average
     ldr r3, =meter_mode                @ 0x08006382 pool 0x08006AD0 = 0x2000803C
     ldrb r3, [r3, #0]                  @ 0x08006386
     cmp r3, #9                         @ 0x08006388  mode 9 = OHM
+.if LOOP_V205 == 0
+    bne .Lac_notohm                         @ production: BEEP (mode 10) gets a longer block, below
+.else
     bne .L080063B0                     @ 0x0800638A
+.endif
     ldr r3, =meter_range               @ 0x0800638C pool 0x08006CF8 = 0x2000803D
     ldrb r3, [r3, #0]                  @ 0x08006390
     cmp r3, #5                         @ 0x08006392  range 5: N = 1
@@ -134,6 +145,13 @@ FUNC ad1_accumulate_average
 .endif
     movs r3, #8                             @ v2.05 0x080063AC: other OHM ranges (0..4): N = 8
     movs r2, r3
+.if LOOP_V205 == 0
+    b .L080063B0
+.Lac_notohm:                                @ reached from the mode 9 test: any other mode, r3 = mode
+    cmp r3, #10
+    bne .L080063B0                          @ N = 16 as v2.05
+    movs r2, #64                            @ IMP-04 (ARS 8.2): BEEP displays a block of >= 100 ms, 64 samples at its 640 sps row
+.endif
 .L080063B0:                              @ reached from 0x08006380 b, 0x0800638A bne, 0x0800639A b, 0x080063AA b
     @ ---- accumulate: count 0x20008080 = 0 starts a new sum (first sample stored), otherwise sum += sample ----
     ldr r3, =v_20008080                @ 0x080063B0 pool 0x08006D18 = 0x20008080
@@ -158,7 +176,11 @@ FUNC ad1_accumulate_average
     ldr r3, =v_20008080                @ 0x080063DE pool 0x08006D18 = 0x20008080
     ldrb r3, [r3, #0]                  @ 0x080063E2
     cmp r3, r2                         @ 0x080063E4  count >= N?
+.if LOOP_V205 == 0
+    blt .Lac_early                          @ production: a block that is not complete may still give the first mean (IMP-01 P5)
+.else
     blt .L08006412                     @ 0x080063E6
+.endif
     ldr r3, =v_20007DD0                @ 0x080063E8 pool 0x08006D1C = 0x20007DD0
     ldr r3, [r3, #0]                   @ 0x080063EC
     ldr r4, =v_20008080                @ 0x080063EE pool 0x08006D18 = 0x20008080
@@ -174,10 +196,69 @@ FUNC ad1_accumulate_average
     str r3, [r4, #0]                   @ 0x0800640C
     movs r3, #1                        @ 0x0800640E
     movs r0, r3                        @ 0x08006410  r0 = 1: mean complete
+.if LOOP_V205 == 0
+    ldr r3, =v_20000238                     @ IMP-01 P5: a mean published while v2.05 still discards means (settle count != 0) is not the
+    ldrb r3, [r3]                           @ first displayed value, so the request stays; a mean that is displayed ends it
+    cbnz r3, .L08006412
+    ldr r4, =mdc_first_mean
+    strb r3, [r4]                           @ r3 = 0: the first value of this change is out
+.endif
 .L08006412:                              @ reached from 0x080063E6 blt
     uxtb r0, r0                        @ 0x08006412
     pop {r4}                           @ 0x08006414
     bx lr                              @ 0x08006416
+.if LOOP_V205 == 0
+@ ---- IMP-01 P5: count < N.  After a configuration change the first displayed value is the mean of MDC_NFIRST clean samples (ARS 5.2 P5) ----
+@ The block is not restarted: it goes on to N samples (window grows to the v2.05 N), so only the first value after a change is a short mean.
+@ Conditions: the apply armed mdc_first_mean (fn_0800B974), the count is exactly MDC_NFIRST, v2.05 no longer discards means of this change
+@ (settle count 0x20000238 = 0: otherwise this block's mean would be discarded anyway and the discard time must stay as in the CP profile of AR),
+@ and the mode is one whose handler displays every mean it is given: DCV, ACV (AC+DC off), DCmV, ACmV, OHM, BEEP and the current modes unless
+@ the two-channel scheme counts means (0x200080A5 = 1 outside calibration mode: fn_08007FA8 and fn_0800664A switch channels after 3 means).
+.Lac_early:                                 @ r0 = 0, r3 = count, r2 = N
+    cmp r3, #MDC_NFIRST
+    bne .L08006412                          @ not the first-mean count
+    ldr r1, =mdc_first_mean
+    ldrb r1, [r1]
+    cmp r1, #0
+    beq .L08006412                          @ no configuration change pending
+    ldr r1, =v_20000238
+    ldrb r1, [r1]
+    cmp r1, #0
+    bne .L08006412                          @ v2.05 still discards means after this change
+    ldr r1, =meter_mode
+    ldrb r1, [r1]                           @ r1 = mode
+    movs r4, #1
+    lsls r4, r4, r1                         @ bit of the mode (0 for a mode above 31)
+    ldr r12, =MDC_FIRST_MASK
+    tst r4, r12
+    beq .L08006412                          @ mode not eligible
+    cmp r1, #2
+    bne 1f
+    ldr r4, =acdc_active
+    ldrb r4, [r4]
+    cmp r4, #0
+    bne .L08006412                          @ ACV with AC+DC: the phases are paced by MAC
+    b 2f
+1:  cmp r1, #16
+    blo 2f
+    ldr r4, =v_2000808A
+    ldrb r4, [r4]                           @ calibration mode ...
+    ldr r12, =v_200080A5
+    ldrb r12, [r12]
+    eor r12, r12, #1                        @ ... or burden option off (0x200080A5 != 1): single-channel chain
+    orrs r4, r4, r12
+    beq .L08006412                          @ two-channel scheme counts means: no short mean
+2:  ldr r4, =v_20007DD0
+    ldr r4, [r4]                            @ sum of the MDC_NFIRST samples
+    sdiv r4, r4, r3                         @ mean (signed, truncating, as the full mean)
+    ldr r1, =v_20007DD4
+    str r4, [r1]
+    movs r4, #0
+    ldr r1, =mdc_first_mean
+    strb r4, [r1]                           @ the first value is out
+    movs r0, #1                             @ r0 = 1: a mean was completed (count and sum go on)
+    b .L08006412
+.endif
     .ltorg
 ENDFUNC ad1_accumulate_average
 
@@ -426,8 +507,9 @@ ENDFUNC mdc_sample_precheck
 
 
     .section .bss_port.mdc, "aw", %nobits
-    .global mdc_ps_done
+    .global mdc_ps_done, mdc_first_mean
 mdc_ps_done: .space 1                       @ 1 = the per-sample value of this conversion is in 0x20007D68 (consumed by fn_080064D6)
+mdc_first_mean: .space 1                    @ 1 = a configuration was applied and its first displayed value is still to come (IMP-01 P5; set by fn_0800B974)
 .endif
 
 

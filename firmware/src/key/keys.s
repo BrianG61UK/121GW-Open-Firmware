@@ -16,10 +16,10 @@
 @ Key bits: bit k of the sample is the key on PG(8+k), active low: 0x01 MODE, 0x02 SETUP, 0x04 MIN/MAX, 0x08 MEM,
 @ 0x10 RANGE, 0x20 HOLD, 0x40 REL, 0x80 PEAK; 0x28 = MEM + HOLD (long press only).
 @
-@ Deviation OF-42 (new defect found while porting, see firmware/requests/W4_to_W10.md): v2.05 counts the debounce
+@ Deviation OF-43 (new defect found while porting, see firmware/requests/W4_to_W10.md): v2.05 counts the debounce
 @ stable count and the hold time in bytes without a limit; after 205 ticks past the long press the hold time wraps
 @ to 0 and the key is taken for a new press, so a key held for about 3.1 s fires its long-press action a second time
-@ (and again every 2.56 s).  Both counters stop at 0xFF here.
+@ (and again every 257 ticks, 2.57 s).  Both counters stop at 0xFF here.
 @ =============================================================================
 
     .syntax unified
@@ -442,7 +442,7 @@ ENDFUNC fn_08016A64
 @            key_short_ev, key_short_code, key_long_ev, key_long_code; reads key_window 0x2000022E,
 @            key_win_b 0x200080CE, key_mem_view 0x20007FE4, key_setup_edit 0x2000806E
 @ Spec     : analysis/keys_setup.md 2.1
-@ Deviation: OF-42 (key_stable and key_hold saturate at 0xFF instead of wrapping)
+@ Deviation: OF-43 (key_stable and key_hold saturate at 0xFF instead of wrapping)
 @ -----------------------------------------------------------------------------
 FUNC process_pg8_15_press_release
     push {r4, lr}                       @ 0801688C
@@ -478,13 +478,13 @@ FUNC process_pg8_15_press_release
     strb r0, [r1]                       @ 080168CC
     b .Lpr_done                         @ 080168CE
 
-@ same sample as before: count it (OF-42: the count stops at 0xFF).  Fewer than two equal samples: nothing yet
+@ same sample as before: count it (OF-43: the count stops at 0xFF).  Fewer than two equal samples: nothing yet
 @ reached from 080168B8 beq (equal / zero) after cmp r0, r1
 .Lpr_same:
     ldr r0, =key_stable                 @ 080168D0
     ldrb r0, [r0]                       @ 080168D4
     adds r0, r0, #1                         @ 080168D6 replaces v2.05 adds r0,r0,#0x1
-    cmp r0, #0x100                    @ OF-42: stop at 0xFF instead of wrapping to 0
+    cmp r0, #0x100                    @ OF-43: stop at 0xFF instead of wrapping to 0
     it eq                             @ r0 was 0xFF
     subeq r0, r0, #1                  @ keep 0xFF
     ldr r1, =key_stable                 @ 080168D8
@@ -550,12 +550,12 @@ FUNC process_pg8_15_press_release
     cmp r0, #0                          @ 0801695A
     beq .Lpr_newpress                   @ 0801695C
 
-@ key held another tick: count the hold time (OF-42: it stops at 0xFF)
+@ key held another tick: count the hold time (OF-43: it stops at 0xFF)
 .Lpr_held:
     ldr r0, =key_hold                   @ 0801695E
     ldrb r0, [r0]                       @ 08016962
     adds r0, r0, #1                         @ 08016964 replaces v2.05 adds r0,r0,#0x1
-    cmp r0, #0x100                    @ OF-42: stop at 0xFF instead of wrapping to 0
+    cmp r0, #0x100                    @ OF-43: stop at 0xFF instead of wrapping to 0
     it eq                             @ r0 was 0xFF
     subeq r0, r0, #1                  @ keep 0xFF
     ldr r1, =key_hold                   @ 08016966

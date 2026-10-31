@@ -187,7 +187,7 @@ FUNC handle_pg8_15_short_press
 .Lsh_08014D4C:
     ldr r0, =meter_mode                 @ 08014D4C
     ldrb r0, [r0]                       @ 08014D50
-    cmp r0, #0xB                        @ 08014D52
+    cmp r0, #0xB                        @ 08014D52 mode 11 DIODE
     bne .Lsh_08014D60                   @ 08014D54
     bl fn_080159C8                      @ 08014D56
     bl fn_0800EE50                      @ 08014D5A
@@ -492,19 +492,19 @@ FUNC handle_pg8_15_short_press
     beq .Lsh_hold_third                 @ 08014F82
     ldr r0, =meter_mode                 @ 08014F84
     ldrb r0, [r0]                       @ 08014F88
-    cmp r0, #6                          @ 08014F8A
+    cmp r0, #6                          @ 08014F8A mode 6 FREQ
     beq .Lsh_hold_off                   @ 08014F8C
     ldr r0, =meter_mode                 @ 08014F8E
     ldrb r0, [r0]                       @ 08014F92
-    cmp r0, #7                          @ 08014F94
+    cmp r0, #7                          @ 08014F94 mode 7 PULSE
     beq .Lsh_hold_off                   @ 08014F96
     ldr r0, =meter_mode                 @ 08014F98
     ldrb r0, [r0]                       @ 08014F9C
-    cmp r0, #8                          @ 08014F9E
+    cmp r0, #8                          @ 08014F9E mode 8 DUTY
     beq .Lsh_hold_off                   @ 08014FA0
     ldr r0, =meter_mode                 @ 08014FA2
     ldrb r0, [r0]                       @ 08014FA6
-    cmp r0, #0xC                        @ 08014FA8
+    cmp r0, #0xC                        @ 08014FA8 mode 12 CAP
     beq .Lsh_hold_off                   @ 08014FAA
     ldr r0, =minmax_state               @ 08014FAC
     ldrb r0, [r0]                       @ 08014FB0
@@ -665,7 +665,7 @@ FUNC handle_pg8_15_short_press
 .Lsh_rel_toggle:
     ldr r0, =meter_mode                 @ 080150D2
     ldrb r0, [r0]                       @ 080150D6
-    cmp r0, #0                          @ 080150D8
+    cmp r0, #0                          @ 080150D8 mode 0 LowZ
     bne .Lsh_080150E2                   @ 080150DA
     bl fn_0800EE6C                      @ 080150DC
     b .Lsh_end                          @ 080150E0
@@ -903,7 +903,7 @@ FUNC handle_pg8_15_short_press
 .Lsh_peak_toggle:
     ldr r0, =meter_mode                 @ 080152B4
     ldrb r0, [r0]                       @ 080152B8
-    cmp r0, #2                          @ 080152BA
+    cmp r0, #2                          @ 080152BA mode 2 ACV
     bne .Lsh_080152C8                   @ 080152BC
     ldr r0, =acdc_active                @ 080152BE
     ldrb r0, [r0]                       @ 080152C2
@@ -913,7 +913,7 @@ FUNC handle_pg8_15_short_press
 .Lsh_080152C8:
     ldr r0, =meter_mode                 @ 080152C8
     ldrb r0, [r0]                       @ 080152CC
-    cmp r0, #4                          @ 080152CE
+    cmp r0, #4                          @ 080152CE mode 4 ACmV
     bne .Lsh_peak_refuse                @ 080152D0
 
 @ OF-17: with the 1 kHz filter on PEAK is refused.  Else toggle peak_hold, clear peak_show_min, request a mode apply
@@ -998,7 +998,7 @@ FUNC handle_pg8_15_short_press
 .Lsh_0801535E:
     ldr r0, =meter_mode                 @ 0801535E
     ldrb r0, [r0]                       @ 08015362
-    cmp r0, #0                          @ 08015364
+    cmp r0, #0                          @ 08015364 mode 0 LowZ
     bne .Lsh_0801536E                   @ 08015366
     bl fn_0800EE6C                      @ 08015368
     b .Lsh_end                          @ 0801536C

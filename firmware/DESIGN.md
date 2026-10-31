@@ -625,7 +625,7 @@ Conventions for all modules:
   `FUN_0800D6E0`, `FUN_0800E848` (Appendix A UI).
 - RAM: Appendix B UI addresses (among them 0x20008091..0x20008094, calibration-step display flags, and 0x20008076, jack
   warning flag read by 0x080199B4).
-- Deviations: OF-19 (TEMP value from `mtmp_temp_result`), OF-30 (LowZ: dashes on the main digits, never a numeric 0,
+- Deviations: OF-19 (carried by MTMP: UI keeps drawing 0x20007D64, which MTMP now converts once per mean and also stores in `mtmp_temp_result`), OF-30 (LowZ: dashes on the main digits, never a numeric 0,
   until the AC/DC decision), OF-32 (BEEP and FREQ blank until the first valid value), OF-33 (CAP blank across the
   timeout range jump), IMP-01 display rules (ARS 5.2 P5).
 
@@ -707,10 +707,17 @@ A module with a narrow interface, so that the faster auto-ranging (IMP-01, ARS s
 - Replaces: AD1 decode `FUN_080062F8`, `ad1_accumulate_average` 0x08006342, `FUN_08006418`, `FUN_080064D6`,
   `FUN_08007714`, `FUN_080077F0`, `FUN_08007FA8`, `FUN_08008138` (DC currents with user zero), `cal_subtract_offset_clamp`
   0x0800F368, `cal_divide_by_gain` 0x0800F3B8, `FUN_0800F2FC`, `FUN_0800EEF0`, `FUN_0800F648`.
-- RAM: sum 0x20007DD0, mean 0x20007DD4, count 0x20008080, 0x20007DC8, va_channel 0x200080C4.
+- RAM: sum 0x20007DD0, mean 0x20007DD4, count 0x20008080, 0x20007DC8, va_channel 0x200080C4; port: `mdc_ps_done`,
+  `mdc_first_mean`, `mdc_acdc_dc_state`.
 - Deviations: OF-14 (sign-extend bit 23), OF-15 (round half away from zero in `cal_divide_by_gain`: +0.5 for positive
   and -0.5 for negative quotients before the truncating d2iz, the helper sequence otherwise unchanged), OF-26 (1/10
-  scale of the 1 kHz filter on every path, with MAC), IMP-01 (`ar_sample` calls).
+  scale of the 1 kHz filter on every path, with MAC), OF-28 (`mdc_dc_state`: the AC+DC DC phase, the DC VA voltage and
+  current and the burden-display voltage and current each smooth through a state block of their own, FUNC `func_st_*`),
+  IMP-01 (`ar_sample` calls through `mdc_sample_precheck`, which `ad1_ready_dispatch` calls before `mac_sample_precheck`
+  of MAC; the first displayed value after a configuration change is the mean of 4 clean samples, ARS 5.2 P5:
+  `fn_0800B974` arms `mdc_first_mean`, `ad1_accumulate_average` publishes the mean at the 4th sample of a block when
+  the v2.05 settle count 0x20000238 is 0 and goes on to the v2.05 N), IMP-04 (BEEP displays a block of 64 samples,
+  ARS 8.2).
 
 ### 6.15 MRES: ohm, continuity, diode, capacitance, LowZ (W5)
 
@@ -914,7 +921,8 @@ moment, lasts the same time and gives every key exactly its v2.05 window meaning
 Baseline mode runs it blocking as v2.05 (TEMP row, then the dial's mode). Production mode (IMP-02, ARS 6): the main
 loop runs during the window; the dial is latched with the v2.05 rule and its mode applied at once; the reading is shown
 in the main digits with the version on the secondary display; a window key that starts a combination stops the
-measurement display and the v2.05 combination screen takes over; the first HY3131 write comes no earlier than in v2.05
+measurement display and the v2.05 combination screen takes over (the version leaves the secondary display); the RANGE
+all-segments test is kept lit until the window closes (`ui_lamp_test`, UI); the first HY3131 write comes no earlier than in v2.05
 (81 ms after reset, ARS 6). Ending the window early when no key is held is not done (ARS 6 item 2). OF-08: the
 MODE-then-REL path sets calibration mode (0x2000808A = 1, 0x20008062 = 1) and writes nothing to the EEPROM.
 
@@ -1915,8 +1923,9 @@ Exceptions decided by this design:
 | `calbin_start`, `calbin_step`, `calbin_result` | CAL | see `src/cal/calbin.s` headers | | main | power-on window (BOOTWIN), LOG/SD | cal.bin save/load as a state machine (IMP-06, OF-12) |
 | `bootwin_active` (byte) | CAL | - | - | main | UI | power-on window open |
 | `ble_tx_tick` | BLE | - | - (clobbers r0-r3) | TIM2 ISR | `isr_tim2` (SYS), every tick after the 500 ms block | starts a deferred status frame (NF-04, OF-10/11); alias of `ble_tx_kick` |
-| `lcd_commit_retry` | LCD | - | - | main (production) | `fn_08016D34` (UI) | repeats a deferred LCD commit (no busy-wait, IMP-01) |
-| `ui_blank_req` (byte, `.bss_port`) | UI | - | - | main | written by AR, MODE, MRES, MFRQ; read by `fn_08016E08` | main digits blank (1) or dashes (2), production only (OF-30, OF-32, OF-33) |
+| `lcd_commit_retry` | LCD | - | - | main (production) | `fn_08016D34` (UI), `enter_stop_and_reinit` (PWR, in the "-oFF-" beep loop) | repeats a deferred LCD commit (no busy-wait, IMP-06); every production loop that stays blocking after a screen was committed and does not run `fn_08016D34` must call it |
+| `ui_blank_req` (byte, `.bss_port`) | UI | - | - | main | written by AR (`ar_apply`, `ar_result_seen`) and MRES (`fn_08006558`); read by `fn_08016E08`, `ui_value_valid` | main digits blank (1) or dashes (2), production only (OF-30, OF-32, IMP-01 rule P5); the OF-33 blank uses the v2.05 flag 0x2000805C |
+| `ui_value_valid` | UI | - | r0 = 1 while the main digits show a reading, 0 while blank or dashes | main | `ble_value_valid` (BLE), a tail call, so a status frame is held back whenever the main digits are blank (`W3_to_W9.md`) | OF-34 |
 | `lcd_init_fault` (byte, `.bss_port`) | LCD | - | - | main | set by `lcd_init` | 1 if `lcd_init` gave up waiting for LCD_SR.ENS or RDY (HW-07) |
 | `sys_main` | SYS | - | does not return | main | `sys_reset` | 3.2 step 5, main loop 3.5 |
 | `sys_system_init` | SYS | - | - | main | `sys_main`, `enter_stop_and_reinit` | replaces `FUN_0801BE76` without the option-byte block |

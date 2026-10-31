@@ -53,6 +53,11 @@ FUNC fn_0800EA3A
     bl bootwin_start
 1:  bl bootwin_exit_due                     @ counter 0 and B != 4 (0x0800EA8E..0x0800EAA0)
     cbnz r0, 3f
+    .if LOOP_V205 == 0
+    bl lcd_commit_retry                     @ IMP-06: this loop stays blocking and never reaches fn_08016D34, so it repeats a
+                                            @ commit deferred while UDR was set (the splash right after lcd_init); production
+                                            @ calls this routine from no caller (sys_bootwin_begin uses bootwin_start), W3_to_W7.md 4
+    .endif
     ldr r1, =v_200080D0
     ldrb r0, [r1]
     cmp r0, #0

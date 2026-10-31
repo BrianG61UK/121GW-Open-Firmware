@@ -4,7 +4,7 @@
 @ Replaces fn_08016D34 (0x08016D34, called once per main-loop pass), fn_08016E08 (main value), fn_0800D664 / fn_0800D6E0
 @ (VA sub-display alternation), fn_0800E848 / fn_0800EA24 (high-voltage warning flags), fn_080153AC (end of MEM view) and
 @ fn_08015934 (held value).  The instruction streams are v2.05's; production mode (LOOP_V205 = 0) adds
-@   - a call of lcd_commit_retry at the start of fn_08016D34 (IMP-06);
+@   - calls of ui_bootwin_gate (IMP-02) and lcd_commit_retry (IMP-06) at the start of fn_08016D34;
 @   - the blank / dash request ui_blank_req in fn_08016E08 (OF-30, OF-32, IMP-01 rule P5);
 @   - the power-on window rules of IMP-02 (ui_bootwin_gate, ui_version_sub, ui_request_redraw): while CAL's window is open the
 @     version "V-2.05" is shown on the sub display and the reading on the main digits, and nothing is drawn while a key
@@ -37,6 +37,11 @@ ui_bw_state:
     .space 1
 @ ui_skip_sub: 1 for the current refresh pass while the sub display shows the version (the sub-display blocks are skipped)
 ui_skip_sub:
+    .space 1
+@ ui_lamp_test: 1 from the moment fn_0801A89C lights every segment (RANGE key inside the power-on window, DESIGN.md 7.1) until the
+@ window closes; the refresh draws nothing meanwhile, so the lamp test stays on the glass as in v2.05 (production only, IMP-02)
+    .global ui_lamp_test
+ui_lamp_test:
     .space 1
     .balign 4
 
@@ -468,17 +473,21 @@ ENDFUNC fn_08015934
 @            (annunciators), 0x20008061 (unit prefix), 0x2000804C (mode annunciators), 0x20008063 (sub-display units),
 @            0x20008062 (setup page), 0x2000805B (commit); page code 0x20008037 / 0x20000236
 @ Spec     : analysis/autorange_and_scheduler.md 1 (loop step 3); analysis/lcd_map.md 4
-@ Deviation: IMP-06 (production): lcd_commit_retry first repeats a commit that was deferred because UDR was set;
-@            IMP-02 (production): ui_bootwin_gate applies the power-on window rules (nothing is drawn while a key combination
-@            screen is shown, the version "V-2.05" stays on the sub display while the window is open, a full redraw is
-@            requested when the window or a combination ends)
+@ Deviation: IMP-02 (production): ui_bootwin_gate applies the power-on window rules first (nothing is drawn while a key
+@            combination screen is shown, the lamp test of the RANGE key is lit again and kept until the window closes, the
+@            version "V-2.05" stays on the sub display while the window is open, a full redraw is requested when the window
+@            or a combination ends);
+@            IMP-06 (production): lcd_commit_retry then repeats a commit that was deferred because UDR was set
 @ Clobbers : r0, r1, r2, r3, r12 (v2.05 regeffects.txt)
 @ -----------------------------------------------------------------------------
 FUNC fn_08016D34
     push {r7, lr}                            @ 08016D34
     .if LOOP_V205 == 0
-    bl lcd_commit_retry                     @ IMP-06: repeat a deferred commit before anything else (also while the MEM view is shown)
-    bl ui_bootwin_gate                      @ IMP-02: power-on window rules (r0 = 1: a key combination screen owns the display)
+    bl ui_bootwin_gate                      @ IMP-02: power-on window rules (r0 = 1: a key combination screen or the lamp test owns the
+                                            @ display); first, so that the lamp test is lit again before any commit of this pass
+    str r0, [sp, #0]                        @ keep the result in the pad slot of push {r7, lr} (v2.05 pops it into r0)
+    bl lcd_commit_retry                     @ IMP-06: repeat a deferred commit (also while the MEM view is shown)
+    ldr r0, [sp, #0]
     cmp r0, #0
     bne .L08016E06                          @ draw nothing in this pass
     .endif
@@ -941,16 +950,18 @@ ENDFUNC ui_value_valid
 @ ui_bootwin_gate - production power-on window: decide what the display refresh may draw
 @ Replaces : nothing (new, IMP-02, DESIGN.md 7.1; request W7_to_W3.md item 1)
 @ In       : -
-@ Out      : r0 = 1 skip the whole refresh (a key combination screen owns the display), 0 refresh (ui_skip_sub tells whether
-@            the sub-display blocks are skipped)
+@ Out      : r0 = 1 skip the whole refresh (a key combination screen or the all-segments test owns the display), 0 refresh
+@            (ui_skip_sub tells whether the sub-display blocks are skipped)
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main only; called at the start of fn_08016D34
-@ RAM      : reads bootwin_active (CAL), 0x200080CD, 0x200080CE (key sequence states); read-modify-writes ui_bw_state,
-@            ui_skip_sub; through ui_version_sub and ui_request_redraw: lcd_shadow, 0x2000805B, 0x2000805D, 0x2000805E,
+@ RAM      : reads bootwin_active (CAL), 0x200080CD, 0x200080CE (key sequence states), ui_lamp_test; read-modify-writes
+@            ui_bw_state, ui_skip_sub, ui_lamp_test (cleared by a combination and when the window is closed); lcd_shadow and
+@            0x2000805B through fn_0801A89C while the lamp test is on; through ui_version_sub and ui_request_redraw: lcd_shadow, 0x2000805B, 0x2000805D, 0x2000805E,
 @            0x20008060..0x20008063
 @ Spec     : DESIGN.md 7.1, analysis/autorange_and_scheduler.md 6 item 3: while the window is open the reading is shown in
 @            the main digits and the version on the secondary display; a window key that starts a combination stops the
-@            measurement display
+@            measurement display; the all-segments test of the RANGE key (DESIGN.md 7.1, analysis/keys_setup.md 3) stays until the
+@            window closes
 @ Deviation: IMP-02
 @ -----------------------------------------------------------------------------
 LFUNC ui_bootwin_gate
@@ -967,6 +978,9 @@ LFUNC ui_bootwin_gate
     ldrb r2, [r0]                           @ key sequence state B
     orrs r1, r1, r2
     bne .Lbg_combo                          @ a combination is in progress: its screens own the display
+    ldr r0, =ui_lamp_test
+    ldrb r0, [r0]                           @ 1 = all segments lit by the RANGE key (set by fn_0801A89C)
+    cbnz r0, .Lbg_lamp
     ldr r0, =ui_bw_state
     ldrb r1, [r0]
     cmp r1, #1
@@ -986,12 +1000,31 @@ LFUNC ui_bootwin_gate
     movs r0, #0                             @ refresh the rest
     pop {r4, pc}
 .Lbg_combo:
+    ldr r0, =ui_lamp_test
+    strb r4, [r0]                           @ a combination screen replaces the lamp test (v2.05 draws over it too; r4 = 0)
     ldr r0, =ui_bw_state
-    movs r1, #2
-    strb r1, [r0]                           @ window open, combination on the display
+    ldrb r1, [r0]
+    movs r2, #2
+    strb r2, [r0]                           @ window open, combination on the display
+    cmp r1, #1
+    bne .Lbg_draw_nothing                   @ the version was not on the sub display: nothing to remove
+    bl ui_sub_clear                         @ first pass of a combination: the v2.05 combination screen has a blank sub display
+.Lbg_draw_nothing:
     movs r0, #1                             @ draw nothing
     pop {r4, pc}
+.Lbg_lamp:
+    bl fn_0801A89C                          @ light every segment again: the mode apply of the window (fn_080171FA through
+                                            @ meter_apply_mode_range) rewrites the decimal point bits of the shadow and v2.05
+                                            @ does not apply the mode before the window ends
+    bl lcd_commit_shadow                    @ written only if the shadow differs from the last committed copy
+    ldr r0, =ui_bw_state
+    movs r1, #2
+    strb r1, [r0]                           @ window open, lamp test on the display (the close requests a full redraw)
+    movs r0, #1                             @ draw nothing else
+    pop {r4, pc}
 .Lbg_closed:
+    ldr r0, =ui_lamp_test
+    strb r4, [r0]                           @ the lamp test ends with the window (r4 = 0)
     ldr r0, =ui_bw_state
     ldrb r1, [r0]
     cbz r1, .Lbg_idle                       @ window was not open
@@ -1041,6 +1074,30 @@ LFUNC ui_version_sub
 ENDFUNC ui_version_sub
 
 @ -----------------------------------------------------------------------------
+@ ui_sub_clear - blank the sub display (digits, minus sign, decimal point, unit group) and commit
+@ Replaces : nothing (new, IMP-02); removes the version of ui_version_sub when a window key starts a combination
+@ In       : -
+@ Out      : -
+@ Clobbers : r0-r3, r12, flags
+@ Context  : main only
+@ RAM      : lcd_shadow (sub display digits, minus, decimal point, unit group); the commit is made at once
+@ Spec     : DESIGN.md 7.1 (the v2.05 combination screens leave the sub display blank)
+@ Deviation: IMP-02
+@ -----------------------------------------------------------------------------
+LFUNC ui_sub_clear
+    push {r4, lr}
+    movs r0, #1                             @ sub display (positions 0..4)
+    ldr r1, =v205_tab_080291B0              @ "     " (v2.05 0x080291B0)
+    bl lcd_draw_5char
+    movs r0, #0
+    bl fn_08017FB4                          @ no sub decimal point
+    bl fn_0801A760                          @ sub unit group and sub minus sign off
+    bl lcd_commit_shadow                    @ made here because the refresh returns without drawing
+    pop {r4, pc}
+    .ltorg
+ENDFUNC ui_sub_clear
+
+@ -----------------------------------------------------------------------------
 @ ui_request_redraw - request a full redraw of the live display
 @ Replaces : nothing (new, IMP-02); the same requests as fn_080153AC plus the sub-display unit refresh 0x20008063
 @ In       : -
@@ -1048,6 +1105,7 @@ ENDFUNC ui_version_sub
 @ Clobbers : r0, r1
 @ Context  : main only
 @ RAM      : writes 0x2000805E, 0x2000805D, 0x20008060, 0x20008061, 0x20008062, 0x20008063 = 1
+@ Spec     : DESIGN.md 7.1 (the display is redrawn from the live state when the window or a combination screen ends)
 @ Deviation: IMP-02
 @ -----------------------------------------------------------------------------
 LFUNC ui_request_redraw

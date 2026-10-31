@@ -87,7 +87,7 @@
     .equ log_flush_failed,        v_200080F6            @ 0x200080F6 a flush or its verification failed
 
 @ -----------------------------------------------------------------------------
-@ log_write_start / log_write_step / log_write_session - the retrying SD log write (state machine, IMP-06)
+@ log_write_start / log_write_step / log_write_session - the retrying SD log write (state machine, IMP-06): overview
 @ Replaces : 0x0801D126 FUN_0801D126 (v2.05; canonical symbol fn_0801D126 = log_write_session)
 @ Called by: main loop step 12 (DESIGN.md 3.5, flag 0x2000801C), log_stop (0x08010B3E, with its argument = 1)
 @
@@ -103,10 +103,7 @@
 @                        by log_stop); v2.05 signature: no input, r0 = 0 written, 1 failed
 @ A step runs one log_session_once, which holds SYSCLK = HSE only for its own duration (sys_clock_select(1) at its
 @ start, (0) at its end, 0x0801D1B2 / 0x0801D372), exactly the SD command sequence of one v2.05 attempt.
-@ Clobbers : r0-r3, r12, flags (AAPCS)
-@ Context  : main only
-@ RAM      : log_attempts 0x200080E5 (the v2.05 retry counter), log_error_code 0x2000801B, ui_refresh_request
-@            0x20008062; port RAM log_write_state, log_write_result
+@ The three routines below each carry their own header.
 @ -----------------------------------------------------------------------------
     .equ LOGW_IDLE,   0                     @ log_write_state: no write in progress
     .equ LOGW_PHASE1, 1                     @ first series of 20 attempts
@@ -118,6 +115,17 @@ log_write_state:  .space 1                  @ LOGW_*
 log_write_result: .space 1                  @ result of the last completed write: 0 written, 1 failed
     .popsection
 
+@ -----------------------------------------------------------------------------
+@ log_write_start - arm the retrying log write
+@ Replaces : first half of 0x0801D126 FUN_0801D126 (v2.05, 0x0801D12A..0x0801D130: attempts = 20)
+@ In       : -
+@ Out      : -
+@ Clobbers : r0, r1, flags (AAPCS)
+@ Context  : main only
+@ RAM      : writes log_write_state (port RAM, = LOGW_PHASE1) and log_attempts 0x200080E5 (= 20)
+@ Spec     : v2.05 listing 0x0801D126..0x0801D1A7; W8_to_W1.md item 3
+@ Deviation: IMP-06
+@ -----------------------------------------------------------------------------
 FUNC log_write_start
     movs    r0, #LOGW_PHASE1
     ldr     r1, =log_write_state
@@ -129,6 +137,19 @@ FUNC log_write_start
     .ltorg
 ENDFUNC log_write_start
 
+@ -----------------------------------------------------------------------------
+@ log_write_step - run one attempt of the armed log write
+@ Replaces : the loop body of 0x0801D126 FUN_0801D126 (v2.05, 0x0801D132..0x0801D1A6), one log_session_once per call
+@ In       : -  (log_write_state selects the series: LOGW_PHASE1, LOGW_PHASE2; LOGW_IDLE = nothing armed)
+@ Out      : r0 = 0 busy (call again on a later pass), 1 done (the result is in log_write_result: 0 written, 1 failed);
+@            idle machine: 1
+@ Clobbers : r1-r3, r12, flags (AAPCS); r4 preserved
+@ Context  : main only
+@ RAM      : reads/writes log_write_state, log_write_result (port RAM), log_attempts 0x200080E5; on the final failure
+@            writes log_error_code 0x2000801B and ui_refresh_request 0x20008062
+@ Spec     : v2.05 listing 0x0801D126..0x0801D1A7
+@ Deviation: IMP-06
+@ -----------------------------------------------------------------------------
 FUNC log_write_step
     push    {r4, lr}
     ldr     r4, =log_write_state
@@ -187,6 +208,18 @@ FUNC log_write_step
     .ltorg
 ENDFUNC log_write_step
 
+@ -----------------------------------------------------------------------------
+@ log_write_session - the v2.05 blocking form: start and step until done
+@ Replaces : 0x0801D126 FUN_0801D126 (v2.05), canonical symbol fn_0801D126; called by log_stop (0x08010B3E) and, in baseline
+@            builds (LOOP_V205 = 1), by the main loop step 12 (0x08024D62)
+@ In       : -
+@ Out      : r0 = 0 written, 1 failed (log_error_code and ui_refresh_request set on failure, as v2.05)
+@ Clobbers : r1-r3, r12, flags (AAPCS); r4 preserved
+@ Context  : main only
+@ RAM      : as log_write_start and log_write_step
+@ Spec     : v2.05 listing 0x0801D126..0x0801D1A7
+@ Deviation: IMP-06 (same attempt order and retry counts as v2.05, split into steps)
+@ -----------------------------------------------------------------------------
 FUNC log_write_session
     push    {r4, lr}
     bl      log_write_start

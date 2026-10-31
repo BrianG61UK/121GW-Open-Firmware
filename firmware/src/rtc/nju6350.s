@@ -658,12 +658,12 @@ ENDFUNC fn_080102B8
 @            not depend on what an earlier read left behind
 @ -----------------------------------------------------------------------------
 FUNC rtc_ce_high
-    push {lr}
+    push {r3, lr}                        @ r3 only keeps SP 8-byte aligned at the call of brd_gpio_init (AAPCS)
     bl rtc_data_pin_output               @ HW-01: PB7 open-drain with pull-up (ODR unchanged, idle low)
     GPIO_CLR GPIOB_BASE, 0x0040          @ PB6 CLK low (v2.05 0x08010308)
     GPIO_CLR GPIOB_BASE, 0x0080          @ PB7 DATA low (v2.05 0x0801030E)
     GPIO_SET GPIOC_BASE, 0x2000          @ PC13 CE high (v2.05 0x08010314)
-    pop {pc}
+    pop {r3, pc}
 ENDFUNC rtc_ce_high
     .ltorg
 
@@ -698,11 +698,11 @@ ENDFUNC rtc_ce_low
 @            with the internal pull-up, so writing 1 releases the line.  The output level (ODR) is left as it is.
 @ -----------------------------------------------------------------------------
 FUNC rtc_data_pin_output
-    push {lr}
+    push {r3, lr}                        @ r3 only keeps SP 8-byte aligned at the call of brd_gpio_init (AAPCS)
     ldr r0, =GPIOB_BASE                  @ port B
     ldr r1, =rtc_desc_data_od            @ descriptor: PB7, output, 2 MHz, open-drain, pull-up, ODR kept
     bl brd_gpio_init                     @ policy-checked write (PB7 may only be open-drain or input)
-    pop {pc}
+    pop {r3, pc}
 ENDFUNC rtc_data_pin_output
     .ltorg
 
@@ -718,11 +718,11 @@ ENDFUNC rtc_data_pin_output
 @            byte at [sp+6] was never set)
 @ -----------------------------------------------------------------------------
 FUNC rtc_data_pin_input_pullup
-    push {lr}
+    push {r3, lr}                        @ r3 only keeps SP 8-byte aligned at the call of brd_gpio_init (AAPCS)
     ldr r0, =GPIOB_BASE                  @ port B
     ldr r1, =rtc_desc_data_in            @ descriptor: PB7, input, pull-up
     bl brd_gpio_init                     @ policy-checked write
-    pop {pc}
+    pop {r3, pc}
 ENDFUNC rtc_data_pin_input_pullup
     .ltorg
 

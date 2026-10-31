@@ -83,7 +83,7 @@ FUNC frequency_select_range
 .L800ac1c_manual4:
     ldr r0, =ar_freq64                  @ 0800AC6A
     ldrd r2, r3, [r0]                   @ 0800AC6E
-    ldr r0, =0x3B9ACA00                 @ 0800AC72
+    ldr r0, =0x3B9ACA00                 @ 0800AC72: 1 000 000 000 mHz = 1 MHz
     movs r1, #0                         @ 0800AC76
     cmp r3, r1                          @ 0800AC78
     bcc .L800ac1c_0800AC8C              @ 0800AC7A
@@ -110,7 +110,7 @@ FUNC frequency_select_range
 .L800ac1c_0800AC98:
     ldr r0, =ar_freq64                  @ 0800AC98
     ldrd r2, r3, [r0]                   @ 0800AC9C
-    ldr r0, =0x05F5E100                 @ 0800ACA0
+    ldr r0, =0x05F5E100                 @ 0800ACA0: 100 000 000 mHz = 100 kHz
     movs r1, #0                         @ 0800ACA4
     cmp r3, r1                          @ 0800ACA6
     bcc .L800ac1c_0800ACBA              @ 0800ACA8
@@ -137,7 +137,7 @@ FUNC frequency_select_range
 .L800ac1c_0800ACC6:
     ldr r0, =ar_freq64                  @ 0800ACC6
     ldrd r2, r3, [r0]                   @ 0800ACCA
-    ldr r0, =0x00989680                 @ 0800ACCE
+    ldr r0, =0x00989680                 @ 0800ACCE: 10 000 000 mHz = 10 kHz
     movs r1, #0                         @ 0800ACD2
     cmp r3, r1                          @ 0800ACD4
     bcc .L800ac1c_0800ACE8              @ 0800ACD6
@@ -164,7 +164,7 @@ FUNC frequency_select_range
 .L800ac1c_0800ACF4:
     ldr r0, =ar_freq64                  @ 0800ACF4
     ldrd r2, r3, [r0]                   @ 0800ACF8
-    ldr r0, =0x000F4240                 @ 0800ACFC
+    ldr r0, =0x000F4240                 @ 0800ACFC: 1 000 000 mHz = 1 kHz
     movs r1, #0                         @ 0800AD00
     cmp r3, r1                          @ 0800AD02
     bcc .L800ac1c_0800AD16              @ 0800AD04
@@ -191,7 +191,7 @@ FUNC frequency_select_range
 .L800ac1c_0800AD22:
     ldr r0, =ar_freq64                  @ 0800AD22
     ldrd r2, r3, [r0]                   @ 0800AD26
-    ldr r0, =0x000186A0                 @ 0800AD2A
+    ldr r0, =0x000186A0                 @ 0800AD2A: 100 000 mHz = 100 Hz
     movs r1, #0                         @ 0800AD2C
     cmp r3, r1                          @ 0800AD2E
     bcc .L800ac1c_0800AD42              @ 0800AD30
@@ -222,7 +222,7 @@ FUNC frequency_select_range
 .L800ac1c_auto:
     ldr r0, =ar_freq64                  @ 0800AD4E
     ldrd r2, r3, [r0]                   @ 0800AD52
-    ldr r0, =0x3B9ACA00                 @ 0800AD56
+    ldr r0, =0x3B9ACA00                 @ 0800AD56: 1 000 000 000 mHz = 1 MHz
     movs r1, #0                         @ 0800AD5A
     cmp r3, r1                          @ 0800AD5C
     bcc .L800ac1c_0800AD72              @ 0800AD5E
@@ -241,7 +241,7 @@ FUNC frequency_select_range
 .L800ac1c_0800AD72:
     ldr r0, =ar_freq64                  @ 0800AD72
     ldrd r2, r3, [r0]                   @ 0800AD76
-    ldr r0, =0x05F5E100                 @ 0800AD7A
+    ldr r0, =0x05F5E100                 @ 0800AD7A: 100 000 000 mHz = 100 kHz
     movs r1, #0                         @ 0800AD7E
     cmp r3, r1                          @ 0800AD80
     bcc .L800ac1c_0800AD96              @ 0800AD82
@@ -263,7 +263,7 @@ FUNC frequency_select_range
     bne .L800ac1c_0800ADC0              @ 0800AD9A
     ldr r0, =ar_freq64                  @ 0800AD9C
     ldrd r2, r3, [r0]                   @ 0800ADA0
-    ldr r0, =0x04C4B400                 @ 0800ADA4
+    ldr r0, =0x04C4B400                 @ 0800ADA4: 80 000 000 mHz = 80 kHz (80 % of 100 kHz)
     movs r1, #0                         @ 0800ADA8
     cmp r3, r1                          @ 0800ADAA
     bcc .L800ac1c_0800ADC0              @ 0800ADAC
@@ -284,7 +284,7 @@ FUNC frequency_select_range
 .L800ac1c_0800ADC0:
     ldr r0, =ar_freq64                  @ 0800ADC0
     ldrd r2, r3, [r0]                   @ 0800ADC4
-    ldr r0, =0x00989680                 @ 0800ADC8
+    ldr r0, =0x00989680                 @ 0800ADC8: 10 000 000 mHz = 10 kHz
     movs r1, #0                         @ 0800ADCC
     cmp r3, r1                          @ 0800ADCE
     bcc .L800ac1c_0800ADE4              @ 0800ADD0
@@ -306,7 +306,7 @@ FUNC frequency_select_range
     bne .L800ac1c_0800AE0E              @ 0800ADE8
     ldr r0, =ar_freq64                  @ 0800ADEA
     ldrd r2, r3, [r0]                   @ 0800ADEE
-    ldr r0, =0x007A1200                 @ 0800ADF2
+    ldr r0, =0x007A1200                 @ 0800ADF2: 8 000 000 mHz = 8 kHz (80 % of 10 kHz)
     movs r1, #0                         @ 0800ADF6
     cmp r3, r1                          @ 0800ADF8
     bcc .L800ac1c_0800AE0E              @ 0800ADFA
@@ -326,7 +326,7 @@ FUNC frequency_select_range
 .L800ac1c_0800AE0E:
     ldr r0, =ar_freq64                  @ 0800AE0E
     ldrd r2, r3, [r0]                   @ 0800AE12
-    ldr r0, =0x000F4240                 @ 0800AE16
+    ldr r0, =0x000F4240                 @ 0800AE16: 1 000 000 mHz = 1 kHz
     movs r1, #0                         @ 0800AE1A
     cmp r3, r1                          @ 0800AE1C
     bcc .L800ac1c_0800AE32              @ 0800AE1E
@@ -348,7 +348,7 @@ FUNC frequency_select_range
     bne .L800ac1c_0800AE5C              @ 0800AE36
     ldr r0, =ar_freq64                  @ 0800AE38
     ldrd r2, r3, [r0]                   @ 0800AE3C
-    ldr r0, =0x000C3500                 @ 0800AE40
+    ldr r0, =0x000C3500                 @ 0800AE40: 800 000 mHz = 800 Hz (80 % of 1 kHz)
     movs r1, #0                         @ 0800AE44
     cmp r3, r1                          @ 0800AE46
     bcc .L800ac1c_0800AE5C              @ 0800AE48
@@ -368,7 +368,7 @@ FUNC frequency_select_range
 .L800ac1c_0800AE5C:
     ldr r0, =ar_freq64                  @ 0800AE5C
     ldrd r2, r3, [r0]                   @ 0800AE60
-    ldr r0, =0x000186A0                 @ 0800AE64
+    ldr r0, =0x000186A0                 @ 0800AE64: 100 000 mHz = 100 Hz
     movs r1, #0                         @ 0800AE66
     cmp r3, r1                          @ 0800AE68
     bcc .L800ac1c_0800AE7E              @ 0800AE6A
@@ -390,7 +390,7 @@ FUNC frequency_select_range
     bne .L800ac1c_0800AEA8              @ 0800AE82
     ldr r0, =ar_freq64                  @ 0800AE84
     ldrd r2, r3, [r0]                   @ 0800AE88
-    ldr r0, =0x00013880                 @ 0800AE8C
+    ldr r0, =0x00013880                 @ 0800AE8C: 80 000 mHz = 80 Hz (80 % of 100 Hz)
     movs r1, #0                         @ 0800AE90
     cmp r3, r1                          @ 0800AE92
     bcc .L800ac1c_0800AEA8              @ 0800AE94

@@ -68,7 +68,7 @@
     <div id="status" style="margin-top:8px"></div>
   </div>
   <div class="panel ctl"><h3>Input stimulus (test leads &#8594; HY3131 front end)</h3>
-    <label>quantity <select id="skind"><option value="V">volts</option><option value="A">amperes</option><option value="ohm">ohms</option><option value="Hz">hertz</option><option value="F">farads</option><option value="degC">thermocouple &#176;C</option><option value="diode">diode forward volts</option><option value="VA">volts + amperes (VA)</option></select></label>
+    <label>quantity <select id="skind"><option value="open">leads open (nothing connected)</option><option value="V">volts</option><option value="A">amperes</option><option value="ohm">ohms</option><option value="Hz">hertz</option><option value="F">farads</option><option value="degC">thermocouple &#176;C</option><option value="diode">diode forward volts</option><option value="VA">volts + amperes (VA)</option></select></label>
     <label>value <input type="number" id="sval" step="any" value="0" style="width:110px"></label>
     <label><input type="checkbox" id="sac"> AC</label>
     <label>frequency <input type="number" id="sfreq" step="any" min="0" value="50" style="width:80px"> Hz</label>
@@ -81,6 +81,14 @@
       <button id="sapply">Apply</button>
     </div>
     <div id="sstat" style="margin-top:6px"></div>
+  </div>
+  <div class="panel ctl"><h3>Environment (not the meter): mains pickup on the V jack</h3>
+    <label title="mains frequency of the environment">frequency <select id="ehz"><option value="50">50 Hz</option><option value="60">60 Hz</option></select></label>
+    <label title="open-circuit voltage of the pickup source (environment choice); 0 = shielded / off">source <input type="number" id="ev" step="any" min="0" style="width:70px"> V rms</label>
+    <label title="coupling capacitance between the source and the V jack / test leads (environment choice)">coupling <input type="number" id="epf" step="any" min="0" style="width:70px"> pF</label>
+    <label title="depth of the slow amplitude variation (environment model), 0 = steady">drift <input type="number" id="edrift" step="any" min="0" max="0.99" style="width:55px"></label>
+    <button id="eapply">Apply</button> <button id="eoff" title="pickup source 0 V">Shielded</button>
+    <div id="estat" style="margin-top:6px"></div>
   </div>
   <div class="panel"><h3>LCD RAM (COM &#215; SEG, raw — independent of the glass map)</h3><div id="matrix"></div></div>
   <div class="panel"><h3>Event log</h3><div id="log"></div></div>
@@ -141,7 +149,12 @@ const sv = id => document.getElementById(id);
 sv('sapply').onclick = () => post({input: {kind: sv('skind').value, value: +sv('sval').value, ac: sv('sac').checked,
   freq: +sv('sfreq').value, duty: +sv('sduty').value, width: +sv('swidth').value, dc: +sv('sdc').value, amps: +sv('samps').value,
   board: sv('sboard').value === '' ? null : +sv('sboard').value}});
-document.getElementById('run').onclick = e => post({run: e.target.textContent === 'Resume'});
+// environment: {environment: {pickup_hz, pickup_v, coupling_pf, drift}} (app.py command 'environment', emu/frontend.py ENV_DEFAULT)
+let envInit = false;
+sv('eapply').onclick = () => post({environment: {pickup_hz: +sv('ehz').value, pickup_v: +sv('ev').value,
+  coupling_pf: +sv('epf').value, drift: +sv('edrift').value}});
+sv('eoff').onclick = () => { sv('ev').value = 0; post({environment: {pickup_v: 0}}); };
+document.getElementById('run').onclick =e => post({run: e.target.textContent === 'Resume'});
 document.getElementById('reset').onclick = () => post({reset:true});
 document.getElementById('sdcard').onchange = e => post({sdcard: e.target.checked});
 async function tick() {
@@ -173,7 +186,12 @@ async function tick() {
         (f.supported ? `<span class="good">supported</span>${f.reason ? ' (' + f.reason + ')' : ''}` : `<span class="bad">unsupported: ${f.reason}</span>`) +
         `<br><span>AD1 ${h.ad1_sps ? h.ad1_sps.toFixed(1) + ' sps, code ' + h.ad1_code : 'off'}</span> &nbsp; <span>counter: ${h.counter}</span>` +
         (f.board_c !== undefined ? ` &nbsp; <span>board ${f.board_c === null ? 'unknown' : f.board_c.toFixed(2) + ' &#176;C'}</span>` : '') +
-        (f.error ? `<br><span class="bad">${f.error}</span>` : ''); }
+        (f.error ? `<br><span class="bad">${f.error}</span>` : '');
+      const pk = f.pickup || {};
+      sv('estat').innerHTML = `<span>pickup at the V jack: ${pk.v_rms_at_jack === null || pk.v_rms_at_jack === undefined ? 'not derived for this row' :
+        (pk.v_rms_at_jack * 1e3).toFixed(3) + ' mV rms'}</span> &nbsp; <span>input: ${pk.network || ''}${pk.input_ohms ? ' (' + (pk.input_ohms / 1e6).toFixed(3) + ' M&#937;)' : ''}</span>`; }
+    if (!envInit && s.environment) { const en = s.environment; sv('ehz').value = String(en.pickup_hz); sv('ev').value = en.pickup_v;
+      sv('epf').value = en.coupling_pf; sv('edrift').value = en.drift; envInit = true; }
     if (s.sdcard) { const sd = document.getElementById('sdcard'); sd.disabled = !s.sdcard.configured; sd.checked = !!s.sdcard.present;
       document.getElementById('sdinfo').textContent = s.sdcard.configured ? `(${s.sdcard.image}, ${s.sdcard.capacity_mb} MiB)` : '(no image configured)'; }
     // sliders follow the machine (a board temperature moves PA4) unless being dragged

@@ -29,6 +29,57 @@
     .section .text.mdc.dc, "ax", %progbits
 
 @ -----------------------------------------------------------------------------
+@ mdc_dc_state - smoothing state block of the quantity a DC chain is processing (OF-28)
+@ Replaces : new (OF-28: v2.05 passes every DC quantity through one history, 0x20007DF8 / 0x20008085 / 0x20007238)
+@ In       : r0 = 0 voltage chain (fn_08007714), 1 current chain (fn_08008138)
+@ Out      : r3 = func_smooth_hist state block of the quantity, or 0 = keep fn_0800B754 and its v2.05 state
+@ Clobbers : r1, r2, r3, flags
+@ Context  : main only
+@ RAM      : reads  0x2000803C meter_mode, 0x200080A5
+@ Spec     : ORIGINAL_FIRMWARE_ISSUES.md OF-28; requests/W6_to_W5.md 4; src/func/smooth.s (blocks)
+@ Deviation: OF-28
+@ Mode 2 (AC+DC DC phase): mdc_acdc_dc_state.  Modes 22, 23, 24 (DC VA): func_st_va_volt for the voltage chain, func_st_va_curr for the current chain.
+@ Modes 17, 19, 21 with the burden option 0x200080A5 = 1 (two quantities alternate): func_st_burden_volt / func_st_burden_curr.  Everything else
+@ (DCV, LowZ DC, DCmV, single-quantity current modes) shares the v2.05 history with no other quantity, so it keeps fn_0800B754.
+@ -----------------------------------------------------------------------------
+LFUNC mdc_dc_state
+    ldr r1, =meter_mode
+    ldrb r1, [r1]                           @ r1 = mode
+    cmp r1, #2
+    bne 1f
+    cmp r0, #0
+    bne 4f                                  @ the current chain never runs in mode 2
+    ldr r3, =mdc_acdc_dc_state              @ AC+DC DC phase (voltage chain)
+    bx lr
+1:  subs r2, r1, #22
+    cmp r2, #2
+    bhi 2f                                  @ not 22..24
+    ldr r3, =func_st_va_volt                @ DC VA, voltage chain
+    cmp r0, #0
+    beq 5f
+    ldr r3, =func_st_va_curr                @ DC VA, current chain
+5:  bx lr
+2:  cmp r1, #17
+    beq 3f
+    cmp r1, #19
+    beq 3f
+    cmp r1, #21
+    bne 4f                                  @ not a DC current mode
+3:  ldr r2, =v_200080A5
+    ldrb r2, [r2]
+    cmp r2, #1
+    bne 4f                                  @ burden option off: one quantity only
+    ldr r3, =func_st_burden_volt            @ burden display, voltage
+    cmp r0, #0
+    beq 6f
+    ldr r3, =func_st_burden_curr            @ burden display, current
+6:  bx lr
+4:  movs r3, #0                             @ v2.05 shared history
+    bx lr
+    .ltorg
+ENDFUNC mdc_dc_state
+
+@ -----------------------------------------------------------------------------
 @ fn_08007714 - DC voltage chain (DCV, LowZ DC, AC+DC DC phase, DC current voltage channel)
 @ Replaces : 0x08007714 FUN_08007714 (v2.05)
 @ In       : -
@@ -40,7 +91,8 @@
 @            writes 0x20007D64, 0x2000805D
 @ Spec     : analysis/hy3131_model.md 5.2, 4.2; hy3131_modes_ac_current.md
 @ Deviation: OF-28
-@ Mean branch (0x20008081 = 1): D = fn_08006418 (mean -> calibrated value), smoothed with threshold 2 counts and depth 2; 0x2000805D = 1.
+@ Mean branch (0x20008081 = 1): D = fn_08006418 (mean -> calibrated value), smoothed with threshold 2 counts and depth 2 (own state block per quantity, OF-28,
+@ see mdc_dc_state); 0x2000805D = 1.
 @ Called for modes 0 (LowZ DC), 1 (DCV), 2 with AC+DC on and 0x200080BD set (DC phase of AC+DC), and by FUN_08007FA8.
 @ -----------------------------------------------------------------------------
 FUNC fn_08007714
@@ -50,16 +102,16 @@ FUNC fn_08007714
     cmp r0, #0                         @ 0x0800771C
     beq .L08007778                     @ 0x0800771E
     bl fn_08006418                     @ 0x08007720  mean code -> 0x20007D64 (calibrated value)
+    @ OF-28: the quantity gets a smoothing state of its own (mdc_dc_state): AC+DC DC phase, DC VA voltage, burden-display voltage;
+    @ every other caller keeps the v2.05 state (fn_0800B754)
+    movs r0, #0                             @ voltage chain
+    bl mdc_dc_state                         @ r3 = state block, 0 = the v2.05 shared state
     movs r2, #2                        @ 0x08007724  r2 = depth 2
     movs r1, #2                        @ 0x08007726  r1 = threshold 2 counts
     ldr r0, =v_20007D64                @ 0x08007728 pool 0x08007F94 = 0x20007D64
     ldr r0, [r0, #0]                   @ 0x0800772C
-    @ OF-28: AC+DC DC phase (mode 2) smooths through its own state block; every other caller keeps the v2.05 state (fn_0800B754)
-    ldr r3, =meter_mode
-    ldrb r3, [r3]
-    cmp r3, #2
-    bne .Ld7_plain
-    ldr r3, =mdc_acdc_dc_state              @ OF-28: own history for the AC+DC DC phase
+    cmp r3, #0
+    beq .Ld7_plain
     bl func_smooth_hist                     @ r0 = value, r1 = 2, r2 = 2, r3 = state block
     b .Ld7_smoothed
 .Ld7_plain:
@@ -343,10 +395,10 @@ ENDFUNC fn_08007FA8
 @ Clobbers : r0-r3, r12, flags (r4 preserved)
 @ Context  : main only
 @ RAM      : reads  0x2000803C meter_mode, 0x2000803D meter_range, 0x20007D64, 0x20007D7C, 0x20007E0C, 0x20008037,
-@            0x20008081
+@            0x20008081, 0x200080A5
 @            writes 0x20007D64, 0x2000805D, 0x20008062
 @ Spec     : analysis/hy3131_modes_ac_current.md
-@ Deviation: none
+@ Deviation: OF-28
 @ Mean branch: D = smoothed(fn_08006418, 10, 10) + FUN_080087F8(0x20007D7C, D); in range 0 the user zero (0x20007E0C) is subtracted.
 @ Then the per-sample chain; for modes 16..21 a redraw is requested when sub page 10 is shown.
 @ -----------------------------------------------------------------------------
@@ -360,11 +412,19 @@ FUNC fn_08008138
     beq .L080081A4                     @ 0x08008144
     @ ---- mean branch: mean -> calibrated value, smoothing (10, 10), burden-voltage correction FUN_080087F8 (MVA) ----
     bl fn_08006418                     @ 0x08008146
+    movs r0, #1                             @ OF-28: current chain
+    bl mdc_dc_state                         @ r3 = state block of the quantity, 0 = the v2.05 shared state
     movs r2, #10                       @ 0x0800814A  depth 10
     movs r1, #10                       @ 0x0800814C  threshold 10 counts
     ldr r0, =v_20007D64                @ 0x0800814E pool 0x080087C8 = 0x20007D64
     ldr r0, [r0, #0]                   @ 0x08008152
-    bl fn_0800B754                     @ 0x08008154  display smoothing (10, 10)
+    cmp r3, #0
+    beq .Ld8_plain
+    bl func_smooth_hist                     @ OF-28: own history (DC VA current, burden-display current)
+    b .Ld8_smoothed
+.Ld8_plain:
+    bl fn_0800B754                     @ 0x08008154  display smoothing (10, 10), shared v2.05 history
+.Ld8_smoothed:
     ldr r1, =v_20007D64                @ 0x08008158 pool 0x080087C8 = 0x20007D64
     str r0, [r1, #0]                   @ 0x0800815C
     ldr r0, =v_20007D64                @ 0x0800815E pool 0x080087C8 = 0x20007D64

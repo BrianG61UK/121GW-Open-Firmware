@@ -6,7 +6,7 @@
 @ followed by polling the card state with CMD13 (sd_get_status) up to 20000 times until it is back in the transfer state.
 @ sd_bringup and sd_probe_mount are the "bring-up" that the log session and cal.bin run before opening files.
 @
-@ Deviation of this file: OF-36 (disk_read honours the sector count).
+@ Deviation of this file: OF-42 (disk_read honours the sector count).
 @
 
     .syntax unified
@@ -311,7 +311,7 @@ ENDFUNC disk_status
 @ Context  : main only
 @ Spec     : v2.05 listing 0x08023F7E..0x08023FB7; the SD command sequence per sector (CMD16 512, CMD17 sector, then CMD13
 @            polling) is sd_read_block + sd_get_status as in v2.05
-@ Deviation: OF-36 (new).  v2.05 reads exactly one sector whatever r3 says: the routine keeps r3 in r6 and never uses it
+@ Deviation: OF-42 (ORIGINAL_FIRMWARE_ISSUES.md).  v2.05 reads exactly one sector whatever r3 says: the routine keeps r3 in r6 and never uses it
 @            (0x08023F8A..0x08023FB4).  FatFs passes a count greater than 1 when f_read has whole sectors for the caller
 @            (0x08021E58..0x08021E80), and then only the first sector would arrive in the caller's buffer.  No v2.05 caller
 @            asks for more than one sector (the log verification and cal.bin read 512 bytes per call, the FAT, directory and

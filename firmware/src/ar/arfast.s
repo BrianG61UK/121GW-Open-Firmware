@@ -16,7 +16,8 @@
 @ Why the final range equals the one v2.05 reaches (ARS 5.1 invariant 1): v2.05 moves one range per decision and
 @ re-measures; every range is ten times the previous one in counts (the table 0x08025A3C: 50 000 counts per range
 @ except DCV range 3 = 6 000, ACA / DCA range 2 = 10 000, CAP = 10 000), so the reading of range j is the reading of
-@ the present range c scaled by 10^(c - j).  Going up v2.05 stops at the lowest j > c with |v_j| <= U_j, going down
+@ the present range c scaled by 10^(c - j).  The one exception is CAP range 5 against range 4 (hundred times: range 5
+@ shows 9999 uF without decimals, range 4 100.00 uF, hy3131_modes_misc.md 5.5), handled in the down search.  Going up v2.05 stops at the lowest j > c with |v_j| <= U_j, going down
 @ at the highest j < c with |v_j| >= L_j (or 0); the routines compute exactly that j from one confirmed sample.  The
 @ sample is an estimate with an uncertainty of one count, so a candidate that the uncertainty leaves undecided is
 @ resolved towards the present range (lower j going up, higher j going down): never an overshoot, and the normal rule
@@ -71,7 +72,8 @@ ar_state:
 ar_ohm_mean:
     .byte 8, 8, 32, 16, 16, 1, 8
     .balign 4
-@ 10^0 .. 10^6: the ratio between ranges j and c is 10^|j - c|, at most 10^6 (seven ranges)
+@ 10^0 .. 10^6: the ratio between ranges j and c is 10^|j - c| (10^(c - j + 1) for CAP range 5 to a lower range), at most
+@ 10^6 (seven OHM ranges; CAP range 5 to range 0 is 10^6 as well)
 ar_pow10:
     .word 1, 10, 100, 1000, 10000, 100000, 1000000
 
@@ -80,22 +82,27 @@ ar_pow10:
 @ -----------------------------------------------------------------------------
 @ ar_thr_up - upper threshold U of a range
 @ Replaces : nothing (the arithmetic of autorange_step 0x0800DF6A..0x0800DFA0 for a chosen range)
-@ In       : r0 = mode, r1 = range
-@ Out      : r0 = U = FS + FS/12 while the overload latch is set, else FS + FS/10 (FS = table 0x08025A3C entry)
-@ Clobbers : r2, r3, flags
+@ In       : r0 = mode, r1 = range, r2 = 1 to honour the overload latch (the present range), 0 to ignore it (a candidate
+@            range above the present one: v2.05 clears the latch with the range change, 0x0800E256..0x0800E270, and
+@            fn_0800DB48 clears it at the apply)
+@ Out      : r0 = U = FS + FS/12 while r2 = 1 and the overload latch is set, else FS + FS/10 (FS = table 0x08025A3C entry)
+@ Clobbers : r2, r3, r12, flags
 @ Context  : main
 @ RAM      : reads 0x200080F8 (mode_ol_latch)
 @ Note     : DIODE (U = FS) is not ranged here
 @ -----------------------------------------------------------------------------
 LFUNC ar_thr_up
+    mov r12, r2                             @ r12 = latch selector
     ldr r2, =full_scale_table
     movs r3, #28
     muls r3, r0, r3                         @ mode * 28: seven words per mode
     adds r2, r2, r3
     ldr r0, [r2, r1, lsl #2]                @ r0 = FS of this range
+    movs r3, #10                            @ divisor 10 ...
+    cmp r12, #0
+    beq 1f                                  @ candidate range: no latch
     ldr r2, =ar_ol_latch
     ldrb r2, [r2]
-    movs r3, #10                            @ divisor 10 ...
     cbz r2, 1f
     movs r3, #12                            @ ... 12 while the latch is set (0x0800DF72..0x0800DF8C)
 1:  udiv r2, r0, r3
@@ -238,7 +245,8 @@ ENDFUNC ar_decision_pending
 @
 @ Conversions to discard after the change, n (the first n conversions are refused by ar_sample, so the caller must
 @ not accumulate them into the mean):
-@   N = 2 conversions (the sinc^2 comb of AD1 needs the third conversion after a change), 26 for DCV range 0 (the
+@   N = 2 conversions (the sinc^2 comb of AD1 needs the third conversion after a change; none for CAP, whose counter
+@       results do not pass the comb: ARS 5.3 expects one CAP conversion per change), 26 for DCV range 0 (the
 @       AD1 pre-filter R 100 kohm with C 27 nF: 10.8 tau = 321 ms, 26 conversions of 12.5 ms), 5 for the DC current
 @       modes under TP (30 ms at 6.25 ms)
 @   CP (default): v2.05 keeps discarding (count - 1) means of M samples (M = 16, OHM per range 8, 8, 32, 16, 16, 1, 8), so
@@ -280,6 +288,11 @@ FUNC ar_apply
     tst r2, r3
     beq .Laa_done                           @ no ranging by samples in this mode: nothing to discard
     movs r5, #2                             @ r5 = N: the comb needs two conversions
+    cmp r0, #MODE_CAP
+    bne .Laa_notcap
+    movs r5, #0                             @ CAP: counter results, AD1 is not consumed (hy3131_modes_misc.md 3.1), so no
+    b .Laa_store                            @ comb to wait for; v2.05 trusts the first result after the apply (count 1)
+.Laa_notcap:
     cmp r0, #1
     bne 1f
     cmp r1, #0
@@ -350,7 +363,9 @@ ENDFUNC ar_apply
 @ K = 2 samples in a row confirm either (CAP: one conversion; CAP has no sample-based step up).  Target range:
 @   up    saturated: OHM the top range, other modes one range up (the true value is unknown); otherwise the lowest j > c
 @         with (|v| - 1) / 10^(j-c) <= U_j, else the top range (overload stays with autorange_step)
-@   down  the highest j in 1..c-1 with (|v| + 1) * 10^(c-j) >= L_j, else 0
+@   down  the highest j in 1..c-1 with (|v| + 1) * 10^(c-j) >= L_j, else 0 (CAP range 5 to a lower range: 10^(c-j+1),
+@         range 5 is 9999 uF with no decimals and range 4 is 100.00 uF: the readings differ by 100, which is why v2.05
+@         uses L = FS/100 in CAP range 5, 0x0800DFB6)
 @ The OHM direction guard (fn_0800E2A0) may refuse the step; the confirmation is then kept and tried again with the
 @ next sample.
 @ -----------------------------------------------------------------------------
@@ -416,6 +431,7 @@ FUNC ar_sample
     beq .Las_chk_under                      @ CAP: no sample-based step up (the counter timeout and autorange_step do that)
     mov r0, r5
     mov r1, r6
+    movs r2, #1                             @ the present range honours the overload latch
     bl ar_thr_up
     cmp r8, #0
     bne .Las_over                           @ saturated: over whatever the value says
@@ -469,6 +485,7 @@ FUNC ar_sample
     udiv r8, r4, r1                         @ r8 = (|value| - 1) / 10^m, the reading in range j
     mov r0, r5
     mov r1, r9
+    movs r2, #0                             @ a range above the present one starts without the latch
     bl ar_thr_up                            @ r0 = U_j
     cmp r8, r0
     bls .Las_do_up                          @ fits range j: the lowest range that does
@@ -505,7 +522,12 @@ FUNC ar_sample
     cmp r9, #0
     beq .Las_do_down                        @ range 0: nothing lower
     subs r0, r6, r9                         @ m = c - k
-    ldr r1, =ar_pow10
+    cmp r5, #MODE_CAP
+    bne 6f
+    cmp r6, #5
+    bne 6f
+    adds r0, r0, #1                         @ CAP range 5 counts whole uF (0 decimals), range 4 hundredths: ratio 100, not 10
+6:  ldr r1, =ar_pow10
     ldr r8, [r1, r0, lsl #2]                @ r8 = 10^m
     mov r0, r5
     mov r1, r9

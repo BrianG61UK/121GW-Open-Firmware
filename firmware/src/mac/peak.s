@@ -75,9 +75,8 @@ FUNC fn_0800A7FC
     adds r0, r1, r0                      @ 0800A856  r0 = v_200077DE + ((v_200077DF << 8) + (v_200077E0 << 16))
     ldr r1, =v_20007DEC                  @ 0800A858
     str r0, [r1]                         @ 0800A85C  peak_lo_raw (u32) = (v_200077DE + ((v_200077DF << 8) + (v_200077E0 << 16)))
-    ldr r0, =v_2000807E                  @ 0800A85E
-    @ ---- v2.05 0x0800A862..0x0800A88C replaced (see Deviation in the header) ----
-    bl hy_peak_restart                      @ HW-05: HY writes register 0x29 <- row byte & 0xFB, delay(10), then the row byte (v2.05 0x0800A862..0x0800A88C
+    @ ---- v2.05 0x0800A85E..0x0800A88C replaced (see Deviation in the header) ----
+    bl hy_peak_restart                      @ HW-05: HY writes register 0x29 <- row byte & 0xFB, delay(10), then the row byte (v2.05 0x0800A85E..0x0800A88C
                                             @ used the read-back copy 0x2000807E and hy3131_write_regs)
     @ only modes 2 and 4 with peak_hold = 1
     ldr r0, =meter_mode                  @ 0800A890

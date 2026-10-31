@@ -156,7 +156,8 @@
 @ Replaces  : 0x08010516 log_compose_mode_range (v2.05)
 @ In        : -
 @ Out       : -
-@ Clobbers  : r0-r1, flags (v2.05 regeffects.txt; r4-r11 preserved)
+@ Clobbers  : r0-r3, r12, flags (v2.05 regeffects.txt: r0-r1; the port also changes r2, r3 and r12 through log_store_value (OF-35);
+@             the only caller, loop step 5 (0x08024BDA), keeps nothing in them; r4-r11 preserved)
 @ Context   : main only (loop step 5 every 100 ms: DESIGN.md 3.5)
 @ RAM       : reads meter_mode 0x2000803C, meter_range 0x2000803D, 0x2000803E (frequency range index), the status flags 0x20008098
 @             0x20008099 0x200080B9 0x200080B7 0x200080BA 0x200080AB, 0x20008047, 0x200080A5, 0x200080A7, 0x200080CA, 0x200080CB,
@@ -618,7 +619,7 @@ ENDFUNC log_compose_mode_range
 @ Replaces : 0x08010908 FUN_08010908 (v2.05), called by log_compose_mode_range at 0x080105D2
 @ In       : -
 @ Out      : -
-@ Clobbers : r0-r3, flags (AAPCS)
+@ Clobbers : r0-r3, r12, flags (AAPCS; v2.05 changed r0 and r1 only, 0x08010908..0x080109E9)
 @ Context  : main only
 @ RAM      : reads disp_overflow 0x20008049, disp_overflow_neg 0x20008045, display_reading 0x20007D64;
 @            read-modify-writes log_rec_flags1 0x20007FEF; writes log_rec_value1 0x20007D28
