@@ -1294,7 +1294,7 @@ New optimisations are added here before they are implemented; anything that chan
 - Q7: verified new defects get OF numbers in `ORIGINAL_FIRMWARE_ISSUES.md`; NF-/HW-/NVM-/IMP-/OPT- entries keep their
   prefixes and the allowlist format accepts all prefixes.
 - Q8: required before the image is flashed to a meter: full EEPROM dump 0x08080000..0x08082FFF and cal.bin save
-  before flashing, first power-on on a current-limited supply, APO/wake test, EEPROM dump after and compared; the test
+  before flashing, first power-on on batteries (a current-limited bench supply in place of the batteries is optional), APO/wake test, EEPROM dump after and compared; the test
   procedure goes in `firmware/HARDWARE_TEST.md` (written with the release, approved by the owner).
 - Q9: fix all three: NF-07 (`CAL_FIX_SETUP_FALLTHROUGH` = 1), NF-08 (`CAL_CANCEL_ON_MODE_CHANGE` = 1),
   NF-10 (`CAL_FIX_MARKER26_RAM` = 1).
