@@ -1,0 +1,8 @@
+# Only our firmware port and our emulator are tracked.
+/*
+!/.gitignore
+!/README.md
+!/firmware/
+!/emulator/
+__pycache__/
+*.pyc
