@@ -1,0 +1,49 @@
+# Deviation allowlist of the firmware port (format: emulator/emu/allowlist.py), used by the differential harness
+# (emulator/diff/compare.py, scenarios of emulator/diff/scenarios) and by the hardware-safety monitor
+# (emulator/emu/safety.py, safety_* entries).  References: firmware/DESIGN.md section 10.
+
+# HW-04: the GPIO output level is written before MODER, so the port drives PD1 and PE9 from "not driven" straight to 1
+# where v2.05 first drives them to 0 (0x0801C08A, 0x0801C0C2) and then to 1 (0x0801C094, 0x0801C0CE).  Cold boot and
+# wake from STOP (firmware/requests/W1_to_W10.md item 3; W10_to_W1.md item 3 for the wake step with PE9=Z).
+HW-04  safety_power  *  pins == PD1 and old == Z and new == 1 and ctx == PE9=1,PD1=Z
+HW-04  safety_power  *  pins == PD1 and old == Z and new == 1 and ctx == PE9=Z,PD1=Z
+HW-04  safety_power  *  pins == PE9 and old == Z and new == 1 and ctx == PE9=Z,PD1=1
+
+# OF-08: calibration-mode entry (MODE at power-on, then REL) does not rewrite the six user-zero records 0x4D0..0x4FC;
+# v2.05 writes A5 00 00 00 00 to each (analysis/keys_setup.md 3.1, 5.2).  The scenario's assertions on those bytes
+# (lines 12..17) describe v2.05.
+OF-08  eeprom        poweron_calmode_erase  offset in 0x4D0..0x4FF
+OF-08  eeprom_final  poweron_calmode_erase  offset in 0x4D0..0x4FF
+OF-08  assert        poweron_calmode_erase  line in 12..17
+
+# OF-23: the DIODE 3 V / 15 V selection is not written to EEPROM 0x12 (v2.05: FUN_080159C8 writes it, boot forces 3 V).
+# diode_range line 15 asserts the v2.05 write.
+OF-23  eeprom        *           offset == 0x12
+OF-23  eeprom_final  *           offset == 0x12
+OF-23  assert        diode_range line == 15
+
+# OF-12: cal.bin is a 1248-byte file that also holds the user-zero records 0x4D0..0x4FF (DESIGN.md section 10, 7.3);
+# v2.05 writes 1200 bytes, EEPROM 0x000..0x4AF (calbin_save 0x0801CD14, analysis/keys_setup.md 3.2).  The card traffic
+# of the save differs with the file size; calbin_save line 14 asserts 1200.
+OF-12  sd_files      calbin_save  path == /CAL.BIN
+OF-12  sd_block      calbin_save  any
+OF-12  sd_cmd        calbin_save  any
+OF-12  assert        calbin_save  line == 14
+
+# OF-17: PEAK while the 1 kHz filter is on is refused (refusal beep, no state change); v2.05 accepts it and the main
+# display goes blank.  In peak_with_filter_of17 the PEAK press starts at 12.0 s (dial at 0; wait 3; MODE press 0.5 s;
+# wait 2; wait 3; long REL 1.5 s; wait 2): from there the display, the HY3131 configuration and the buzzer differ.
+OF-17  lcd           peak_with_filter_of17  t in 12.0..1000.0
+OF-17  spi           peak_with_filter_of17  t in 12.0..1000.0
+OF-17  gpio          peak_with_filter_of17  t in 12.0..1000.0
+
+# OF-11: the first status frame after the BLE transfer is switched on is built before it is sent (v2.05 can send the
+# previous buffer, analysis/ble_packet.md section 2).  In the BLE scenarios the long PEAK press starts at 3.0 s and the
+# transfer starts when the long press fires (50 ticks), the first frame within the next 50 ticks: window 3.0..4.5 s.
+OF-11  uart_tx       ble_*  t in 3.0..4.5
+
+# OF-10: command echoes are queued between status frames instead of being sent at once into a running frame.  The
+# injected frame of ble_key_injection, ble_bad_key_frame and ble_set_clock arrives at 5.5 s; the echo and the frame
+# around it fall within 5.5..6.6 s (one 50-tick frame period plus an echo of 5 or 15 bytes at 19200 baud).
+OF-10  uart_tx       ble_key_injection  t in 5.5..6.6
+OF-10  uart_tx       ble_set_clock      t in 5.5..6.6

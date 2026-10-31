@@ -6,3 +6,7 @@
 !/emulator/
 __pycache__/
 *.pyc
+
+# internal worker coordination notes (not part of the firmware)
+/firmware/requests/
+/firmware/PHASE0_*.md
