@@ -1308,7 +1308,13 @@ New optimisations are added here before they are implemented; anything that chan
   `ORIGINAL_FIRMWARE_ISSUES.md` (confirmed by execution). NF-10 is refuted: the only write of marker 0x26 / RAM flag
   0x20007FE0 (0x0800F8AE..0x0800F8B8) is in the AC gain completion FUN_0800F7B8, which never runs in mode 9; switch
   `CAL_FIX_MARKER26_RAM` is removed and that code is ported as in v2.05. BEEP calibration stays refused (OF-07).
-- Q12: MPU guard added (switch `MPU_GUARD`), enabled once W10 has added the MPU to the emulator and it is tested.
+- Q12: MPU guard added (switch `MPU_GUARD`). The emulator models the MPU (PM0056 4.2, `emulator/emu/scs.py`); the guard
+  build boots and stray stores to program flash and the option bytes fault into `sys_fault_safe` with nothing written.
+  The default becomes 1 once STOP/wake of the guard build passes in integration.
+- Routine-level runner (9.4 level 2): `emulator/diff/routine.py`. Check tools: `firmware/tools/check_image.py`
+  (items 1, 2, 5, plus lint items 6 and 7, stricter than item 2: every FLASH offset outside the allowed list and the
+  FLASH bit-band alias are rejected), `check_hy.py` (needs a Python with capstone and unicorn: `make PYTHON=...`),
+  `check_gpio.py` with `fe_levels.txt`.
 
 ---
 
