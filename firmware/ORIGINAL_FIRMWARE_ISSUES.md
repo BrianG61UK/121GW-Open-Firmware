@@ -20,11 +20,11 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-05 | Mode helper | Unset register passed on for modes outside the handled set | low | open |
 | OF-06 | GPIO set-up | Pin mask left uninitialised for unhandled arguments | high | open |
 | OF-07 | Calibration | Calibration save in LowZ and BEEP overwrites the ACV record area, which those modes never load | high | open |
-| OF-08 | Calibration | Entering calibration mode clears the six user current-zero records without confirmation or mention in the manual | low | by design |
+| OF-08 | Calibration | Entering calibration mode clears the six user current-zero records without confirmation or mention in the manual | medium | open |
 | OF-09 | Calibration | Current zeroing (long REL) stores only the last increment: a second zeroing is lost at the next mode/range change | medium | open |
 | OF-10 | Bluetooth | Packet build and transmit are not synchronised; command echoes can interleave with status frames | medium | open |
 | OF-11 | Bluetooth | First frame after enabling BT can carry stale buffer contents | low | open |
-| OF-12 | Backup | `cal.bin` does not include the six user current-zero records at EEPROM 0x4D0–0x4FF | low | by design |
+| OF-12 | Backup | `cal.bin` does not include the six user current-zero records at EEPROM 0x4D0–0x4FF | medium | open |
 | OF-13 | ADC | ADC sample-time register rewritten while the ADC is on, against the reference manual | low | open |
 | OF-14 | Measurement | HY3131 AD1 result decoded with the wrong two's-complement offset: negative codes read 1 LSB high, negative full scale reads as positive | low | open |
 | OF-15 | Measurement | Rounding to display counts truncates toward zero after adding 0.5: negative readings show one count too little in magnitude | medium | open |
@@ -98,7 +98,9 @@ Power-on, then MODE, then REL within the start-up window enters calibration mode
 `FUN_0801150E` (`0x0800EAF6`), which rewrites the six records at EEPROM 0x4D0, 0x4D8, 0x4E0, 0x4E8,
 0x4F0, 0x4F8 (marker 0xA5 + value 0). There is no confirmation step, and the user manual does not
 mention it. The six records are the user current-zero offsets set by a long REL (OF-09), not factory calibration;
-clearing them when the factory calibration mode starts is a reasonable design. Port: unchanged behaviour.
+they are cleared all at once, even for ranges that are not recalibrated. Port: a record is cleared only when
+calibration of its mode and range is performed (before its calibration measurement if that measurement includes
+the zero offset).
 
 ### OF-09 — current-extra store value
 A long REL in modes 16..21 at range 0 stores `0x20007D64` to EEPROM (`FUN_080114BC`, called at
@@ -123,7 +125,8 @@ Port: build before the first transmit.
 ### OF-12 — incomplete calibration backup
 `cal.bin` save/load (`FUN_0801CD14` / `FUN_0801CF06`) covers EEPROM 0x000–0x4AF only; the
 current-offset records at 0x4D0–0x4FF (read by `FUN_08011448`) are not included. The omitted records are user current-zero offsets (OF-09), not calibration, so leaving them out of a calibration
-backup is defensible and keeps the file compatible with v2.05. Port: unchanged format.
+backup loses them. Port: `cal.bin` also carries the six records; a 1200-byte v2.05 file is still accepted and
+then leaves 0x4D0–0x4FF untouched.
 
 ### OF-13 — ADC sample time changed while the ADC is enabled
 RM0038 (rev. 15) section 12.15.6, ADC_SMPR3: "These bits must be written only when ADON=0."
