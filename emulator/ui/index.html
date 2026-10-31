@@ -35,6 +35,8 @@
   #log { font:11px/14px Menlo, monospace; height:300px; overflow:auto; white-space:pre; color:#c7d0d6; }
   .ctl button { background:#2b3238; color:#e6eaee; border:1px solid #3a434a; border-radius:6px; padding:4px 10px; margin-right:6px; cursor:pointer; }
   label { margin-right:12px; } input[type=range] { width:160px; vertical-align:middle; }
+  .ctl select, .ctl input[type=number] { background:#2b3238; color:#e6eaee; border:1px solid #3a434a; border-radius:6px; padding:3px 6px; }
+  .bad { color:#ff9b6b; } .good { color:#8fdc8f; }
 </style>
 </head>
 <body>
@@ -58,11 +60,27 @@
     <button id="run">Pause</button><button id="reset">Power cycle</button>
     <label><input type="checkbox" id="ghost"> ghost unlit segments</label>
     <label><input type="checkbox" id="unproven"> show unproven glass elements</label>
+    <label title="needs an image: start the emulator with --sdcard PATH"><input type="checkbox" id="sdcard"> SD card inserted</label> <span id="sdinfo"></span>
     <div style="margin-top:6px">
       <label>PA5 battery sense <input type="range" id="PA5" min="0" max="3.3" step="0.01"> <span id="PA5v"></span> V</label>
       <label>PA4 thermistor <input type="range" id="PA4" min="0" max="3.3" step="0.01"> <span id="PA4v"></span> V</label>
     </div>
     <div id="status" style="margin-top:8px"></div>
+  </div>
+  <div class="panel ctl"><h3>Input stimulus (test leads &#8594; HY3131 front end)</h3>
+    <label>quantity <select id="skind"><option value="V">volts</option><option value="A">amperes</option><option value="ohm">ohms</option><option value="Hz">hertz</option><option value="F">farads</option><option value="degC">thermocouple &#176;C</option><option value="diode">diode forward volts</option><option value="VA">volts + amperes (VA)</option></select></label>
+    <label>value <input type="number" id="sval" step="any" value="0" style="width:110px"></label>
+    <label><input type="checkbox" id="sac"> AC</label>
+    <label>frequency <input type="number" id="sfreq" step="any" min="0" value="50" style="width:80px"> Hz</label>
+    <div style="margin-top:6px">
+      <label title="high fraction of the signal at the counter input">duty <input type="number" id="sduty" step="any" min="0" max="1" value="0.5" style="width:60px"></label>
+      <label title="high time; overrides duty when above 0">pulse width <input type="number" id="swidth" step="any" min="0" value="0" style="width:80px"> s</label>
+      <label title="DC component of an AC voltage (AC+DC)">DC part <input type="number" id="sdc" step="any" value="0" style="width:70px"> V</label>
+      <label title="current of the VA quantity">amperes <input type="number" id="samps" step="any" value="0" style="width:80px"> A</label>
+      <label title="cold junction; sets the PA4 thermistor voltage. Empty: follows the PA4 slider">board <input type="number" id="sboard" step="any" placeholder="PA4" style="width:60px"> &#176;C</label>
+      <button id="sapply">Apply</button>
+    </div>
+    <div id="sstat" style="margin-top:6px"></div>
   </div>
   <div class="panel"><h3>LCD RAM (COM &#215; SEG, raw — independent of the glass map)</h3><div id="matrix"></div></div>
   <div class="panel"><h3>Event log</h3><div id="log"></div></div>
@@ -117,8 +135,15 @@ for (const [j, x, y] of JACKS) { const e = document.createElement('div'); e.clas
 // analog inputs
 for (const p of ['PA5','PA4']) { const s = document.getElementById(p); s.oninput = () => { document.getElementById(p+'v').textContent = (+s.value).toFixed(2); post({analog:p, volts:+s.value}); }; }
 let analogInit = false;
+// stimulus: {input: {kind, value, ac, freq, duty, width, dc, amps, board}} (app.py command 'input', fields: emu/frontend.py)
+let stimInit = false;
+const sv = id => document.getElementById(id);
+sv('sapply').onclick = () => post({input: {kind: sv('skind').value, value: +sv('sval').value, ac: sv('sac').checked,
+  freq: +sv('sfreq').value, duty: +sv('sduty').value, width: +sv('swidth').value, dc: +sv('sdc').value, amps: +sv('samps').value,
+  board: sv('sboard').value === '' ? null : +sv('sboard').value}});
 document.getElementById('run').onclick = e => post({run: e.target.textContent === 'Resume'});
 document.getElementById('reset').onclick = () => post({reset:true});
+document.getElementById('sdcard').onchange = e => post({sdcard: e.target.checked});
 async function tick() {
   try {
     const s = await (await fetch('/state')).json();
@@ -140,10 +165,22 @@ async function tick() {
     pointer.setAttribute('transform', `rotate(${DOTS[s.dial][2]} 347 873.6)`);
     for (const k in keyEls) keyEls[k].classList.toggle('down', s.keys.includes(k));
     for (const j in jackEls) jackEls[j].classList.toggle('plugged', s.jacks.includes(j));
-    if (!analogInit && s.analog) { for (const p of ['PA5','PA4']) { document.getElementById(p).value = s.analog[p]; document.getElementById(p+'v').textContent = s.analog[p].toFixed(2); } analogInit = true; }
+    if (!stimInit && s.stimulus) { const st = s.stimulus; sv('skind').value = st.kind; sv('sval').value = st.value; sv('sac').checked = st.ac;
+      sv('sfreq').value = st.freq; sv('sduty').value = st.duty ?? 0.5; sv('swidth').value = st.width ?? 0; sv('sdc').value = st.dc ?? 0;
+      sv('samps').value = st.amps ?? 0; sv('sboard').value = st.board ?? ''; stimInit = true; }
+    if (s.frontend) { const f = s.frontend, h = s.hy3131 || {};
+      document.getElementById('sstat').innerHTML = `<span>front end: ${f.backend}</span> &nbsp; <span>firmware mode ${f.mode_name} range ${f.range}</span> &nbsp; ` +
+        (f.supported ? `<span class="good">supported</span>${f.reason ? ' (' + f.reason + ')' : ''}` : `<span class="bad">unsupported: ${f.reason}</span>`) +
+        `<br><span>AD1 ${h.ad1_sps ? h.ad1_sps.toFixed(1) + ' sps, code ' + h.ad1_code : 'off'}</span> &nbsp; <span>counter: ${h.counter}</span>` +
+        (f.board_c !== undefined ? ` &nbsp; <span>board ${f.board_c === null ? 'unknown' : f.board_c.toFixed(2) + ' &#176;C'}</span>` : '') +
+        (f.error ? `<br><span class="bad">${f.error}</span>` : ''); }
+    if (s.sdcard) { const sd = document.getElementById('sdcard'); sd.disabled = !s.sdcard.configured; sd.checked = !!s.sdcard.present;
+      document.getElementById('sdinfo').textContent = s.sdcard.configured ? `(${s.sdcard.image}, ${s.sdcard.capacity_mb} MiB)` : '(no image configured)'; }
+    // sliders follow the machine (a board temperature moves PA4) unless being dragged
+    if (s.analog) { for (const p of ['PA5','PA4']) if (!analogInit || document.activeElement !== sv(p)) { sv(p).value = s.analog[p]; sv(p+'v').textContent = s.analog[p].toFixed(2); } analogInit = true; }
     const lg = document.getElementById('log'), atEnd = lg.scrollTop + lg.clientHeight >= lg.scrollHeight - 4;
     lg.textContent = s.log.join('\n'); if (atEnd) lg.scrollTop = lg.scrollHeight;
-  } catch (e) {}
+  } catch (e) { console.error(e); }
   setTimeout(tick, 100);
 }
 tick();

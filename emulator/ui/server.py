@@ -4,7 +4,11 @@ GET  /               front panel page
 GET  /assets/...     static assets (LCD layers, bit map)
 GET  /state          JSON snapshot: LCD RAM, outputs, run state, recent log lines
 POST /input          JSON command: {"key": name, "down": bool} | {"dial": position} |
-                     {"jack": name, "plugged": bool} | {"run": bool} | {"reset": true} | {"speed": x}
+                     {"jack": name, "plugged": bool} | {"run": bool} | {"reset": true} | {"speed": x} |
+                     {"analog": "PA4"|"PA5", "volts": v} |
+                     {"input": {"kind": "V"|"A"|"ohm"|"Hz"|"F"|"degC"|"diode"|"VA", "value": x, "ac": bool,
+                                "freq": f, "duty": d, "width": s, "dc": v, "amps": a, "board": t}}
+                     (stimulus fields: emu/frontend.py module docstring; app.py Emulator.command)
 The emulator object passed to serve() must provide snapshot() and command(dict); it runs in its
 own thread and is shared with scripted tests, so the page always shows the machine under test.
 """
