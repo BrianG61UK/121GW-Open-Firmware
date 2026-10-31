@@ -1,0 +1,17 @@
+# CAP with several capacitances.
+source analysis/hy3131_model.md sections 3, 5 (configuration rows, value chain) and emu/frontend.py (calibrated front end)
+source preconditions: rotary-memory bytes of the supplied calibration EEPROM image (0x08..0x0E = 01 03 06 0A 18 16 13)
+dial ohm
+wait 3
+press MODE
+wait 1
+press MODE
+wait 1
+input F 1e-9
+wait 6
+input F 1e-7
+wait 6
+input F 1e-5
+wait 6
+input F 1e-3
+wait 6

@@ -1,0 +1,13 @@
+# PEAK while the 1 kHz filter is on (documented original issue OF-17: the main display goes blank and stays blank).
+source firmware/ORIGINAL_FIRMWARE_ISSUES.md OF-17; analysis/keys_setup.md section 2.2 (PEAK and REL rows)
+source preconditions: rotary-memory bytes of the supplied calibration EEPROM image (0x08..0x0E = 01 03 06 0A 18 16 13)
+dial v
+wait 3
+press MODE
+wait 2
+input V 1.0 ac freq=50
+wait 3
+long REL
+wait 2
+press PEAK
+wait 6

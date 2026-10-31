@@ -1,0 +1,8 @@
+# MCU system reset while measuring: the bootloader and the application start again.
+source emu app.py system_reset (RM0038 6.1.1); analysis/keys_setup.md section 3 (splash at start)
+dial v
+wait 3
+sysreset
+wait 1.0
+expect lcd main "U-2.05"
+wait 4

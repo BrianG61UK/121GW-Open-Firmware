@@ -1,0 +1,20 @@
+# FREQ, PULSE and DUTY with square-wave inputs.
+source analysis/hy3131_model.md sections 3, 5 (configuration rows, value chain) and emu/frontend.py (calibrated front end)
+source preconditions: rotary-memory bytes of the supplied calibration EEPROM image (0x08..0x0E = 01 03 06 0A 18 16 13)
+source firmware/ORIGINAL_FIRMWARE_ISSUES.md OF-18 (pulse width quantisation)
+dial hz
+wait 3
+input Hz 1000 duty=0.5
+wait 4
+input Hz 50 duty=0.25
+wait 5
+input Hz 100000 duty=0.5
+wait 4
+press MODE
+wait 1
+input Hz 1000 duty=0.25
+wait 4
+press MODE
+wait 1
+input Hz 1000 duty=0.75
+wait 4

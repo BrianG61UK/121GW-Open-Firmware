@@ -1,0 +1,14 @@
+# Power-on with the dial at Hz: splash, then the mode of that position.
+source analysis/rotary.md section 2 (position handler FUN_080143EE, rotary memory readers) and section 4 (power-on: mode loaded from rotary memory, no EEPROM write)
+source analysis/keys_setup.md section 3 (FUN_0801A854 draws the version splash "V-2.05" from 0xCD = 205; window 0x2000022E = 2000 TIM3 ticks); the font draws V like U (analysis/lcd_map.md section 2)
+source analysis/lcd_map.md section 4.1 (lcd_set_mode_annunciators 0x080172A8)
+source preconditions: rotary-memory bytes of the supplied calibration EEPROM image (0x08..0x0E = 01 03 06 0A 18 16 13)
+expect eeprom 0x0A == 0x06
+dial hz
+wait 1.0
+expect lcd main "U-2.05"
+expect lcd on
+wait 3.0
+expect seg SegHz on
+expect eeprom_unchanged 0x000..0x2FFF
+wait 2.0

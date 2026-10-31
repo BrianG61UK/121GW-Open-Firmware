@@ -1,0 +1,14 @@
+# BLE key frame F4 "05" "05" = MODE key: echo and mode change DCV -> ACV (EEPROM 0x08).
+source analysis/ble_packet.md sections 1, 2, 6 (USART2 19200 8N1, PF15 supply, 19-byte frame every 50 TIM2 ticks, receive F4/F8 frames) and analysis/keys_setup.md section 2.2 PEAK long press
+source preconditions: rotary-memory bytes of the supplied calibration EEPROM image (0x08..0x0E = 01 03 06 0A 18 16 13)
+expect eeprom 0x08 == 0x01
+dial v
+wait 3
+long PEAK
+wait 1
+ble F4 30 35 30 35
+wait 1.5
+expect eeprom 0x08 == 0x02
+expect seg AC on
+long PEAK
+wait 1

@@ -1,0 +1,14 @@
+# The mode chosen with MODE comes back after a power cycle (rotary memory).
+source analysis/keys_setup.md section 2.2 (MODE cycle table, cycle_mode_on_bit0 0x08014500) and analysis/rotary.md section 3 (rotary_memory_store 0x08011154: stored offsets and values)
+source analysis/rotary.md section 2 (position handler FUN_080143EE, rotary memory readers) and section 4 (power-on: mode loaded from rotary memory, no EEPROM write)
+source preconditions: rotary-memory bytes of the supplied calibration EEPROM image (0x08..0x0E = 01 03 06 0A 18 16 13)
+expect eeprom 0x08 == 0x01
+dial v
+wait 3
+press MODE
+wait 1
+expect eeprom 0x08 == 0x02
+powercycle off=2
+wait 4
+expect seg AC on
+expect seg DC off

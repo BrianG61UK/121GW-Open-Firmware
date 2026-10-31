@@ -1,0 +1,12 @@
+# MEM at power-on shows "SdCAL" (S and d drawn like 5 and D); no further key: the window ends, normal operation, no EEPROM write.
+source analysis/keys_setup.md section 3 (power-on window FUN_0800EA3A, short press fires on press inside the window, section 2.1)
+source analysis/keys_setup.md section 3.2 (B=1, "SdCAL" 0x08029238, window 5000)
+flag sd
+down MEM
+dial v
+wait 0.5
+up MEM
+wait 0.5
+expect lcd main_chars "5DCAL"   # S and d drawn like 5 and D (font, lcd_map.md 2); decimal points not compared
+wait 7
+expect eeprom_unchanged 0x000..0x2FFF

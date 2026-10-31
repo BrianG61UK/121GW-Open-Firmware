@@ -1,0 +1,20 @@
+# TEMP with thermocouple temperatures and board temperatures.
+source analysis/hy3131_model.md sections 3, 5 (configuration rows, value chain) and emu/frontend.py (calibrated front end)
+source preconditions: rotary-memory bytes of the supplied calibration EEPROM image (0x08..0x0E = 01 03 06 0A 18 16 13)
+source firmware/ORIGINAL_FIRMWARE_ISSUES.md OF-21, OF-22, OF-24 (temperature rounding and limits)
+dial mv
+wait 3
+press MODE
+wait 1
+press MODE
+wait 1
+input degC 25 board=25
+wait 4
+input degC 100 board=25
+wait 4
+input degC -10 board=25
+wait 4
+input degC 300 board=30
+wait 4
+input degC -40 board=-22
+wait 4

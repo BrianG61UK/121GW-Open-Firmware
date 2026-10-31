@@ -1,0 +1,34 @@
+# Turn the dial through every position and back; no EEPROM write.
+source analysis/rotary.md section 2 (position handler FUN_080143EE, rotary memory readers) and section 4 (power-on: mode loaded from rotary memory, no EEPROM write)
+source analysis/rotary.md section 2 end: "The dial change itself never writes EEPROM"
+dial lowz
+wait 3
+dial v
+wait 2
+dial mv
+wait 2
+dial hz
+wait 2
+dial ohm
+wait 2
+dial va
+wait 2
+dial ua
+wait 2
+dial a
+wait 2
+dial ua
+wait 2
+dial va
+wait 2
+dial ohm
+wait 2
+dial hz
+wait 2
+dial mv
+wait 2
+dial v
+wait 2
+dial lowz
+wait 2
+expect eeprom_unchanged 0x000..0x2FFF

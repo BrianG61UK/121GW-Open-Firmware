@@ -1,0 +1,11 @@
+# MODE at LowZ: mode 0 has no cycle; accepted beep, no change, no EEPROM write.
+source analysis/keys_setup.md section 2.2 MODE row ("Mode 0 (LowZ) has no cycle: the beep is given and nothing changes"); analysis/rotary.md section 3 (no store for mode 0)
+dial lowz
+wait 3
+mark start
+press MODE
+wait 1
+press MODE
+wait 1
+expect seg LowZ on
+expect eeprom_unchanged 0x000..0x2FFF since start

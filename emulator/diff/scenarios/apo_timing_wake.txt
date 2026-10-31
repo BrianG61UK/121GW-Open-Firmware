@@ -1,0 +1,31 @@
+# Auto power off: APO switched on in SETUP item 2 (the supplied EEPROM image has it off); 1800 s after the last key
+# press PE9 goes low (STOP); a key press then wakes the meter and the splash returns.
+source analysis/rotary.md section 4 power-off path (counter 0x20000230 reloaded with 0x708 = 1800 when minmax_state == 0 (0x0800ED26), decremented once per NJU6350 second (0x200080D4 set by FUN_080100C4) only while 0x20008039 == 0; enter_stop_and_reinit clears PE9)
+source analysis/rotary.md section 4 (FUN_0801C61C arms EXTI on the key lines; wake runs FUN_0800EA3A again)
+source analysis/keys_setup.md section 2.1 (every beep reloads the APO counter, FUN_0800ED26) and section 4 item 2 (0x20008039, EEPROM 0x16: "APOoN" when 0)
+source preconditions: EEPROM 0x16 = 0x01 (APO off) in the supplied calibration EEPROM image
+flag long
+expect eeprom 0x16 == 0x01
+dial v
+wait 3
+press SETUP
+wait 0.6
+press SETUP
+wait 0.6
+long SETUP
+wait 0.5
+press REL
+wait 0.5
+long SETUP
+wait 1.5
+expect eeprom 0x16 == 0x00
+expect gpio supply 1
+wait 1730
+expect gpio supply 1
+wait 80
+expect gpio supply 0
+press MODE
+wait 1.0
+expect lcd main "U-2.05"
+wait 4
+expect gpio supply 1

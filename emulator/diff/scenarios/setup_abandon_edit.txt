@@ -1,0 +1,18 @@
+# Item 3 edit left with a short SETUP: no save (FUN_08015410 clears the edit flag for items other than 8).
+source analysis/keys_setup.md section 4 (setup item 0x20008037, FUN_08015410; item texts drawn by FUN_0801797C; edit by long SETUP, REL = up, PEAK = down, long SETUP saves) and section 5.1 (EEPROM writers)
+dial v
+wait 3
+press SETUP
+wait 0.6
+press SETUP
+wait 0.6
+press SETUP
+wait 0.6
+mark start
+long SETUP
+wait 0.5
+press REL
+wait 0.5
+press SETUP
+wait 1
+expect eeprom_unchanged 0x000..0x2FFF since start

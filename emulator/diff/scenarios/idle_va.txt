@@ -1,0 +1,6 @@
+# Idle meter at VA for 60 s with no input, as a UI session without interaction.
+source owner requirement: unmodified v2.05 must pass the hardware-safety checks in a 60 s idle run per dial position
+source analysis/rotary.md section 2 (position handler FUN_080143EE, rotary memory readers) and section 4 (power-on: mode loaded from rotary memory, no EEPROM write)
+dial va
+wait 60.0
+expect eeprom_unchanged 0x000..0x2FFF

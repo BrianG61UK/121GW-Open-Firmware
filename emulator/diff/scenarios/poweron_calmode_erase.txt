@@ -1,0 +1,20 @@
+# DESTRUCTIVE: MODE at power-on then REL enters calibration mode and rewrites the six current-offset records 0x4D0..0x4FC (OF-08). Runs on a private EEPROM copy.
+source analysis/keys_setup.md section 3 (power-on window FUN_0800EA3A, short press fires on press inside the window, section 2.1)
+source analysis/keys_setup.md section 3.1 and section 5.2 (current_extra_erase_all 0x0801150E: A5 00 00 00 00 at 0x4D0, 0x4D8, ... 0x4F8); firmware/ORIGINAL_FIRMWARE_ISSUES.md OF-08
+flag destructive
+down MODE
+dial v
+wait 0.5
+up MODE
+wait 0.3
+press REL
+wait 3
+expect eeprom 0x4D0 == 0xA5
+expect eeprom 0x4D8 == 0xA5
+expect eeprom 0x4E0 == 0xA5
+expect eeprom 0x4E8 == 0xA5
+expect eeprom 0x4F0 == 0xA5
+expect eeprom 0x4F8 == 0xA5
+expect eeprom 0x4D1 == 0x00
+expect eeprom 0x4FC == 0x00
+expect eeprom_unchanged 0x000..0x4CF

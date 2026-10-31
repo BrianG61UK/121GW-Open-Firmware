@@ -1,0 +1,16 @@
+# SETUP held at power-on: the setup item starts at the year; saving the year then also writes EEPROM 0x01..0x02.
+source analysis/keys_setup.md section 3 (power-on window FUN_0800EA3A, short press fires on press inside the window, section 2.1)
+source analysis/keys_setup.md section 3.3 and section 5.1 (0x01..0x02 via FUN_08015F44 when 0x2000808B != 0)
+down SETUP
+dial v
+wait 0.8
+up SETUP
+wait 3
+mark start
+long SETUP
+wait 0.5
+press REL
+wait 0.5
+long SETUP
+wait 1.5
+expect eeprom_written 0x01..0x02 since start

@@ -1,0 +1,19 @@
+# HOLD three times in DCV: hold, auto-hold stage, off.
+source analysis/keys_setup.md section 2.2 HOLD row (hold_active, hold_stage2 via FUN_0801584C) and analysis/lcd_map.md section 4.2 (HOLD w4b16, A- w2b16 when hold_stage2 and not hold_active)
+dial v
+wait 3
+input V 1.0
+wait 2
+press HOLD
+wait 1
+expect seg HOLD on
+input V 2.0
+wait 2
+press HOLD
+wait 1
+expect seg A- on
+wait 2
+press HOLD
+wait 1
+expect seg HOLD off
+expect seg A- off

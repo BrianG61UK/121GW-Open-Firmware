@@ -1,0 +1,34 @@
+# BEEP mode item 10: continuity threshold step and save (EEPROM 0x14).
+source analysis/keys_setup.md section 4 (setup item 0x20008037, FUN_08015410; item texts drawn by FUN_0801797C; edit by long SETUP, REL = up, PEAK = down, long SETUP saves) and section 5.1 (EEPROM writers)
+source preconditions: rotary-memory bytes of the supplied calibration EEPROM image (0x08..0x0E = 01 03 06 0A 18 16 13)
+expect eeprom 0x0B == 0x0A
+dial ohm
+wait 3
+press SETUP
+wait 0.6
+press SETUP
+wait 0.6
+press SETUP
+wait 0.6
+press SETUP
+wait 0.6
+press SETUP
+wait 0.6
+press SETUP
+wait 0.6
+press SETUP
+wait 0.6
+press SETUP
+wait 0.6
+press SETUP
+wait 0.6
+press SETUP
+wait 0.6
+mark start
+long SETUP
+wait 0.5
+press REL
+wait 0.5
+long SETUP
+wait 1.5
+expect eeprom_written 0x14 since start

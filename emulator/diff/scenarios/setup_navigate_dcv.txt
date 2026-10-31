@@ -1,0 +1,26 @@
+# SETUP short presses walk the items 1..9 and wrap to 0 in DCV (no extra items in mode 1); no EEPROM write.
+source analysis/keys_setup.md section 4 (setup item 0x20008037, FUN_08015410; item texts drawn by FUN_0801797C; edit by long SETUP, REL = up, PEAK = down, long SETUP saves) and section 5.1 (EEPROM writers)
+dial v
+wait 3
+mark start
+press SETUP
+wait 0.7
+press SETUP
+wait 0.7
+press SETUP
+wait 0.7
+press SETUP
+wait 0.7
+press SETUP
+wait 0.7
+press SETUP
+wait 0.7
+press SETUP
+wait 0.7
+press SETUP
+wait 0.7
+press SETUP
+wait 0.7
+press SETUP
+wait 0.7
+expect eeprom_unchanged 0x000..0x2FFF since start

@@ -1,0 +1,13 @@
+# DCA, item 10 burden display on (RAM only): the meter alternates current and voltage measurement.
+source analysis/keys_setup.md section 4 extra items (17, 19, 21: item 10 editable FUN_080160E8, RAM only); analysis/hy3131_modes_ac_current.md (0x200080A5 alternation)
+source preconditions: rotary-memory bytes of the supplied calibration EEPROM image (0x08..0x0E = 01 03 06 0A 18 16 13)
+dial a
+wait 3
+mark start
+long SETUP
+wait 0.5
+press REL
+wait 0.5
+long SETUP
+wait 6
+expect eeprom_unchanged 0x000..0x2FFF since start

@@ -1,0 +1,9 @@
+# MEM+HOLD long press toggles logging (on, then off).
+source analysis/keys_setup.md section 2.2 MEM row (long press toggles logging 0x20007FE1 via FUN_0801657C; short press toggles the stored-data view, refused while the record count is 0) and MEM+HOLD row
+flag sd
+dial v
+wait 3
+combo MEM+HOLD
+wait 6
+combo MEM+HOLD
+wait 3

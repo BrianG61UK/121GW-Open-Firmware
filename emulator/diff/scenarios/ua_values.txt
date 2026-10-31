@@ -1,0 +1,19 @@
+# DCuA and ACuA.
+source analysis/hy3131_model.md sections 3, 5 (configuration rows, value chain) and emu/frontend.py (calibrated front end)
+source preconditions: rotary-memory bytes of the supplied calibration EEPROM image (0x08..0x0E = 01 03 06 0A 18 16 13)
+dial ua
+wait 3
+press MODE
+wait 1
+press MODE
+wait 1
+input A 0.0001
+wait 3
+input A 0.0025
+wait 3
+input A -0.001
+wait 3
+press MODE
+wait 1
+input A 0.001 ac freq=50
+wait 4

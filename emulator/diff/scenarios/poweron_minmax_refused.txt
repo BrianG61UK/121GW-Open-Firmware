@@ -1,0 +1,9 @@
+# MIN/MAX at power-on: refused (mode 0 during the window); no state change.
+source analysis/keys_setup.md section 3 (power-on window FUN_0800EA3A, short press fires on press inside the window, section 2.1)
+down MINMAX
+dial v
+wait 0.5
+up MINMAX
+wait 4
+expect seg MAX off
+expect eeprom_unchanged 0x000..0x2FFF

@@ -1,0 +1,13 @@
+# LowZ with DC and AC inputs (the AC variant needs more than 10.0 V for five readings).
+source analysis/hy3131_model.md sections 3, 5 (configuration rows, value chain) and emu/frontend.py (calibrated front end)
+source analysis/hy3131_modes_ac_current.md (LowZ AC/DC selection, 0x20008098 / 0x20008099)
+dial lowz
+wait 3
+input V 5
+wait 4
+input V 230 ac freq=50
+wait 8
+input V 24 ac freq=60
+wait 6
+input V -12
+wait 6

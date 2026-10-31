@@ -1,0 +1,16 @@
+# BLE transfer: long PEAK powers the module (PF15) and starts the 19-byte status frames; long PEAK stops it.
+source analysis/ble_packet.md sections 1, 2, 6 (USART2 19200 8N1, PF15 supply, 19-byte frame every 50 TIM2 ticks, receive F4/F8 frames) and analysis/keys_setup.md section 2.2 PEAK long press
+source analysis/lcd_map.md section 4.2 (bt w0b31 while 0x2000802B != 0)
+dial v
+wait 3
+input V 1.234
+long PEAK
+mark on
+wait 4
+expect gpio ble_supply 1
+expect seg bt on
+expect uart_tx >= 114 since on
+long PEAK
+wait 1
+expect gpio ble_supply 0
+expect seg bt off
