@@ -16,7 +16,7 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-01 | Table lookup | Stale index used when a table search fails | medium | open |
 | OF-02 | Mode setup | Unset register values stored to globals for unhandled cases | medium | open |
 | OF-03 | Mode setup | Unset register stored for out-of-range modes (two functions) | low | open |
-| OF-04 | Multiplier path | Unset register passed to a float multiply for mode byte > 3 | medium | open |
+| OF-04 | Multiplier path | Unset register passed to a float multiply for a range byte > 3 (dBm path; not reached with a consistent mode and range) | low | open |
 | OF-05 | Mode helper | Unset register passed on for modes outside the handled set | low | open |
 | OF-06 | GPIO set-up | Pin mask left uninitialised for unhandled arguments | high | open |
 | OF-07 | Calibration | LowZ calibration would write the ACV range-0 record, which LowZ never loads (reachable through OF-36); BEEP shares OHM range 1's record 0x120 | medium | open |
@@ -55,6 +55,15 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-40 | Power-down | The TIM2 jack-warning beep can set the buzzer output again after power-down has cleared it (chirp of about 69 ms after the "-oFF-" beep) | low | open |
 | OF-41 | Display | Setup page 7 (time): the TIM2 handler converts and draws the time through the same digit globals and text buffer the main loop uses for the reading; the reading shows wrong digits for about 0.22 s | low | open |
 | OF-42 | SD card | The disk read routine `FUN_08023F7E` reads one sector whatever sector count the file system asks for; no v2.05 caller asks for more than one | low | open |
+| OF-43 | Keys | The key hold time and the stable-sample count are unlimited byte counters: a key held for about 3.1 s fires its long-press action again, then every 2.57 s; released between 2.6 s and 3.1 s it also fires its short-press action | medium | open |
+| OF-44 | Measurement | ACmV with the 1 kHz filter on: the per-sample value 0x20007D68 (bargraph, log record) lacks the filter correction that the reading and the ACV per-sample value have | medium | open |
+| OF-45 | Bluetooth | `USART_SendData` waits for TXE without a bound inside the TIM2 handler: if it runs in the 109 us between the serial-transfer flag and the USART2 clock enable, the meter hangs until it is switched off | low | open |
+| OF-46 | Measurement | ACV dBm sub display at a zero reading: log10(0) = -infinity is converted to 0xFFFFFFFF and shown as "- 7295" | low | open |
+| OF-47 | Logging | Logging stopped by a low battery stores code 100 and the sub display shows "SdE" with two blank digits; the two-digit routine is right only up to 19 | low | open |
+| OF-48 | Keys | Setup edit: REL or PEAK held longer than 0.5 s steps once more when the key is released (the press is queued, the MEM view excludes it) | low | open |
+| OF-49 | Display | `FUN_0801B090`: the first digit word is n / 10000 without reduction, so n >= 100000 draws a blank or wrong first character; no defined v2.05 input reaches it | low | open |
+| OF-50 | Display | `FUN_0801B77A` passes `LCD_FCR AND mask` instead of the mask to `LCD_ContrastConfig`; the result is always overwritten by the following `lcd_init` | low | open |
+| OF-51 | Runtime library | Soft-float and 64-bit division helpers differ from IEEE 754 / the ARM run-time ABI in listed cases (fdiv exponent 254, subnormal operands of fadd/fsub/dadd/dsub, dsqrt special operands, division by zero); none reached by v2.05 code | low | open |
 
 ## Details
 
@@ -83,9 +92,12 @@ reading carries a correction computed from an undefined frequency.
 mode is not in the handled ranges. Port: defined value.
 
 ### OF-04 — unset multiplier
-`FUN_0800A74C`: a mode byte > 3 takes the default branch (`0x0800A75E cmp r0,#3`, `0x0800A762 b.n
-0x0800A7BA`), which never writes r4; r4 is then passed to the float multiply (`0x0800A7BA movs r0,r4`,
-`0x0800A7BC movs r1,r4`). Port: defined value.
+`FUN_0800A74C` (the dBm value for the ACV sub display, OF-46) switches on the range byte `meter_range` (0x2000803D; the literal at `0x0800B064`, loaded at `0x0800A74E`/`0x0800A752`; the mode byte is
+0x2000803C): ranges 0 to 3 load r4 (`0x0800A764`, `0x0800A77A`, `0x0800A790`, `0x0800A7A6`); a range byte above 3 takes the default branch (`0x0800A75E cmp r0,#3`, `0x0800A762 b.n 0x0800A7BA`),
+which never writes r4; r4 is then passed to the float multiply (`0x0800A7BA movs r0,r4`, `0x0800A7BC movs r1,r4`). Execution check: range 3 gives 62.2185 dBm for 10000 counts whatever r4 held; range 4 or 9
+with r4 = 1.0f gives 2.2185, with r4 = 2.0f 8.2391, with r4 = 0 -infinity. Reachability: the only caller (`FUN_080076BC`, from the ACV and VA voltage handlers) runs in modes 0, 2, 13, 14 and 15, whose range counts
+are 1, 4, 4, 4 and 4 (table at 0x20000000); over the coverage runs the range byte at entry was always 0..3 (modes 0, 2, 13, 15; more than 1000 calls), so the default branch is not reached with a consistent
+mode and range. Port: defined value (x = 1.0, dBm 2.2185 for a range byte above 3).
 
 ### OF-05 — unset register passed on
 `FUN_0801B77A`: modes < 10 or > 17 leave r4 unset (`0x0801B784 bcc 0x0801B7FA`, `0x0801B79C b.n
@@ -618,3 +630,139 @@ Impact: none in v2.05; a future caller reading 1024 bytes or more in one f_read 
 get one correct sector and stale data after it.
 Port: `disk_read` reads `count` sectors in turn (CMD16 + CMD17 + status poll each, as `disk_write` writes them) and stops at the
 first failure; with count 1 it is the v2.05 routine (deviation OF-42, module SD).
+Append: "Execution check (Unicorn, v2.05 image, FatFs structures built by hand: sector size 512, 4 sectors per cluster, file at cluster 2 at fptr 0, the block read `FUN_08022FCE` replaced by a stub that fills
+the destination with the sector number): `f_read(fp, buf, 2048, &br)` returns 0 with br = 2048, performs one block read (sector 100), and the buffer holds sector 100 in the first 512 bytes and the old
+contents in the remaining 1536. Reachability re-checked: the seven `f_read` call sites (`0x0801CDCE`, `0x0801CE32`, `0x0801CE9E`, `0x0801CF62`, `0x0801CFB8`, `0x0801D016`, `0x0801F728`) pass at most 0x200
+bytes (the 0x4B0 byte calibration file is read as 0x200 + 0x200 + 0xB0), so the sector count at `0x08021E74` is never above 1."
+
+### OF-43 — key hold counters wrap: a held key fires its long-press action again after 3.1 s
+`process_pg8_15_press_release` (`0x0801688C`, called once per TIM2 tick flag 0x200080D0 from `main` `0x08024BAC` through `FUN_0801680C`;
+the TIM2 handler stores it at `0x0802429E`) counts the hold time 0x20008072 (`adds r0,r0,#1` / `strb`, `0x08016964`, `0x0801696A`) and
+the equal-sample count 0x200080EF (`0x080168D6`..`0x080168DC`) in bytes without a limit. The hold time is set to 0x33 when the long press
+fires (`0x08016976`..`0x0801697C`) and keeps counting; it is 0xFF 204 ticks later and the next increment gives 0. A hold time of 0 means "no
+key tracked" (`0x0801695A cmp r0,#0`, `0x0801695C beq 0x080169E8`): as soon as the lockout 0x20008073 is 0 (`0x080169E8`..`0x080169F0`) the key
+that is still down is taken for a new press: hold time 1 (`0x080169FA`..`0x08016A00`), a short press is queued (0x200080EE = 1,
+`0x08016A4E`..`0x08016A5A`; inside the power-on window 0x2000022E != 0 it fires at once, `0x08016A08`..`0x08016A34`), and 49 ticks later the hold
+time is 0x32 and the long press fires again (`0x08016972`, `0x08016974`). The equal-sample count wraps the same way (0xFF to 0, then
+`cmp r0,#2` `0x080168E4` / `blt.w 0x08016A5C` `0x080168E6`): the key logic skips two ticks every 256.
+Execution check (Unicorn, `0x0801688C` and `FUN_0801682C` once per tick, GPIOG IDR `0x40021C10` driven, handlers `0x08014C3C` / `0x0801622C`
+replaced by call logs, RAM zero, window counter 0): RANGE (PG12) pressed at tick 5 and held 1200 ticks: long press at ticks 56, 313, 570, 827 and
+1084 (every 257 ticks = 2.57 s at 10.02 ms); the same for MODE (0x01) and MEM+HOLD (0x28); HOLD (0x20) has no long press. With the window counter
+at 5 the wraps also give short presses at 264 and 521. Release scan (key down at tick 5): released at tick 264 or earlier, no extra event; released at
+ticks 266 to 313 (265 was not run), a short press two ticks after the release although the long press had already fired (266 to 268, 313 to 315); released at 314 or later,
+the second long press (313). Real handler `0x0801622C` called repeatedly: MODE (key 1) toggles 0x2000807B 1, 0, 1; PEAK (0x80) toggles 0x2000802B;
+SETUP (2) toggles the edit flag 0x2000806E and the call that leaves the edit writes the EEPROM; RANGE (0x10) sets `range_manual` 0 and the range-change flag 0x2000804B again; REL (0x40, mode 16, range 0, 0x20007D64 = 5) adds the value to 0x20007E0C again and stores to the data EEPROM again (`0x0801645C`):
+0x20007E0C = 5, 10, 15 on three calls. Full emulator (DCV): MODE held 4.5 s: backlight on 0.69 s after the press, off again at 4.14 s with the key
+still down; MEM held 6 s with an SD card: logging flag 0x20007FE1 = 1 at 1.5 s and 3.0 s, 0 at 4.5 s and 6.0 s (the repeat comes 3.4 s after the first
+long press there, because the main loop serves about 72 ticks per second, see OF-31).
+Impact: a key held longer than about 3.1 s repeats its long-press action: MEM starts logging and stops it again (a file is created and closed),
+MODE toggles the backlight back and forth, PEAK toggles the serial transfer, SETUP toggles the item edit and saves it, RANGE selects auto-range
+again, REL in the current modes at range 0 adds the reading to the user zero again and writes the EEPROM (see OF-09). A key released between the
+wrap and the second long press (2.6 s to 3.1 s) also fires its short-press action (dispatch executed; the actions are those of `analysis/keys_setup.md`
+2.2: MODE changes the mode, RANGE steps the range).
+Port: both counters stop at 0xFF (KEY, `keys.s`); one long press per hold, no short press after it.
+
+### OF-44 — ACmV with the 1 kHz filter: the per-sample value lacks the filter correction
+The mode 4 handler `FUN_080069B4` (dispatched at `0x0800629E`) applies the 1 kHz filter correction `fn 0x08006D40` to the mean (`0x08006A50`),
+but its per-sample block (`0x08006A84`..`0x08006A9A`: 0x20007D74, `bl 0x08008468` at `0x08006A88`, `bl 0x0800742C` at `0x08006A94`, store to 0x20007D68
+at `0x08006A9A`) never calls it. The ACV handler `FUN_08006AEC` ends its per-sample block with the correction
+(`0x08006C50`..`0x08006C76`: mode 2 or 4 at `0x08006C52` / `0x08006C5A`, filter flag 0x200080B9 = 1 at `0x08006C5E`..`0x08006C64`, 0x20007D68 x 10,
+`bl 0x08006D40` at `0x08006C70`, store at `0x08006C76`). The mode 4 comparison there is dead code: `FUN_08006AEC` has four callers (`0x080062C2`, `0x0800654C`, `0x08006676`, `0x08008BA4`) and mode 4 is dispatched to `FUN_080069B4` (`0x0800629E`), not to it; the
+compare suggests the designer meant the correction for the ACmV sample too (inference from the dead compare, not proven). 0x20007D68 feeds the bargraph (`bargraph_count_from_value` `0x08018FA8`) and, in all modes
+except 5 to 9 and 12, the log record (OF-35).
+Execution check (full emulator, ACmV, 0.1 V AC): filter off, 50 Hz: 0x20007D64 = 10000, 0x20007D68 = 10000, bargraph count 5. Filter on, 50 Hz: 9999 / 9596,
+count 4. Filter on, 1 kHz: 9999 / 2885, count 1. Same test in ACV (1.0 V AC, filter on): 0x20007D64 = 0x20007D68 = 9999 at 50 Hz and at 1 kHz, count 4.
+Impact: with the filter on, the number on the main display is right, but the bargraph and the logged value follow the unscaled sample: at 1 kHz
+the bargraph shows one segment for a reading that fills four or five; the log (OF-35) holds 2885 where the display shows 9999. The error depends on the
+signal frequency.
+Port: v2.05 behaviour kept (`firmware/src/mac/ac.s`, `.Lmac_acmv_sample`); the correction of the ACV block would have to be added for mode 4.
+
+### OF-45 — USART_SendData waits for TXE without a bound inside the TIM2 handler
+`FUN_0800D170` (USART_SendData with wait) loops `0x0800D176 movs r1,#0x80` / `0x0800D17A bl 0x0801CC5E` (USART_GetFlagStatus, TXE) /
+`0x0800D17E cmp r0,#0` / `0x0800D180 beq 0x0800D176`: no counter and no other exit. Callers: the TIM2 handler (`IRQ28_Handler` 0x0802428C; 50-tick block
+`0x0802461C`, flag test `0x08024630`..`0x08024638`, call `0x0802464C`), the USART2 handler (`0x0802481C`, TXE already set) and the main-loop echo
+`FUN_0800C308` (`0x0800C328`). USART2 (0x40004400) is only set up while the transfer flag 0x2000802B is 1: the long PEAK handler stores the flag at
+`0x08016536` and calls `FUN_0800C51A` (`0x08016560`), which calls `usart2_init` (`0x0801C390`); the USART2 clock is enabled at `0x0801C3EA` (`bl 0x0801FFBC`,
+RCC_APB1ENR bit 17), TE/RE are set by the init structure (mode 0xC at `0x0801C40C`), no hardware flow control (`0x0801C408`), USART_Cmd at `0x0801C422`. Clearing
+the flag calls `0x0801C954` (supply low, interrupts off, USART_Cmd 0 `0x0801C96E`, clock off `0x0801C978`). Between the store and the clock enable the USART2 registers
+are not clocked and RM0038 6.3.10 (as quoted in `emulator/emu/periph/usart.py`) says reads then return 0: TXE reads 0.
+Execution check (full emulator, hooks at `0x08016536` and `0x0801C3EA`): the window is 456 core cycles = 108.7 us (4.194304 MHz); the 50-tick block runs once per 0.501 s,
+so a random TIM2 phase hits it about once in 4600 switch-ons. Normal run (DCV 1 V, long PEAK, step to 2.0 V): the main display shows 2.0000 three seconds later. Run with the TIM2
+counter and 0x20007F04 set at the store so that the block runs 217 cycles later: the handler (IPSR 44) stays in the loop (`0x0800D17E` reached 1 686 103 times up to the end of the
+run) and the display still shows 1.0000 three seconds after the step to 2.0 V. No code references an IWDG or WWDG register (`analysis/decompile/mmio_refs.txt`), so
+only switching the meter off and on recovers. Not a cause: the BLE module supply (TXE does not depend on the line). The silicon behaviour with a gated clock was not measured;
+the hang follows RM0038 6.3.10.
+Impact: in rare cases (about 1 in 4600 switch-ons of the serial transfer) the TIM2 handler never returns: display, keys, measurement and auto power-off stop until the dial
+is turned off and on. No effect otherwise.
+Port: the wait is bounded (`firmware/src/ble/usart.s`, `fn_0800D170`, `SYS_WAIT_POLLS`; on timeout nothing is sent) and the TIM2 handler only records the frame request (OF-10, NF-04).
+
+### OF-46 — ACV dBm sub display shows "- 7295" at a zero reading
+`FUN_0800A74C` (called after every ACV mean from `FUN_080076BC`, `0x080076EE`) computes dBm = 10 log10(x x / 0.6) with x = reading / 10^(4 - range): float square
+(`0x0800A7BE`), double conversion (`0x0800A7C2`), division by 0.6 (`0x0800A7C6`..`0x0800A7CE`, constant 0x3FE3333333333333), log10 (`0x0800A7DE bl 0x0801BB5C`), times 10.0
+(`0x0800A7E4`..`0x0800A7E8`), float result to 0x20007E94 (`0x0800A7F4`). For a reading 0x20007D64 = 0 the library log10 returns -infinity (0xFF800000). The sub display
+for ACV item 11 (`FUN_08018590`, called at `0x08017B66`) turns the magnitude into an unsigned integer (`FUN_0801BD24`: infinity gives 0xFFFFFFFF) and calls `FUN_0801B090`
+(`0x0801868C`): the digit words are 429496, 7, 2, 9, 5, `FUN_0801B130` clears the first (above 255) and the display shows " 7295" with the minus sign.
+Execution check: `0x0800A74C` with 0x20007D64 = 0: 0x20007E94 = 0xFF800000 in all four ranges (1 V = 10000 counts gives 2.2185 dBm, 10 log10(1/0.6)); `FUN_08018590` with that
+value draws " 7295". Full emulator, ACV, 0 V input, one SETUP press (item 10 to 11): sub display "- 7295"; with 1.0 V AC: " 2.218".
+Impact: with the dBm page selected and an open or shorted input (reading exactly 0) the sub display shows a number instead of an under-range indication.
+Port: not changed (copies of `fn_0800A74C` in `mac/acdc.s` and `fn_08018590` in `set/setup.s`).
+
+### OF-47 — logging stopped by a low battery shows "SdE" and two blank digits
+While logging, the step function tests the battery flag 0x2000803B (`0x0801D2F8`..`0x0801D300`); when set it stops logging (`0x0801D304 bl 0x08010AF8`, 0x20007FE1 = 0), and stores
+code 100 in 0x2000801B (`0x0801D316 movs r0,#0x64`, `0x0801D318`..`0x0801D31C`). Starting a log with the battery flag set stores 0x14 instead (`0x080109F6`..`0x080109FC`), and
+the sub display shows "LoBat" for it: `FUN_0801797C` compares with 0x14 (`0x080179A6`) and calls `FUN_080198B0` ("LoBat", `0x080198C2`..`0x080198E8`). Every other code goes to `FUN_08019948`
+(`0x080179B6`), which prints "SdE" and two digits: tens = n / 10 + '0' (`sdiv` `0x08019980`), units = (n - 10) + '0' for n >= 10 (`subs r5,#0xa` `0x0801998C`, `adds.w r0,r5,#0x30`
+`0x08019998`), right only for n up to 19; the font has glyphs only for 0x30..0x39, 0x41..0x5A, 0x61..0x7A, 0x20, 0x2D, 0x3D and 0xFF. `FUN_08019698` (the "-O-nn" calibration step
+display, units at `0x08019716`..`0x0801971C`) has the same arithmetic (`0x080196FC`..`0x0801970C`); its n is the capture counter 0x20008095, which is set to 16 or 4 (`0x080164F4`, `FUN_080157E8` result stored at `0x080157C2`) and decremented to 0 by nine sites (`0x08008618`, `0x08008CC4`, `0x0800EFB0`, `0x0800F05C`, `0x0800F0DC`, `0x0800F4BE`, `0x0800F586`, `0x0800F6E8`, `0x0800F7E0`), each followed by a zero test that clears the capture flag; the six calibration-capture runs (SETUP and MEM captures with RANGE and MODE pressed in the middle) wrote only 16..0 (or 4..0) to it, never 255. So only `FUN_08019948` is reachable with n >= 20.
+Execution check (Unicorn, `0x08019948`): n = 19 "SdE19"; 20 "SdE2:" (0x3A); 23 "SdE2=" (glyph a+d); 25 "SdE2?"; 59 "SdE5a"; 99 0x39 0x89; 100 0x3A 0x8A. Full emulator (SD card, logging started by long MEM,
+DCV 1 V, battery sense PA5 lowered to 0.90 V): the sub display shows the record counter, then "SdE" with two blank digits (decoded text "SdE  ") after the battery flag came on, and it stays so.
+Impact: the user does not see why logging stopped (the battery symbol is shown, the "LoBat" text of the start case is not).
+Port: the v2.05 routines are kept (`firmware/src/ui/messages.s` `fn_08019948`, `firmware/src/log/files.s` code 0x64).
+
+### OF-48 — setup edit: REL or PEAK held longer than 0.5 s steps once more at release
+The press is queued at `0x08016A36`..`0x08016A5A` unless the MEM view 0x20007FE4 is set and the key is REL (0x40) or PEAK (0x80) (`0x08016A3E`..`0x08016A4C`); the edit flag 0x2000806E is not
+tested there. The hold branch (`0x080169B2`..`0x080169E6`) tests view OR edit (0x20007FE4 | 0x2000806E, pool `0x08016D1C`), keeps the hold time of REL/PEAK at 1 and calls the auto-repeat
+`FUN_08016A64(1)`. The hold time therefore never reaches 0x32, the queued press (0x200080EE) is never cancelled (the cancel is on the 0x32 path, `0x08016984`) and the release dispatches it.
+Execution check (Unicorn, key down at tick 5, up at tick 105, step events logged): REL in the MEM view: steps at ticks 11, 42, 73, 104, nothing at the release; REL in edit: steps at 58, 89 and 107
+(the last one is the release); a 5-tick tap steps once in both cases; PEAK gives the same.
+Impact: after a hold the digit or setting is one step further than the auto-repeat sequence (for example contrast 14 held up to 16 instead of 15). `analysis/keys_setup.md` 2.1 states that
+REL and PEAK are not queued in edit; that is wrong (section 7).
+Port: v2.05 behaviour kept (W4 notes).
+
+### OF-49 — number-to-digits routine: first digit word n / 10000 for n >= 100000
+`FUN_0801B090` (`0x0801B090`..`0x0801B11A`) stores the first digit word as n / 10000 (`movw r1,#0x2710`, `udiv` `0x0801B094`, store `0x0801B09C`) with no reduction; `FUN_0801B130`
+(`0x0801B130`..`0x0801B140`) only sets a word above 255 to 0, then adds '0' to the words it draws. For 100000 <= n < 256000 the first character is 0x3A..0x48 (blank glyph or a wrong
+letter), above that the first word is cleared.
+Execution check (Unicorn, `FUN_0801B090` then `FUN_0801B130(0)`): 99999 "99999"; 100000 0x0A,"0000"; 123456 0x0C,"3456"; 256000 0x19,"6000"; 999999 'c'... (first word 99 = 0x63); 0x7FFFFFFF " 8364".
+Reachability (call sites by return address, maxima observed over 102 runs, all below 100000): main display `0x0801715A` (max 99999: the reading is limited to -99999..99999,
+`0x08017036`..`0x08017040`, pool 0x000186A0 / 0xFFFE7961; the REL branch passes value / 10); BLE `0x0800C546` (u16 year-month, first word at most 6) and `0x0800C584` (the ID, kept
+below 100000 at boot, `0x08010FA6`); sub display `0x08017F6C` (frequency: 0x20007D84 / 10, and 0x20007D84 <= 100000 for all five ranges because the range is only taken below
+the thresholds 10^5, 10^6, 10^7, 10^8, 10^9 at `0x0800AEE4`, `0x0800B750`, `0x0800B74C`, `0x0800B748`, `0x0800B744`; max seen 6000); `0x080181D6` (VA voltages and currents, max 50000, overload
+flags at 55001); dBm `0x08018690` (max 6130; the only larger value is 0xFFFFFFFF from OF-46, whose first word is cleared); temperature `0x08018A5A` (max 8070, 12-bit ADC value x 10); setup pages
+(`0x080183C2` clamped to 99, `0x080187A0`, `0x080187F4`, `0x08018834`, `0x080188BC`, `0x0801890E`, `0x080189C4` ID), splash `0x0801A862` (205), log file writer `0x0801F394` / `0x0801F3CE`.
+The one path without a bound: a counter result of 1 MHz or more stores an unset register in 0x20007D84 (OF-02, `0x0800B014`..`0x0800B024`); with r7 / 10 between 100000 and 255999 the sub display
+frequency page (ACV, ACmV, AC currents, default item 10) shows a wrong first character (executed: 0x20007D84 = 1 234 567 draws 0x0C,"3456"). The emulator starts with r7 = 0, ACV at 1.5 MHz shows 0.
+Impact: none with defined inputs.
+Port: v2.05 routine kept (`fn_0801B090`).
+
+### OF-50 — contrast set-up routine passes the register value, not the mask
+`FUN_0801B77A` (`0x0801B77A`..`0x0801B800`, called from the tail of `FUN_08024DE0` at `0x08024EC4`) selects on the contrast setting 0x20000237 (10..17) and builds r4 as
+`LCD_FCR AND mask` (`0x0801B7AC`, `0x0801B7B8`, `0x0801B7C4`, `0x0801B7D0`, `0x0801B7DC`, `0x0801B7E8`, `0x0801B7F4`; setting 10: 0, `0x0801B79E`..`0x0801B7A4`), then `bl 0x08020472` (LCD_ContrastConfig:
+clear CC, OR r0). The mask itself is what `lcd_init`'s `FUN_0801B708` passes (`0x400`..`0x1C00`, `0x0801B72C`..`0x0801B774`). The routine can therefore only keep or clear CC bits.
+Both callers of `FUN_08024DE0` (`main` `0x08024B56`, wake `0x08024EF2`) call `lcd_init` next (`0x08024B62`, `0x08024EFC`, same setting 0x20000237), which writes the right CC (`0x0801B48C bl 0x0801B708`).
+Execution check (Unicorn): LCD_FCR.CC = 7 before: settings 10..17 give CC = 0, 1, 2, 3, 4, 5, 6, 7 (setting - 10); CC = 0 before: CC = 0 for every setting; CC = 1 before: CC = 0 or 1 by setting.
+Impact: none (overwritten); latent. (Settings outside 10..17 are OF-05.)
+Port: v2.05 behaviour kept; the following `lcd_init` sets the contrast.
+
+### OF-51 — soft-float and 64-bit division helpers: deviations from IEEE 754 and the run-time ABI
+Execution of the original helpers against IEEE results (hardware float/double as reference; 4000 random pairs per class unless stated):
+- `fn 0x08012F94` (float divide): a result whose biased exponent is 254 returns +-infinity (`0x08012FEA cmp r4,#0xfe` / `bge 0x08013038`, IEEE needs 255). 0xC23C8DC1 / 0x828CAB39 gives 0x7F800000 (IEEE 0x7F2B9283); of 20000 random normal pairs, all 28 with an IEEE exponent of 254 differ, the other 19972 agree.
+- `fn 0x080132EC` / `0x080133B4` (float add / subtract): a subnormal operand in a magnitude subtraction enters at half its value (0x01000000 - 0x00400000 gives 0x00E00000, IEEE 0x00C00000) and a negative result with exponent field 0 loses its leading one (0x00AAE475 - 0x0112A19A gives 0x8074BD7E, IEEE 0x807A5EBF): 154 and 172 of 4000 mismatches for add with one subnormal operand, 152 and 195 for subtract; none with two subnormal or two normal operands.
+- `fn 0x080131B8` / `0x0801FB9C` (double add / subtract): with one subnormal operand and a negative larger operand the larger operand is returned unchanged (`0x08013286`, `0x0801FCF6` form the exponent difference from "sign and exponent" minus 1): 0x8010000000000000 + 0x8000000000000001 gives 0x8010000000000000 (IEEE 0x8010000000000001); 0x800B5B3E13F95954 - 0x0047152C8D4F9271 gives 0x8047152C8D4F9271 (IEEE 0x804880944FCEBD9C); mismatches in about 99 % of the pairs (1499 of 1513 and 1493 of 1511 for add, 1491 of 1504 and 1482 of 1503 for subtract) when the normal operand has an exponent field below 40, about 2 % (34 of 1470, 34 of 1494, 32 of 1488, 36 of 1528) with a random normal operand, none in about 1500 pairs per class when the larger operand is positive.
+- `fn 0x08013EF4` (double sqrt): sqrt(-0) = +0 (`0x08013FD8`); a negative NaN with a non-zero high mantissa is returned unchanged without errno; every other negative operand (including -infinity) writes errno 0x21 (RAM 0x20000228) and returns r0 unchanged with r1 = NOT of sign and exponent (-1.0 gives 0xFFFFF40000000000).
+- `fn 0x08014028` (unsigned 64-bit divmod) and `fn 0x08013FE4` (signed): a divisor of 0 returns the dividend as quotient and 0 as remainder (`0x08014030 cbz r2,0x0801403E` / `b.w 0x0802038C`); no trap, no errno (12345678901234 / 0 gives 12345678901234 remainder 0).
+Reachability: `dsqrt` has two callers (`0x0800A73C`, `0x080082BE`), both preceded by the unsigned-to-double conversion `0x08013ED8` (result +0 or positive, never negative, -0 or NaN); operand classes seen over the runs: positive and +0 only, so none of its quirks is reachable.
+`fdiv` (40 call sites), `fadd` / `fsub` (12), `dadd` / `dsub` (28, including the log10 library): the operands are converted counts (0 or at least 1.0), calibration words converted from unsigned integers, constants and thermocouple tables; a subnormal operand (below 1.2e-38 / 2.3e-308) or a quotient of 1.7e38 or more did not occur in any of 102 runs (hooks on every entry: 0 subnormal operands, 0 candidate quotients) and was not found in the call sites that were read; not every site was traced by hand.
+`uldivmod` (14 sites): divisors are the constants 1, 10, 100, 1000, 10000 (`0x0800AF1C`..`0x0800AFE0`, `0x0800B0A2`, `0x0800B272`..`0x0800B2B2`, `0x0800B6A2`) or `0x20007E48 / 10` at `0x0800B662` (at least 0x200000 / 10: T = 0x1000000 - (word at 0x2000001C << 8) + CTA, and the word is 0xE000 after start-up, `analysis/decompile/ram_init.txt`), `(0x20007E18 / 1000) x 0x20007E40` at `0x0800B6B6` and `0x20007E40 x 100` at `0x0800B71A`: 0x20007E18 is at least 40 000 000 (`analysis/hy3131_modes_misc.md` 5.2) and 0x20007E40 is the counter's whole-cycle count, so a zero divisor needs a counter result with zero cycles. No zero divisor in any run, including PULSE and DUTY with no signal.
+Impact: none found; the helpers were kept bit for bit in the port, so that any future caller sees the v2.05 results.
+Port: kept bit for bit (`firmware/src/rt/*.s`, deviation none).
