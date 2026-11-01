@@ -193,7 +193,7 @@ the USART2 and SD handlers).
 | IRQ | Source | IPR byte (pre/sub) | v2.05 handler | Port handler (module) | Work (v2.05) |
 |---|---|---|---|---|---|
 | 28 | TIM2 update | 0xA0 (2/2) | 0x0802428C | `sys_tim2_isr` (SYS) | 10 ms flag 0x200080D0, countdowns, 100 ms flag 0x200080D1, 500 ms flag 0x200080D3, BLE frame request at count 40 and frame start at 50, logging tick, MEM-view timeout (`FUN_080153AC`), blink phase, jack-warning beep, setup page 7 blink drawing |
-| 29 | TIM3 update | 0x50 (1/1) | 0x08024722 | `bzb_tim3_isr` (BZB) | power-on window counter 0x2000022E, buzzer countdown and repeat pulses on PE7 |
+| 29 | TIM3 update | 0x50 (1/1) | 0x08024722 | `bzb_tim3_isr` (BZB) | power-on window counter 0x2000022E, buzzer countdown and repeat pulses on PE7; production only: countdown of the HY counter-restart wait `hy_restart_ticks` (6.13, IMP-06) |
 | 38 | USART2 | 0x00 (v2.05 never writes it; reset value 0) | 0x080247D8 | `ble_usart2_isr` (BLE) | TXE: next byte of the 19-byte frame; RXNE: receive buffer 0x20007B80 |
 | 45 | SDIO | 0x00 | 0x080248B8 -> 0x08023476 | `sd_sdio_isr` (SD) | SDIO status |
 | 53 | DMA2 channel 4 | 0x00 | 0x080248C0 -> 0x08023524 | `sd_dma_isr` (SD) | DMA flags |
@@ -246,7 +246,7 @@ build switch `LOOP_V205` in `config.inc`:
 | Item | `LOOP_V205 = 1` (verification baseline) | `LOOP_V205 = 0` (production, IMP-06) |
 |---|---|---|
 | LCD commit | `lcd_commit_shadow` busy-waits on LCD_SR UDR as v2.05 (0x0801B304, 0x08020492); in v2.05 this locks the pass to the 13.84 ms LCD frame (ARS 11 item 1) | commit only when the shadow changed; deferred to a later pass while UDR is still set; never waits |
-| Blocking routines | run to completion (counter restart delay(10000) 0x0800BFCE (17.1 ms in v2.05, ARS re-measured 2026-11-01), `pe7_on_blocking_100_ticks` 1 s, SD card operations, calibration-backup operations) | the same routines as state machines (`*_start`, `*_step` returning 0 = busy / 1 = done), stepped once per pass; in baseline mode the loop calls `*_step` until it returns 1, which is the v2.05 order |
+| Blocking routines | run to completion (counter restart delay(10000) 0x0800BFCE (17.1 ms in v2.05, ARS re-measured 2026-11-01), `pe7_on_blocking_100_ticks` 1 s, SD card operations, calibration-backup operations) | the same routines as state machines (`*_start`, `*_step` returning 0 = busy / 1 = done), stepped once per pass; a wait inside such a routine is measured in timer ticks, never in passes (a production pass lasts until the next interrupt): the counter-restart wait is 19 TIM3 ticks (17.92..18.92 ms, >= v2.05's 17.1 ms; 6.13); in baseline mode the loop calls `*_step` until it returns 1, which is the v2.05 order |
 | HY3131 read | full 0x34-byte burst from register 0 per event (0x08006158) | per-event read sets (6.13) |
 | Sleep | none (v2.05 never sleeps) | `wfi` at the end of each pass; wake-ups are the interrupts v2.05 already enables (TIM3 every 0.996 ms, TIM2, USART2, SDIO, DMA2); no new interrupt source |
 
@@ -375,8 +375,11 @@ Mechanism: BRD is the only module that writes MODER/OTYPER/OSPEEDR/PUPDR/AFR (v2
 `gpio_init` 0x0801BD48 and `gpio_set_alternate_function` 0x0801BE04). `brd_gpio_init` checks every request against
 the constant table `brd_pin_policy` (per port: masks of pins allowed as push-pull output, open-drain output, AF with the
 allowed AF number, input, analog) and refuses any request outside it. It writes the output level (BSRR) before
-switching MODER to output, so no pin drives a stale ODR value (v2.05 writes MODER first, 0x0801BD86; on wake PE9 is
-driven low from 0x0801C0C2 to 0x0801C0CE) (HW-04). Build check 9.3 item 4 decodes every `brd_gpio_init` call.
+switching MODER to output, so no pin drives a stale ODR value (v2.05 writes MODER first, 0x0801BD86) (HW-04). Exception:
+PE9 keeps the level it has when port E becomes an output and is set high after the other port E pins, as in v2.05: at a
+cold start the bootloader has left it high (no change); at the wake from STOP it goes Z -> 0, PE12 (SHDN_A) goes low with
+the HY3131 supply still off, and PE9 rises at the v2.05 step 0x0801C0CE (4.3 rule 1; scenario `apo_stop_wake_short`;
+setting PE9 high first made PE12 fall with PE9 high, a power step v2.05 never makes). Build check 9.3 item 4 decodes every `brd_gpio_init` call.
 
 ### 4.3 Power sequencing
 
@@ -710,6 +713,12 @@ A module with a narrow interface, so that the faster auto-ranging (IMP-01, ARS s
   0x2000807D at 0x08006190 and tests rx[0x29] bit 2 at 0x08006196..0x080061C4 on every event), and every other mirror byte that a consumer of that event reads (W5 tabulates the consumers per
   event from the listing; `hy3131_modes_misc.md` 8 lists the register-mirror readers). The RMS block is not read (OF-16).
   Bit timing stays v2.05's. Baseline mode keeps the full burst.
+- Counter restart (production mode, IMP-06): `hy3131_counter_restart` sends phase 1 (R20 with ENCTR cleared) and arms
+  `hy_restart_ticks` = 19, which `bzb_tim3_isr` counts down; `hy_counter_restart_step` (called by `hy3131_poll` every
+  pass) sends phases 2 and 3 (CTA preset, read-back, R20 | 0x02) in the first pass after the count reached 0. The wait
+  replaces v2.05's delay(10000) at 0x0800BFCE (17.1 ms, ARS 5.2 P6): armed at any phase of the 0.99564 ms TIM3 period,
+  19 ticks last 17.92..18.92 ms, never less than v2.05. No event is serviced while the restart is pending, as v2.05
+  services none during its blocking delay (4.1 item 8). Baseline mode keeps the blocking delay.
 - RAM: mirror 0x200077D0 (52 bytes), 0x20007DC4, 0x20007DCC, 0x2000807D..0x2000807F, 0x200080BD.
 - Context: main only.
 - Deviations: OF-16 (the RMS event is serviced with the INTF clear only; no square root, average or hooks; their results

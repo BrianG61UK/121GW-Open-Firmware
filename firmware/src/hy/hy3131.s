@@ -7,7 +7,8 @@
 @ Every row written to the HY3131 comes from the 15 v2.05 tables of hy_rows.s (DESIGN.md 4.1 item 1); the only byte changes are
 @ the two v2.05 ones (LowZ AC, OHM range 6 with 0x20007FE0 set).  hy3131_write_regs checks the final frame against the
 @ whitelist again (spi.s).  Port RAM of this module: hy_row_r20 / hy_row_r29 = R20 / R29 of the row last written (HW-05),
-@ hy_row_valid = 1 once a row has been written, hy_restart_left = remaining slices of a pending counter restart,
+@ hy_row_valid = 1 once a row has been written, hy_restart_pend = 1 while a counter restart waits for its phases 2 and 3
+@ (production), hy_restart_ticks = TIM3 ticks left of that wait (production; counted down by bzb_tim3_isr),
 @ hy_refused_count = refused requests.
 @ =============================================================================
 
@@ -20,8 +21,11 @@
     .include "config.inc"
 
 
-    .equ HY_RESTART_SLICES, 20             @ production: counter restart wait = 20 slices ...
-    .equ HY_RESTART_SLICE_LOOPS, 500       @ ... of fn_0800ECF6(500) = fn_0800ECF6(10000) of v2.05 0x0800BFCA..0x0800BFCE
+    @ Production counter restart wait in TIM3 ticks, never shorter than v2.05's delay(10000) at 0x0800BFCA..0x0800BFCE
+    @ (17.1 ms, analysis/autorange_and_scheduler.md 5.2 P6, emulator measurement).  TIM3 period = (PSC 260 + 1) x
+    @ (ARR 15 + 1) / 4194304 Hz = 0.99564 ms (sys/main.s sys_tim3_base, DESIGN.md 3.3).  The wait is armed at any phase
+    @ of the period, so 19 ticks end after more than 18 periods = 17.92 ms (>= 17.1 ms) and at most 19 periods = 18.92 ms.
+    .equ HY_RESTART_TICKS, 19
 
     .section .text.hy.cfg, "ax", %progbits
 
@@ -906,7 +910,6 @@ ENDFUNC hy3131_set_irq_enable
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main only
 @ RAM      : reads  hy_row_r20, hy_row_valid, 0x2000803C meter_mode
-@            writes hy_restart_left
 @ Spec     : analysis/hy3131_model.md 3 (counter preset); hy3131_modes_misc.md 0
 @ Deviation: HW-05
 @ LOOP_V205 = 1: the whole sequence runs inside this call as in v2.05, including delay(10000) (0x0800BFCA..0x0800BFCE).
@@ -1012,13 +1015,14 @@ ENDFUNC hy3131_counter_restart
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main only
 @ RAM      : reads  hy_row_r20, hy_row_valid, 0x2000803C meter_mode
-@            writes hy_restart_left
+@            writes hy_restart_ticks, hy_restart_pend
 @ Spec     : DESIGN.md 3.5 (blocking routines as state machines), 6.13; analysis/autorange_and_scheduler.md 5.2 P6
 @ Deviation: IMP-06
-@ Phase 1 (R20 & mask) is sent here; the wait of v2.05 (fn_0800ECF6(10000), 0x0800BFCE) is spent in HY_RESTART_SLICES slices
-@ of fn_0800ECF6(HY_RESTART_SLICE_LOOPS) = the same number of loop iterations, one slice per main-loop pass
-@ (hy3131_poll calls hy_counter_restart_step); phases 2 and 3 follow in the pass after the last slice.  A second start
-@ before the sequence has finished starts it again from phase 1.
+@ Phase 1 (R20 & mask) is sent here; the wait of v2.05 (fn_0800ECF6(10000), 0x0800BFCE, 17.1 ms) is measured in TIM3 ticks
+@ (HY_RESTART_TICKS, counted down by bzb_tim3_isr), not in main-loop passes, so its length does not depend on how long a
+@ pass lasts (the production loop sleeps with WFI between passes); hy3131_poll calls hy_counter_restart_step every pass and
+@ phases 2 and 3 follow in the first pass after the count reached 0.  A second start before the sequence has finished
+@ starts it again from phase 1.
 @ -----------------------------------------------------------------------------
 FUNC hy3131_counter_restart
     ldr r0, =hy_row_valid
@@ -1046,9 +1050,12 @@ FUNC hy3131_counter_restart
     movs r1, #32                            @ register 0x20
     mov r0, sp
     bl hy3131_write_regs                    @ phase 1 (v2.05 0x0800BFC6)
-    movs r0, #HY_RESTART_SLICES
-    ldr r1, =hy_restart_left
-    strb r0, [r1]                           @ wait pending: phases 2 and 3 run after the last slice
+    movs r0, #HY_RESTART_TICKS
+    ldr r1, =hy_restart_ticks
+    strb r0, [r1]                           @ wait armed (single byte store: atomic against bzb_tim3_isr)
+    movs r0, #1
+    ldr r1, =hy_restart_pend
+    strb r0, [r1]                           @ phases 2 and 3 pending
     add sp, #8
     pop {r4, pc}
     .ltorg
@@ -1073,31 +1080,34 @@ FUNC hy_counter_restart_step
 ENDFUNC hy_counter_restart_step
 .else
 @ -----------------------------------------------------------------------------
-@ hy_counter_restart_step - one slice of the pending counter restart
+@ hy_counter_restart_step - finish a pending counter restart once its TIM3 wait has run out
 @ Replaces : the second half of 0x0800BF8C hy3131_counter_restart (v2.05), see hy3131_counter_restart (production)
 @ In       : -
-@ Out      : r0 = 1 idle or finished, 0 busy
+@ Out      : r0 = 1 idle or finished, 0 busy (wait still running)
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main only (called by hy3131_poll once per pass)
-@ RAM      : reads  hy_restart_left, hy_row_r20, 0x2000001C
-@            writes hy_restart_left
+@ RAM      : reads  hy_restart_pend, hy_restart_ticks, hy_row_r20, 0x2000001C
+@            writes hy_restart_pend
 @ Spec     : DESIGN.md 3.5, 6.13
 @ Deviation: IMP-06
 @ -----------------------------------------------------------------------------
 FUNC hy_counter_restart_step
-    ldr r1, =hy_restart_left
+    ldr r1, =hy_restart_pend
     ldrb r0, [r1]
-    cbnz r0, .Lst_busy
+    cbnz r0, .Lst_pend
     movs r0, #1                             @ nothing pending
     bx lr
-.Lst_busy:
+.Lst_pend:
+    ldr r0, =hy_restart_ticks
+    ldrb r0, [r0]
+    cbz r0, .Lst_go
+    movs r0, #0                             @ busy: the wait of v2.05 delay(10000) (0x0800BFCE) is still running
+    bx lr
+.Lst_go:
+    movs r0, #0
+    strb r0, [r1]                           @ no longer pending (only main writes hy_restart_pend)
     push {r4, lr}
     sub sp, #8                              @ frame buffer
-    subs r4, r0, #1                         @ r4 = slices left after this one
-    strb r4, [r1]
-    ldr r0, =HY_RESTART_SLICE_LOOPS
-    bl fn_0800ECF6                          @ one slice of the v2.05 delay(10000) (0x0800BFCE)
-    cbnz r4, .Lst_wait                      @ more slices to go
     @ ---- phase 2 (v2.05 0x0800BFD2..0x0800BFFA): CTA <- 0, preset; read back ----
     movs r0, #0
     strb r0, [sp]                           @ CTA<7:0> = 0
@@ -1125,10 +1135,6 @@ FUNC hy_counter_restart_step
     bl hy3131_write_regs
     add sp, #8
     movs r0, #1                             @ finished
-    pop {r4, pc}
-.Lst_wait:
-    add sp, #8
-    movs r0, #0                             @ busy
     pop {r4, pc}
     .ltorg
 ENDFUNC hy_counter_restart_step
@@ -1178,9 +1184,10 @@ ENDFUNC hy_peak_restart
 @ Port RAM of module HY
 @ -----------------------------------------------------------------------------
     .section .bss_port.hy, "aw", %nobits
-    .global hy_row_r20, hy_row_r29, hy_row_valid, hy_restart_left, hy_refused_count
+    .global hy_row_r20, hy_row_r29, hy_row_valid, hy_restart_pend, hy_restart_ticks, hy_refused_count
 hy_row_r20:        .space 1                 @ R20 of the row last written to registers 0x20..0x33 (HW-05)
 hy_row_r29:        .space 1                 @ R29 of that row
 hy_row_valid:      .space 1                 @ 1 once a row has been written, 0 after reset
-hy_restart_left:   .space 1                 @ production: slices left of a pending counter restart (0 = none)
+hy_restart_pend:   .space 1                 @ production: 1 while a counter restart waits for its phases 2 and 3 (0 = none)
+hy_restart_ticks:  .space 1                 @ production: TIM3 ticks left of that wait (decremented by bzb_tim3_isr)
 hy_refused_count:  .space 1                 @ refused HY3131 requests, saturating (diagnostic, probe build 9.4 level 5)

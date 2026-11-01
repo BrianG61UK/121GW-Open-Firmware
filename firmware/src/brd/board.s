@@ -91,8 +91,13 @@ FUNC board_gpio_init
     ldr r1, =brd_desc_pd_out
     ldr r0, =GPIOD_BASE
     bl brd_gpio_init
-    @ PE9 H (0x0801C0CE); PE8, PE7, PE12, PE13, PE5 L (0x0801C0D8..0x0801C0FC); PE15 L (0x0801C2A2)
-    GPIO_SET GPIOE_BASE, 0x0200
+    @ PE8, PE7, PE12, PE13, PE5 L (0x0801C0D8..0x0801C0FC); PE15 L (0x0801C2A2); then PE9 H (0x0801C0CE).
+    @ PE9 keeps the level it has when the port becomes an output, as in v2.05 (MODER first, 0x0801BD86): at a cold start
+    @ the bootloader has left PE9 an output at 1 (0x08004324), so nothing changes; at the wake from STOP its level is the
+    @ 0 of the power-down (0x0801C618), so PE9 goes Z -> 0, PE12 (SHDN_A) Z -> 0 with the HY3131 supply still off, and
+    @ PE9 0 -> 1 only after that, which is v2.05's power order (DESIGN.md 4.3 rule 1).  Setting PE9 high before the
+    @ descriptor, the port drove PE9 Z -> 1 first and then PE12 Z -> 0 with PE9 high, a step v2.05 never makes
+    @ (scenario apo_stop_wake_short, hardware-safety stop).
     GPIO_CLR GPIOE_BASE, 0x0100
     GPIO_CLR GPIOE_BASE, 0x0080
     GPIO_CLR GPIOE_BASE, 0x1000
@@ -102,6 +107,7 @@ FUNC board_gpio_init
     ldr r1, =brd_desc_pe_out
     ldr r0, =GPIOE_BASE
     bl brd_gpio_init
+    GPIO_SET GPIOE_BASE, 0x0200             @ PE9 high (0x0801C0CE): no change at a cold start, 0 -> 1 at the wake
     @ PB6, PB7 L (0x0801C1D4, 0x0801C1DC), then PB6 push-pull and PB7 open-drain outputs
     GPIO_CLR GPIOB_BASE, 0x0040
     GPIO_CLR GPIOB_BASE, 0x0080

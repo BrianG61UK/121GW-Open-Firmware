@@ -38,9 +38,9 @@
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main only
-@ RAM      : reads  0x2000803C meter_mode, 0x2000803D meter_range, hy_restart_left (production)
+@ RAM      : reads  0x2000803C meter_mode, 0x2000803D meter_range, hy_restart_pend (production)
 @ Spec     : analysis/hy3131_model.md 2.1; DESIGN.md 3.5 step 1, 4.1 item 8
-@ Deviation: IMP-06 (restart slice; no event service while a restart is pending)
+@ Deviation: IMP-06 (counter restart finished by hy_counter_restart_step; no event service while a restart is pending)
 @ PF3 (HY_DO) is the HY3131 interrupt output while CS is high: GPIOF IDR bit 3 set = an enabled event is pending (DS p15).
 @ -----------------------------------------------------------------------------
 FUNC hy3131_poll
@@ -50,7 +50,7 @@ FUNC hy3131_poll
     @ INTF clear nor the peak restart (R29 writes, FUN_0800A7FC) nor a new restart can be sent between restart phase 1 and 3.
     @ v2.05 services nothing during its blocking delay(10000) (0x0800BFCE), so registers 0x20..0x33 only ever hold v2.05
     @ states (DESIGN.md 4.1 item 8); the pending event keeps PF3 high and is serviced in the pass after phase 3.
-    ldr r0, =hy_restart_left
+    ldr r0, =hy_restart_pend
     ldrb r0, [r0]
     cmp r0, #0
     bne .L08006134                          @ restart pending: skip the event service this pass
@@ -62,7 +62,7 @@ FUNC hy3131_poll
     bl hy3131_service_irq              @ 0x08006130  event pending: service it
 .L08006134:                              @ reached from 0x0800612E bpl
 .if LOOP_V205 == 0
-    bl hy_counter_restart_step              @ production: finish a pending counter restart (one slice per pass)
+    bl hy_counter_restart_step              @ production: finish a pending counter restart once its TIM3 wait ran out
 .endif
     @ ---- CAP: no counter result within the timeout in mode 12, ranges 0..4 -> FUN_0800B540 (v2.05 0x08006134..0x08006148) ----
     ldr r0, =meter_mode                @ 0x08006134 pool 0x08006AD0 = 0x2000803C

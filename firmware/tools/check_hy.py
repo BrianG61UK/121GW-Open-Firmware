@@ -162,6 +162,21 @@ class World:
             uc.hook_add(UC_HOOK_MEM_WRITE, gpiof, begin=ODR, end=ODR + 0x7)
         return uc, run
 
+    def finish_restart(self, uc, step, run, label, count=3_000_000):
+        """Finish a pending counter restart of the port (production build: hy_counter_restart_step).  While the TIM3 wait
+        hy_restart_ticks is armed the step must report busy (0) and send nothing; this checker runs no interrupts, so the
+        count-down of bzb_tim3_isr is stood in for by writing 0 to hy_restart_ticks, after which the step must finish."""
+        ticks = self.syms.get('hy_restart_ticks')
+        if ticks is not None and uc.mem_read(ticks, 1)[0]:
+            n_frames, n_wire = len(run['frames']), len(run['wire'])
+            if self.call(uc, step, count=count) != 0 or len(run['frames']) != n_frames or len(run['wire']) != n_wire:
+                raise CheckError('%s: restart step did not wait for its TIM3 ticks' % label)
+            uc.mem_write(ticks, b'\x00')                 # the TIM3 count-down (bzb_tim3_isr) has run out
+        for _ in range(100):
+            if self.call(uc, step, count=count) == 1:
+                return
+        raise CheckError('%s: restart step never finished' % label)
+
     @staticmethod
     def call(uc, addr, args=(), count=3_000_000):
         for r, v in zip((UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2), args):
@@ -264,11 +279,7 @@ def sweep(world, select, write, read, delay, step, range_count, label):
                         uc.mem_write(a, bytes([v]))
                     r = world.call(uc, select, (mode, rng))
                     if step:
-                        for _ in range(100):
-                            if world.call(uc, step) == 1:
-                                break
-                        else:
-                            raise CheckError('%s: restart step never finished (mode %d range %d)' % (label, mode, rng))
+                        world.finish_restart(uc, step, run, '%s (mode %d range %d)' % (label, mode, rng))
                     out[(mode, rng, key)] = (run['frames'], r)
                     for a in sorted(run['reads']):
                         if a in FLAGS and a not in asg:
@@ -381,9 +392,7 @@ def check_wire(world, syms, ref, vio):
             uc.mem_write(a, bytes([v]))
         world.call(uc, sel, (mode, rng), count=6_000_000)
         if step:
-            for _ in range(100):
-                if world.call(uc, step, count=6_000_000) == 1:
-                    break
+            world.finish_restart(uc, step, run, 'wire (mode %d range %d)' % (mode, rng), count=6_000_000)
         wire = run['wire']
         if wire != list(sig):
             vio.append('HY-WIRE mode %d range %d flags %s: bus frames %s differ from the requested v2.05 frames %s'
@@ -511,9 +520,7 @@ def random_ram(world, syms, ref_frames, vio, runs=300):
         try:
             world.call(uc, sel, (mode, r), count=6_000_000)
             if step:
-                for _ in range(100):
-                    if world.call(uc, step, count=6_000_000) == 1:
-                        break
+                world.finish_restart(uc, step, run, 'random run %d (mode %d range %d)' % (i, mode, r), count=6_000_000)
         except UcError as e:
             vio.append('HY-RANDOM run %d (mode %d range %d): emulation error %s' % (i, mode, r, e))
             continue

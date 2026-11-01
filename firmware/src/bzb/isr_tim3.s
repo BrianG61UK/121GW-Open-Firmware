@@ -16,13 +16,16 @@
 
 @ -----------------------------------------------------------------------------
 @ bzb_tim3_isr - 1 ms tick: power-on window counter, buzzer pulse countdown and pattern phases
-@ Replaces : 0x08024722 IRQ29_Handler (v2.05), step for step
+@ Replaces : 0x08024722 IRQ29_Handler (v2.05), step for step; production adds the HY counter restart wait count
 @ In/Out   : - / -
 @ Clobbers : r0-r3, r12 (stacked by the exception entry)
 @ Context  : IRQ29, priority 0x50 (preemption 1); preempts sys_tim2_isr and main
 @ RAM      : writes 0x200080CF = 1 (1 ms flag), 0x2000022E (window counter, u16), 0x20007FB4, 0x20008079,
-@            0x2000807A; reads 0x2000803A (power-off pending stops the countdown), 0x20007FB6, 0x20008078
+@            0x2000807A; reads 0x2000803A (power-off pending stops the countdown), 0x20007FB6, 0x20008078;
+@            production: hy_restart_ticks (HY) decremented while not 0 (this handler is its only decrementer)
 @ Spec     : DESIGN.md 3.4 (IRQ29 row), 4.5, 6.4
+@ Deviation: IMP-06 (production: the wait of the HY3131 counter restart, v2.05 delay(10000) 0x0800BFCE, is counted
+@            in these ticks instead of main-loop passes; see hy3131_counter_restart)
 @ -----------------------------------------------------------------------------
 FUNC bzb_tim3_isr
     push {r3, lr}
@@ -38,6 +41,14 @@ FUNC bzb_tim3_isr
     subs r0, r0, #1
     strh r0, [r1]
 .Lt3_buzz:
+.if LOOP_V205 == 0
+    ldr r1, =hy_restart_ticks               @ production: HY counter restart wait (IMP-06)
+    ldrb r0, [r1]
+    cbz r0, .Lt3_hy
+    subs r0, r0, #1
+    strb r0, [r1]
+.Lt3_hy:
+.endif
     ldr r1, =v_20007FB4                     @ r1 = pulse countdown address
     ldrh r0, [r1]
     cbz r0, .Lt3_done                       @ no pulse (0x08024756)

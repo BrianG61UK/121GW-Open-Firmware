@@ -58,6 +58,8 @@ class Machine:
         self._sysclk_hz = sysclk_hz           # updated by the RCC model through the sysclk_hz property
         self._clk_mark = (0, Fraction(0))     # (cycles, elapsed seconds) when the core clock last changed
         self.clock_hooks = []                 # callables run after every core clock change (event re-timing)
+        self._run_end = None                  # end cycle of the running run() call (None outside run()); re-scaled
+                                              # by a core clock change (sysclk_hz setter) so the budget stays a time
         self.periphs = []                     # (base, end, model)
         self.events = []                      # (due_cycle, seq, callback)
         self._seq = 0
@@ -340,8 +342,19 @@ class Machine:
 
     @sysclk_hz.setter
     def sysclk_hz(self, hz):
+        old = self._sysclk_hz
         self._clk_mark = (self.cycles, self.elapsed_s())   # close the time segment run at the old clock
         self._sysclk_hz = hz
+        # A run() budget is given in cycles of the clock in effect when run() was called (callers compute it as
+        # seconds x sysclk_hz).  The cycles still to run are re-scaled to the new clock so the call ends at the same
+        # emulated time: without this a drop from 4.194 MHz to 65.536 kHz (v2.05 FUN_0801C522 before STOP) made the
+        # rest of a 50 ms scenario chunk last 64 times longer and moved every later scenario step.
+        if self._run_end is not None and hz != old:
+            rem = self._run_end - self.cycles
+            if rem > 0:
+                self._run_end = self.cycles + max(1, -(-rem * hz // old))     # ceil(rem * hz / old)
+                if self._in_slice and self._run_end < self._slice_end:
+                    self._slice_end = self._run_end
         for hook in list(self.clock_hooks):
             hook()
 
@@ -476,8 +489,11 @@ class Machine:
             self._charge(1)                            # the WFI / WFE executes: 1 + W (DDI 0337H Table 3.1), W = 0
             return (a + 2) | 1
         self._asleep_at = a
-        if self.events:                                # asleep until the next event
-            self._charge(max(0, self.events[0][0] - (self.cycles - self._prepay)))
+        if self.events:                                # asleep until the next event, at most to the end of the run()
+            due = self.events[0][0]                    # call (the sleep goes on in the next call: the instruction is
+            if self._run_end is not None:              # executed again there)
+                due = min(due, self._run_end)
+            self._charge(max(0, due - (self.cycles - self._prepay)))
         else:
             self.idle = True
         return a | 1
@@ -564,8 +580,17 @@ class Machine:
         self._prepay = 0                               # the abandoned instructions never execute
 
     def run(self, max_cycles, slice_cycles=4000):
-        end = self.cycles + max_cycles
-        while self.cycles < end and self._stop_reason is None and self.reset_request is None:
+        """Run for max_cycles cycles of the current core clock (a time budget: a clock change during the call re-scales
+        the cycles still to run, see the sysclk_hz setter), or until the core stops, a reset is requested or the core
+        sleeps with nothing scheduled.  Returns the stop reason (None when the CPU did not stop)."""
+        self._run_end = self.cycles + max_cycles
+        try:
+            return self._run(slice_cycles)
+        finally:
+            self._run_end = None
+
+    def _run(self, slice_cycles):
+        while self.cycles < self._run_end and self._stop_reason is None and self.reset_request is None:
             self._run_events()
             if self._fault is not None:                # synchronous fault of the MPU model: taken before anything else
                 exc, rpc = self._fault
@@ -582,7 +607,7 @@ class Machine:
                 self._take_fault()
                 if self._fault is not None:            # stacking fault of this entry: enter it before the handler runs
                     continue
-            n = slice_cycles
+            n = max(1, min(slice_cycles, self._run_end - self.cycles))   # a slice does not run past the run() budget
             if self.events:
                 n = max(1, min(n, self.events[0][0] - self.cycles))
             self._resume = None

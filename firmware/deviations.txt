@@ -2,12 +2,12 @@
 # (emulator/diff/compare.py, scenarios of emulator/diff/scenarios) and by the hardware-safety monitor
 # (emulator/emu/safety.py, safety_* entries).  References: firmware/DESIGN.md section 10.
 
-# HW-04: the GPIO output level is written before MODER, so the port drives PD1 and PE9 from "not driven" straight to 1
-# where v2.05 first drives them to 0 (0x0801C08A, 0x0801C0C2) and then to 1 (0x0801C094, 0x0801C0CE).  Cold boot and
-# wake from STOP (firmware/requests/W1_to_W10.md item 3).  The wake step "PD1 Z -> 1 with PE9=Z,PD1=Z" needs no entry:
-# v2.05 makes it itself at wake (GPIO_Init at 0x0801BD86 with the PD1 output bit already set; whitelist 'power' line).
+# HW-04: the GPIO output level is written before MODER, so the port drives PD1 from "not driven" straight to 1 where v2.05
+# first drives it to 0 (0x0801C08A) and then to 1 (0x0801C094).  The wake step "PD1 Z -> 1 with PE9=Z,PD1=Z" needs no
+# entry: v2.05 makes it itself at wake (GPIO_Init at 0x0801BD86 with the PD1 output bit already set; whitelist 'power'
+# line).  PE9 keeps v2.05's order (src/brd/board.s: Z -> 0 with the port's MODER, PE12 low, then 0 -> 1 at the wake; no
+# change at a cold start, where the bootloader has left it high), so it has no entry (apo_stop_wake_short).
 HW-04  safety_power  *  pins == PD1 and old == Z and new == 1 and ctx == PE9=1,PD1=Z
-HW-04  safety_power  *  pins == PE9 and old == Z and new == 1 and ctx == PE9=Z,PD1=1
 
 # OF-08: calibration-mode entry (MODE at power-on, then REL) does not rewrite the six user-zero records 0x4D0..0x4FC;
 # v2.05 writes A5 00 00 00 00 to each (analysis/keys_setup.md 3.1, 5.2).  The scenario's assertions on those bytes
@@ -173,6 +173,23 @@ OF-53+OF-26  lcd  peak_with_filter_of17  step == 10 and since in 0.76..1.27 and 
 # the port, which then restarts the peak registers once more (peak_acmv: 10.819 .. 11.186 s, an extra pair at 11.186 s).  The
 # R29 restart frames of the PEAK scenarios are not compared (their two values are checked by the safety monitor).
 OF-53  spi  peak_ac*  dir == W and addr == 41
+
+# NF-05 (src/brd/stop.s fn_080207CC): v2.05 enters STOP with a single WFE (0x080207F6), which returns at once when the event
+# register is set; in apo_stop_wake_short it is set at the WFE (an exception was entered before, emu/core.py), so v2.05 leaves
+# STOP 0.22 s after the power-down and runs its power-on window again (supply back at 6.263 s); the port re-enters STOP until
+# an armed EXTI line is pending and wakes at the dial change of line 16 (supply at 7.126 s).  Both wake sequences are the
+# same pins in the same order (PD0 PD1 PD7 PE5 buzzer backlight, PE9 0, PE12 0, PE13 PE15, PE9 1, PC11 PF4 PF5 PF6 PF15 PH2
+# PA11 PA12; HW-04 below), and the window and the mV apply follow in both, 0.863 s apart: the streams are paired with that
+# tolerance; the clock reads after the power-down (v2.05 reads while the port sleeps) are not compared.
+NF-05  tolerance:lcd    apo_stop_wake_short  0.87
+NF-05  tolerance:gpio   apo_stop_wake_short  0.87
+NF-05  tolerance:power  apo_stop_wake_short  0.87
+NF-05  tolerance:spi    apo_stop_wake_short  0.87
+NF-05  rtc              apo_stop_wake_short  text ~ "read *" and step == 14 and since in 3.0..4.0
+NF-05  rtc              apo_stop_wake_short  text ~ "read *" and step == 16
+# HW-04 at the wake: PA12 ends at 1, so the port writes its level before MODER and it goes Z -> 1, where v2.05 drives
+# Z -> 0 -> 1 (v2.05 6.2642 s; the port 7.1263 s).
+HW-04  gpio  apo_stop_wake_short  pin == PA12 and t in 6.25..7.2
 
 # =====================================================================================================================
 # Entries for the deviations of firmware/DESIGN.md sections 10 and 11 that the scenarios of emulator/diff/scenarios make
@@ -690,6 +707,17 @@ IMP-06  mask:lcd:sub  sd_insert_remove  build == production and step in 10..12
 # (PE15 / PF6 at 0.407 s against 0.751 s after the key goes down; IMP-06), beyond the general 0.2 s (power) / 0.283 s (gpio).
 IMP-06  power  range_cycle_all_modes  build == production and step == 273 and pin ~ "P[EF]*"
 IMP-06  gpio   range_cycle_all_modes  build == production and step == 273 and pin ~ "P[EF]*"
+# apo_stop_wake_short: the "-oFF-" screen of the power-off is drawn in one pass by the production beep state machine
+# (IMP-06), v2.05 blanks the display in one LCD frame and draws "-oFF-" in the next (5.046 / 5.059 s).
+IMP-06  lcd  apo_stop_wake_short  build == production and step == 14 and main == "     " and since in 1.9..2.2
+# After the wake the power-on window runs again (IMP-02): production applies the dial's mode (mV) inside the window and shows
+# the reading with the version on the sub display, v2.05 shows the splash and applies the mode after the window (the window
+# entries above use the time since the power-on, which a wake does not restart).  The display, the HY3131 configuration
+# writes and the front-end pins after the wake are not compared in production; the wake pin sequence (the power stream)
+# and the supply / enable pins are.
+IMP-02  lcd    apo_stop_wake_short  build == production and t in 6.25..11
+IMP-02  spi    apo_stop_wake_short  build == production and dir == W and addr in 27..32 and t in 6.25..11
+IMP-02  gpio   apo_stop_wake_short  build == production and t in 7.13..11 and pin != buzzer and pin != backlight and pin != supply and pin != ble_supply
 # Setup edits: the edit blink (0x2000806F) toggles on the 500 ms flags while an edit runs; production starts the edit at the
 # key event, v2.05 one or more LCD passes later, so where a 500 ms flag falls between the two the blink runs in the opposite
 # phase for the whole edit (setup_temp_unit: v2.05 blank at 3.772 s, production at 4.050 s; the frames come half a period
@@ -728,5 +756,6 @@ NF-11+IMP-06  lcd  setup_time      build == production and step in 20..27
 #   the record values are the same in v2.05 and both builds; the blocks differ only by the record count and time stamps,
 #   entries above); with noise on, the noise draws shift with the timing too, so the two causes cannot be told apart and no
 #   entry is written.
-# Not run: NF-05, NF-06 (STOP and wake: apo_timing_wake and apo_disabled are long scenarios, not in the 93).
+# STOP and wake: apo_stop_wake_short (NF-05 entries above); NF-06 (the EXTI wake lines are disarmed after the wake) changes no
+#   compared stream there; apo_timing_wake and apo_disabled are long scenarios and are not run (owner decision).
 # No deviation (v2.05 behaviour kept): OF-44 .. OF-51.  OF-52, OF-53, OF-54: entries above (OF-54 in the baseline read entry).

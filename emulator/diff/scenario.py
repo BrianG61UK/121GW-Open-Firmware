@@ -27,6 +27,10 @@ Plain-text format ('#' starts a comment; times in seconds; keys MODE SETUP MINMA
     sd <insert|remove>
     ble <hex byte> [<hex byte>...]     bytes delivered to the USART2 receiver (analysis/ble_packet.md section 6)
     sysreset                           MCU system reset (SCB_AIRCR.SYSRESETREQ)
+    ram <0xADDR> <u8|u16|u32> <value>  store a value (little endian) in the emulated SRAM 0x20000000..0x2000BFFF between two
+                                       instructions, without taking time: puts a firmware state that otherwise takes minutes
+                                       to reach (e.g. the APO countdown 0x20000230 near its expiry); the address and the
+                                       meaning must be cited by a `source` line
     mark <label>                       named time point for `since` in assertions
     expect lcd <main|sub> "<text>"     decoded display text (trace.LcdDecoder.text), exact
     expect lcd <main_chars|sub_chars> "<text>"     the same without the decimal points
@@ -67,6 +71,7 @@ from diff.trace import Recorder, PIN_NAMES       # noqa: E402
 
 DIAL_NAMES = {'off': 0, 'lowz': 1, 'v': 2, 'mv': 3, 'hz': 4, 'ohm': 5, 'va': 6, 'ua': 7, 'a': 8}
 FLAGS = {'destructive', 'sd', 'long'}
+SRAM_LO, SRAM_HI = 0x20000000, 0x2000C000          # SRAM of the STM32L152 (48 KB, emu/core.py SRAM_BASE / SRAM_SIZE)
 SD_MB = 64                                       # smallest FAT32 image emu/sdcard.format_fat32 accepts
 NS = 1_000_000_000
 
@@ -144,6 +149,9 @@ class Scenario:
 
     def sysreset(self, line=0, text=''):
         return self._add('sysreset', line, text)
+
+    def ram(self, addr, size, value, line=0, text=''):
+        return self._add('ram', line, text, addr=int(addr), size=int(size), value=int(value))
 
     def mark(self, label, line=0, text=''):
         return self._add('mark', line, text, label=label)
@@ -278,6 +286,16 @@ def parse(text, name='scenario', path=None):
                 sc.ble(bytes(int(x, 16) for x in a), **kw)
             elif op == 'sysreset':
                 sc.sysreset(**kw)
+            elif op == 'ram':
+                sizes = {'u8': 1, 'u16': 2, 'u32': 4}
+                if len(a) != 3 or a[1] not in sizes:
+                    raise ScenarioError('ram <0xADDR> <u8|u16|u32> <value>')
+                addr, size, value = int(a[0], 0), sizes[a[1]], int(a[2], 0)
+                if not (SRAM_LO <= addr and addr + size <= SRAM_HI) or addr % size:
+                    raise ScenarioError(f'ram: 0x{addr:08X} is not an aligned SRAM address')
+                if not 0 <= value < 1 << (8 * size):
+                    raise ScenarioError(f'ram: value {value} does not fit {a[1]}')
+                sc.ram(addr, size, value, **kw)
             elif op == 'mark':
                 marks.add(a[0])
                 sc.mark(a[0], **kw)
@@ -485,6 +503,8 @@ class Runner:
         elif st.op == 'sysreset':
             self._emit('reset', ('system', 'AIRCR.SYSRESETREQ (scenario)'))
             e.command({'sysreset': True})
+        elif st.op == 'ram':
+            e.m.uc.mem_write(a['addr'], a['value'].to_bytes(a['size'], 'little'))
         elif st.op == 'mark':
             self.marks[a['label']] = self.now_ns()
         elif st.op == 'expect':
