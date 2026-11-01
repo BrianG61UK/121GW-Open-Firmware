@@ -64,6 +64,7 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-49 | Display | `FUN_0801B090`: the first digit word is n / 10000 without reduction, so n >= 100000 draws a blank or wrong first character; no defined v2.05 input reaches it | low | open |
 | OF-50 | Display | `FUN_0801B77A` passes `LCD_FCR AND mask` instead of the mask to `LCD_ContrastConfig`; the result is always overwritten by the following `lcd_init` | low | open |
 | OF-51 | Runtime library | Soft-float and 64-bit division helpers differ from IEEE 754 / the ARM run-time ABI in listed cases (fdiv exponent 254, subnormal operands of fadd/fsub/dadd/dsub, dsqrt special operands, division by zero); none reached by v2.05 code | low | open |
+| OF-52 | Battery | The ADC-to-battery conversion is a straight line that matches the hardware divider only near 6.4 V: the gauge reads up to 6 % low near empty and the low-battery warning starts at 4.31 V instead of the displayed 4.1 V | low | open |
 
 ## Details
 
@@ -766,3 +767,20 @@ Reachability: `dsqrt` has two callers (`0x0800A73C`, `0x080082BE`), both precede
 `uldivmod` (14 sites): divisors are the constants 1, 10, 100, 1000, 10000 (`0x0800AF1C`..`0x0800AFE0`, `0x0800B0A2`, `0x0800B272`..`0x0800B2B2`, `0x0800B6A2`) or `0x20007E48 / 10` at `0x0800B662` (at least 0x200000 / 10: T = 0x1000000 - (word at 0x2000001C << 8) + CTA, and the word is 0xE000 after start-up, `analysis/decompile/ram_init.txt`), `(0x20007E18 / 1000) x 0x20007E40` at `0x0800B6B6` and `0x20007E40 x 100` at `0x0800B71A`: 0x20007E18 is at least 40 000 000 (`analysis/hy3131_modes_misc.md` 5.2) and 0x20007E40 is the counter's whole-cycle count, so a zero divisor needs a counter result with zero cycles. No zero divisor in any run, including PULSE and DUTY with no signal.
 Impact: none found; the helpers were kept bit for bit in the port, so that any future caller sees the v2.05 results.
 Port: kept bit for bit (`firmware/src/rt/*.s`, deviation none).
+
+### OF-52 — battery conversion does not match the hardware divider
+Hardware (wire-traced, `analysis/frontend_netlist.md` sections 7 and 9): B+ (BAT1 through the dial contact) - R69 1M -
+PA5 - R70 330k - VSS, ratio 330/1330 = 0.2481 at printed values; the ADC reference VDDA = VREF+ is the VDD_P rail,
+NJU7200U33, 3.300 V typical (NJU7200 data sheet p4), so ADC code = B+ x 0.2481 / 3.3 x 4095 = B+ x 307.9.
+Firmware: `adc_ch5_process` (`0x080134DA`) clamps the code to 0x3FC..0xC30 and converts it with `FUN_08013728` (table
+0x08028C9C, T[i] = 3120 - 140 i; value = 1050 - 50 i + 50 (code - T[i]) / 140, in 0.01 V), i.e. code / 280 - 0.643 V;
+the low-battery flag is set below 41 (4.1 V) (`0x0801353A cmp #0x29`). The firmware line and the hardware line cross
+at 6.4 V.
+Execution check (the original `FUN_08013728` under Unicorn, codes from the hardware relation): B+ 4.00 V -> 3.75 V
+(-6.2 %), 4.10 V -> 3.86 V, 4.31 V -> 4.09 V, 5.00 V -> 4.85 V (-3.0 %), 6.00 V -> 5.95 V, 6.40 V -> 6.39 V,
+8.00 V -> 8.15 V, 9.50 V -> 9.80 V (+3.2 %).
+Impact: the battery voltage shown is up to 6 % low near the end of the battery's life, and the low-battery symbol (and
+everything tied to the flag) appears when B+ falls below 4.31 V, not 4.1 V. The figures use printed nominal values;
+part tolerances shift them, a comparison of display and measured battery voltage on a meter confirms them.
+Port: convert with the hardware relation (code x 3.3 / 4095 / 0.2481), keeping the 4.1 V threshold.
+
