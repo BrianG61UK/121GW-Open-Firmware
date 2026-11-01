@@ -15,12 +15,24 @@ HW-04  safety_power  *  pins == PE9 and old == Z and new == 1 and ctx == PE9=Z,P
 OF-08  eeprom        poweron_calmode_erase  offset in 0x4D0..0x4FF
 OF-08  eeprom_final  poweron_calmode_erase  offset in 0x4D0..0x4FF
 OF-08  assert        poweron_calmode_erase  line in 12..17
+# Not writing the six records saves v2.05's six EEPROM programming times (26.4 ms each, 0.844..0.977 s): everything the
+# meter does after the REL press of line 10 comes 0.139 s earlier in the port (row write 1.062 / 0.923 s).
+OF-08  tolerance:lcd   poweron_calmode_erase  0.145
+OF-08  tolerance:spi   poweron_calmode_erase  0.145
+# The clock-chip reads at the end of the power-on window (two full reads) and at the next seconds change come 0.139 s
+# earlier too and in another order relative to the 100 ms reads (v2.05 1.005, 1.008, 1.020 s; the port 0.866, 0.869,
+# 0.942, 1.005, 1.032 s); the 100 ms reads after them are paired again (1.120 / 1.129 s).
+OF-08  rtc             poweron_calmode_erase  step == 10 and since in 0.0..0.3
 
 # OF-23: the DIODE 3 V / 15 V selection is not written to EEPROM 0x12 (v2.05: FUN_080159C8 writes it, boot forces 3 V).
 # diode_range line 15 asserts the v2.05 write.
 OF-23  eeprom        *           offset == 0x12
 OF-23  eeprom_final  *           offset == 0x12
 OF-23  assert        diode_range line == 15
+# The 15 V source is switched (PE15 / PF6) without the EEPROM write before it (v2.05 0x12 written at 5.193 s, PE15 at
+# 5.193 s), so 5.5 ms earlier; the first 15 V reading then comes from another conversion (v2.05 " 3.850" at 0.210 s after
+# the RANGE press of line 11, the port " 3.080" at 0.209 s and 0.223 s).
+OF-23  lcd           diode_range  build == baseline and step == 11 and since in 0.2..0.23
 
 # OF-12: cal.bin is a 1248-byte file that also holds the user-zero records 0x4D0..0x4FF (DESIGN.md section 10, 7.3);
 # v2.05 writes 1200 bytes, EEPROM 0x000..0x4AF (calbin_save 0x0801CD14, analysis/keys_setup.md 3.2).  The card traffic
@@ -79,6 +91,9 @@ HW-04  power  *  pin == PD1 and boot in 0.03..0.045
 # v2.05 writes PE15 high first (3 instructions before PF6 low).  diode_range: the second RANGE press (line 13) leaves 15 V.
 HW-06  gpio   diode_range  step == 13 and pin == PE15 and level == 1
 HW-06  gpio   diode_range  step == 13 and pin == PF6 and level == 0
+# range_cycle_all_modes leaves the DIODE 15 V source with the RANGE press of line 261 (PE15 / PF6 at 166.84 s).
+HW-06  gpio   range_cycle_all_modes  step == 261 and pin == PE15 and level == 1
+HW-06  gpio   range_cycle_all_modes  step == 261 and pin == PF6 and level == 0
 
 # OF-14 + OF-15 (ORIGINAL_FIRMWARE_ISSUES.md): a negative DC reading is decoded 1 LSB high (OF-14) and rounded toward zero
 # (OF-15), so v2.05 shows -1.2344 for -1.2345 V and -47.999 for -48.0 V, the port the exact value; the intermediate
@@ -88,15 +103,28 @@ OF-14+OF-15  lcd  dc*_values  main ~ "-*" and boot in 0.5..1e9
 OF-14+OF-15  lcd  ua_values   main ~ "-*" and boot in 0.5..1e9
 OF-14+OF-15  lcd  lowz_values main ~ "-*" and boot in 0.5..1e9
 OF-14+OF-15  lcd_final  lowz_values  main ~ "-*"
+# The bargraph follows the per-sample value, which is negative (and in v2.05 1 LSB high) before the main digits change:
+# the first frame after the step to a negative input still shows the old positive digits with a bargraph of one segment
+# more in the port (dcmv_values line 12: 400.00 with 25 / 24 segments; the same frame in dca_values and dcma_values line 13,
+# dcv_values line 15).
+OF-14+OF-15  lcd  dcmv_values  step == 12 and since in 0.02..0.04
+OF-14+OF-15  lcd  dca_values   step == 13 and since in 0.02..0.12
+OF-14+OF-15  lcd  dcma_values  step == 13 and since in 0.02..0.04
+OF-14+OF-15  lcd  dcv_values   step == 15 and since in 0.02..0.04
 # AC+DC with a negative DC component (acdc_values line 12: dc=-2.0): the combined value is built from the DC phase, so the
 # steady reading differs in the last digit (v2.05 2.2359, port 2.2360); OF-28 (shared smoothing state) acts on the same
 # value.
 OF-14+OF-15+OF-28  lcd  acdc_values  step == 12 and main ~ "2.2*"
 
 # OF-21 (FUN_08018AD8, 0x08018AF4..0x08018B0C): the board temperature on the secondary display is rounded on the wrong digit
-# in v2.05 (boot_v: v2.05 shows 27.0, the port 27.1 for the same ADC value).  Persistent in every frame that shows it, so the secondary
-# display is not compared while it shows a temperature; the main display and the annunciators are.
-OF-21  mask:lcd:sub  *  sub ~ "*c"
+# in v2.05.  The scenarios' thermistor input gives T = 2705 (0.01 degC) at the entry of FUN_08018AD8 / fn_08018AD8 in both
+# images (boot_v, register r0 at 2.124 s and 2.154 s); v2.05 shows 27.0 (rounds on the tenths of 270), the port 27.1 (27.05
+# half away from zero).  Only those two texts are masked, so any other secondary-display temperature stays compared;
+# temp_values drives the thermistor through many values (all affected by the rounding) and mem_logging_sd shows the logged
+# temperature without its decimal point (270 / 271).
+OF-21  mask:lcd:sub  *  sub ~ " 27.[01]c"
+OF-21  mask:lcd:sub  temp_values  sub ~ "*c"
+OF-21  mask:lcd:sub  mem_logging_sd  sub ~ " 27[01]c"
 # The same rounding on the main display in TEMP mode and OF-24 (cold-junction value kept below -20.0 degC in v2.05, the
 # existing fault path in the port; temp_values line 19 drives the board to -22 degC): the main display is not compared in
 # the TEMP steps (lines 11..19).
@@ -113,11 +141,14 @@ OF-21  uart_tx  ble_*  pos == 18
 # the DUTY mode of line 17; the first DUTY frame still shows the width in the new unit (0249.9 / 0250.0).
 OF-18  lcd  freq_values  step in 13..17 and main ~ "0*"
 
-# OF-33 (cap.s 474): the CAP timeout range jump draws the old count with the new decimal point for one update in v2.05;
-# the port blanks across the jump.  cap_values: the jumps made by the inputs of lines 14 (1.0000) and 16 (9999).  The
-# baseline run shows the same frames as v2.05 here, so the entry currently removes identical frames from both runs.
-OF-33  lcd  cap_values  step == 14 and since in 0.9..1.1 and main == "1.0000"
-OF-33  lcd  cap_values  step == 16 and since in 1.7..2.0 and main ~ "*9999"
+# OF-33 (src/mres/cap.s, fn_0800B540): the CAP timeout range jump draws the old count with the new decimal point for one
+# update in v2.05; the port draws blank digits with the new decimal point in that frame.  cap_values, line 14 (10 nF ->
+# 10 uF): v2.05 "1.0000" at 0.989 s after the step, the port " .    " in the same frame (baseline; the production frames
+# are inside the IMP-01 window), both then " .    " at 1.003 s; line 16 (-> 1 mF): v2.05 " 9999" at 1.839 s, then blank
+# at 1.852 s, the port blank at 1.838 s (paired with v2.05's blank frame within the tolerance).
+OF-33  lcd  cap_values  step == 14 and since in 0.95..0.995 and main == "1.0000"
+OF-33  lcd  cap_values  build == baseline and step == 14 and since in 0.95..0.995 and main == " .    "
+OF-33  lcd  cap_values  step == 16 and since in 1.7..1.845 and main ~ "*9999"
 
 # IMP-05 (analysis/autorange_and_scheduler.md section 9): setup item 10 in BEEP steps REL through DN 1 .. UP300 (16 codes)
 # instead of the four v2.05 codes; from code 0 (DN 30, EEPROM 0x014 = 0) one REL gives DN 50 (code 7) where v2.05 gives
@@ -127,26 +158,105 @@ IMP-05  lcd_final   setup_beep_threshold  sub ~ "[DU][NP]*"
 IMP-05  eeprom        setup_beep_threshold  offset == 0x14
 IMP-05  eeprom_final  setup_beep_threshold  offset == 0x14
 
-# OPT-01 + OPT-08 (DESIGN 11; src/cal/cache.s, nvm_read_block): start-up differs in time.  Measured on boot_v: the application's
-# GPIO burst comes 0.54 ms earlier (RAM init by copy instead of lz77, OPT-01), the first HY3131 write 1.24 ms later (the
-# 1280-byte calibration cache is loaded before it, OPT-08: +1.78 ms).  The LCD-paced baseline loop then runs 1.07..1.24 ms
-# later than v2.05's, so an event that the main loop produces falls one LCD frame (13.84 ms, 72 Hz) later or earlier when
-# its trigger lies near a pass boundary: measured differences of lcd and gpio events in the 93 baseline runs cluster at
-# +1.1, +14.9 and -12.8 ms.  Tolerance = one frame + the shift + 0.4 ms.
-OPT-01+OPT-08  tolerance:lcd    *  0.0155
-OPT-01+OPT-08  tolerance:gpio   *  0.0155
-OPT-01+OPT-08  tolerance:power  *  0.0155
+# OPT-01 (DESIGN 3.2 step 4, 11): the RAM image is copied instead of lz77-unpacked, so the port's start-up on the 16 MHz
+# PLL clock is shorter and every later start-up step comes earlier.  Measured on boot_v: TIM2 updates 0.86 ms earlier
+# (v2.05 46.990 ms, port 46.134 ms), LCD frames 0.42 ms earlier (v2.05 49.272 ms, port 48.850 ms; LCDCLK restarts when
+# RTCSEL is selected again after the backup-domain reset), the first HY3131 write 0.9 ms later (both wait for the end of
+# lcd_init's display update in the splash routine; the port then waits a 1.19 ms safety margin, DESIGN 7.1).  The bootloader's TIM2 keeps counting into the application (DESIGN 3.2
+# step 1): v2.05 takes its update at 35.885 ms and the update event of its own TIM2 set-up at 36.971 ms, two ticks; the
+# port takes only the second (36.108 ms): its timer, slower on the MSI clock after the earlier switch, has not reached
+# its period when the port's TIM2 set-up restarts it.  So the port's 10 ms tick count, and with it the 100 ms, 500 ms
+# and 1 s flags and the BLE frame ticks, run one tick (10.02 ms) behind v2.05's, on a grid 0.86 ms earlier.
+# Consequences in the LCD-paced baseline loop:
+# - an action triggered by a key, a flag or a sample falls in the same, the next or the next-but-one LCD pass (13.84 ms):
+#   measured differences of lcd, spi, eeprom, gpio and card events reach 28.1 ms (acdc_values, idle_ua);
+# - the clock-chip full reads (100 ms flag, seconds change) come up to one tick plus two passes later (measured 34.0 ms,
+#   dca_values); the seconds-register polls, one per 10 ms flag a pass sees, differ in number (flags coalesce
+#   differently within the 13.84 ms passes), so they are not compared; the full reads (year..second) and writes are;
+# - the HY3131 event reads (one 52-byte read per serviced event, then the INTF clear) are made in other passes, so their
+#   number and, while an input settles, their AD1 values differ; the configuration writes stay compared;
+# - the number of CMD13 status polls after a card block depends on the TIM2/TIM3 interrupts that fall into the polling
+#   loop (calbin_load: 29 or 30 polls on different blocks in the two images); the commands and blocks stay compared.
+OPT-01  tolerance:lcd       *  0.0285 and build == baseline
+OPT-01  tolerance:gpio      *  0.0285 and build == baseline
+OPT-01  tolerance:power     *  0.0285 and build == baseline
+OPT-01  tolerance:spi       *  0.0285 and build == baseline
+OPT-01  tolerance:eeprom    *  0.0285 and build == baseline
+OPT-01  tolerance:sd_cmd    *  0.0285 and build == baseline
+OPT-01  tolerance:sd_block  *  0.0285 and build == baseline
+OPT-01  tolerance:rtc       *  0.035
+OPT-01  rtc     *  text ~ "read second*"
+OPT-01  spi     *  build == baseline and dir == R
+OPT-01  spi     *  build == baseline and dir == W and addr == 30 and data ~ "00"
+OPT-01  sd_cmd  *  index == 13
+# The first frame after an input step shows a mean of the samples converted so far; with the sample grid 0.4 ms apart the
+# two images include a different number of samples of the new input (one frame each, 38 ms or 0.1..0.2 s after the step).
+OPT-01  lcd  ble_stream         build == baseline and step == 7 and since in 0.03..0.045
+OPT-01  lcd  hold_sequence_dcv  build == baseline and step == 5 and since in 0.03..0.045
+OPT-01  lcd  mem_logging_sd     build == baseline and step == 6 and since in 0.03..0.045
+OPT-01  lcd  rel_dcv            build == baseline and step == 5 and since in 0.03..0.045
+OPT-01  lcd  rel_dcv            build == baseline and step == 10 and since in 0.18..0.2
+OPT-01  lcd  minmax_dcv         build == baseline and step == 5 and since in 0.03..0.045
+OPT-01  lcd  minmax_dcv         build == baseline and step == 12 and since in 0.07..0.1
+OPT-01  lcd  autorange_dcv      build == baseline and step == 6 and since in 0.03..0.045
+OPT-01  lcd  autorange_dcv      build == baseline and step == 8 and since in 0.12..0.14
+OPT-01  lcd  dcv_values         build == baseline and step == 7 and since in 0.12..0.14
+OPT-01  lcd  dcv_values         build == baseline and step == 11 and since in 0.09..0.12
+OPT-01  lcd  dcv_values         build == baseline and step == 19 and since in 0.07..0.12
+# va_values line 10 (5 V 1 A -> 12 V 2.5 A): until the voltage and current channels have both been measured at the new
+# input the product is computed from one new and one old channel value (v2.05 6.875, the port 6.405, three frames up to
+# 0.85 s, then both show dashes); which channel value is new depends on the channel alternation phase.
+OPT-01  lcd  va_values          build == baseline and step == 10 and since in 0.04..0.86
+# va_values: the channel alternation (as in the idle scenarios below) drifts up to 51.3 ms in the AC VA part (line 14 on;
+# 120 configuration writes, identical in content and order).
+OPT-01  tolerance:spi  va_values  0.052 and build == baseline
+OPT-01  lcd  acmv_values        build == baseline and step == 12 and since in 0.21..0.23
+OPT-01  lcd  peak_acv_ranges    build == baseline and step == 30 and since in 0.16..0.17
+# minmax_dcv line 18 (AVG): the average includes those settling samples, so it differs by one count (1.3593 / 1.3606)
+# until line 21 replaces it.
+OPT-01  lcd  minmax_dcv         build == baseline and step == 18 and since in 0.3..1.5
+OPT-01  lcd  minmax_dcv         build == baseline and step == 21 and since in 0.19..0.22
+# autorange_dcv line 14 (450 V -> 0.05 V): whether the mean of the block that contains the step still shows a value
+# (v2.05 " 56.29" at 0.220 s) before the range is lowered depends on how many low samples the block holds; the lower
+# range is then applied one 0.21 s block apart (row write 17.238 s / 17.446 s).
+OPT-01  lcd  autorange_dcv      build == baseline and step == 14 and since in 0.2..0.25 and main == " 56.29"
+OPT-01  tolerance:spi  autorange_dcv  0.21 and build == baseline
+OPT-01  tolerance:lcd  autorange_dcv  0.21 and build == baseline
+# minmax_dcv line 21: the same block decision (the range after the MIN/MAX exit, 0.208 s apart; frames identical).
+OPT-01  tolerance:lcd  minmax_dcv     0.21 and build == baseline
+# idle scenarios: the VA / LowZ channel alternation is timed in TIM2 ticks from the last switch, so the 0.86 ms grid
+# offset moves a switch by one tick now and then and the offsets add up over the 60 s run (idle_va: up to -112.5 ms at 59.7 s,
+# idle_lowz +53 ms, idle_ua -43 ms; the rows, their order and their content are identical).
+OPT-01  tolerance:spi  idle_va    0.12 and build == baseline
+OPT-01  tolerance:lcd  idle_va    0.12 and build == baseline
+OPT-01  tolerance:spi  idle_lowz  0.055 and build == baseline
+OPT-01  tolerance:spi  idle_ua    0.045 and build == baseline
+OPT-01  tolerance:lcd  idle_ua    0.045 and build == baseline
+# One tick fewer before the first 100 ms flag: the first board-temperature conversion (fn_0801349C, 100 ms step) comes after
+# the first measurement frame, which then shows the RAM value 0 for one frame (baseline boot_v: "  0.0c" at 2.152 s, " 27.1c"
+# at 2.166 s; v2.05 converts at 2.122 s, before its first frame at 2.153 s).  v2.05 shows the same frame when its flag
+# comes later (poweron_setup_year: "  0.0c" twice in v2.05).  The secondary display of that frame is not compared (the
+# frame itself, and v2.05's frame with 27.0 masked by OF-21, are).
+OPT-01  mask:lcd:sub  *  build == baseline and sub == "  0.0c" and boot in 2.0..2.3
 
 # NF-11 (DESIGN 3.4, 6.7): the time page (setup page 7) is drawn by the main loop on a request of the TIM2 handler, v2.05
 # draws from the handler.  The blinking separator and the page changes reach the glass up to three LCD frames later
 # (measured: 42.6 ms, setup_time / setup_navigate_dcv, 3 x 13.84 ms + 1.1 ms).
 NF-11  tolerance:lcd  setup_time          0.045
 NF-11  tolerance:lcd  setup_navigate_dcv  0.045
+# setup_time, time edit (lines 20 and 26): the field blink drawn by the handler in v2.05 and the separator / page drawing of
+# the main loop in the port meet in other frames: v2.05 "12-00" at 1.352 s then "  -00" at 1.380 s after line 20, the port
+# "   00" at 1.366 s then "12-00" at 1.379 s; the same after line 26 (0.857..0.886 s).  Two frames each.
+NF-11  lcd  setup_time  step == 20 and since in 1.34..1.39
+NF-11  lcd  setup_time  step == 26 and since in 0.85..0.89
 
 # OPT-03 (nvm/flash.s 272..294): an EEPROM byte that already holds the value is not programmed again, so the changed byte
 # of a restore is committed earlier.  calbin_load: v2.05 writes the 17 bytes 0x000..0x010 before the changed byte 0x010
 # at 2 x 3.28 ms each (emu/periph/flash.py TPROG_US_DEFAULT = 3280): 111 ms at most (measured: 92 ms earlier).
 OPT-03  tolerance:eeprom  calbin_load  0.115
+# v2.05 programs all 1200 restored bytes, 5.4 ms each, before it shows the result "5AuED" (8.048 s); the port programs
+# only the changed byte and shows it at 1.613 s.
+OPT-03  tolerance:lcd     calbin_load  6.44
 
 
 # =====================================================================================================================
@@ -170,6 +280,40 @@ IMP-02  lcd     *  build == production and boot in 0.09..2.7
 IMP-02  spi     *  build == production and boot in 0.06..2.7
 IMP-02  gpio    *  build == production and boot in 0.1..2.2 and pin != buzzer and pin != backlight and pin != supply and pin != ble_supply
 IMP-02  power   *  build == production and boot in 0.1..2.2 and pin ~ "P[EF]*"
+# The loop's 100 ms and 1 s steps read the clock chip during the window too (v2.05: no reads between 0.04 s and 2.07 s).
+IMP-02  rtc     *  build == production and boot in 0.05..2.2
+# Battery: the 20-reading history of adc_ch5_process (pwr/battery.s fn_080135B0, mean while it fills, trimmed mean of
+# entries 5..14 when full) already holds the readings of the window when battery_low lowers PA5 at 3.0 s (line 7), so the
+# trimmed mean needs more low readings than v2.05's partly filled history: the symbol appears 1.09 s later (v2.05 7.466 s,
+# production 8.56 s); it goes off at the same time (14.47 / 14.57 s).
+IMP-02  lcd     battery_low  build == production and step == 7 and since in 4.4..5.6
+# VA dial positions (uA, VA): the voltage and current channels alternate (rows 0x0000138A.. / 0x0000129B..), started
+# 2.0 s earlier in production, so the alternation runs with another phase for the whole run (first row after the window
+# v2.05 2.731 s channel B, production 3.205 s channel A): the configuration writes of the alternation, the frames (sub
+# display annunciators SubV / SubA) and the final frame differ in phase only.  Every write is still checked by the safety
+# monitor against the v2.05 whitelist.
+IMP-02  spi        boot_ua          build == production and dir == W and addr in 27..32 and boot in 2.7..1e9
+IMP-02  spi        boot_va          build == production and dir == W and addr in 27..32 and boot in 2.7..1e9
+IMP-02  spi        idle_ua          build == production and dir == W and addr in 27..32 and boot in 2.7..1e9
+IMP-02  spi        idle_va          build == production and dir == W and addr in 27..32 and boot in 2.7..1e9
+IMP-02  spi        setup_burden_va  build == production and dir == W and addr in 27..32 and boot in 2.7..1e9
+IMP-02  spi        mode_cycle_ua    build == production and dir == W and addr in 27..32 and boot in 2.7..1e9
+IMP-02  spi        mode_cycle_va    build == production and dir == W and addr in 27..32 and boot in 2.7..1e9
+IMP-02  lcd        boot_ua          build == production and boot in 2.7..1e9
+IMP-02  lcd        boot_va          build == production and boot in 2.7..1e9
+IMP-02  lcd        idle_ua          build == production and boot in 2.7..1e9
+IMP-02  lcd        idle_va          build == production and boot in 2.7..1e9
+IMP-02  lcd        setup_burden_va  build == production and boot in 2.7..1e9
+IMP-02  lcd_final  idle_ua          build == production
+IMP-02  lcd_final  idle_va          build == production
+IMP-02  lcd_final  mode_cycle_ua    build == production
+IMP-02  lcd_final  mode_cycle_va    build == production
+# OL: fn_080199B4 draws the letters only; the decimal point of the "0F.L" text is the one the previous value left in the
+# shadow.  v2.05 (and the baseline) draws the zeroed value "0.00" before the first result (OF-32), whose decimal point stays
+# under OL; production blanks until the first result (OF-32, IMP-01 rule P5), so an OL that follows the blank shows
+# "0FL" (boot_ohm, setup_beep_threshold: " 0F.L " / " 0FL ").  The main digits of OL frames are not compared in production;
+# the rest of those frames is.
+OF-32+IMP-01  mask:lcd:main  *  build == production and main ~ " 0F*L "
 
 # IMP-06 (DESIGN 3.5, 6.13): per-event read sets of the HY3131 (AD1 3 bytes, INTF/INTE, R41, counter registers) instead of the
 # 52-byte burst from register 0 at every event, and every conversion is serviced (dcv_values: 2391 events against 2014,
@@ -223,7 +367,7 @@ IMP-01  spi  ohm_r6_marker_set  build == production and dir == W and addr in 27.
 # produces (EEPROM saves after a key, card traffic, buzzer and front-end pins) come earlier.  Largest differences
 # measured over the 93 scenarios of the production build: eeprom 193.4 ms earlier (poweron_setup_year), sd_block 209.8 ms
 # earlier (mem_logging_sd), gpio 267.9 ms earlier / 71.8 ms later (dca_values / hold_sequence_dcv), lcd 220.3 ms earlier
-# (ble_bad_key_frame; the +1094 ms of the battery symbol in battery_low is not covered and stays a divergence).
+# (ble_bad_key_frame; the +1.09 s of the battery symbol in battery_low has its own IMP-02 entry above).
 IMP-06  tolerance:lcd       *  0.23 and build == production
 IMP-06  tolerance:eeprom    *  0.2 and build == production
 IMP-06  tolerance:sd_block  *  0.22 and build == production
@@ -233,6 +377,15 @@ IMP-01+IMP-06  tolerance:power  *  0.28 and build == production
 # OF-11 (production): the first status frame is sent when the transfer is switched on (3.543 s) where v2.05 waits for the next
 # 50-tick boundary (4.025 s), so every later frame is 0.48 s earlier as well; the frames are paired in order.
 OF-11  tolerance:uart_tx  ble_*  0.5 and build == production
+# IMP-06 (state machines): v2.05 is blocked while it programs a restored cal.bin (6.4 s, OPT-03) or saves one, and while
+# it stores a set date or time; production keeps running its loop, so the clock-chip reads around those operations differ
+# in number (the clock writes stay compared; setup_date: identical frames, 0.172 s earlier in production).
+IMP-06+OPT-03  rtc  calbin_*            build == production and text ~ "read *"
+IMP-06  rtc  setup_date          build == production and text ~ "read *"
+IMP-06  rtc  setup_time          build == production and text ~ "read *"
+IMP-06  rtc  setup_year          build == production and text ~ "read *"
+IMP-06  rtc  poweron_setup_year  build == production and text ~ "read *"
+IMP-06  tolerance:rtc  *  0.2 and build == production
 
 # =====================================================================================================================
 # Deviations of firmware/DESIGN.md sections 10 and 11 and of ORIGINAL_FIRMWARE_ISSUES.md (OF-01 .. OF-51) with no entry,

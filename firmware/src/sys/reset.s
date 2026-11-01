@@ -42,14 +42,16 @@
 FUNC sys_reset
     @ step 1: mask interrupts, disable and clear every NVIC source (the bootloader leaves IRQ28/45/53 enabled
     @ with its own TIM2 handler 0x08004DD4 active, DESIGN.md 2.1)
-    @ TIM2 is stopped before the NVIC pending bits are cleared, so an update between the two cannot leave IRQ28
-    @ pending (DESIGN.md 3.2 lists the NVIC writes first; the result is the same with no spurious tick)
+    @ TIM2's own registers are left as the bootloader left them (counter running, UIE set), as v2.05 leaves them.  No
+    @ interrupt can be taken before sys_nvic_init enables IRQ28 again (PRIMASK set here, NVIC disabled and cleared below,
+    @ VTOR and RAM set first), and then it enters the port's handler.  v2.05 takes two TIM2 interrupts at start-up from
+    @ this state: the bootloader's timer period expiring after its main has started, and the update event (UG) of its
+    @ TIM2 time-base set-up while UIE is still set (boot_v: IRQ28 handler at 35.885 ms and 36.971 ms, UG write
+    @ 0x08020952 at 36.967 ms).  The port keeps the TIM2 state, so its handler sees the same two updates (the first at
+    @ the NVIC enable if the flag is already set, the second at fn_08020908 in sys_tim2_init) and the 10 ms tick count,
+    @ the 100 ms, 500 ms and 1 s flags and the BLE frame ticks keep v2.05's phase.  Clearing DIER/SR here put every
+    @ TIM2-derived event 2 ticks (20.04 ms) behind v2.05.
     cpsid i
-    ldr r0, =TIM2_BASE
-    movs r1, #0
-    strh r1, [r0, #TIM_CR1]                 @ TIM2 counter stopped (RM0038 17.4.1)
-    strh r1, [r0, #TIM_DIER]                @ update interrupt off (17.4.4)
-    strh r1, [r0, #TIM_SR]                  @ pending update flag cleared (17.4.5)
     mov r1, #0xFFFFFFFF
     ldr r0, =NVIC_ICER0
     str r1, [r0]                            @ ICER0: IRQ 0..31 disabled

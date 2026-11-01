@@ -12,7 +12,8 @@
 @ or jumps the range (auto: 0/1 -> 2, 2..4 -> 5) and re-applies.
 @
 @ OF-33: the range jump now sets the display-blank flag 0x2000805C (cleared by autorange_step at the next result, as for any range
-@ change), so the old count is not drawn with the new range's decimal point.
+@ change) and the value redraw request 0x2000805F (outside HOLD), so the refresh of the same pass draws blank digits before
+@ meter_apply_mode_range commits the new range's decimal point; the old count is not drawn with it.
 @ IMP-01 (production): the unsmoothed count X is passed to ar_sample (r1 = 0: counter modes have no AD1 code); a discarded result is not smoothed or published.
 @ =============================================================================
 
@@ -397,8 +398,8 @@ ENDFUNC fn_0800B33C
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main only
-@ RAM      : reads  0x2000803D meter_range, 0x20008042 range_manual, 0x2000808A, 0x200080A2, 0x200080A3
-@            writes 0x2000803D meter_range, 0x20008046, 0x2000804A, 0x2000804B, 0x2000805C, 0x2000805D, 0x2000807C,
+@ RAM      : reads  0x2000803D meter_range, 0x20008042 range_manual, 0x2000808A, 0x200080A2, 0x200080A3, hold_active, hold_stage2
+@            writes 0x2000803D meter_range, 0x20008046, 0x2000804A, 0x2000804B, 0x2000805C, 0x2000805D, 0x2000805F, 0x2000807C,
 @            0x200080A2, 0x200080A3, 0x200080A4
 @ Spec     : analysis/hy3131_modes_misc.md 5.5 (timeout); ORIGINAL_FIRMWARE_ISSUES.md OF-33
 @ Deviation: OF-33
@@ -472,6 +473,21 @@ FUNC fn_0800B540
     movs r0, #1
     ldr r1, =v_2000805C
     strb r0, [r1]                           @ OF-33: blank the display across the jump (v2.05 drew the old count with the new decimal point)
+    @ OF-33: the blank flag alone is not drawn in this pass: no new result is pending, so the refresh (main loop step 3) does not
+    @ call fn_08016E08, and meter_apply_mode_range (step 13) then commits the old digits with the new range's decimal point
+    @ (integration trace, cap_values 18.98 s).  A value redraw request (0x2000805F, set as meter_apply_mode_range sets it at
+    @ 0x0800D548, i.e. not while HOLD is active or in auto-hold stage 2) makes step 3 draw the blank digits (fn_08019A98 via the
+    @ v2.05 blank rule 0x08016FCE..0x08017004) before the apply commits.
+    ldr r0, =hold_active
+    ldrb r0, [r0]
+    ldr r1, =hold_stage2
+    ldrb r1, [r1]
+    orrs r0, r1
+    bne 1f                                  @ HOLD or auto-hold stage 2: the held digits stay (as at 0x0800D544)
+    movs r0, #1
+    ldr r1, =v_2000805F
+    strb r0, [r1]                           @ display request: the refresh of this pass draws the blank digits
+1:
     movs r0, #0                        @ 0x0800B5C2
     ldr r1, =v_2000807C                @ 0x0800B5C4 pool 0x0800C1B8 = 0x2000807C
     strb r0, [r1, #0]                  @ 0x0800B5C8

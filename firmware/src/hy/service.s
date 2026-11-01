@@ -30,13 +30,23 @@
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main only
-@ RAM      : reads  0x2000803C meter_mode, 0x2000803D meter_range
-@ Spec     : analysis/hy3131_model.md 2.1; DESIGN.md 3.5 step 1
-@ Deviation: IMP-06 (restart slice)
+@ RAM      : reads  0x2000803C meter_mode, 0x2000803D meter_range, hy_restart_left (production)
+@ Spec     : analysis/hy3131_model.md 2.1; DESIGN.md 3.5 step 1, 4.1 item 8
+@ Deviation: IMP-06 (restart slice; no event service while a restart is pending)
 @ PF3 (HY_DO) is the HY3131 interrupt output while CS is high: GPIOF IDR bit 3 set = an enabled event is pending (DS p15).
 @ -----------------------------------------------------------------------------
 FUNC hy3131_poll
     push {r7, lr}                      @ 0x08006124
+.if LOOP_V205 == 0
+    @ production: while a counter restart is pending (counter off, R20 = row & 0xFD / 0xF9) no event is serviced, so neither the
+    @ INTF clear nor the peak restart (R29 writes, FUN_0800A7FC) nor a new restart can be sent between restart phase 1 and 3.
+    @ v2.05 services nothing during its blocking delay(10000) (0x0800BFCE), so registers 0x20..0x33 only ever hold v2.05
+    @ states (DESIGN.md 4.1 item 8); the pending event keeps PF3 high and is serviced in the pass after phase 3.
+    ldr r0, =hy_restart_left
+    ldrb r0, [r0]
+    cmp r0, #0
+    bne .L08006134                          @ restart pending: skip the event service this pass
+.endif
     ldr r0, =(GPIOF_BASE + GPIO_IDR)   @ 0x08006126 pool 0x08006ACC = 0x40021810  GPIOF IDR
     ldrh r0, [r0, #0]                  @ 0x0800612A  IDR (halfword)
     lsls r0, r0, #28                   @ 0x0800612C  move bit 3 (PF3) to the sign flag

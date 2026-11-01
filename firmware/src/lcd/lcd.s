@@ -1159,4 +1159,33 @@ FUNC lcd_commit_retry
     bx lr
     .ltorg
 ENDFUNC lcd_commit_retry
+
+@ -----------------------------------------------------------------------------
+@ lcd_commit_flush - wait until a deferred commit has been written (bounded)
+@ Replaces : the UDR busy-wait of lcd_commit_shadow 0x0801B336 (v2.05) for the one production caller that needs v2.05's timing
+@ In       : -
+@ Out      : -
+@ Clobbers : r0-r3, r12, flags
+@ Context  : main only; production start-up (bootwin_start, after the splash commit)
+@ RAM      : reads lcd_commit_pending
+@ Spec     : DESIGN.md 7.1 (first HY3131 write of the power-on window no earlier than in v2.05); RM0038 16.5.3 (UDR)
+@ Deviation: HW-07 (the wait is bounded by LCD_WAIT_POLLS retries; on a timeout the commit stays owed to lcd_commit_retry)
+@ v2.05 commits the splash with a UDR busy-wait that lasts until lcd_init's commit has been displayed (boot_v: splash commit
+@ 79.96 ms, first HY3131 write 82.70 ms); the production commit only defers, so without this wait the window's first HY3131
+@ write came at 70.2 ms.
+@ -----------------------------------------------------------------------------
+FUNC lcd_commit_flush
+    push {r4, lr}
+    ldr r4, =LCD_WAIT_POLLS                 @ retry budget (HW-07)
+.Lcf_loop:
+    ldr r0, =lcd_commit_pending
+    ldrb r0, [r0]
+    cbz r0, .Lcf_done                       @ nothing owed: the commit has been written
+    bl lcd_commit_retry                     @ writes it once UDR is clear, else defers again
+    subs r4, r4, #1
+    bne .Lcf_loop
+.Lcf_done:
+    pop {r4, pc}
+    .ltorg
+ENDFUNC lcd_commit_flush
     .endif

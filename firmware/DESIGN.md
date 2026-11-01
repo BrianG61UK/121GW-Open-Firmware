@@ -929,7 +929,10 @@ loop runs during the window; the dial is latched with the v2.05 rule and its mod
 in the main digits with the version on the secondary display; a window key that starts a combination stops the
 measurement display and the v2.05 combination screen takes over (the version leaves the secondary display); the RANGE
 all-segments test is kept lit until the window closes (`ui_lamp_test`, UI); the first HY3131 write comes no earlier than in v2.05
-(81 ms after reset, ARS 6). Ending the window early when no key is held is not done (ARS 6 item 2). OF-08: the
+(81 ms after reset, ARS 6; with the emulator's LCD frames timed on LCDCLK, 2026-10-31, v2.05 writes 77.74 ms after the
+HY3131 supply is switched on by the bootloader).  Both builds wait for the splash commit as v2.05 does and then a margin of
+1000 delay iterations (1.19 ms at 4.194 MHz, `BW_HY_MARGIN_LOOPS` in `bootwin.s`), because the port's faster start-up
+(OPT-01) would otherwise write 0.3..0.5 ms earlier. Ending the window early when no key is held is not done (ARS 6 item 2). OF-08: the
 MODE-then-REL path sets calibration mode (0x2000808A = 1, 0x20008062 = 1) and writes nothing to the EEPROM.
 
 ### 7.2 Calibration mode rules in the port

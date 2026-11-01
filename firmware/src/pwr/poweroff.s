@@ -100,7 +100,7 @@ FUNC enter_stop_and_reinit
     strb r0, [r1]                           @ woken from STOP (0x08024EEC)
     bl sys_system_init                      @ FUN_0801BE76 (0x08024EEE), timers and IRQ28/29 enabled again
     bl set_state_reset                      @ FUN_08024DE0 (0x08024EF2)
-    bl cal_cache_load                       @ calibration cache (DESIGN.md 6.20: at boot and wake)
+                                            @ (the calibration cache is loaded by bootwin_start, DESIGN.md 3.2 step 5, 6.20)
     movs r1, #1
     ldr r0, =lcd_contrast
     ldrb r0, [r0]

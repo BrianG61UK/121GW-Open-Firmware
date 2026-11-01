@@ -67,7 +67,7 @@ FUNC sys_main
     bl sys_system_init                      @ FUN_0801BE76 (0x08024B4E)
     bl sample_pf8_at_boot                   @ 0x08024B52
     bl set_state_reset                      @ FUN_08024DE0 (0x08024B56)
-    bl cal_cache_load                       @ EEPROM 0x000..0x4FF into the cache (DESIGN.md 6.20)
+                                            @ (the calibration cache is loaded by bootwin_start, inside the splash commit's wait)
     movs r1, #1
     ldr r0, =lcd_contrast                   @ 0x20000237 (0x08024B5C)
     ldrb r0, [r0]

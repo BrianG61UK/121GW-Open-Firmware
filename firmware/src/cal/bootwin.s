@@ -26,6 +26,12 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
+    @ Safety margin before the first HY3131 write (DESIGN.md 7.1: never earlier than v2.05).  Measured in the emulator: v2.05
+    @ writes the TEMP row 77.74 ms after the HY3131 supply (PE9, set by the bootloader at 1.997 ms), the port without the
+    @ margin 77.44 ms (baseline) / 77.24 ms (production), because its whole start-up is 0.3..0.5 ms faster (OPT-01).  1000
+    @ iterations of fn_0800ECF6 (5 instructions each) take 1.19 ms at 4.194 MHz with one cycle per instruction, longer on
+    @ the device (flash wait states), so the first write comes at least 0.69 ms later than v2.05's.
+    .equ BW_HY_MARGIN_LOOPS, 1000
     .equ BW_A,  v_200080CD                  @ window sequence state A (MODE / SETUP path)
     .equ BW_B,  v_200080CE                  @ window sequence state B (MEM path)
 
@@ -80,7 +86,8 @@ ENDFUNC fn_0800EA3A
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags (AAPCS)
 @ Context  : main (sys_main, enter_stop_and_reinit)
-@ RAM      : writes 0x200080B3 = 0, 0x2000022E = BOOTWIN_TICKS, bootwin_active = 1, bootwin_cb = 0
+@ RAM      : writes 0x200080B3 = 0, 0x2000022E = BOOTWIN_TICKS, bootwin_active = 1, bootwin_cb = 0, cal_cache, cal_cache_valid
+@            (cal_cache_load, OPT-08)
 @ -----------------------------------------------------------------------------
 FUNC bootwin_start
     push {r4, lr}
@@ -104,8 +111,18 @@ FUNC bootwin_start
     movs r1, #0
     movs r0, #0
     bl fn_0800FE74                          @ (0x0800EA70)
+    bl cal_cache_load                       @ OPT-08: EEPROM 0x000..0x4FF into the cache.  Loaded here, before the splash: the
+                                            @ splash routine waits for the end of lcd_init's display update (boot_v, v2.05:
+                                            @ 66.23 -> 80.17 ms), which takes far longer than the copy (1.78 ms), so the copy
+                                            @ adds no time to the start-up (before lcd_init it delayed the LCD start and every
+                                            @ later event; DESIGN.md 3.2 step 5).  Every reader before this point
+                                            @ (set_state_reset, lcd_init) reads the EEPROM itself (cal_cache_valid = 0).
     bl fn_0801A854                          @ splash "V-205" (0x0800EA74)
     bl lcd_commit_shadow
+    .if LOOP_V205 == 0
+    bl lcd_commit_flush                     @ production: wait as v2.05's commit does until the splash is written, so the
+                                            @ first HY3131 write below is not earlier than in v2.05 (DESIGN.md 7.1)
+    .endif
     ldr r1, =v_2000022E
     movw r0, #BOOTWIN_TICKS
     strh r0, [r1]                           @ window counter (0x0800EA84; halfword store is atomic for IRQ29)
@@ -114,6 +131,8 @@ FUNC bootwin_start
     strb r0, [r1]
     movs r0, #0
     strb r0, [r1, #1]                       @ bootwin_cb = 0
+    movw r0, #BW_HY_MARGIN_LOOPS
+    bl fn_0800ECF6                          @ safety margin: the first HY3131 write never comes earlier than in v2.05 (7.1)
     movs r1, #0
     movs r0, #5
     bl fn_0800B974                          @ TEMP row, first HY3131 transaction (0x0800EA8A)

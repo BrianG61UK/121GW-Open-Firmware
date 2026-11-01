@@ -340,8 +340,10 @@ FUNC disk_read
     bl      sd_get_status                   @ 0 = card in the transfer state
     cmp     r0, #0
     beq     .Ldr_ok
-    subs    r7, r7, #1
-    bne     .Ldr_poll                       @ at most 20000 polls (0x08023FA8..0x08023FAC)
+    subs    r7, r7, #1                      @ 0x08023FA8
+    cmp     r7, #0                          @ 0x08023FAA: kept although subs set the flags, so that one poll takes the
+                                            @ v2.05 instruction count and the number of CMD13 commands per sector is v2.05's
+    bne     .Ldr_poll                       @ at most 20000 polls (0x08023FAC)
     movs    r0, #2                          @ timeout: RES_ERROR
     b       .Ldr_ret
 .Ldr_ok:

@@ -11,11 +11,15 @@ Frame timing (RM0038 16.4.2, page 359)
 where ncom is 1, 2, 3, 4 or 8 for static, 1/2, 1/3, 1/4 and 1/8 duty (CR.DUTY).  The table 74 examples of RM0038
 (for instance 32.768 kHz, PS=4, DIV=1, 1/4 duty -> 30.12 Hz) are reproduced by this formula.  LCDCLK is RTCCLK
 (RM0038 16.4.1 note).  If the machine has an attribute `rcc`, `rcc.rtcclk_hz` (RTCSEL selection) is read every time a
-frame is timed; a value of 0 means no clock is selected, the frame generator then waits (polling every 4096 core
-cycles) and FCRSF is not set, as on the device.  Without an RCC model `lcdclk_hz` is used; this board uses the LSI
-of about 37 kHz (RM0038 16.4.2), so it defaults to 37000.  The frame period is converted to core cycles with
-m.sysclk_hz read at the start of each frame; a change of m.sysclk_hz in the middle of a frame lengthens or shortens
-that one frame (the RCC model does not notify the LCD).
+frame is timed; a value of 0 means no clock is selected, the frame generator then waits and FCRSF is not set, as on
+the device.  Without an RCC model `lcdclk_hz` is used; this board uses the LSI of about 37 kHz (RM0038 16.4.2), so it
+defaults to 37000.
+Frame boundaries are kept in emulated seconds (Machine.elapsed_s), because LCDCLK does not depend on the core clock:
+a core clock change re-times the pending boundary (Machine.clock_hooks), so SYSCLK changes neither lengthen nor
+shorten a frame.  The RCC model's rtc_clock_hooks tell the LCD when RTCCLK may have appeared or disappeared: a frame
+generator waiting for LCDCLK starts (or resumes) at that moment, and a running one stops when the clock goes (the
+backup-domain reset at every start-up of the firmware, RCC_CSR RTCRST, removes RTCSEL until it is selected again).
+Without an RCC model the clock never changes; a missing clock is then re-checked every CLOCK_POLL core cycles.
 Clock gate (RM0038 6.3.10 note, page 158): while `rcc.clock_enabled('LCD')` is false, register reads return 0
 ("the returned value is always 0x0") and writes are ignored (RM0038 does not say what a write does; ignoring it is the
 model's choice) and the first such access is logged.  DEAD (dead time, 16.4.6) is held inside the frame period: RM0038 states that it reduces the contrast
@@ -172,7 +176,9 @@ class LCD(Periph):
         self._gen = getattr(self, '_gen', 0) + 1
         self._fcr_gen = getattr(self, '_fcr_gen', 0) + 1
         self._irq.reset()
-        self._t_next = Fraction(0)              # core cycle (exact) of the next frame boundary
+        self._t_next = Fraction(0)              # emulated time in seconds (exact) of the next frame boundary
+        self._waiting = None                    # 'start' / 'resume' while the frame generator waits for LCDCLK
+        self._sched = getattr(self, '_sched', 0) + 1    # generation of the scheduled boundary event (re-timing)
         self._gate_logged = False
 
     @property
@@ -210,11 +216,49 @@ class LCD(Periph):
             self.m.log.append((self.m.cycles, f"LCD {rw} access at offset 0x{off:02X} with its clock disabled"))
 
     def frame_cycles(self):
-        """Frame period in core cycles for the configuration in use (exact Fraction), None without LCDCLK."""
+        """Frame period in core cycles at the present core clock (exact Fraction), None without LCDCLK."""
         clk = self._lcdclk()
         if not clk:
             return None
         return Fraction(self._ratio()) * Fraction(self.m.sysclk_hz) / Fraction(clk)
+
+    def frame_seconds(self):
+        """Frame period in seconds for the configuration in use (exact Fraction), None without LCDCLK."""
+        clk = self._lcdclk()
+        if not clk:
+            return None
+        return Fraction(self._ratio()) / Fraction(clk)
+
+    def _hook(self):
+        """Register the core-clock and RTCCLK notifications once per machine."""
+        if getattr(self, '_hooked_m', None) is self.m:
+            return
+        self._hooked_m = self.m
+        self.m.clock_hooks.append(self._retime)
+        rcc = getattr(self.m, 'rcc', None)
+        if rcc is not None and hasattr(rcc, 'rtc_clock_hooks'):
+            rcc.rtc_clock_hooks.append(self._lcdclk_changed)
+
+    def _retime(self):
+        """Core clock changed: the pending boundary keeps its time in seconds; schedule it again in core cycles."""
+        if self.ens and self._waiting is None:
+            self._schedule_boundary()
+
+    def _lcdclk_changed(self):
+        """RTCCLK may have changed (RCC rtc_clock_hooks)."""
+        if not self.ens:
+            return
+        clk = self._lcdclk()
+        if self._waiting is not None:
+            if clk:
+                kind, self._waiting = self._waiting, None
+                fs = self.frame_seconds()
+                settle = fs if (kind == 'resume' or not (self.cr & CR_VSEL)) else 0
+                self._t_next = self.m.elapsed_s() + settle
+                self._schedule_boundary()
+        elif not clk:                           # the clock went away during a frame: the generator stops here
+            self._sched += 1                    # cancels the scheduled boundary
+            self._waiting = 'resume'
 
     def frame_hz(self):
         """Frame rate in Hz for the configuration in use (f_frame of RM0038 16.4.2), 0 without LCDCLK."""
@@ -222,11 +266,14 @@ class LCD(Periph):
         return float(Fraction(clk) / self._ratio()) if clk else 0.0
 
     def _delay_to(self, t):
-        return max(1, ceil(t) - self.m.cycles)
+        """Core cycles from now until the emulated time t (seconds), at least 1."""
+        return max(1, ceil((t - self.m.elapsed_s()) * self.m.sysclk_hz))
 
     def _schedule_boundary(self):
         gen = self._gen
-        self.m.schedule(self._delay_to(self._t_next), lambda: self._boundary(gen))
+        self._sched += 1
+        sched = self._sched
+        self.m.schedule(self._delay_to(self._t_next), lambda: self._boundary(gen, sched))
 
     def _enable(self):
         """LCDEN went 0 -> 1 (RM0038 16.5.1, 16.5.3: ENS is set immediately)."""
@@ -237,27 +284,45 @@ class LCD(Periph):
         self._fcr_applied = self.fcr
         self._set_duty()
         self.m.log.append((self.m.cycles, "LCD enabled"))
+        self._hook()
         self._start_frames(self._gen)
 
     def _start_frames(self, gen):
         """Wait for LCDCLK, then run the step-up settling time (one frame with VSEL = 0) before the first frame."""
         if gen != self._gen:
             return
-        fc = self.frame_cycles()
-        if fc is None:
-            self.m.schedule(CLOCK_POLL, lambda: self._start_frames(gen))
+        fs = self.frame_seconds()
+        if fs is None:
+            self._wait_clock('start', gen)
             return
-        self._t_next = Fraction(self.m.cycles) + (fc if not (self.cr & CR_VSEL) else 0)
+        self._waiting = None
+        self._t_next = self.m.elapsed_s() + (fs if not (self.cr & CR_VSEL) else 0)
         self._schedule_boundary()
+
+    def _wait_clock(self, kind, gen):
+        """No LCDCLK: wait for it (rtc_clock_hooks of the RCC model; without one, re-check every CLOCK_POLL cycles)."""
+        self._waiting = kind
+        self._sched += 1
+        rcc = getattr(self.m, 'rcc', None)
+        if rcc is None or not hasattr(rcc, 'rtc_clock_hooks'):
+            self.m.schedule(CLOCK_POLL, lambda: self._poll_clock(gen))
+
+    def _poll_clock(self, gen):
+        if gen != self._gen or self._waiting is None:
+            return
+        if self._lcdclk():
+            self._lcdclk_changed()
+        else:
+            self.m.schedule(CLOCK_POLL, lambda: self._poll_clock(gen))
 
     def _set_duty(self):
         n = DUTY_NCOM.get((self.cr >> 2) & 7)
         if n is not None:
             self._duty_ncom = n
 
-    def _boundary(self, gen):
+    def _boundary(self, gen, sched):
         """Start of a frame."""
-        if gen != self._gen:
+        if gen != self._gen or sched != self._sched:
             return
         if not (self.cr & CR_LCDEN):            # RM0038 16.5.1 / 16.5.3: off at the end of the last frame
             self.ens = False
@@ -272,23 +337,13 @@ class LCD(Periph):
         self.sof = True
         if self.udr:
             self._do_update()
-        fc = self.frame_cycles()
-        if fc is None:                          # LCDCLK stopped: the next frame waits for it
-            self.m.schedule(CLOCK_POLL, lambda: self._resume(gen))
+        fs = self.frame_seconds()
+        if fs is None:                          # LCDCLK stopped: the next frame waits for it
+            self._wait_clock('resume', gen)
         else:
-            self._t_next += fc
+            self._t_next += fs
             self._schedule_boundary()
         self._irq.update()
-
-    def _resume(self, gen):
-        if gen != self._gen:
-            return
-        fc = self.frame_cycles()
-        if fc is None:
-            self.m.schedule(CLOCK_POLL, lambda: self._resume(gen))
-            return
-        self._t_next = Fraction(self.m.cycles) + fc
-        self._schedule_boundary()
 
     def _do_update(self):
         """Copy LCD_RAM into LCD_DISPLAY (RM0038 16.4.7, SR.UDR note)."""
