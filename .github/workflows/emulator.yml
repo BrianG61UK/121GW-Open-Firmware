@@ -161,8 +161,11 @@ jobs:
           setup="121GW-Open-Firmware-Emulator-$RELEASE_TAG-windows-x64.exe"
           dir="$(cygpath -w "$PWD/installed")"
           ./"$setup" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$dir"
-          "installed/121gw-emulator.exe" --no-open --port 8131 > app.log 2>&1 &
-          python -I emulator/tools/smoke.py --url http://127.0.0.1:8131 --expect-direct --expect-synthetic || { cat app.log; exit 1; }
+          date -u +"start %H:%M:%S"
+          PYTHONUNBUFFERED=1 "installed/121gw-emulator.exe" --no-open --port 8131 > app.log 2>&1 &
+          python -I emulator/tools/smoke.py --url http://127.0.0.1:8131 --timeout 300 --expect-direct --expect-synthetic || {
+            date -u +"fail %H:%M:%S"; tasklist | grep -i 121gw || echo "process not running"
+            netstat -ano | grep 8131 || echo "nothing listens on 8131"; cat app.log; exit 1; }
           curl -fsS -X POST -H 'X-121GW: quit' http://127.0.0.1:8131/quit
           sleep 2
       - name: Checksum

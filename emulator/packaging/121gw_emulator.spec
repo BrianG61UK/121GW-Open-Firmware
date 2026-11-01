@@ -20,10 +20,18 @@ for need in ('data/synthetic_eeprom.bin', 'data/v205_tables.json', 'data/firmwar
     if not os.path.isfile(os.path.join(root, need)):
         raise SystemExit('packaging: %s is missing (run emulator/tools/prepare_data.py)' % need)
 
+# unicorn keeps its native library in unicorn/lib (libunicorn.so.2 on Linux, a versioned name that
+# collect_dynamic_libs does not match); bundle every file of that folder at the same relative place
+import glob, unicorn as _uc
+_uclib = os.path.join(os.path.dirname(_uc.__file__), 'lib')
+unicorn_libs = [(f, os.path.join('unicorn', 'lib')) for f in glob.glob(os.path.join(_uclib, '*')) if os.path.isfile(f) and not f.endswith('.a')]
+if not unicorn_libs:
+    raise SystemExit('packaging: no unicorn native library found in %s' % _uclib)
+
 a = Analysis(
     [os.path.join(root, 'launcher.py')],
     pathex=[root],
-    binaries=collect_dynamic_libs('unicorn') + collect_dynamic_libs('capstone'),   # no stock hook ships unicorn's library
+    binaries=unicorn_libs + collect_dynamic_libs('capstone'),   # no stock hook ships unicorn's library
     datas=[(os.path.join(root, 'ui', 'index.html'), 'ui'),
            (os.path.join(root, 'ui', 'assets'), os.path.join('ui', 'assets')),
            (os.path.join(root, 'data'), 'data'),
