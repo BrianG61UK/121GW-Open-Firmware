@@ -1,6 +1,6 @@
 # EEVblog 121GW — open firmware port and emulator
 
-<p align="center"><img src="emulator/ui/assets/panel.png" alt="121GW" width="260"></p>
+<p align="center"><img src="emulator/ui/assets/logo.png" alt="121GW running this firmware in the emulator" width="260"></p>
 
 | Folder | Content |
 |---|---|
