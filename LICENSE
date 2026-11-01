@@ -8,15 +8,15 @@ Copyright (c) 2026 zombu4
    consideration is charged for them and that this licence text is included unchanged.
 
 2. Restrictions
-   Except by EEVblog (David L. Jones), this software may not be
+   Except by the copyright holder (zombu4) and EEVblog (David L. Jones), this software may not be
    a) sold, licensed for a fee or otherwise offered for money or other consideration, in source or binary form;
    b) bundled with, pre-installed on or distributed as part of any product, device, software package, software
       distribution or service.
 
-3. EEVblog
-   EEVblog (David L. Jones) may use, sell, bundle, distribute and relicense this software without the
-   restrictions of section 2; the copyright holder grants him this permission in full and irrevocably. No one
-   else, the copyright holder included, may sell or bundle it.
+3. The copyright holder and EEVblog
+   The copyright holder (zombu4) and EEVblog (David L. Jones) may each use, sell, bundle, distribute and relicense
+   this software without the restrictions of section 2; the copyright holder grants EEVblog this permission in full
+   and irrevocably. No one else may sell or bundle it.
 
 4. Third-party material
    The LCD segment graphics in emulator/ui/assets/lcd are from the official 121GW app and are licensed under the MIT
