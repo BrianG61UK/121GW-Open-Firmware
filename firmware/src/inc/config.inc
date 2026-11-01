@@ -37,7 +37,7 @@
     @ models the MPU and the guarded image has been tested in it (Q12: "enabled once W10 has added the MPU to
     @ the emulator and it is tested").
     .ifndef MPU_GUARD
-    .equ MPU_GUARD, 0                   @ SWITCH MPU_GUARD default 0 (Q12, emulator has no MPU model yet)
+    .equ MPU_GUARD, 1                   @ SWITCH MPU_GUARD default 1 (Q12: MPU model in the emulator; STOP/wake verified in both builds)
     .endif
 
     @ SAFETY_PROBE = 1 builds the never-released probe image of DESIGN.md 9.4 level 5.

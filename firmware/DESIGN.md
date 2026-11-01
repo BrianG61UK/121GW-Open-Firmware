@@ -1375,7 +1375,7 @@ New optimisations are added here before they are implemented; anything that chan
   a logging test with a slow card.
 - Q12: MPU guard added (switch `MPU_GUARD`). The emulator models the MPU (PM0056 4.2, `emulator/emu/scs.py`); the guard
   build boots and stray stores to program flash and the option bytes fault into `sys_fault_safe` with nothing written.
-  The default becomes 1 once STOP/wake of the guard build passes in integration.
+  Default 1: the STOP/wake scenario of both guard builds is identical to v2.05 with no safety violation (2026-11-01).
 - Routine-level runner (9.4 level 2): `emulator/diff/routine.py`. Check tools: `firmware/tools/check_image.py`
   (items 1, 2, 5, plus lint items 6 and 7, stricter than item 2: every FLASH offset outside the allowed list and the
   FLASH bit-band alias are rejected), `check_hy.py` (needs a Python with capstone and unicorn: `make PYTHON=...`),
