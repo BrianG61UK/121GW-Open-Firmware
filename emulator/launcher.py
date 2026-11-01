@@ -7,9 +7,14 @@ ships with (firmware builds, v2.05 table data, synthetic EEPROM) is found by emu
 """
 import faulthandler
 import sys
+import threading
 import traceback
 
-faulthandler.enable()          # a native crash prints its Python stack (a frozen app ignores PYTHONFAULTHANDLER)
+if sys.stderr is not None and hasattr(sys.stderr, 'fileno'):    # windowed apps (macOS .app) have no stderr
+    try:
+        faulthandler.enable()  # a native crash prints its Python stack (a frozen app ignores PYTHONFAULTHANDLER)
+    except (RuntimeError, ValueError, OSError):
+        pass
 
 import app  # noqa: E402
 
@@ -22,9 +27,23 @@ if __name__ == '__main__':
     for default in (['--no-inputs'], ['--port-tries', '20']):
         if default[0] not in args:
             args[:0] = default
-    try:
-        app.main(args)
-    except BaseException:
-        traceback.print_exc()
-        sys.stderr.flush()
-        raise
+    # The emulator runs in a thread with a large stack: Unicorn's code generator runs on the calling thread's stack,
+    # and a frozen application's main thread has a smaller stack than python.exe's.
+    result = {}
+
+    def run():
+        try:
+            app.main(args)
+        except BaseException as e:   # report, then end the process with the same outcome
+            result['exc'] = e
+            if sys.stderr is not None:
+                traceback.print_exc()
+                sys.stderr.flush()
+
+    threading.stack_size(64 * 1024 * 1024)
+    t = threading.Thread(target=run, name='emulator')
+    t.start()
+    t.join()
+    if 'exc' in result:
+        e = result['exc']
+        sys.exit(e.code if isinstance(e, SystemExit) else 1)
