@@ -39,6 +39,20 @@ a = Analysis(
     hiddenimports=['ui.server'] + collect_submodules('unicorn'),   # unicorn imports its arch modules by name
     excludes=['tkinter', 'numpy', 'PIL', 'matplotlib'],
 )
+# Windows: the Microsoft C runtime DLLs PyInstaller takes from the Python installation can be older than the ones the
+# unicorn DLL was built against; loaded from the application folder they win over the system copies and the process
+# ends with 0xC0000409 (fail-fast) as soon as emulation starts, while the same code runs under python.exe, which uses
+# the system copies.  Bundle the system's (current) runtime DLLs instead; they are redistributable.
+if sys.platform == 'win32':
+    _sys32 = os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32')
+    _crt = ('vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll', 'msvcp140_1.dll', 'msvcp140_2.dll', 'concrt140.dll')
+    a.binaries = [b for b in a.binaries if os.path.basename(b[0]).lower() not in _crt]
+    for _n in _crt:
+        _f = os.path.join(_sys32, _n)
+        if os.path.isfile(_f):
+            a.binaries.append((_n, _f, 'BINARY'))
+            print('packaging: C runtime from the system:', _f)
+
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='121gw-emulator', icon=icon,
           console=(sys.platform != 'darwin'))                   # macOS: windowed .app; the UI has a Quit button
