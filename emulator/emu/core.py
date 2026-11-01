@@ -21,6 +21,7 @@ Execution model
 import struct
 from bisect import bisect_left
 from fractions import Fraction
+from unicorn.arm_const import UC_CPU_ARM_CORTEX_M3
 from unicorn import Uc, UcError, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_BLOCK, UC_HOOK_INTR, UC_HOOK_CODE, UC_HOOK_MEM_INVALID, UC_PROT_READ, UC_PROT_EXEC, UC_PROT_ALL
 from unicorn.arm_const import *
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB, CS_MODE_MCLASS
@@ -47,6 +48,9 @@ FRAME_REGS = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3,
 class Machine:
     def __init__(self, sysclk_hz=16_000_000):
         self.uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)
+        # the STM32L152 core is a Cortex-M3 (PM0056 1.1): select that CPU model explicitly, before any memory is mapped,
+        # instead of relying on Unicorn's default model for M-class mode
+        self.uc.ctl_set_cpu_model(UC_CPU_ARM_CORTEX_M3)
         self.cs = Cs(CS_ARCH_ARM, CS_MODE_THUMB | CS_MODE_MCLASS)
         self.cyc = CycleModel()
         # virtual time in core clock cycles: per instruction the best-case Cortex-M3 count of ARM DDI 0337H Table 3.1
