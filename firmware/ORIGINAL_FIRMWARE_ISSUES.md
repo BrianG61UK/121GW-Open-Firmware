@@ -52,12 +52,12 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-37 | Calibration | SETUP short in calibration mode continues into the MEM-short code: refusal beep after a started offset capture; in an AC band slot 2 is overwritten from the slot-1 reading | medium | open |
 | OF-38 | Settings | Contrast 10 and 11 can be selected and are saved to EEPROM 0x1A, but power-up accepts only 12..17 and replaces them with 14 | low | open |
 | OF-39 | ADC | ADC_Init passes an uninitialised stack word that is ORed unmasked into ADC_CR2 (value: core register r6 as left at reset) | low | open |
-| OF-40 | Power-down | The TIM2 jack-warning beep can set the buzzer output again after power-down has cleared it (chirp of about 69 ms after the "-oFF-" beep) | low | open |
+| OF-40 | Power-down | The TIM2 jack-warning beep can set the buzzer output again after power-down has cleared it (chirp of about 86 ms after the "-oFF-" beep) | low | open |
 | OF-41 | Display | Setup page 7 (time): the TIM2 handler converts and draws the time through the same digit globals and text buffer the main loop uses for the reading; the reading shows wrong digits for about 0.22 s | low | open |
 | OF-42 | SD card | The disk read routine `FUN_08023F7E` reads one sector whatever sector count the file system asks for; no v2.05 caller asks for more than one | low | open |
 | OF-43 | Keys | The key hold time and the stable-sample count are unlimited byte counters: a key held for about 3.1 s fires its long-press action again, then every 2.57 s; released between 2.6 s and 3.1 s it also fires its short-press action | medium | open |
 | OF-44 | Measurement | ACmV with the 1 kHz filter on: the per-sample value 0x20007D68 (bargraph, log record) lacks the filter correction that the reading and the ACV per-sample value have | medium | open |
-| OF-45 | Bluetooth | `USART_SendData` waits for TXE without a bound inside the TIM2 handler: if it runs in the 109 us between the serial-transfer flag and the USART2 clock enable, the meter hangs until it is switched off | low | open |
+| OF-45 | Bluetooth | `USART_SendData` waits for TXE without a bound inside the TIM2 handler: if it runs in the 148 us between the serial-transfer flag and the USART2 clock enable, the meter hangs until it is switched off | low | open |
 | OF-46 | Measurement | ACV dBm sub display at a zero reading: log10(0) = -infinity is converted to 0xFFFFFFFF and shown as "- 7295" | low | open |
 | OF-47 | Logging | Logging stopped by a low battery stores code 100 and the sub display shows "SdE" with two blank digits; the two-digit routine is right only up to 19 | low | open |
 | OF-48 | Keys | Setup edit: REL or PEAK held longer than 0.5 s steps once more when the key is released (the press is queued, the MEM view excludes it) | low | open |
@@ -174,7 +174,7 @@ then leaves 0x4D0–0x4FF untouched.
 RM0038 (rev. 15) section 12.15.6, ADC_SMPR3: "These bits must be written only when ADON=0."
 The channel-configuration routine writes ADC_SMPR3 (0x40012414) at `0x080201F0` while CR2.ADON = 1,
 every time the firmware switches between channel 4 (thermistor) and channel 5 (battery sense) via
-`FUN_080137B4` (returns at `0x080137EE` / `0x080137FE`); observed 20 times in 4 s of emulated running.
+`FUN_080137B4` (returns at `0x080137EE` / `0x080137FE`); observed 40 times in 4 s of emulated running (every 0.1 s, alternating between channels 4 and 5).
 Impact: behaviour outside the manufacturer's specification (the sample time may not take effect
 cleanly for the next conversion). Port: configure sample times once with ADON = 0.
 
@@ -219,10 +219,10 @@ With both set, the row selector `0x0800B994` returns the plain ACV/ACmV row (R29
 while `0x0800BEAC` still writes the peak-mode interrupt enable INTE = 0x11 (RMSIE + CTIE, no AD1IE). RMSF can
 never occur (RMS off) and AD1F is not enabled, so `hy3131_service_irq` (`0x0800614E`) is never entered: neither
 the AD1 chain nor the peak routine (`0x0800A7FC`) runs, and 0x2000805D (new-value flag) is never set.
-Execution check (full emulator, ACV, 3 s after the keys): filter only — INTE 0x05, 217 interrupt services,
-218 AD1 decodes, 14 display updates; PEAK only — INTE 0x11, R29 0xC4, 57 services and 57 peak-routine calls;
+Execution check (full emulator, ACV, 3 s after the keys): filter only — INTE 0x05, 214 interrupt services,
+214 AD1 decodes, 14 display updates; PEAK only — INTE 0x11, R29 0xC4, 57 services and 57 peak-routine calls;
 PEAK + filter (either key order) — INTE 0x11, R29 0x01, **0 services, 0 AD1 decodes, 0 peak calls, 0 display
-updates**, while the chip itself completed 1124 AD1 conversions.
+updates**, while the chip itself completed 1122 AD1 conversions.
 Nothing sets 0x2000805D, so `autorange_step` never runs and the settle counter 0x20000238 set at mode
 application is never decremented; while it is non-zero `FUN_08016E08` calls `0x08019A98`, which draws five spaces
 (string 0x080291B0).
@@ -253,9 +253,9 @@ display routine clears 0x2000805D (`0x08016E0C`). That routine is skipped while 
 Execution check (full emulator, TEMP, 35 records logged to an emulated SD card, then MEM view; write
 watchpoints on 0x2000805D, 0x20007D64, 0x20007D70): before the view each mean gives 242 (24.2 degC). In view,
 0x20007D64 goes 242 → 329 → 350 → 356 → 357 on successive samples (pc 0x080078AE) and returns to 242 at each
-mean; the only writer of 0x2000805D in view is `0x0800781A` (= 1). On leaving the view (t = 19.296 s) the
+mean; the only writer of 0x2000805D in view is `0x0800781A` (= 1). On leaving the view (t = 19.291 s) the
 display routine ran immediately and stored **357** in the displayed value 0x20007D70 (`0x08017178`); 242 came
-back only at the next mean, 0.26 s later.
+back only at the next mean, 0.29 s later.
 Impact: after closing MEM view in TEMP mode the meter shows a wrong temperature (here 35.7 degC instead of 24.2 degC) for up to one mean period.
 Port: keep the converted temperature in its own variable; never feed 0x20007D64 back into the conversion.
 
@@ -406,16 +406,16 @@ counter 5 (DC) or 3 (AC) (`FUN_0800DB48`). Mode 0 is exempt from the settle blan
 0x2000803C), so the forced 0 is drawn as a value ("   0.0", annunciators LowZ and V, no AC/DC annunciator). The
 apply also zeroes 0x20007D64 (`0x0800D57C`).
 Execution check (main digits and all LCD annunciators sampled every 5 ms; write trace of 0x20007D64): dial V -> LowZ
-with 100 V DC present: "0.0" from 0.114 s to 1.400 s after the dial change (1.29 s), five zero stores by `0x08006600`
-at 0.284..1.152 s, each right after the mean wrote 1000; HV symbol at 0.960 s; bargraph moves at 0.309 s. With
-230 V AC 50 Hz present: "0.0" from 0.114 s to 2.247 s (2.13 s; DC state first, toggle to AC at 0.887 s, re-apply);
-HV symbol at 1.583 s. Power-on in LowZ with 100 V DC / 230 V AC / 600 V DC: "0.0" for at least 0.9 s, HV symbol
-0.85 s / 1.46 s / 0.85 s after the first "0.0". Meter already in LowZ at 0 V (it cycles DC/AC and re-applies every
-5..7 means), voltage then applied at 12 different phases each: 230 V AC: "0.0" for 1.15..2.24 s; 100 V DC:
-1.17..1.70 s; -100 V DC: 1.14..1.72 s; 24 V AC: 1.15..2.38 s (no HV symbol). The HV symbol appeared before the digits
+with 100 V DC present: "0.0" from 0.136 s to 1.423 s after the dial change (1.29 s), five zero stores by `0x08006600`
+at 0.300..1.176 s, each right after the mean wrote 1000; HV symbol at 0.980 s; bargraph moves at 0.330 s. With
+230 V AC 50 Hz present: "0.0" from 0.136 s to 2.263 s (2.13 s; DC state first, toggle to AC at 0.905 s, re-apply);
+HV symbol at 1.600 s. Power-on in LowZ with 100 V DC / 230 V AC / 600 V DC: "0.0" for at least 0.88 s, HV symbol
+0.85 s / 1.47 s / 0.85 s after the first "0.0". Meter already in LowZ at 0 V (it cycles DC/AC and re-applies every
+5..7 means), voltage then applied at 12 different phases each: 230 V AC: "0.0" for 1.12..2.31 s; 100 V DC:
+1.16..1.78 s; -100 V DC: 1.21..1.91 s; 24 V AC: 1.22..2.42 s (no HV symbol). The HV symbol appeared before the digits
 in every trial with 100 V or more. 8.0 V DC is shown as "0.0" indefinitely; 11.0 V DC is shown after the same delay.
 Impact: in the mode used to check whether a conductor is live, the main display reads "0.0 V" for 1.1 to 2.4 s after
-the probes touch 100..600 V; until the HV symbol appears (up to 1.58 s in the trials) nothing but the bargraph
+the probes touch 100..600 V; until the HV symbol appears (up to 1.69 s in the trials) nothing but the bargraph
 indicates the voltage. A user who reads the digits early can take a live conductor for dead. The times are firmware
 times on an ideal front end; real settling can only lengthen them. The dead band below about 10 V (reading 0.0) is
 covered by the manual's "not designed to be operated at low voltages (below 12V)" and is not part of this issue.
@@ -433,13 +433,13 @@ writes RCC_CSR.RTCSEL = 10 (LSI). The only WFI/WFE in the image (`0x080207F2` wf
 encodings) are in the STOP entry `0x080207CC` with SCR.SLEEPDEEP set (`0x080207E4`), called only from
 `enter_stop_and_reinit` (`0x08024EE4`), which `main` reaches only when 0x2000803A is set (`0x08024DD0`..`0x08024DDA`).
 Execution check (hooks at `0x08024B6A` poll call, `0x0801B304`, `0x0801B32E`..`0x0801B340` wait, `0x0800614E` HY3131
-service; 2 s each, frame 72.27 Hz for FCR 0x00C05440 with LSI 37 kHz): BEEP 10 ohm: 72.5 commits/s, 665 ms/s inside
+service; 2 s each, frame 72.27 Hz for FCR 0x00C05440 with LSI 37 kHz): BEEP 10 ohm: 72.5 commits/s, 515 ms/s inside
 the wait, 72.5 HY3131 services/s for 641.5 AD1 conversions/s (89 % dropped), median main pass 13.84 ms. OHM 1 kohm:
-72.0 services/s for 320.5 conversions/s, 679 ms/s waiting. DCV 1 V: 71.0 commits/s, 597 ms/s waiting, 69.5 services/s
-for 77.0 conversions/s (10 % dropped). No partial commit occurred in these runs.
+72.5 services/s for 320.5 conversions/s, 534 ms/s waiting. DCV 1 V: 69.5 commits/s, 470 ms/s waiting, 68.5 services/s
+for 77.0 conversions/s (11 % dropped). No partial commit occurred in these runs.
 Impact: the 16-sample mean takes 16 x 13.84 = 221 ms on every configuration row faster than the frame rate (BEEP row:
 25 ms possible), so update rate, range-change time and continuity digit response are set by the LCD frame, not by the
-HY3131. 60 to 68 % of the active time is spent spinning instead of sleeping. Displayed values are not wrong: dropped
+HY3131. 47 to 53 % of the active time is spent spinning instead of sleeping. Displayed values are not wrong: dropped
 conversions are simply not averaged. The frame rate depends on the LSI frequency, which the STM32L151 datasheet
 (Table 31) specifies as 26 to 56 kHz (typ 38 kHz), i.e. 51 to 109 Hz frame rate with this FCR value; the 72 Hz
 figure is the emulator's nominal 37 kHz and differs from meter to meter. This is a throughput, latency and power
@@ -452,11 +452,11 @@ the end of each pass, woken by the interrupts v2.05 already enables.
 FREQ/PULSE/DUTY (`0x0800DBC6`..`0x0800DBDA`, value 0), and the apply zeroes 0x20007D64 (`0x0800D57C`), 0x20007D68
 (`0x0800D584`) and 0x20007D70 (`0x0800D31E`). With the counter 0 and 0x2000805C clear the blank branch
 (`0x08016FCE`..`0x08016FE0`) is not taken and the display draws 0x20007D64 = 0 until the first result.
-Execution check: OHM -> BEEP (MODE) with 100 ohm: "  0.00" ohm from 0.082 s to 0.290 s after the key release, then
-"100.00"; with open leads: "  0.00" from 0.054 s to 0.261 s, then " OFL"; the buzzer stayed off in both runs.
-DCV -> Hz (dial) with 1 kHz: " 0.000" Hz from 0.119 s to 0.561 s, then "1.0000" kHz. With no signal "0.000" Hz is
+Execution check: OHM -> BEEP (MODE) with 100 ohm: "  0.00" ohm from 0.089 s to 0.297 s after the key release, then
+"100.00"; with open leads: "  0.00" from 0.060 s to 0.269 s, then " OFL"; the buzzer stayed off in both runs.
+DCV -> Hz (dial) with 1 kHz: " 0.000" Hz from 0.112 s to 0.567 s, then "1.0000" kHz. With no signal "0.000" Hz is
 the correct final reading.
-Impact: for about 0.2 s (BEEP) and 0.44 s (FREQ) a valid-looking reading of zero is shown; in BEEP open leads briefly
+Impact: for about 0.2 s (BEEP) and 0.46 s (FREQ) a valid-looking reading of zero is shown; in BEEP open leads briefly
 read as a short. Cosmetic; no false continuity tone. Times are firmware times (lower bound).
 Port: blank until the first result after an apply.
 
@@ -585,18 +585,18 @@ Port: the field is initialised to 0 (software trigger, as used via SWSTART `0x08
 image. In that window the TIM2 handler's 50-tick block (counter 0x20007F04, `0x0802461C`) calls
 `pe7_on_with_timeout(500)` (`0x0802469A`..`0x0802469E`, sets PE7 at `0x0800EEE4`) when 0x20008077 toggles to 1 and
 0x20008076 | 0x200080B2 != 0 (jack warning). The window lasts from `0x0801C58C` to the next LCD frame boundary
-(LCD disable wait in `FUN_0801C908`), 4.5 to 13.9 ms in the runs; the TIM2 period is 10.02 ms and the window starts
+(LCD disable wait in `FUN_0801C908`), 0.4 to 13.9 ms in the runs; the TIM2 period is 10.02 ms and the window starts
 right after a tick, so only windows above 10.02 ms can contain one. PE7 is not left high into STOP: `0x0801CA22`
 sets all GPIOE pins to analog before the `wfe` (`0x080207F6`). The TIM3 repeat path (`0x080247D4`) needs a repeat
 count 0x2000807A pending at power-down; its only writer `FUN_0800EE7A` reloads the APO counter (`0x0800EE88`
 `bl 0x0800ED26`), and it was not reproduced.
 Execution check (DCV, plug in the A jack -> " LEAd" and the 0.5 s on / 0.5 s off warning; APO request 0x2000803A set
 from a write hook on 0x20007F04 to choose the TIM2 phase, which in use drifts freely against the RTC second that
-triggers APO; 73 runs): window above 10.02 ms in 37 runs; with the jack-warning tick inside the window (2 runs):
-PE7 set by the TIM2 handler (pc `0x0800EEE4`, IPSR 44) 10.02 ms after `0x0801C58C`, TIM2 stopped at 12.17 ms, PE7 high
-until its pin went analog at 79.2 ms. In the other runs, and in 40 runs with the APO countdown itself as trigger, PE7 stayed low from `0x0801C58C` until
+triggers APO; 108 runs): window above 10.02 ms in 44 runs; with the jack-warning tick inside the window (4 runs):
+PE7 set by the TIM2 handler (pc `0x0800EEE4`, IPSR 44) 10.01..10.03 ms after `0x0801C58C`, TIM2 stopped at 12.51 ms, PE7 high
+until its pin went analog at 96.6 ms. In the other runs, and in 40 runs with the APO countdown itself as trigger (window above 10.02 ms in 16 of them), PE7 stayed low from `0x0801C58C` until
 the pins went analog.
-Impact: occasionally, with a lead in a current jack at auto power-off, a second buzzer chirp of about 69 ms follows
+Impact: occasionally, with a lead in a current jack at auto power-off, a second buzzer chirp of about 86 ms follows
 the power-off beep. Whether the sounder is still powered at that moment (PE9 is cleared at `0x0801C618`, about the
 time the timers stop) is not known from the documents.
 Port: TIM2 and TIM3 update interrupts are disabled before the buzzer state is cleared and PE7 set low (HW-08).
@@ -610,11 +610,11 @@ When setup item 0x20008037 = 7, the TIM2 handler's 50-tick block toggles 0x20008
 0x08019AE0`) without masking interrupts. A TIM2 tick between `0x08017156` and the draw makes main draw the time digits
 or a mixture into the reading.
 Execution check (DCV 1.2345 V, setup page 7; to bring the two events together the 0.5 s counter 0x20007F04 was preset
-to 49 at each `0x08017156`, which in use meet at random; 90 s): 6 nested calls, 5 visible: main display "1.2-28",
-"1.2 28", "1.2348", "1.1 29" (and one frame "1.23?5"), each for 16 LCD frames (about 0.22 s), then "1.2345" again.
-Without the preset (20 s, 40 handler draws, 88 main draws of about 160 us) no overlap occurred.
+to 49 at each `0x08017156`, which in use meet at random; 90 s): 8 nested calls, 5 visible: main display "1.2 56",
+"1.2357", "0.0057", "0.2 57", "1.2-57", each for 16 LCD frames (about 0.22 s), then "1.2345" again.
+Without the preset (20 s, 40 handler draws, 88 main draws of about 250 us) no overlap occurred.
 Impact: on the time setup page the main reading can briefly show wrong digits (estimated from the measured window:
-about 4.4 draws/s x 160 us, i.e. roughly 0.07 % of the half-second ticks). Cosmetic, transient.
+about 4.4 draws/s x 250 us, i.e. roughly 0.11 % of the half-second ticks). Cosmetic, transient.
 Port: the handler only sets a request; main draws the page (NF-11).
 
 ### OF-42 — disk read ignores the sector count
@@ -655,7 +655,7 @@ at 5 the wraps also give short presses at 264 and 521. Release scan (key down at
 ticks 266 to 313 (265 was not run), a short press two ticks after the release although the long press had already fired (266 to 268, 313 to 315); released at 314 or later,
 the second long press (313). Real handler `0x0801622C` called repeatedly: MODE (key 1) toggles 0x2000807B 1, 0, 1; PEAK (0x80) toggles 0x2000802B;
 SETUP (2) toggles the edit flag 0x2000806E and the call that leaves the edit writes the EEPROM; RANGE (0x10) sets `range_manual` 0 and the range-change flag 0x2000804B again; REL (0x40, mode 16, range 0, 0x20007D64 = 5) adds the value to 0x20007E0C again and stores to the data EEPROM again (`0x0801645C`):
-0x20007E0C = 5, 10, 15 on three calls. Full emulator (DCV): MODE held 4.5 s: backlight on 0.69 s after the press, off again at 4.14 s with the key
+0x20007E0C = 5, 10, 15 on three calls. Full emulator (DCV): MODE held 4.5 s: backlight on 0.70 s after the press, off again at 4.03 s with the key
 still down; MEM held 6 s with an SD card: logging flag 0x20007FE1 = 1 at 1.5 s and 3.0 s, 0 at 4.5 s and 6.0 s (the repeat comes 3.4 s after the first
 long press there, because the main loop serves about 72 ticks per second, see OF-31).
 Impact: a key held longer than about 3.1 s repeats its long-press action: MEM starts logging and stops it again (a file is created and closed),
@@ -689,13 +689,13 @@ Port: v2.05 behaviour kept (`firmware/src/mac/ac.s`, `.Lmac_acmv_sample`); the c
 RCC_APB1ENR bit 17), TE/RE are set by the init structure (mode 0xC at `0x0801C40C`), no hardware flow control (`0x0801C408`), USART_Cmd at `0x0801C422`. Clearing
 the flag calls `0x0801C954` (supply low, interrupts off, USART_Cmd 0 `0x0801C96E`, clock off `0x0801C978`). Between the store and the clock enable the USART2 registers
 are not clocked and RM0038 6.3.10 (as quoted in `emulator/emu/periph/usart.py`) says reads then return 0: TXE reads 0.
-Execution check (full emulator, hooks at `0x08016536` and `0x0801C3EA`): the window is 456 core cycles = 108.7 us (4.194304 MHz); the 50-tick block runs once per 0.501 s,
-so a random TIM2 phase hits it about once in 4600 switch-ons. Normal run (DCV 1 V, long PEAK, step to 2.0 V): the main display shows 2.0000 three seconds later. Run with the TIM2
-counter and 0x20007F04 set at the store so that the block runs 217 cycles later: the handler (IPSR 44) stays in the loop (`0x0800D17E` reached 1 686 103 times up to the end of the
+Execution check (full emulator, hooks at `0x08016536` and `0x0801C3EA`): the window is 622 core cycles = 148.3 us (4.194304 MHz); the 50-tick block runs once per 0.501 s,
+so a random TIM2 phase hits it about once in 3400 switch-ons. Normal run (DCV 1 V, long PEAK, step to 2.0 V): the main display shows 2.0000 three seconds later. Run with the TIM2
+counter and 0x20007F04 set at the store so that the block runs 514 cycles later: the handler (IPSR 44) stays in the loop (`0x0800D17E` reached 1 176 119 times up to the end of the
 run) and the display still shows 1.0000 three seconds after the step to 2.0 V. No code references an IWDG or WWDG register (`analysis/decompile/mmio_refs.txt`), so
 only switching the meter off and on recovers. Not a cause: the BLE module supply (TXE does not depend on the line). The silicon behaviour with a gated clock was not measured;
 the hang follows RM0038 6.3.10.
-Impact: in rare cases (about 1 in 4600 switch-ons of the serial transfer) the TIM2 handler never returns: display, keys, measurement and auto power-off stop until the dial
+Impact: in rare cases (about 1 in 3400 switch-ons of the serial transfer) the TIM2 handler never returns: display, keys, measurement and auto power-off stop until the dial
 is turned off and on. No effect otherwise.
 Port: the wait is bounded (`firmware/src/ble/usart.s`, `fn_0800D170`, `SYS_WAIT_POLLS`; on timeout nothing is sent) and the TIM2 handler only records the frame request (OF-10, NF-04).
 
@@ -792,9 +792,10 @@ Port: convert with the hardware relation (code x 3.3 / 4095 / 0.2481), keeping t
 0 clears the flags (HY3131 data sheet p19, 10.2 (7)), including any flag the chip raised after the burst read, which
 the firmware has not seen. A lost counter-done flag (CTF) means FUN_0800AA00 is not called and the counter is not
 restarted, so the frequency reading stops updating until the next mode/range apply re-arms the counter.
-Execution check (emulator, original image): in acv_values the count completes at about 6.4625 s, between the read at
-6.461950 s and the clear at 6.462191 s; no counter restart follows until the re-apply at 7.40 s. Over the scenario
-library v2.05 lost the counter-done flag 22 times in 12 scenarios.
+Execution check (emulator, original image): in acv_values the count completes at 6.501886 s, after the INTF byte was
+read (6.501460 s) and before the clear completes (6.503092 s); no counter restart follows until the re-apply at 7.43 s.
+Over 93 scenarios of the scenario library (all but apo_disabled and apo_timing_wake) v2.05 lost the counter-done flag
+30 times in 10 scenarios.
 Impact: the frequency shown on the sub display (AC modes) or the main display freezes for up to the next apply; which
 event is lost depends on sub-millisecond timing.
 Port: clear only the flags that were read: write a value that is 0 for the flags seen set in the burst and 1 for all
