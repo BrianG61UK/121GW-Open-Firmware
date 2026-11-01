@@ -3,9 +3,9 @@
 @
 @ Replaces fn_08016D34 (0x08016D34, called once per main-loop pass), fn_08016E08 (main value), fn_0800D664 / fn_0800D6E0
 @ (VA sub-display alternation), fn_0800E848 / fn_0800EA24 (high-voltage warning flags), fn_080153AC (end of MEM view) and
-@ fn_08015934 (held value).  The instruction streams are v2.05's; production mode (LOOP_V205 = 0) adds
+@ fn_08015934 (held value).  The instruction streams are v2.05's; both builds add the blank / dash request ui_blank_req
+@ in fn_08016E08 (OF-30; request 1 of OF-32 / IMP-01 rule P5 is written in production only); production mode (LOOP_V205 = 0) adds
 @   - the call of ui_bootwin_gate (IMP-02) at the start of fn_08016D34 and of lcd_commit_retry (IMP-06) at its end;
-@   - the blank / dash request ui_blank_req in fn_08016E08 (OF-30, OF-32, IMP-01 rule P5);
 @   - the power-on window rules of IMP-02 (ui_bootwin_gate, ui_version_sub, ui_request_redraw): while CAL's window is open the
 @     version "V-2.05" is shown on the sub display and the reading on the main digits, and nothing is drawn while a key
 @     combination screen owns the display (request W7_to_W3.md item 1).
@@ -22,7 +22,8 @@
 
     .section .bss_port.ui, "aw", %nobits
 
-@ ui_blank_req: request from the measurement modules that the main digits show no value (production mode only).
+@ ui_blank_req: request from the measurement modules that the main digits show no value (request 2, OF-30: both builds;
+@ request 1, OF-32 / IMP-01: production only).
 @   0 = draw the value (v2.05 behaviour)
 @   1 = draw five spaces (OF-32 BEEP / FREQ / PULSE / DUTY until the first valid result; IMP-01 rule P5 after a range change)
 @   2 = draw five dashes (OF-30 LowZ while a voltage is present and the AC/DC decision is still pending)
@@ -609,10 +610,10 @@ ENDFUNC fn_08016D34
 @ RAM      : clears 0x2000805D and 0x2000805F; reads meter_mode, range_manual, minmax_state, 0x2000808A, 0x2000805A,
 @            0x20008076, 0x200080BF, the calibration screen flags 0x2000808C..0x20008094, settle count 0x20000238,
 @            0x2000805C, hold_active, hold_stage2, 0x20008046 (OL), rel_active, 0x2000803F, 0x20007D64; writes 0x20008046,
-@            0x2000805A, the calibration flags 0x2000808D, 0x2000808F, 0x20008092, 0x20008094; ui_blank_req is read in production
+@            0x2000805A, the calibration flags 0x2000808D, 0x2000808F, 0x20008092, 0x20008094; ui_blank_req is read in both builds
 @ Spec     : analysis/autorange_and_scheduler.md 2.4 (blank rule), analysis/lcd_map.md 2
-@ Deviation: OF-30, OF-32, IMP-01 rule P5 (production only): when ui_blank_req is non-zero the main digits show spaces (1)
-@            or dashes (2) instead of the value; the request is placed after the calibration screens, the jack warning and
+@ Deviation: OF-30 (both builds), OF-32, IMP-01 rule P5 (production only; only OF-30 writes the byte in the baseline):
+@            when ui_blank_req is non-zero the main digits show spaces (1) or dashes (2) instead of the value; the request is placed after the calibration screens, the jack warning and
 @            the VA no-value screen, and before the v2.05 blank rule, so those keep their priority
 @ Clobbers : r0, r1, r2, r3 (v2.05 regeffects.txt)
 @ -----------------------------------------------------------------------------
@@ -813,15 +814,13 @@ FUNC fn_08016E08
     bl fn_08019738                           @ 08016FC8
     b .L08017090                             @ 08016FCC
 .L08016FCE:                                @ reached from 08016FB4 beq (equal / zero)
-    .if LOOP_V205 == 0
-    ldr r0, =ui_blank_req                   @ production: request from the measurement modules (OF-30, OF-32, IMP-01 P5)
+    ldr r0, =ui_blank_req                   @ request from the measurement modules (OF-30 both builds; OF-32, IMP-01 P5 production)
     ldrb r0, [r0]
     cmp r0, #0
     beq .Lub_none                           @ 0: draw the value as v2.05 does
     bl ui_blank_draw                        @ 1: spaces, 2: dashes; auto-hold stage 2 keeps the old digits; clears OL
     b .L08017090                            @ done with this update (same exit as the v2.05 blank branch 0x08017004)
 .Lub_none:
-    .endif
     @ v2.05 blank rule: settle count (0x20000238) or blank flag (0x2000805C) non-zero outside mode 0: spaces (fn_08019A98) unless auto-hold stage 2, OL cleared
     ldr r0, =v_20000238                      @ 08016FCE &settle count
     ldrb r0, [r0, #0]                        @ 08016FD2
@@ -922,16 +921,14 @@ ENDFUNC fn_08016E08
 @ Out      : r0 = 1 while the main digits show a reading, 0 while they are blank or show dashes
 @ Clobbers : r0
 @ Context  : main only
-@ RAM      : reads ui_blank_req (production), meter_mode, settle count 0x20000238, blank flag 0x2000805C
+@ RAM      : reads ui_blank_req, meter_mode, settle count 0x20000238, blank flag 0x2000805C
 @ Spec     : analysis/autorange_and_scheduler.md 2.4 (blank rule), 5.2 P5, P7; OF-30, OF-32, OF-33, OF-34
-@ Deviation: OF-34 (used by the BLE frame builder), OF-30 / OF-32 / IMP-01 (ui_blank_req term, production only)
+@ Deviation: OF-34 (used by the BLE frame builder), OF-30 (both builds) / OF-32 / IMP-01 (production only) in the ui_blank_req term
 @ -----------------------------------------------------------------------------
 FUNC ui_value_valid
-    .if LOOP_V205 == 0
     ldr r0, =ui_blank_req
     ldrb r0, [r0]
     cbnz r0, .Luv_blank                     @ spaces or dashes requested by the measurement modules
-    .endif
     ldr r0, =meter_mode
     ldrb r0, [r0]
     cbz r0, .Luv_valid                      @ mode 0 (LowZ) is exempt from the v2.05 blank rule (0x08016FE2..0x08016FEA)

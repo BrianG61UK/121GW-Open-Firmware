@@ -10,7 +10,7 @@
 @
 @ The per-sample value is the one the AC handlers produce in their per-sample part (fn_08006AEC from
 @ 0x08006BC4, fn_080069B4 from 0x08006A84, fn_080067D6 from 0x08006920): fn_08008468 on the latest sample
-@ (0x20007D74), then fn_0800742C, then for ACV with the 1 kHz filter on fn_08006D40 on ten times the value.
+@ (0x20007D74), then fn_0800742C, then for ACV and (OF-44) ACmV with the 1 kHz filter on fn_08006D40 on ten times the value.
 @ When the conversion is accepted this routine leaves that value in 0x20007D68 and sets mac_ps_done; the handler
 @ of the same conversion then skips its own computation and clears the flag, so the float chain runs once per
 @ conversion.
@@ -46,7 +46,7 @@
 @            writes sample_value (0x20007D68), bargraph_update (0x2000805E), mac_ps_done (cleared at entry, set for an
 @                   accepted conversion)
 @ Spec     : analysis/autorange_and_scheduler.md 5.2 P2, P3; DESIGN.md 6.12, 6.18 (IMP-01)
-@ Deviation: IMP-01
+@ Deviation: IMP-01, OF-44 (ACmV filter correction)
 @ -----------------------------------------------------------------------------
 FUNC mac_sample_precheck
     movs r1, #0
@@ -94,7 +94,10 @@ FUNC mac_sample_precheck
     ldr r1, =v_20007D68
     str r0, [r1]                            @ sample_value
     cmp r4, #2
-    bne 1f                                  @ the 1 kHz filter correction is part of the ACV handler only
+    beq 3f
+    cmp r4, #4
+    bne 1f                                  @ the 1 kHz filter correction belongs to the ACV and (OF-44) ACmV handlers only
+3:
     ldr r0, =filter_1khz
     ldrb r0, [r0]
     cmp r0, #1

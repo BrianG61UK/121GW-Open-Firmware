@@ -1101,7 +1101,8 @@ ENDFUNC fn_0801AFFC
 @ fn_0801B090 - split a magnitude into five decimal digit words
 @ Replaces : 0x0801B090 FUN_0801B090 (v2.05, 140 bytes)
 @ In       : r0 = unsigned value
-@ Out      : 0x20007DB0 = r0 / 10000 (not reduced modulo 10, so values >= 100000 give a first word >= 10),
+@ Deviation: OF-49 (v2.05 stored the first word unreduced, so values >= 100000 gave a first word >= 10)
+@ Out      : 0x20007DB0 = (r0 / 10000) mod 10,
 @            0x20007DB4 = (r0 mod 10000) / 1000, 0x20007DB8 = (r0 mod 1000) / 100, 0x20007DBC = (r0 mod 100) / 10,
 @            0x20007DC0 = r0 mod 10
 @ Clobbers : r1, r2 (v2.05 regeffects)
@@ -1113,6 +1114,12 @@ ENDFUNC fn_0801AFFC
 FUNC fn_0801B090
     movw r1, #10000                          @ 0801B090
     udiv r1, r0, r1                          @ 0801B094
+    @ OF-49: reduce the first word modulo 10 (v2.05 stored n / 10000 unreduced: n >= 100000 drew a wrong first character).
+    @ Only r1 and r2 are used, as in v2.05: r1 mod 10 = r1 - 8 q - 2 q with q = r1 / 10.
+    movs r2, #10
+    udiv r2, r1, r2                          @ r2 = (n / 10000) / 10
+    sub r1, r1, r2, lsl #3
+    sub r1, r1, r2, lsl #1                   @ r1 = (n / 10000) mod 10
     ldr r2, =v_20007DB0                      @ 0801B098 &digit word 0 (10^4)
     str r1, [r2, #0]                         @ 0801B09C
     movw r1, #10000                          @ 0801B09E

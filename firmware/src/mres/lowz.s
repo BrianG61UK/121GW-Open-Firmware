@@ -10,10 +10,10 @@
 @
 @ OF-30 (ORIGINAL_FIRMWARE_ISSUES.md, owner decision): v2.05 stored 0 into the displayed value 0x20007D64 for every mean above the
 @ threshold until the fifth, so "0.0" was shown for 1.1 to 2.4 s while 100..600 V were present, and the HV symbol (which looks at
-@ the displayed value) came up to 1.58 s late.  Production: the port keeps the real value in 0x20007D64 (the HV logic sees it at the
-@ first mean) and sets the UI request byte ui_blank_req (W3, port RAM) to 2 while the voltage is not yet confirmed; the main digits show
-@ five dashes then (firmware/requests/W3_to_W5.md 1).  The byte is 0 whenever no voltage is pending.  Baseline (LOOP_V205 = 1) keeps the v2.05
-@ zero store, because the UI does not read the byte there.  The AC/DC selection logic is unchanged.
+@ the displayed value) came up to 1.58 s late.  Both builds (production and the LOOP_V205 = 1 baseline): the port keeps the real
+@ value in 0x20007D64 (the HV logic sees it at the first mean) and sets the UI request byte ui_blank_req (W3, port RAM) to 2 while
+@ the voltage is not yet confirmed; the main digits show five dashes then (firmware/requests/W3_to_W5.md 1).  The byte is 0
+@ whenever no voltage is pending.  The AC/DC selection logic is unchanged.
 @ =============================================================================
 
     .syntax unified
@@ -127,11 +127,9 @@ FUNC fn_08006558
     cmp r0, #0                         @ 0x08006588
     bne .L080065EC                     @ 0x0800658A  overload flag set: treat as a voltage
     @ ---- |D| within the threshold and no overload: dead band, show 0.0 (D = 0), voltage not present ----
-.if LOOP_V205 == 0
     movs r0, #0
     ldr r1, =ui_blank_req
-    strb r0, [r1]                           @ OF-30 (production): nothing pending when the voltage is gone
-.endif
+    strb r0, [r1]                           @ OF-30: nothing pending when the voltage is gone
     movs r0, #0                        @ 0x0800658C
     ldr r1, =v_20007D64                @ 0x0800658E pool 0x08006D28 = 0x20007D64
     str r0, [r1, #0]                   @ 0x08006592
@@ -179,16 +177,10 @@ FUNC fn_08006558
     ldrb r0, [r0]
     cmp r0, #0
     bne .Llz_confirmed                      @ already confirmed: the real value is shown
-.if LOOP_V205
-    movs r0, #0
-    ldr r1, =v_20007D64
-    str r0, [r1]                            @ v2.05 0x080065FA..0x08006600: the displayed value is forced to 0 until confirmed (baseline)
-.else
     movs r0, #2
     ldr r1, =ui_blank_req
-    strb r0, [r1]                           @ OF-30 (production): not confirmed yet - D keeps the real value, the UI shows five dashes
-                                            @ (ui_blank_req = 2, W3_to_W5.md 1); v2.05 stored D = 0 here
-.endif
+    strb r0, [r1]                           @ OF-30: not confirmed yet - D keeps the real value, the UI shows five dashes
+                                            @ (ui_blank_req = 2, W3_to_W5.md 1); v2.05 stored D = 0 here (0x080065FA..0x08006600)
     ldr r0, =v_2000023A
     ldrb r0, [r0]
     subs r0, r0, #1                         @ one more mean with a voltage present
@@ -203,11 +195,9 @@ FUNC fn_08006558
     ldr r1, =v_20008060
     strb r0, [r1]                           @ annunciator refresh
 .Llz_confirmed:
-.if LOOP_V205 == 0
     movs r0, #0
     ldr r1, =ui_blank_req
     strb r0, [r1]                           @ decision taken: the value is shown
-.endif
 .L0800662A:                              @ reached from 0x080065C2 bne, 0x080065EA b, 0x080065F8 bne, 0x08006618 bne
     pop {r4, pc}                       @ 0x0800662A
     .ltorg

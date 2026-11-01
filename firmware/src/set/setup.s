@@ -1321,7 +1321,7 @@ ENDFUNC fn_080165F4
 @            set_item, set_redraw
 @ Spec     : analysis/keys_setup.md 4 (SETUP menu); analysis/lcd_map.md
 @ Note     : Clears set_redraw, then chooses the page: the message flag set_msg_flag (fn_080198FC) or message code
-@            set_msg_code (code 0x14: fn_080198B0, others: fn_08019948) replace the setup page; item 100 (logging /
+@            set_msg_code (codes 0x14 and, OF-47, 0x64: fn_080198B0, others: fn_08019948) replace the setup page; item 100 (logging /
 @            MEM view) shows the u16 0x20007F9C while 0x20007FE1 is clear, else the u32 set_view_value (divided by 10
 @            with the k annunciator from 100000); while an edit is active and the blink phase is off the blank state
 @            is drawn (fn_0801813A); in calibration mode the " CAL " screen (fn_08019880), or, while set_cal_item_cnt
@@ -1352,8 +1352,11 @@ FUNC fn_0801797C
     ldr.w r0, =set_msg_code                 @ 080179A0
     ldrb r0, [r0, #0x0]                     @ 080179A4  r0 = set_msg_code
     cmp r0, #0x14                           @ 080179A6  compare set_msg_code with 20 (0x14)
-    bne .L080179B0                          @ 080179A8  if set_msg_code != 20 (0x14)
-    bl fn_080198B0                          @ 080179AA  message screen for message code 0x14 [r0=set_msg_code]
+    beq .Lof47_lobat                        @ OF-47  code 0x14: logging refused, battery low
+    cmp r0, #0x64                           @ OF-47  code 100 (0x64): logging stopped by a low battery (log/files.s 0x0801D316);
+    bne .L080179B0                          @ OF-47  v2.05 drew "SdE" and two blank digits for it
+.Lof47_lobat:
+    bl fn_080198B0                          @ 080179AA  message screen for message code 0x14 and (OF-47) 0x64 [r0=set_msg_code]
     b .L080179BA                            @ 080179AE
 .L080179B0:  @ reached from 080179A8 bne (set_msg_code != 20 (0x14))
     ldr.w r0, =set_msg_code                 @ 080179B0
@@ -2687,6 +2690,7 @@ ENDFUNC fn_080184D4
 @ Context  : main only
 @ RAM      : reads set_acv_float, set_ovl; writes lcd_shadow, set_acv_scaled, set_commit_req, set_sub_dp
 @ Spec     : analysis/keys_setup.md 4 (SETUP menu); analysis/lcd_map.md
+@ Deviation: OF-46 (dBm of a zero reading, -infinity: five dashes instead of the integer conversion of the infinity)
 @ -----------------------------------------------------------------------------
 FUNC fn_08018590
     push {r3, r4, r5, lr}                   @ 08018590
@@ -2698,6 +2702,29 @@ FUNC fn_08018590
     bl fn_080199B4                          @ 0801859E  show " OFL " or burden text (r0) [r0=1]
     b .L080186AA                            @ 080185A2
 .L080185A4:  @ reached from 0801859A beq (set_ovl == 0)
+    @ OF-46: a zero ACV reading gives dBm = 10 log10(0) = -infinity (0xFF800000); v2.05 converted it to the unsigned integer
+    @ 0xFFFFFFFF and drew "- 7295".  There is no finite value to show: draw the five dashes of the v2.05 text 0x08029288
+    @ (the "no value" text of the VA sub display, fn_08019A86 at 0x08017CA8; " OFL " is the overload text and would be wrong
+    @ for a reading of zero), no minus sign and no decimal point; set_acv_scaled (BLE sub display case 11) gets 0 instead of 1.
+    ldr.w r0, =set_acv_float                @ OF-46
+    ldr r0, [r0, #0x0]                      @ OF-46  r0 = set_acv_float
+    ldr.w r1, =0xFF800000                   @ OF-46  -infinity
+    cmp r0, r1                              @ OF-46
+    bne .Lof46_finite                       @ OF-46  finite dBm: the v2.05 path
+    movs r0, #0x0                           @ OF-46
+    ldr.w r1, =set_acv_scaled               @ OF-46
+    str r0, [r1, #0x0]                      @ OF-46  set_acv_scaled = 0
+    ldr.w r1, =set_sub_dp                   @ OF-46
+    strb r0, [r1, #0x0]                     @ OF-46  set_sub_dp = 0
+    bl fn_08017FB4                          @ OF-46  no sub decimal point [r0=0]
+    ldr.w r0, =lcd_shadow                   @ OF-46
+    ldr r1, [r0, #0x10]                     @ OF-46  r1 = lcd_shadow+16
+    bics r1, r1, #0x20000000                @ OF-46  sub minus sign off
+    str r1, [r0, #0x10]                     @ OF-46
+    movs r0, #0x1                           @ OF-46
+    bl fn_08019A86                          @ OF-46  "-----" on the sub display [r0=1]
+    b .Lof46_commit                         @ OF-46
+.Lof46_finite:
     ldr.w r0, =set_acv_float                @ 080185A4
     ldr r0, [r0, #0x0]                      @ 080185A8  r0 = set_acv_float
     movs r1, #0x0                           @ 080185AA
@@ -2796,6 +2823,7 @@ FUNC fn_08018590
     ldr.w r1, =set_text5                    @ 0801869A
     movs r0, #0x1                           @ 0801869C
     bl lcd_draw_5char                       @ 0801869E  draw 5 characters, r0 = 0 main (positions 5..9) or 1 secondary (0..4), r1 = text [r0=1, r1=&set_text5]
+.Lof46_commit:
     movs r0, #0x1                           @ 080186A2
     ldr.w r1, =set_commit_req               @ 080186A4
     strb r0, [r1, #0x0]                     @ 080186A8  set_commit_req = 1

@@ -5,7 +5,7 @@
 @ fn_08019738, SdCAL / SdSAv / SdSEt / SAvEd / -Err- / CAL1 / CAL, LoBAt, SdEnd, SdExx, OFL, OPEN, LEAD, -----,
 @ blank, and the V-2.05 splash fn_0801A854.  Every string is the v2.05 table in ui/tables_v205.s (TABLE_V205 copies of
 @ 0x080291A8..0x08029288); the 5-character texts are drawn through lcd_draw_5char.
-@ Port-only: ui_blank_draw (production mode), which draws the spaces or dashes requested through ui_blank_req.
+@ Port-only: ui_blank_draw (both builds), which draws the spaces or dashes requested through ui_blank_req.
 @ Context: main only.
 @ =============================================================================
 
@@ -485,11 +485,11 @@ ENDFUNC fn_080198FC
 @ -----------------------------------------------------------------------------
 @ fn_08019948 - "SdEnn" on the sub display (SD error number)
 @ Replaces : 0x08019948 FUN_08019948 (v2.05, 108 bytes)
-@ In       : r0 = number 0..99 (low byte)
+@ In       : r0 = number 0..99 (low byte; a larger number is shown modulo 100)
 @ Out      : -   (sets the commit request 0x2000805B)
 @ Context  : main only
-@ Note     : the units digit is (n - 10) + 0x30 for n >= 10, so the text is correct for n = 0..19 only; for n >= 20 the units
-@            character is wrong (v2.05 behaviour, kept; whether n >= 20 can occur is not established)
+@ Deviation: OF-47 (v2.05: units digit (n - 10) + 0x30 and tens digit n / 10 + 0x30, right for n = 0..19 only; both digits are now
+@            taken modulo 10, so every n up to 99 reads correctly)
 @ RAM      : clears the sub "k" unit (w4 bit 17); writes the text buffer = 'S' 'd' 'E' tens ('0' below 10) units
 @ Spec     : DESIGN.md 6.8
 @
@@ -513,23 +513,19 @@ FUNC fn_08019948
     movs r0, #69                             @ 0801996E
     ldr r1, =v_20007C30                      @ 08019970 &5-char text buffer
     strb r0, [r1, #2]                        @ 08019974
-    uxtb r5, r5                              @ 08019976
-    cmp r5, #10                              @ 08019978
-    blt .L08019990                           @ 0801997A
-    uxtb r5, r5                              @ 0801997C
+    @ OF-47: tens = (n / 10) mod 10, units = n mod 10.  v2.05 computed tens = n / 10 and units = n - 10 for n >= 10, which is
+    @ right for n = 0..19 only (n = 20 gave "2:", n = 23 "2=").  The code 100 (logging stopped by a low battery) is
+    @ routed to the "LoBAt" text by fn_0801797C before it reaches this routine.
+    uxtb r5, r5                              @ 08019976 r5 = n
     movs r0, #10                             @ 0801997E
-    sdiv r0, r5, r0                          @ 08019980
-    adds r0, #48                             @ 08019984
+    udiv r1, r5, r0                          @ r1 = n / 10
+    udiv r2, r1, r0                          @ r2 = n / 100
+    mls r3, r2, r0, r1                       @ r3 = tens digit = n / 10 - 10 * (n / 100)
+    mls r5, r1, r0, r5                       @ r5 = units digit = n - 10 * (n / 10)
+    adds r3, #48                             @ 08019984 tens character
     ldr r1, =v_20007C30                      @ 08019986 &5-char text buffer
-    strb r0, [r1, #3]                        @ 0801998A
-    subs r5, #10                             @ 0801998C
-    b .L08019998                             @ 0801998E
-.L08019990:                                @ reached from 0801997A blt (signed <)
-    movs r0, #48                             @ 08019990
-    ldr r1, =v_20007C30                      @ 08019992 &5-char text buffer
-    strb r0, [r1, #3]                        @ 08019996
-.L08019998:                                @ reached from 0801998E b; falls in
-    adds.w r0, r5, #48                       @ 08019998
+    strb r3, [r1, #3]                        @ 0801998A
+    adds.w r0, r5, #48                       @ 08019998 units character
     ldr r1, =v_20007C30                      @ 0801999C &5-char text buffer
     strb r0, [r1, #4]                        @ 080199A0
     ldr r1, =v_20007C30                      @ 080199A2 &5-char text buffer
@@ -780,10 +776,9 @@ FUNC fn_0801A854
 ENDFUNC fn_0801A854
     .ltorg
 
-    .if LOOP_V205 == 0
 @ -----------------------------------------------------------------------------
 @ ui_blank_draw - draw five spaces or five dashes on the main digits for a ui_blank_req request
-@ Replaces : nothing (new, production mode); the v2.05 blank branch 0x08016FE2..0x08017004 is the spaces case
+@ Replaces : nothing (new); the v2.05 blank branch 0x08016FE2..0x08017004 is the spaces case
 @ In       : r0 = request value (1 = spaces, 2 = dashes)
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags
@@ -825,4 +820,3 @@ FUNC ui_blank_draw
     pop {r4, pc}
     .ltorg
 ENDFUNC ui_blank_draw
-    .endif

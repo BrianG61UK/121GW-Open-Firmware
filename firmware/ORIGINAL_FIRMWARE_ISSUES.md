@@ -7,66 +7,66 @@ Every entry is proven from the original machine code; addresses are instruction 
 and can be checked with any disassembler. "Port" describes what this firmware does instead.
 Status: **open** = documented, fix not yet implemented; **approval** = touches calibration/EEPROM
 semantics, fix waits for owner approval; **by design** = documented, judged intended, behaviour kept;
-**fixed** = implemented and verified in the emulator.
+**fixed** = implemented in the new firmware and verified in the emulator; **fixed (fast build)** = only in the production build; **kept** = left as v2.05 on purpose.
 
 ## Summary
 
 | ID | Area | Issue | Severity | Status |
 |---|---|---|---|---|
-| OF-01 | Table lookup | Stale index used when a table search fails | medium | open |
-| OF-02 | Mode setup | Unset register values stored to globals for unhandled cases | medium | open |
-| OF-03 | Mode setup | Unset register stored for out-of-range modes (two functions) | low | open |
-| OF-04 | Multiplier path | Unset register passed to a float multiply for a range byte > 3 (dBm path; not reached with a consistent mode and range) | low | open |
-| OF-05 | Mode helper | Unset register passed on for modes outside the handled set | low | open |
-| OF-06 | GPIO set-up | Pin mask left uninitialised for unhandled arguments | high | open |
-| OF-07 | Calibration | LowZ calibration would write the ACV range-0 record, which LowZ never loads (reachable through OF-36); BEEP shares OHM range 1's record 0x120 | medium | open |
-| OF-08 | Calibration | Entering calibration mode clears the six user current-zero records without confirmation or mention in the manual | medium | open |
-| OF-09 | Calibration | Current zeroing (long REL) stores only the last increment: a second zeroing is lost at the next mode/range change | medium | open |
-| OF-10 | Bluetooth | Packet build and transmit are not synchronised; command echoes can interleave with status frames | medium | open |
-| OF-11 | Bluetooth | First frame after enabling BT can carry stale buffer contents | low | open |
-| OF-12 | Backup | `cal.bin` does not include the six user current-zero records at EEPROM 0x4D0–0x4FF | medium | open |
-| OF-13 | ADC | ADC sample-time register rewritten while the ADC is on, against the reference manual | low | open |
-| OF-14 | Measurement | HY3131 AD1 result decoded with the wrong two's-complement offset: negative codes read 1 LSB high, negative full scale reads as positive | low | open |
-| OF-15 | Measurement | Rounding to display counts truncates toward zero after adding 0.5: negative readings show one count too little in magnitude | medium | open |
-| OF-16 | Measurement | The HY3131 true-RMS result is read, square-rooted and averaged on every RMS interrupt, then never used | low | open |
-| OF-17 | Measurement | PEAK and the 1 kHz filter can be on together; the HY3131 then raises no serviced interrupt, the main display goes blank and stays blank | medium | open |
-| OF-18 | Measurement | PULSE width is computed from a duty cycle truncated to 0.1 %: shown in 5 digits but quantised to 0.1 % of the period, always rounded down | medium | open |
-| OF-19 | Measurement | TEMP re-converts its own previous result on every AD1 sample while MEM view is open; leaving the view shows a wrong temperature | low | open |
-| OF-20 | Measurement | BEEP overload limit inherits the OL-hysteresis flag of the previous mode (OL from 541.67 ohm instead of 550.00 ohm) | low | open |
-| OF-21 | Measurement | Temperature rounding to 0.1 degree tests the digit after the division: tenths digit 5 is never shown, readings up to 0.1 degree off | low | open |
-| OF-22 | Measurement | degC to degF takes the sign from bit 15 and negates with one's complement: up to 0.02 degF error, -40.0 degC shows -39.9 degF | low | open |
-| OF-23 | Settings | DIODE 15 V selection is written to EEPROM 0x12 and loaded at boot, then forced back to 3 V | low | open |
-| OF-24 | Measurement | Cold-junction conversion silently keeps the previous (or power-on zero) value for board temperatures below -20.0 degC | low | open |
-| OF-25 | Measurement | AC+DC: the sum of squares wraps at 2^32, so a large reading is shown as a small one, with no overload and no range change | high | open |
-| OF-26 | Measurement | 1 kHz filter: below 20 Hz, or while no frequency has been measured, the reading is ten times too large | medium | open |
-| OF-27 | Measurement | VA, mode 15 ranges 2/3 (0x20007FDF = 0): burden table read past the end of its rows; range 3 shows OFL for a valid voltage | medium | open |
-| OF-28 | Measurement | One smoothing state shared by two different quantities (AC+DC, burden display, VA): readings are averaged with the other quantity | low | open |
-| OF-29 | Measurement | DC VA burden correction depends on the sign: reversing the polarity changes the corrected magnitude | low | open |
-| OF-30 | Measurement | LowZ shows "0.0" V for 1.1 to 2.4 s each time a voltage appears at the input (100 V, 230 V, 600 V tested), before the real value | high | open |
-| OF-31 | Main loop | LCD update busy-wait in every display commit paces the main loop to the LCD frame: AD1 conversions beyond about 72 per second are dropped and the CPU never sleeps while measuring | low | open |
-| OF-32 | Display | BEEP and FREQ draw the zeroed value at mode entry: "0.00" ohm with open or connected leads, "0.000" Hz with a signal present | low | open |
-| OF-33 | Measurement | CAP timeout range jump draws the old count with the new range's decimal point and the old unit for one display update ("10.000" nF becomes "1.0000" nF) | low | open |
-| OF-34 | Bluetooth | Status frames built during a range change report value 0, no overload, in the new range, with no flag that the value is invalid | low | open |
-| OF-35 | Logging | Log records store the single per-sample value 0x20007D68, not the averaged value that is displayed | low | open |
-| OF-36 | Calibration | A running offset/gain capture is not cancelled by a mode or range change; it completes in the new mode/range and is written to that mode/range's EEPROM record | high | open |
-| OF-37 | Calibration | SETUP short in calibration mode continues into the MEM-short code: refusal beep after a started offset capture; in an AC band slot 2 is overwritten from the slot-1 reading | medium | open |
-| OF-38 | Settings | Contrast 10 and 11 can be selected and are saved to EEPROM 0x1A, but power-up accepts only 12..17 and replaces them with 14 | low | open |
-| OF-39 | ADC | ADC_Init passes an uninitialised stack word that is ORed unmasked into ADC_CR2 (value: core register r6 as left at reset) | low | open |
-| OF-40 | Power-down | The TIM2 jack-warning beep can set the buzzer output again after power-down has cleared it (chirp of about 86 ms after the "-oFF-" beep) | low | open |
-| OF-41 | Display | Setup page 7 (time): the TIM2 handler converts and draws the time through the same digit globals and text buffer the main loop uses for the reading; the reading shows wrong digits for about 0.22 s | low | open |
-| OF-42 | SD card | The disk read routine `FUN_08023F7E` reads one sector whatever sector count the file system asks for; no v2.05 caller asks for more than one | low | open |
-| OF-43 | Keys | The key hold time and the stable-sample count are unlimited byte counters: a key held for about 3.1 s fires its long-press action again, then every 2.57 s; released between 2.6 s and 3.1 s it also fires its short-press action | medium | open |
-| OF-44 | Measurement | ACmV with the 1 kHz filter on: the per-sample value 0x20007D68 (bargraph, log record) lacks the filter correction that the reading and the ACV per-sample value have | medium | open |
-| OF-45 | Bluetooth | `USART_SendData` waits for TXE without a bound inside the TIM2 handler: if it runs in the 148 us between the serial-transfer flag and the USART2 clock enable, the meter hangs until it is switched off | low | open |
-| OF-46 | Measurement | ACV dBm sub display at a zero reading: log10(0) = -infinity is converted to 0xFFFFFFFF and shown as "- 7295" | low | open |
-| OF-47 | Logging | Logging stopped by a low battery stores code 100 and the sub display shows "SdE" with two blank digits; the two-digit routine is right only up to 19 | low | open |
-| OF-48 | Keys | Setup edit: REL or PEAK held longer than 0.5 s steps once more when the key is released (the press is queued, the MEM view excludes it) | low | open |
-| OF-49 | Display | `FUN_0801B090`: the first digit word is n / 10000 without reduction, so n >= 100000 draws a blank or wrong first character; no defined v2.05 input reaches it | low | open |
-| OF-50 | Display | `FUN_0801B77A` passes `LCD_FCR AND mask` instead of the mask to `LCD_ContrastConfig`; the result is always overwritten by the following `lcd_init` | low | open |
-| OF-51 | Runtime library | Soft-float and 64-bit division helpers differ from IEEE 754 / the ARM run-time ABI in listed cases (fdiv exponent 254, subnormal operands of fadd/fsub/dadd/dsub, dsqrt special operands, division by zero); none reached by v2.05 code | low | open |
-| OF-52 | Battery | The ADC-to-battery conversion is a straight line that matches the hardware divider only near 6.4 V: the gauge reads up to 6 % low near empty and the low-battery warning starts at 4.31 V instead of the displayed 4.1 V | low | open |
-| OF-53 | Measurement | HY3131 interrupt flags are cleared by writing 0 after the status burst read: a flag raised in between is lost; a lost counter-done flag freezes the frequency reading until the next mode or range apply | medium | open |
-| OF-54 | Measurement | The status burst reads the counter registers before INTF: a count that completes in between is seen as done with stale counter values; in AC modes the frequency correction then uses frequency 0 | medium | open |
+| OF-01 | Table lookup | Stale index used when a table search fails | medium | fixed |
+| OF-02 | Mode setup | Unset register values stored to globals for unhandled cases | medium | fixed |
+| OF-03 | Mode setup | Unset register stored for out-of-range modes (two functions) | low | fixed |
+| OF-04 | Multiplier path | Unset register passed to a float multiply for a range byte > 3 (dBm path; not reached with a consistent mode and range) | low | fixed |
+| OF-05 | Mode helper | Unset register passed on for modes outside the handled set | low | fixed |
+| OF-06 | GPIO set-up | Pin mask left uninitialised for unhandled arguments | high | fixed |
+| OF-07 | Calibration | LowZ calibration would write the ACV range-0 record, which LowZ never loads (reachable through OF-36); BEEP shares OHM range 1's record 0x120 | medium | fixed |
+| OF-08 | Calibration | Entering calibration mode clears the six user current-zero records without confirmation or mention in the manual | medium | fixed |
+| OF-09 | Calibration | Current zeroing (long REL) stores only the last increment: a second zeroing is lost at the next mode/range change | medium | fixed |
+| OF-10 | Bluetooth | Packet build and transmit are not synchronised; command echoes can interleave with status frames | medium | fixed |
+| OF-11 | Bluetooth | First frame after enabling BT can carry stale buffer contents | low | fixed |
+| OF-12 | Backup | `cal.bin` does not include the six user current-zero records at EEPROM 0x4D0–0x4FF | medium | fixed |
+| OF-13 | ADC | ADC sample-time register rewritten while the ADC is on, against the reference manual | low | fixed |
+| OF-14 | Measurement | HY3131 AD1 result decoded with the wrong two's-complement offset: negative codes read 1 LSB high, negative full scale reads as positive | low | fixed |
+| OF-15 | Measurement | Rounding to display counts truncates toward zero after adding 0.5: negative readings show one count too little in magnitude | medium | fixed |
+| OF-16 | Measurement | The HY3131 true-RMS result is read, square-rooted and averaged on every RMS interrupt, then never used | low | fixed |
+| OF-17 | Measurement | PEAK and the 1 kHz filter can be on together; the HY3131 then raises no serviced interrupt, the main display goes blank and stays blank | medium | fixed |
+| OF-18 | Measurement | PULSE width is computed from a duty cycle truncated to 0.1 %: shown in 5 digits but quantised to 0.1 % of the period, always rounded down | medium | fixed |
+| OF-19 | Measurement | TEMP re-converts its own previous result on every AD1 sample while MEM view is open; leaving the view shows a wrong temperature | low | fixed |
+| OF-20 | Measurement | BEEP overload limit inherits the OL-hysteresis flag of the previous mode (OL from 541.67 ohm instead of 550.00 ohm) | low | fixed |
+| OF-21 | Measurement | Temperature rounding to 0.1 degree tests the digit after the division: tenths digit 5 is never shown, readings up to 0.1 degree off | low | fixed |
+| OF-22 | Measurement | degC to degF takes the sign from bit 15 and negates with one's complement: up to 0.02 degF error, -40.0 degC shows -39.9 degF | low | fixed |
+| OF-23 | Settings | DIODE 15 V selection is written to EEPROM 0x12 and loaded at boot, then forced back to 3 V | low | fixed |
+| OF-24 | Measurement | Cold-junction conversion silently keeps the previous (or power-on zero) value for board temperatures below -20.0 degC | low | fixed |
+| OF-25 | Measurement | AC+DC: the sum of squares wraps at 2^32, so a large reading is shown as a small one, with no overload and no range change | high | fixed |
+| OF-26 | Measurement | 1 kHz filter: below 20 Hz, or while no frequency has been measured, the reading is ten times too large | medium | fixed |
+| OF-27 | Measurement | VA, mode 15 ranges 2/3 (0x20007FDF = 0): burden table read past the end of its rows; range 3 shows OFL for a valid voltage | medium | fixed |
+| OF-28 | Measurement | One smoothing state shared by two different quantities (AC+DC, burden display, VA): readings are averaged with the other quantity | low | fixed |
+| OF-29 | Measurement | DC VA burden correction depends on the sign: reversing the polarity changes the corrected magnitude | low | fixed |
+| OF-30 | Measurement | LowZ shows "0.0" V for 1.1 to 2.4 s each time a voltage appears at the input (100 V, 230 V, 600 V tested), before the real value | high | fixed |
+| OF-31 | Main loop | LCD update busy-wait in every display commit paces the main loop to the LCD frame: AD1 conversions beyond about 72 per second are dropped and the CPU never sleeps while measuring | low | fixed (fast build) |
+| OF-32 | Display | BEEP and FREQ draw the zeroed value at mode entry: "0.00" ohm with open or connected leads, "0.000" Hz with a signal present | low | fixed (fast build) |
+| OF-33 | Measurement | CAP timeout range jump draws the old count with the new range's decimal point and the old unit for one display update ("10.000" nF becomes "1.0000" nF) | low | fixed |
+| OF-34 | Bluetooth | Status frames built during a range change report value 0, no overload, in the new range, with no flag that the value is invalid | low | fixed |
+| OF-35 | Logging | Log records store the single per-sample value 0x20007D68, not the averaged value that is displayed | low | fixed |
+| OF-36 | Calibration | A running offset/gain capture is not cancelled by a mode or range change; it completes in the new mode/range and is written to that mode/range's EEPROM record | high | fixed |
+| OF-37 | Calibration | SETUP short in calibration mode continues into the MEM-short code: refusal beep after a started offset capture; in an AC band slot 2 is overwritten from the slot-1 reading | medium | fixed |
+| OF-38 | Settings | Contrast 10 and 11 can be selected and are saved to EEPROM 0x1A, but power-up accepts only 12..17 and replaces them with 14 | low | fixed |
+| OF-39 | ADC | ADC_Init passes an uninitialised stack word that is ORed unmasked into ADC_CR2 (value: core register r6 as left at reset) | low | fixed |
+| OF-40 | Power-down | The TIM2 jack-warning beep can set the buzzer output again after power-down has cleared it (chirp of about 86 ms after the "-oFF-" beep) | low | fixed |
+| OF-41 | Display | Setup page 7 (time): the TIM2 handler converts and draws the time through the same digit globals and text buffer the main loop uses for the reading; the reading shows wrong digits for about 0.22 s | low | fixed |
+| OF-42 | SD card | The disk read routine `FUN_08023F7E` reads one sector whatever sector count the file system asks for; no v2.05 caller asks for more than one | low | fixed |
+| OF-43 | Keys | The key hold time and the stable-sample count are unlimited byte counters: a key held for about 3.1 s fires its long-press action again, then every 2.57 s; released between 2.6 s and 3.1 s it also fires its short-press action | medium | fixed |
+| OF-44 | Measurement | ACmV with the 1 kHz filter on: the per-sample value 0x20007D68 (bargraph, log record) lacks the filter correction that the reading and the ACV per-sample value have | medium | fixed |
+| OF-45 | Bluetooth | `USART_SendData` waits for TXE without a bound inside the TIM2 handler: if it runs in the 148 us between the serial-transfer flag and the USART2 clock enable, the meter hangs until it is switched off | low | fixed |
+| OF-46 | Measurement | ACV dBm sub display at a zero reading: log10(0) = -infinity is converted to 0xFFFFFFFF and shown as "- 7295" | low | fixed |
+| OF-47 | Logging | Logging stopped by a low battery stores code 100 and the sub display shows "SdE" with two blank digits; the two-digit routine is right only up to 19 | low | fixed |
+| OF-48 | Keys | Setup edit: REL or PEAK held longer than 0.5 s steps once more when the key is released (the press is queued, the MEM view excludes it) | low | fixed |
+| OF-49 | Display | `FUN_0801B090`: the first digit word is n / 10000 without reduction, so n >= 100000 draws a blank or wrong first character; no defined v2.05 input reaches it | low | fixed |
+| OF-50 | Display | `FUN_0801B77A` passes `LCD_FCR AND mask` instead of the mask to `LCD_ContrastConfig`; the result is always overwritten by the following `lcd_init` | low | fixed |
+| OF-51 | Runtime library | Soft-float and 64-bit division helpers differ from IEEE 754 / the ARM run-time ABI in listed cases (fdiv exponent 254, subnormal operands of fadd/fsub/dadd/dsub, dsqrt special operands, division by zero); none reached by v2.05 code | low | kept (latent, unreachable) |
+| OF-52 | Battery | The ADC-to-battery conversion is a straight line that matches the hardware divider only near 6.4 V: the gauge reads up to 6 % low near empty and the low-battery warning starts at 4.31 V instead of the displayed 4.1 V | low | fixed |
+| OF-53 | Measurement | HY3131 interrupt flags are cleared by writing 0 after the status burst read: a flag raised in between is lost; a lost counter-done flag freezes the frequency reading until the next mode or range apply | medium | fixed |
+| OF-54 | Measurement | The status burst reads the counter registers before INTF: a count that completes in between is seen as done with stale counter values; in AC modes the frequency correction then uses frequency 0 | medium | fixed |
 
 ## Details
 

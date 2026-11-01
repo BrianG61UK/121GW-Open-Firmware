@@ -9,11 +9,12 @@
 @   HW-07  every wait on an LCD status flag is bounded by LCD_WAIT_POLLS (config.inc); lcd_init gives up with the
 @          controller disabled (lcd_init_fault = 1) instead of hanging;
 @   OF-05  fn_0801B77A leaves LCD_FCR alone for a contrast setting outside 10..17;
+@   OF-50  fn_0801B77A passes the contrast mask to fn_08020472, not LCD_FCR AND mask;
 @   IMP-06 (LOOP_V205 = 0 only) the commit never waits for UDR: a commit that finds the previous update request still
 @          pending is deferred (lcd_commit_pending) and repeated by lcd_commit_retry, which fn_08016D34 calls on every
 @          pass; the eight words are written only when they differ from the last committed copy (lcd_last).
 @ With LOOP_V205 = 1 the routines behave as v2.05 (LCD_RAM word sequence, UDR request, partial commit mask) apart from
-@ HW-07 and OF-05.
+@ HW-07, OF-05 and OF-50.
 @ Context: drawing into the shadow and committing are main-only (DESIGN.md 3.4, NF-11).
 @ =============================================================================
 
@@ -695,13 +696,13 @@ ENDFUNC fn_0801B708
 @ In       : -
 @ Out      : -
 @ Context  : main only
-@ RAM      : reads lcd_contrast (0x20000237), LCD_FCR
+@ RAM      : reads lcd_contrast (0x20000237); writes LCD_FCR (CC field, through fn_08020472)
 @ Spec     : analysis/lcd_map.md 1
 @ Deviation: OF-05 (a setting outside 10..17 no longer reaches fn_08020472 with an unset r4: LCD_FCR is left unchanged,
-@            as fn_0801B708 does)
-@ Note     : for the settings 11..17 v2.05 passes (LCD_FCR AND mask) to fn_08020472, not the mask, so CC can only lose
-@            bits here; both calls of set_state_reset (from main 0x08024B56 and enter_stop_and_reinit 0x08024EF2) are followed by lcd_init (0x08024B62, 0x08024EFC), whose fn_0801B708
-@            writes CC completely.  Kept as in v2.05 (frame-identical).
+@            as fn_0801B708 does); OF-50 (fn_08020472 gets the mask (setting - 10) << 10, as fn_0801B708 passes it; v2.05
+@            passed LCD_FCR AND mask, so CC could only lose bits)
+@ Note     : both calls of set_state_reset (from main 0x08024B56 and enter_stop_and_reinit 0x08024EF2) are followed by lcd_init
+@            (0x08024B62, 0x08024EFC), whose fn_0801B708 writes CC again with the same setting.
 @ Clobbers : r0, r1, r2 (v2.05 regeffects.txt)
 @ -----------------------------------------------------------------------------
 FUNC fn_0801B77A
@@ -724,54 +725,30 @@ FUNC fn_0801B77A
     beq .L0801B7F0                           @ 0801B79A
     b .L0801B800                             @ 0801B79C setting > 17: leave LCD_FCR alone (OF-05)
 .L0801B79E:                                @ reached from 0801B782 beq (equal / zero)
-    ldr r0, =LCD_FCR                         @ 0801B79E
-    ldr r0, [r0, #0]                         @ 0801B7A0
-    movs r0, #0                              @ 0801B7A2
-    movs r4, r0                              @ 0801B7A4
+    movs r4, #0                              @ 0801B7A2 setting 10: mask 0 (v2.05 read LCD_FCR first and discarded the value)
     b .L0801B7FA                             @ 0801B7A6
 .L0801B7A8:                                @ reached from 0801B78A bcc (unsigned <)
-    ldr r0, =LCD_FCR                         @ 0801B7A8
-    ldr r0, [r0, #0]                         @ 0801B7AA
-    ands.w r0, r0, #1024                     @ 0801B7AC
-    movs r4, r0                              @ 0801B7B0
+    mov.w r4, #1024                       @ OF-50 0801B7A8: the mask itself (v2.05 passed LCD_FCR AND mask)
     b .L0801B7FA                             @ 0801B7B2
 .L0801B7B4:                                @ reached from 0801B788 beq (equal / zero)
-    ldr r0, =LCD_FCR                         @ 0801B7B4
-    ldr r0, [r0, #0]                         @ 0801B7B6
-    ands.w r0, r0, #2048                     @ 0801B7B8
-    movs r4, r0                              @ 0801B7BC
+    mov.w r4, #2048                       @ OF-50 0801B7B4: the mask itself (v2.05 passed LCD_FCR AND mask)
     b .L0801B7FA                             @ 0801B7BE
 .L0801B7C0:                                @ reached from 0801B790 bcc (unsigned <)
-    ldr r0, =LCD_FCR                         @ 0801B7C0
-    ldr r0, [r0, #0]                         @ 0801B7C2
-    ands.w r0, r0, #3072                     @ 0801B7C4
-    movs r4, r0                              @ 0801B7C8
+    mov.w r4, #3072                       @ OF-50 0801B7C0: the mask itself (v2.05 passed LCD_FCR AND mask)
     b .L0801B7FA                             @ 0801B7CA
 .L0801B7CC:                                @ reached from 0801B78E beq (equal / zero)
-    ldr r0, =LCD_FCR                         @ 0801B7CC
-    ldr r0, [r0, #0]                         @ 0801B7CE
-    ands.w r0, r0, #4096                     @ 0801B7D0
-    movs r4, r0                              @ 0801B7D4
+    mov.w r4, #4096                       @ OF-50 0801B7CC: the mask itself (v2.05 passed LCD_FCR AND mask)
     b .L0801B7FA                             @ 0801B7D6
 .L0801B7D8:                                @ reached from 0801B796 bcc (unsigned <)
-    ldr r0, =LCD_FCR                         @ 0801B7D8
-    ldr r0, [r0, #0]                         @ 0801B7DA
-    ands.w r0, r0, #5120                     @ 0801B7DC
-    movs r4, r0                              @ 0801B7E0
+    mov.w r4, #5120                       @ OF-50 0801B7D8: the mask itself (v2.05 passed LCD_FCR AND mask)
     b .L0801B7FA                             @ 0801B7E2
 .L0801B7E4:                                @ reached from 0801B794 beq (equal / zero)
-    ldr r0, =LCD_FCR                         @ 0801B7E4
-    ldr r0, [r0, #0]                         @ 0801B7E6
-    ands.w r0, r0, #6144                     @ 0801B7E8
-    movs r4, r0                              @ 0801B7EC
+    mov.w r4, #6144                       @ OF-50 0801B7E4: the mask itself (v2.05 passed LCD_FCR AND mask)
     b .L0801B7FA                             @ 0801B7EE
 .L0801B7F0:                                @ reached from 0801B79A beq (equal / zero)
-    ldr r0, =LCD_FCR                         @ 0801B7F0
-    ldr r0, [r0, #0]                         @ 0801B7F2
-    ands.w r0, r0, #7168                     @ 0801B7F4
-    movs r4, r0                              @ 0801B7F8
+    mov.w r4, #7168                       @ OF-50 0801B7F0: the mask itself (v2.05 passed LCD_FCR AND mask)
 .L0801B7FA:                                @ reached from 0801B7A6 b; 0801B7B2 b; 0801B7BE b; 0801B7CA b; 0801B7D6 b; 0801B7E2 b; 0801B7EE b; falls in
-    @ r4 = new CC field value (setting 10: 0; settings 11..17: LCD_FCR AND ((setting - 10) << 10)); apply it
+    @ r4 = new CC field value (setting - 10) << 10 (OF-50: the mask; v2.05 used LCD_FCR AND mask); apply it
 
     movs r0, r4                              @ 0801B7FA
     bl fn_08020472                           @ 0801B7FC

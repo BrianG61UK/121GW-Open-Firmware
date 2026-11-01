@@ -442,7 +442,8 @@ ENDFUNC fn_08016A64
 @            key_short_ev, key_short_code, key_long_ev, key_long_code; reads key_window 0x2000022E,
 @            key_win_b 0x200080CE, key_mem_view 0x20007FE4, key_setup_edit 0x2000806E
 @ Spec     : analysis/keys_setup.md 2.1
-@ Deviation: OF-43 (key_stable and key_hold saturate at 0xFF instead of wrapping)
+@ Deviation: OF-43 (key_stable and key_hold saturate at 0xFF instead of wrapping); OF-48 (the queued press of REL / PEAK in
+@            setup edit is dropped once the auto-repeat has stepped)
 @ -----------------------------------------------------------------------------
 FUNC process_pg8_15_press_release
     push {r4, lr}                       @ 0801688C
@@ -620,6 +621,18 @@ FUNC process_pg8_15_press_release
     strb r0, [r1]                       @ 080169DE
     movs r0, #1                         @ 080169E0
     bl fn_08016A64                      @ 080169E2
+    @ OF-48: the press of REL / PEAK in setup edit is queued at 0x08016A4E and v2.05 dispatches it at the release even after the
+    @ auto-repeat has stepped (the hold time stays at 1, so the cancel at 0x08016984 never runs): a hold of more than 0.5 s
+    @ stepped once more at the release.  Once the first repeat has fired (key_rep_phase != 0) the queued press is dropped.
+    @ A press shorter than the repeat delay (50 ticks in edit) still steps once, at the release, as in v2.05.  (In the MEM
+    @ view nothing is queued, so the store changes nothing there.)
+    ldr r0, =key_rep_phase
+    ldrb r0, [r0]
+    cmp r0, #0
+    beq .Lpr_done                       @ no repeat yet: the queued press stays
+    movs r0, #0
+    ldr r1, =key_queued
+    strb r0, [r1]                       @ the repeat has stepped: no second step at the release
     b .Lpr_done                         @ 080169E6
 
 @ hold time 0 = a new press, accepted only when the lockout has run out

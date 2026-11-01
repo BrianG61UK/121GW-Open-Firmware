@@ -759,3 +759,10 @@ NF-11+IMP-06  lcd  setup_time      build == production and step in 20..27
 # STOP and wake: apo_stop_wake_short (NF-05 entries above); NF-06 (the EXTI wake lines are disarmed after the wake) changes no
 #   compared stream there; apo_timing_wake and apo_disabled are long scenarios and are not run (owner decision).
 # No deviation (v2.05 behaviour kept): OF-44 .. OF-51.  OF-52, OF-53, OF-54: entries above (OF-54 in the baseline read entry).
+
+# OF-30 in the strict build (src/mres/lowz.s, src/ui/refresh.s, now active in both builds): while a LowZ voltage is not yet
+# confirmed the port shows five dashes where v2.05 forces "0.0"; measured with 100 V DC: dashes 0.26..1.25 s after the
+# step, real value from 1.26 s in both images, HV symbol at 0.58 s (v2.05) / 0.59 s (port).
+OF-30  lcd  lowz_values  build == baseline and main == "----.-"
+OF-30  lcd  lowz_values  build == baseline and since in 0..2.6
+# (v2.05 forces "0.0" for up to 2.4 s with 230 V AC; the port shows dashes, then the real value as soon as it is confirmed)

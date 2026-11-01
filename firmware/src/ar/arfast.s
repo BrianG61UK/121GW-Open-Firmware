@@ -159,20 +159,26 @@ ENDFUNC ar_thr_low
 
 @ -----------------------------------------------------------------------------
 @ ar_apply - end of an apply, baseline image
-@ Replaces : nothing (new; the v2.05 algorithm has no apply hook, OF-20 is the fix)
+@ Replaces : nothing (new; the v2.05 algorithm has no apply hook, OF-20 and OF-30 are the fixes)
 @ In       : r0 = mode, r1 = range (not used here)
 @ Out      : -
 @ Clobbers : r2, r3
 @ Context  : main (tail call of fn_0800DB48)
-@ RAM      : writes 0x200080F8 (mode_ol_latch) = 0
-@ Spec     : ORIGINAL_FIRMWARE_ISSUES.md OF-20
-@ Deviation: OF-20
+@ RAM      : writes 0x200080F8 (mode_ol_latch) = 0; ui_blank_req = 0 in every mode but LowZ
+@ Spec     : ORIGINAL_FIRMWARE_ISSUES.md OF-20, OF-30
+@ Deviation: OF-20, OF-30
+@ The dashes request of the LowZ detector (OF-30) belongs to mode 0 only: an apply of any other mode withdraws it, as the
+@ production ar_apply does; in mode 0 (also the AC/DC re-apply every 5 means) the byte is owned by the detector.
 @ -----------------------------------------------------------------------------
 FUNC ar_apply
     movs r3, #0
     ldr r2, =ar_ol_latch
     strb r3, [r2]                           @ the overload hysteresis starts clear at every apply (OF-20)
-    bx lr
+    uxtb r0, r0
+    cbz r0, 1f                              @ LowZ: the detector owns ui_blank_req
+    ldr r2, =ui_blank_req
+    strb r3, [r2]                           @ OF-30: another mode: no dashes pending
+1:  bx lr
 ENDFUNC ar_apply
 
 @ -----------------------------------------------------------------------------

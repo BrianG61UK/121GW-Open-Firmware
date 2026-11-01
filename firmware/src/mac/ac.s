@@ -465,7 +465,8 @@ ENDFUNC fn_0800699A
 @            0x2000808E cal_req_gain, 0x200080B7 peak_hold
 @            writes 0x20007D64 reading, 0x20007D68 sample_value, 0x20007E08 cal_zero_capture, 0x2000805D new_reading
 @ Spec     : analysis/hy3131_modes_ac_current.md 4, 7.2
-@ Deviation: IMP-01 (production build: the per-sample value may already have been made by mac_sample_precheck)
+@ Deviation: IMP-01 (production build: the per-sample value may already have been made by mac_sample_precheck);
+@            OF-44 (both builds: the per-sample value gets the 1 kHz filter correction, which v2.05 applies to the mean only)
 @ -----------------------------------------------------------------------------
 FUNC fn_080069B4
     push {r7, lr}                        @ 080069B4
@@ -562,7 +563,7 @@ FUNC fn_080069B4
     ldr r1, =v_2000805D                  @ 08006A7E
     strb r0, [r1]                        @ 08006A82  new_reading (u8) = 1
 .Lmac_acmv_sample:   @ per-sample part
-    @ per-sample value from the latest sample: gain and frequency correction (no 1 kHz filter correction here)
+    @ per-sample value from the latest sample: gain and frequency correction, then (OF-44) the 1 kHz filter correction
 .if LOOP_V205 == 0
     ldr r1, =mac_ps_done                    @ IMP-01: the per-sample value was made by mac_sample_precheck
     ldrb r0, [r1]
@@ -582,6 +583,20 @@ FUNC fn_080069B4
     bl fn_0800742C                       @ 08006A94  MAC: AC frequency correction (r0 = mode, r1 = value)
     ldr r1, =v_20007D68                  @ 08006A98
     str r0, [r1]                         @ 08006A9A  sample_value (u32) = r0
+    @ OF-44: 1 kHz filter correction of the x10-scaled per-sample value, as the ACV handler does at 0x08006C50..0x08006C76
+    @ (v2.05 has no such block here: the bargraph and the log record followed the unfiltered sample).  The handler runs in
+    @ mode 4 only (ad1_ready_dispatch 0x0800629E), so the mode test of the ACV block is not repeated.
+    ldr r0, =filter_1khz
+    ldrb r0, [r0]
+    cmp r0, #1
+    bne 9f                               @ filter off: sample_value stays as it is
+    ldr r0, =v_20007D68
+    ldr r0, [r0]                         @ r0 = sample_value
+    movs r1, #0xa
+    muls r0, r1, r0                      @ ten times the value (fn_08008468 divided by ten)
+    bl fn_08006D40                       @ MAC: 1 kHz filter correction
+    ldr r1, =v_20007D68
+    str r0, [r1]                         @ sample_value (u32) = r0
 9:
     pop {r0, pc}                         @ 08006A9C
     .ltorg
