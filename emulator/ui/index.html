@@ -62,7 +62,7 @@
     <label><input type="checkbox" id="unproven"> show unproven glass elements</label>
     <label title="needs an image: start the emulator with --sdcard PATH"><input type="checkbox" id="sdcard"> SD card inserted</label> <span id="sdinfo"></span>
     <div style="margin-top:6px">
-      <label>PA5 battery sense <input type="range" id="PA5" min="0" max="3.3" step="0.01"> <span id="PA5v"></span> V</label>
+      <label title="PA5 = B+ &#215; 330k / 1330k (R69 1M, R70 330k)">battery (B+) <input type="range" id="BAT" min="3" max="10" step="0.05"> <span id="BATv"></span> V</label>
       <label>PA4 thermistor <input type="range" id="PA4" min="0" max="3.3" step="0.01"> <span id="PA4v"></span> V</label>
     </div>
     <div id="status" style="margin-top:8px"></div>
@@ -141,7 +141,8 @@ const JACKS = [['A',163,1183],['mA',313,1183],['COM',462,1183],['V',532,1053]]; 
 for (const [j, x, y] of JACKS) { const e = document.createElement('div'); e.className = 'abs jack'; e.title = j + ' jack';
   place(e, x - 36, y - 36, x + 36, y + 36); e.onclick = () => post({jack:j, plugged:!e.classList.contains('plugged')}); panel.appendChild(e); jackEls[j] = e; }
 // analog inputs
-for (const p of ['PA5','PA4']) { const s = document.getElementById(p); s.oninput = () => { document.getElementById(p+'v').textContent = (+s.value).toFixed(2); post({analog:p, volts:+s.value}); }; }
+{ const s = document.getElementById('PA4'); s.oninput = () => { document.getElementById('PA4v').textContent = (+s.value).toFixed(2); post({analog:'PA4', volts:+s.value}); }; }
+{ const s = document.getElementById('BAT'); s.oninput = () => { document.getElementById('BATv').textContent = (+s.value).toFixed(2); post({battery:+s.value}); }; }
 let analogInit = false;
 // stimulus: {input: {kind, value, ac, freq, duty, width, dc, amps, board}} (app.py command 'input', fields: emu/frontend.py)
 let stimInit = false;
@@ -195,7 +196,9 @@ async function tick() {
     if (s.sdcard) { const sd = document.getElementById('sdcard'); sd.disabled = !s.sdcard.configured; sd.checked = !!s.sdcard.present;
       document.getElementById('sdinfo').textContent = s.sdcard.configured ? `(${s.sdcard.image}, ${s.sdcard.capacity_mb} MiB)` : '(no image configured)'; }
     // sliders follow the machine (a board temperature moves PA4) unless being dragged
-    if (s.analog) { for (const p of ['PA5','PA4']) if (!analogInit || document.activeElement !== sv(p)) { sv(p).value = s.analog[p]; sv(p+'v').textContent = s.analog[p].toFixed(2); } analogInit = true; }
+    if (s.analog) { if (!analogInit || document.activeElement !== sv('PA4')) { sv('PA4').value = s.analog.PA4; sv('PA4v').textContent = s.analog.PA4.toFixed(2); }
+      if (s.battery !== undefined && (!analogInit || document.activeElement !== sv('BAT'))) { sv('BAT').value = s.battery; sv('BATv').textContent = s.battery.toFixed(2); }
+      analogInit = true; }
     const lg = document.getElementById('log'), atEnd = lg.scrollTop + lg.clientHeight >= lg.scrollHeight - 4;
     lg.textContent = s.log.join('\n'); if (atEnd) lg.scrollTop = lg.scrollHeight;
   } catch (e) { console.error(e); }

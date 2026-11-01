@@ -35,6 +35,7 @@ from emu.frontend import make_frontend, FrontendUnavailable
 from emu.safety import Safety
 
 APP_BASE = 0x08006000
+BAT_SENSE_RATIO = 330e3 / (1e6 + 330e3)   # PA5 / B+ (R69 1M, R70 330k; analysis/frontend_netlist.md)
 
 
 def parse_option_bytes(path):
@@ -110,11 +111,11 @@ class Emulator:
         self.usart2 = USART(0x40004400, 38, 'USART2')
         m.add_periph(0x40004400, 0x400, self.usart2)
         # ADC: PA5 = battery sense, PA4 = thermistor (firmware: adc_ch5_process / adc_ch4_process).
-        # Defaults: 6 V pack through R69 1M / R70 330k (schematic text; topology still to be confirmed
-        # on the drawing) = 1.49 V; NTC1 10k vs R38 10k at 25 C = half of VDDA.  Both are UI-adjustable.
+        # Defaults: B+ = 6 V (BAT1 "6V") through R69 1M / R70 330k (wire-traced, analysis/frontend_netlist.md) at PA5;
+        # NTC1 10k vs R38 10k at 25 C = half of VDDA.  Both are UI-adjustable (battery as B+, see command 'battery').
         self.adc = ADC(vref_volts=3.3)
         m.add_periph(0x40012400, 0x400, self.adc)
-        self.analog = dict(self.board_state.get('analog', {'PA5': 1.49, 'PA4': 1.65}))
+        self.analog = dict(self.board_state.get('analog', {'PA5': 6.0 * BAT_SENSE_RATIO, 'PA4': 1.65}))
         self.adc.set_channel_volts(5, self.analog['PA5'])
         self.adc.set_channel_volts(4, self.analog['PA4'])
         self.ble_rx = []
@@ -278,6 +279,7 @@ class Emulator:
                 'jacks': sorted(self.board.jacks),
                 'unmodelled': len(m.unmodelled),
                 'analog': self.analog,
+                'battery': self.analog['PA5'] / BAT_SENSE_RATIO,
                 'stimulus': self.frontend.stim,
                 'environment': dict(self.frontend.env),
                 'frontend': dict(self.frontend.status(), error=self.frontend_error),
@@ -314,6 +316,14 @@ class Emulator:
                 self.power_cycle(); self.running = True
             elif 'sysreset' in c:                # same as the firmware writing SCB_AIRCR.SYSRESETREQ; no UI button
                 self.system_reset('AIRCR.SYSRESETREQ')
+            elif 'battery' in c:
+                # battery (B+) voltage: PA5 sees it through R69 1M / R70 330k (analysis/frontend_netlist.md, battery
+                # sense: B+ - R69 - LOW_BAT (PA5) - R70 - VSS; ratio 330/1330 at printed values)
+                vbat = float(c['battery'])
+                if not 0.0 <= vbat <= 12.0:
+                    raise ValueError('battery voltage out of range 0..12 V')
+                self.analog['PA5'] = vbat * BAT_SENSE_RATIO
+                self.adc.set_channel_volts(5, self.analog['PA5'])
             elif 'analog' in c:
                 pin, volts = c['analog'], float(c['volts'])
                 ch = {'PA5': 5, 'PA4': 4}[pin]

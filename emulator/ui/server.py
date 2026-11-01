@@ -5,7 +5,7 @@ GET  /assets/...     static assets (LCD layers, bit map)
 GET  /state          JSON snapshot: LCD RAM, outputs, run state, recent log lines
 POST /input          JSON command: {"key": name, "down": bool} | {"dial": position} |
                      {"jack": name, "plugged": bool} | {"run": bool} | {"reset": true} | {"speed": x} |
-                     {"analog": "PA4"|"PA5", "volts": v} |
+                     {"analog": "PA4"|"PA5", "volts": v} | {"battery": B+ volts (PA5 via R69/R70)} |
                      {"input": {"kind": "open"|"V"|"A"|"ohm"|"Hz"|"F"|"degC"|"diode"|"VA", "value": x,
                                 "ac": bool, "freq": f, "duty": d, "width": s, "dc": v, "amps": a, "board": t}} |
                      {"environment": {"pickup_hz": 50|60, "pickup_v": v, "coupling_pf": c, "drift": d}}
