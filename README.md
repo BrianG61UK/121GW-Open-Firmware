@@ -1,5 +1,7 @@
 # EEVblog 121GW — open firmware port and emulator
 
+<p align="center"><img src="emulator/ui/assets/panel.png" alt="121GW" width="260"></p>
+
 | Folder | Content |
 |---|---|
 | `firmware/` | new firmware for the 121GW (STM32L152ZD) in hand-written Thumb-2 assembly, loaded by the meter's existing bootloader at 0x08006000 |
