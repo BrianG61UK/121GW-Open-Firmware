@@ -21,4 +21,6 @@
   not included: `<dir>` must hold `bootloader.bin`, `EEVBlog2_05.bin` and `option.bytes` read from a meter.
 - `emulator/diff/run.py` compares two firmware images scenario by scenario (see its docstring).
 
-Not for publication until approved by EEVblog.
+## Licence
+
+Free to use, modify and share; selling or bundling only by zombu4 and EEVblog (David L. Jones). See `LICENSE`.

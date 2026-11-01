@@ -7,4 +7,4 @@
 !/emulator/
 __pycache__/
 *.pyc
-
+/firmware/build/
