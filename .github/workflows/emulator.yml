@@ -138,6 +138,9 @@ jobs:
         run: |
           python -I emulator/tools/prepare_data.py --dist dist
           python -I emulator/packaging/make_icons.py build/icons
+      - name: Emulator from source (diagnostic)
+        run: |
+          python -X faulthandler -I emulator/scripts/example_headless.py 2_fast || echo "source run exit code $?"
       - name: Application folder
         working-directory: emulator
         run: |
@@ -165,7 +168,7 @@ jobs:
           app_pid=$!
           python -I emulator/tools/smoke.py --url http://127.0.0.1:8131 --timeout 300 --expect-direct --expect-synthetic || {
             date -u +"fail %H:%M:%S"; tasklist | grep -i 121gw || echo "process not running"
-            wait "$app_pid"; echo "application exit code $?"
+            code=0; wait "$app_pid" || code=$?; echo "application exit code $code"
             netstat -ano | grep 8131 || echo "nothing listens on 8131"; cat app.log; exit 1; }
           curl -fsS -X POST -H 'X-121GW: quit' http://127.0.0.1:8131/quit
           sleep 2
