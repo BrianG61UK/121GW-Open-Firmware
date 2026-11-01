@@ -133,18 +133,30 @@ jobs:
           name: firmware-dist
           path: dist
       - name: Install build tools
-        run: python -m pip install unicorn==2.1.4 capstone==5.0.9 pyinstaller==6.22.3 pillow
+        run: python -m pip install unicorn==2.1.4 capstone==5.0.9 pillow
       - name: Prepare the emulator data and icons
         run: |
           python -I emulator/tools/prepare_data.py --dist dist
           python -I emulator/packaging/make_icons.py build/icons
-      - name: Application folder
-        working-directory: emulator
+      - name: Application folder (embeddable Python)
+        # Windows ships the official embeddable CPython with the emulator sources: the emulator is proven to run under
+        # python.exe, while a PyInstaller build of it ended with 0xC0000409 (fail-fast) as soon as emulation started.
         run: |
-          python -I ../.github/scripts/check_no_originals.py data
-          EMU_VERSION="$RELEASE_TAG" EMU_ICON="$(cygpath -m "$PWD/../build/icons/121gw-emulator.ico")" \
-            pyinstaller --noconfirm packaging/121gw_emulator.spec
-          python -I ../.github/scripts/check_no_originals.py dist
+          set -euo pipefail
+          python -I .github/scripts/check_no_originals.py emulator/data
+          out=emulator/dist/121gw-emulator; rm -rf "$out"; mkdir -p "$out/app"
+          curl -fsSL -o pyembed.zip https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip
+          python -I .github/scripts/sha256sum.py pyembed.zip
+          powershell -NoProfile -Command "Expand-Archive -Path pyembed.zip -DestinationPath '$out/python'"
+          # module search path of the embedded interpreter: its stdlib, its site-packages and the emulator sources
+          printf 'python311.zip\r\n.\r\nLib\\site-packages\r\n..\\app\r\nimport site\r\n' > "$out/python/python311._pth"
+          python -m pip install --no-compile --target "$out/python/Lib/site-packages" unicorn==2.1.4 capstone==5.0.9
+          cp -r emulator/app.py emulator/launcher.py emulator/emu emulator/ui emulator/data "$out/app/"
+          cp build/icons/121gw-emulator.ico "$out/app/"
+          cp LICENSE "$out/"
+          find "$out" -name __pycache__ -prune -exec rm -rf {} +
+          python -I .github/scripts/check_no_originals.py "$out"
+          "$out/python/python.exe" -c "import unicorn, capstone, app; print('embedded interpreter ok')"
       - name: Installer (Inno Setup)
         run: |
           set -euo pipefail
@@ -160,7 +172,7 @@ jobs:
           $setup = "121GW-Open-Firmware-Emulator-$env:RELEASE_TAG-windows-x64.exe"
           $dir = Join-Path $PWD "installed"
           Start-Process -FilePath ".\$setup" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$dir" -Wait
-          $p = Start-Process -FilePath (Join-Path $dir "121gw-emulator.exe") -ArgumentList "--no-open", "--port", "8131" `
+          $p = Start-Process -FilePath (Join-Path $dir "python\python.exe") -ArgumentList "`"$(Join-Path $dir 'app\launcher.py')`"", "--no-open", "--port", "8131" `
                  -RedirectStandardOutput app.log -RedirectStandardError app.err -PassThru -NoNewWindow
           python -I emulator/tools/smoke.py --url http://127.0.0.1:8131 --timeout 300 --expect-direct --expect-synthetic
           $ok = $LASTEXITCODE -eq 0

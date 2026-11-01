@@ -1,12 +1,13 @@
 ; Inno Setup script of the 121GW emulator installer.
 ;   ISCC /DAppVersion=1.2.3 /DSourceDir=<dist\121gw-emulator> /DOutputDir=<dir> /DLicenseFile=<LICENSE> packaging\windows\121gw_emulator.iss
 ; Installs per user (no administrator rights) into %LOCALAPPDATA%\Programs, adds a Start menu entry and an uninstaller.
-; The program is a console application: its window shows the server log, closing it stops the emulator.
+; The program is the official embeddable CPython running app\launcher.py in a console window (the server log); closing
+; the window stops the emulator.
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
 #ifndef SourceDir
-  #error SourceDir (the PyInstaller one-folder output) is required
+  #error SourceDir (the application folder: python\ app\ LICENSE) is required
 #endif
 #ifndef OutputDir
   #define OutputDir "."
@@ -38,8 +39,8 @@ WizardStyle=modern
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{group}\121GW Emulator"; Filename: "{app}\121gw-emulator.exe"; WorkingDir: "{app}"
+Name: "{group}\121GW Emulator"; Filename: "{app}\python\python.exe"; Parameters: """{app}\app\launcher.py"""; WorkingDir: "{app}"; IconFilename: "{app}\app\121gw-emulator.ico"
 Name: "{group}\Uninstall 121GW Emulator"; Filename: "{uninstallexe}"
 
 [Run]
-Filename: "{app}\121gw-emulator.exe"; Description: "Start the 121GW emulator now"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\python\python.exe"; Parameters: """{app}\app\launcher.py"""; Description: "Start the 121GW emulator now"; Flags: postinstall nowait skipifsilent
