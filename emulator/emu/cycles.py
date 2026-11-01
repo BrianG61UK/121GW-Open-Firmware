@@ -86,7 +86,7 @@ class CycleModel:
             c, ldr_dst = self._cost(i, prev)
             addrs.append(i.address)
             cum.append(cum[-1] + c)
-            if i.id == A.ARM_INS_WFI:
+            if i.mnemonic == 'wfi':                  # Capstone reports WFI as the HINT id (63), not ARM_INS_WFI
                 wfi.append(i.address)
             prev = (i, ldr_dst)
         # Capstone stops at an encoding it rejects while Unicorn translated the block to its end: the rest is counted

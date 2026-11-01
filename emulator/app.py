@@ -97,6 +97,8 @@ class Emulator:
         m.add_periph(0x40010400, 0x400, self.exti)
         for port in self.gpio.values():
             self.exti.attach_gpio(port)
+        # an EXTI event pulse is the external event signal that sets the WFE event register (PM0056 2.5.3)
+        self.exti.event_hook = lambda mask: setattr(m, 'event_reg', True)
         # internal RTC (RTC_AF1 = PC13) and the external NJU6350 (CE PC13, CLK PB6, DATA PB7; schematic nets
         # RTC_CE, EE_CLK, EE_DO)
         self.rtc = RTC(self.exti)

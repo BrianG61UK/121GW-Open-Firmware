@@ -62,7 +62,8 @@ class Machine:
         self.events = []                      # (due_cycle, seq, callback)
         self._seq = 0
         self.pending = set()                  # pending exception numbers (16+IRQ for interrupts)
-        self.event_reg = False                # WFE event register (PM0056 3.12.10): set on exception entry/return
+        self.event_reg = False                # WFE event register: set by SEV and by an external event signal (EXTI event
+                                              # line), PM0056 2.5.2 / 2.5.3 / 3.12.9; cleared by a WFE that returns on it
         self.idle = False                     # core asleep in WFI/WFE with nothing scheduled
         self._asleep_at = None                # address of the WFI / WFE the core sleeps at (see _sleep)
         self._wfi_hooked = set()              # WFI addresses with an idle hook (see _on_block)
@@ -385,7 +386,6 @@ class Machine:
         return best
 
     def _enter(self, exc, pc):
-        self.event_reg = True                 # exception entry sets the event register (PM0056 3.12.10)
         uc = self.uc
         sp = uc.reg_read(UC_ARM_REG_SP)
         align = (sp & 4) and self.nvic.stkalign()
@@ -483,14 +483,40 @@ class Machine:
         return a | 1
 
     def _wake_ok(self, kind):
-        for e in self.pending:
-            if e < 16 or self.nvic is None or self.nvic.enabled(e):
-                return True
+        """Wake condition of WFI / WFE (PM0056).
+        WFI (2.5.2 "Wakeup from WFI", 3.12.11): an exception with sufficient priority to cause exception entry, i.e.
+        enabled, pending, above the current execution priority and not masked by BASEPRI or FAULTMASK; PRIMASK does not
+        prevent the wake-up (the core wakes but takes the exception only when PRIMASK clears).
+        WFE (3.12.10): the event register set (SEV, external event signal), or an exception not masked by the exception
+        mask registers (PRIMASK, FAULTMASK, BASEPRI) or the current priority, or, with SCR.SEVONPEND, an exception
+        entering the Pending state (modelled as: any pending exception)."""
         if kind == 'wfe':
             if self.event_reg:
                 return True
             if self.nvic is not None and self.nvic.scr & 0x10 and self.pending:   # SEVONPEND (SCR bit 4)
                 return True
+        if not self.pending:
+            return False
+        if self.nvic is None:
+            return True
+        uc = self.uc
+        primask = uc.reg_read(UC_ARM_REG_PRIMASK) & 1
+        faultmask = uc.reg_read(UC_ARM_REG_FAULTMASK) & 1
+        basepri = uc.reg_read(UC_ARM_REG_BASEPRI) & 0xFF
+        cur = self.nvic.priority(self.active[-1]) if self.active else 256
+        for e in self.pending:
+            if e >= 16 and not self.nvic.enabled(e):
+                continue
+            p = self.nvic.priority(e)
+            if p >= cur:
+                continue
+            if e != 2 and faultmask:                      # FAULTMASK masks everything except NMI
+                continue
+            if e >= 4 and basepri and p >= basepri:
+                continue
+            if kind == 'wfe' and primask and e >= 4:      # WFE: PRIMASK masks configurable exceptions
+                continue
+            return True
         return False
 
     def _take_fault(self):
