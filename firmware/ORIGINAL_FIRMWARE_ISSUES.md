@@ -65,6 +65,7 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-50 | Display | `FUN_0801B77A` passes `LCD_FCR AND mask` instead of the mask to `LCD_ContrastConfig`; the result is always overwritten by the following `lcd_init` | low | open |
 | OF-51 | Runtime library | Soft-float and 64-bit division helpers differ from IEEE 754 / the ARM run-time ABI in listed cases (fdiv exponent 254, subnormal operands of fadd/fsub/dadd/dsub, dsqrt special operands, division by zero); none reached by v2.05 code | low | open |
 | OF-52 | Battery | The ADC-to-battery conversion is a straight line that matches the hardware divider only near 6.4 V: the gauge reads up to 6 % low near empty and the low-battery warning starts at 4.31 V instead of the displayed 4.1 V | low | open |
+| OF-53 | Measurement | HY3131 interrupt flags are cleared by writing 0 after the status burst read: a flag raised in between is lost; a lost counter-done flag freezes the frequency reading until the next mode or range apply | medium | open |
 
 ## Details
 
@@ -783,4 +784,18 @@ Impact: the battery voltage shown is up to 6 % low near the end of the battery's
 everything tied to the flag) appears when B+ falls below 4.31 V, not 4.1 V. The figures use printed nominal values;
 part tolerances shift them, a comparison of display and measured battery voltage on a meter confirms them.
 Port: convert with the hardware relation (code x 3.3 / 4095 / 0.2481), keeping the 4.1 V threshold.
+
+### OF-53 — HY3131 interrupt flags lost between the status read and the clear
+`hy3131_service_irq` reads the 0x34-byte status burst from register 0, INTF included (`0x08006150`..`0x08006158`,
+`bl 0x0800C0C0`), then writes one byte 0 to register 0x1E, INTF (`0x0800615C`..`0x0800616C`, `bl 0x0800C03C`). Writing
+0 clears the flags (HY3131 data sheet p19, 10.2 (7)), including any flag the chip raised after the burst read, which
+the firmware has not seen. A lost counter-done flag (CTF) means FUN_0800AA00 is not called and the counter is not
+restarted, so the frequency reading stops updating until the next mode/range apply re-arms the counter.
+Execution check (emulator, original image): in acv_values the count completes at about 6.4625 s, between the read at
+6.461950 s and the clear at 6.462191 s; no counter restart follows until the re-apply at 7.40 s. Over the scenario
+library v2.05 lost the counter-done flag 22 times in 12 scenarios.
+Impact: the frequency shown on the sub display (AC modes) or the main display freezes for up to the next apply; which
+event is lost depends on sub-millisecond timing.
+Port: clear only the flags that were read: write a value that is 0 for the flags seen set in the burst and 1 for all
+other flags (INTF bits are cleared only by writing 0, data sheet p19), so no flag raised after the read is discarded.
 
