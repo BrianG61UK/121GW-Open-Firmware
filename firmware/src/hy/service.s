@@ -10,6 +10,11 @@
 @ OF-16: the RMS event (INTF bit 4) is serviced by the INTF clear alone; v2.05 FUN_08008208 (square root, 4-sample average and
 @ four hooks that are bx lr) is not called, its results have no reader.  INTE values are unchanged (the peak rows use RMSIE as
 @ their periodic trigger for the peak routine).
+@
+@ OF-53 (both builds): the INTF write after the read acknowledges only the flags that were read as set (0 for those, 1 for
+@ the others; INTF bits clear only on a written 0, DS p19 10.2 (7)); v2.05 writes 0 and loses a flag raised in between.
+@ OF-54 (both builds): counter data and CTF belong to the same completed count (baseline: the counter block is read again
+@ after CTF is seen; production: INTF is read first and the counter block after it).
 @ =============================================================================
 
     .syntax unified
@@ -20,6 +25,9 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
+
+    @ INTF bits that carry a flag (DS p19 10.2): BORF 7, RMSF 4, LPFF 3, AD1F 2, AD2F 1, CTF 0; bits 6:5 are "-"
+    .equ HY_INTF_ACK_MASK, 0x9F
 
     .section .text.hy.service, "ax", %progbits
 
@@ -81,10 +89,12 @@ ENDFUNC hy3131_poll
 @ RAM      : reads  0x200080BA acdc_active, 0x200077D0 adc_regs, 0x2000807E, 0x2000807F
 @            writes 0x20007DC4, 0x2000807D, 0x2000807E, 0x2000807F
 @ Spec     : analysis/hy3131_model.md 2.1
-@ Deviation: OF-16 (no call of FUN_08008208)
+@ Deviation: OF-16 (no call of FUN_08008208), OF-53 (INTF acknowledge value), OF-54 (counter block read again on CTF)
 @ Steps (v2.05): read registers 0x00..0x33; write INTF = 0 (register 0x1E, byte 0x20007DC4 = 0); event mask 0x2000807F =
 @ INTF & INTE; copies of R20 (0x2000807D) and R29 (0x2000807E); AD1F -> ad1_ready_dispatch; RMSF -> (v2.05 FUN_08008208, dropped,
 @ OF-16); peak gate: R29 bit 2 (ENPKH) and AC+DC off -> FUN_0800A7FC; CTF -> FUN_0800AA00.
+@ Port: the INTF write clears only the flags read (OF-53) and CTF reads the counter block 0x14..0x1D again before
+@ FUN_0800AA00 (OF-54).
 @ -----------------------------------------------------------------------------
 .if LOOP_V205
 FUNC hy3131_service_irq
@@ -93,13 +103,20 @@ FUNC hy3131_service_irq
     movs r1, #0                        @ 0x08006152
     ldr r0, =adc_regs                  @ 0x08006154 pool 0x08006AD4 = 0x200077D0  register mirror 0x200077D0
     bl hy3131_read_regs_to_rxbuf       @ 0x08006158  burst read from register 0 (hy3131_read_regs_to_rxbuf)
-    movs r0, #0                        @ 0x0800615C
-    ldr r1, =v_20007DC4                @ 0x0800615E pool 0x08006AD8 = 0x20007DC4  0x20007DC4 serves as the one-byte zero buffer
+    @ OF-53: v2.05 writes 0 here (0x0800615C), which also clears a flag raised after the burst read; the port writes 0 only
+    @ for the flags it has read as set and 1 for every other flag (a written 1 leaves an INTF bit unchanged, DS p19 10.2 (7)),
+    @ so a later event stays pending and is serviced in the next pass.  Bits 6:5 have no flag ("-", DS p19) and are written 0
+    @ as v2.05 writes them.
+    ldr r0, =adc_regs
+    ldrb r0, [r0, #30]                      @ rx[0x1E] = INTF as read by the burst
+    mvns r0, r0                             @ 1 for every flag not seen set
+    and r0, r0, #HY_INTF_ACK_MASK           @ BORF, RMSF, LPFF, AD1F, AD2F, CTF only
+    ldr r1, =v_20007DC4                @ 0x0800615E pool 0x08006AD8 = 0x20007DC4  0x20007DC4 serves as the one-byte write buffer
     strb r0, [r1, #0]                  @ 0x08006162
     movs r2, #1                        @ 0x08006164
     movs r1, #30                       @ 0x08006166  register 0x1E = INTF
     ldr r0, =v_20007DC4                @ 0x08006168 pool 0x08006AD8 = 0x20007DC4
-    bl hy3131_write_regs               @ 0x0800616C  INTF <- 0 (write of 0 clears flags, DS p19)
+    bl hy3131_write_regs               @ 0x0800616C  INTF <- acknowledge value (a written 0 clears a flag, DS p19; OF-53)
     ldr r0, =adc_regs                  @ 0x08006170 pool 0x08006AD4 = 0x200077D0
     ldrb r0, [r0, #30]                 @ 0x08006174  rx[0x1E] = INTF
     ldr r1, =adc_regs                  @ 0x08006176 pool 0x08006AD4 = 0x200077D0
@@ -145,6 +162,14 @@ FUNC hy3131_service_irq
     ldrb r0, [r0, #0]                  @ 0x080061D8
     lsls r0, r0, #31                   @ 0x080061DA  mask bit 0 = CTF
     bpl .L080061E2                     @ 0x080061DC
+    @ OF-54: the burst clocks out the counter registers 0x15..0x1D before INTF (0x1E), so a count that completed between the
+    @ two was seen with the values of the count before; the counter block is read again now that CTF has been seen (the
+    @ counter has stopped, "ceased counting", DS p37 (5), until fn_0800AA00 restarts it), so data and flag belong to the
+    @ same completed count.  Registers 0x14..0x1D as in the production read set (CTSTA first: its read clears CTBOV, DS p36).
+    movs r2, #10
+    movs r1, #0x14
+    ldr r0, =adc_regs
+    bl hy3131_read_regs_to_rxbuf            @ mirror[0x14..0x1D] = CTSTA, CTC, CTB, CTA of the completed count
     bl fn_0800AA00                     @ 0x080061DE  counter result (MFRQ FUN_0800AA00)
 .L080061E2:                              @ reached from 0x080061DC bpl
     pop {r0, pc}                       @ 0x080061E2
@@ -162,7 +187,8 @@ ENDFUNC hy3131_service_irq
 @ RAM      : reads  0x200080BA acdc_active, 0x200077D0 adc_regs, 0x2000807E, 0x2000807F
 @            writes 0x20007DC4, 0x2000807D, 0x2000807E, 0x2000807F
 @ Spec     : DESIGN.md 6.13 (read sets); analysis/hy3131_modes_misc.md 8 (mirror readers); hy3131_model.md 2.1
-@ Deviation: IMP-06, OF-16
+@ Deviation: IMP-06, OF-16, OF-53 (INTF acknowledge value); OF-54 needs no extra read here: INTF is read first and the
+@            counter block only after CTF has been seen, so data and flag always belong to the same completed count
 @ Read sets (all with the v2.05 read command format and bit timing, hy_read_frame):
 @   every event  registers 0x1E..0x20 (INTF, INTE, R20; reading INTF clears it, DS p19) and 0x29 (R29: ENPKH test)
 @   AD1F         registers 0x00..0x02 (AD1 data, read by FUN_080062F8)
@@ -175,13 +201,16 @@ FUNC hy3131_service_irq
     movs r0, #0x1E
     movs r1, #3
     bl hy_read_frame                        @ mirror[0x1E..0x20] = INTF, INTE, R20
-    movs r0, #0
+    ldr r0, =adc_regs
+    ldrb r0, [r0, #30]                      @ INTF as read
+    mvns r0, r0                             @ OF-53: 0 for the flags seen set, 1 for the others (a written 1 has no effect,
+    and r0, r0, #HY_INTF_ACK_MASK           @ DS p19 10.2 (7)); bits 6:5 ("-") 0 as v2.05 writes them
     ldr r1, =v_20007DC4
-    strb r0, [r1]                           @ zero byte (v2.05 0x08006162)
+    strb r0, [r1]                           @ write buffer (v2.05 0x08006162 stores 0)
     movs r2, #1
     movs r1, #30                            @ register 0x1E = INTF
     ldr r0, =v_20007DC4
-    bl hy3131_write_regs                    @ INTF <- 0 (v2.05 0x0800616C)
+    bl hy3131_write_regs                    @ INTF <- acknowledge value (v2.05 0x0800616C writes 0; OF-53)
     movs r0, #0x29
     movs r1, #1
     bl hy_read_frame                        @ mirror[0x29] = R29

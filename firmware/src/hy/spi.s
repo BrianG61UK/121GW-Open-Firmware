@@ -276,7 +276,9 @@ ENDFUNC hy_row_whitelisted
 @ Allowed frames (first register, bytes) and content:
 @   (0x20, 20)  a configuration row (hy_row_whitelisted)                       v2.05 0x0800BE94
 @   (0x1E,  2)  INTF = 0, INTE in {0x01, 0x04, 0x05, 0x11}                     v2.05 0x0800BF74
-@   (0x1E,  1)  INTF = 0                                                       v2.05 0x0800616C
+@   (0x1E,  1)  INTF acknowledge: any value with bits 6:5 = 0                  v2.05 0x0800616C (writes 0; OF-53)
+@               INTF is a flag register, not configuration: a written 0 clears a flag, a written 1 leaves it unchanged
+@               (DS p19 10.2 (7)); bits 6:5 carry no flag ("-") and stay 0 as in v2.05's write
 @   (0x20,  1)  R20 restart value: row R20 & 0xFD, & 0xF9, or | 0x02            v2.05 0x0800BFC6, 0x0800C036
 @   (0x1B,  3)  counter preset 00 00 E0 or 00 00 80                            v2.05 0x0800BFF0
 @   (0x29,  1)  R29 peak restart value: row R29 or row R29 & 0xFB              v2.05 0x0800A872, 0x0800A88C
@@ -329,7 +331,8 @@ FUNC hy_frame_allowed
     b .Lfa_refuse                           @ INTE value not produced by v2.05
 .Lfa_intf:
     ldrb r0, [r1]
-    cbnz r0, .Lfa_refuse                    @ only INTF = 0 is ever written
+    tst r0, #0x60                           @ bits 6:5 ("-", DS p19) must be 0; flag bits 7, 4..0 may be 0 (clear) or 1 (keep)
+    bne .Lfa_refuse
     b .Lfa_ok
 .Lfa_r20:
     ldrb r0, [r1]                           @ value about to be written to R20
@@ -549,7 +552,7 @@ ENDFUNC hy3131_read_regs_to_rxbuf
 hy_write_shapes:
     .byte 0x20, 20                          @ configuration row            0x0800BE94
     .byte 0x1E, 2                           @ INTF = 0, INTE               0x0800BF74
-    .byte 0x1E, 1                           @ INTF = 0 after a service     0x0800616C
+    .byte 0x1E, 1                           @ INTF acknowledge (OF-53)     0x0800616C
     .byte 0x20, 1                           @ R20 counter restart          0x0800BFC6, 0x0800C036
     .byte 0x1B, 3                           @ counter preset CTA           0x0800BFF0
     .byte 0x29, 1                           @ R29 peak restart             0x0800A872, 0x0800A88C

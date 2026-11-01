@@ -4,7 +4,7 @@
 @ Replaces fn_08016D34 (0x08016D34, called once per main-loop pass), fn_08016E08 (main value), fn_0800D664 / fn_0800D6E0
 @ (VA sub-display alternation), fn_0800E848 / fn_0800EA24 (high-voltage warning flags), fn_080153AC (end of MEM view) and
 @ fn_08015934 (held value).  The instruction streams are v2.05's; production mode (LOOP_V205 = 0) adds
-@   - calls of ui_bootwin_gate (IMP-02) and lcd_commit_retry (IMP-06) at the start of fn_08016D34;
+@   - the call of ui_bootwin_gate (IMP-02) at the start of fn_08016D34 and of lcd_commit_retry (IMP-06) at its end;
 @   - the blank / dash request ui_blank_req in fn_08016E08 (OF-30, OF-32, IMP-01 rule P5);
 @   - the power-on window rules of IMP-02 (ui_bootwin_gate, ui_version_sub, ui_request_redraw): while CAL's window is open the
 @     version "V-2.05" is shown on the sub display and the reading on the main digits, and nothing is drawn while a key
@@ -477,7 +477,8 @@ ENDFUNC fn_08015934
 @            combination screen is shown, the lamp test of the RANGE key is lit again and kept until the window closes, the
 @            version "V-2.05" stays on the sub display while the window is open, a full redraw is requested when the window
 @            or a combination ends);
-@            IMP-06 (production): lcd_commit_retry then repeats a commit that was deferred because UDR was set
+@            IMP-06 (production): lcd_commit_retry at the end of the pass repeats a commit that was deferred because UDR
+@            was set
 @ Clobbers : r0, r1, r2, r3, r12 (v2.05 regeffects.txt)
 @ -----------------------------------------------------------------------------
 FUNC fn_08016D34
@@ -485,11 +486,8 @@ FUNC fn_08016D34
     .if LOOP_V205 == 0
     bl ui_bootwin_gate                      @ IMP-02: power-on window rules (r0 = 1: a key combination screen or the lamp test owns the
                                             @ display); first, so that the lamp test is lit again before any commit of this pass
-    str r0, [sp, #0]                        @ keep the result in the pad slot of push {r7, lr} (v2.05 pops it into r0)
-    bl lcd_commit_retry                     @ IMP-06: repeat a deferred commit (also while the MEM view is shown)
-    ldr r0, [sp, #0]
     cmp r0, #0
-    bne .L08016E06                          @ draw nothing in this pass
+    bne .L08016E06                          @ draw nothing in this pass (the deferred commit is still repeated at the end)
     .endif
     @ MEM view active (0x20007FE4 != 0): nothing is refreshed
     ldr r0, =v_20007FE4                      @ 08016D36 &MEM view active (recalled-record view)
@@ -591,6 +589,13 @@ FUNC fn_08016D34
     strb r0, [r1, #0]                        @ 08016E00
     bl lcd_commit_shadow                     @ 08016E02
 .L08016E06:                                @ reached from 08016D3E bne (not equal / non-zero); 08016DF8 beq (equal / zero); falls in
+    .if LOOP_V205 == 0
+    @ IMP-06: repeat a commit that an earlier routine had to defer (UDR still set), after this pass has drawn: the shadow
+    @ then holds the finished screen.  Repeated at the start of the pass, it committed the shadow half way through an apply
+    @ (the old digits with the new decimal point and the sub decimal point cleared by fn_0800A560: "2300.0" / " 5000" for
+    @ one frame at a range change).  Also while the MEM view is shown or a window screen owns the display.
+    bl lcd_commit_retry
+    .endif
     pop {r0, pc}                             @ 08016E06
 ENDFUNC fn_08016D34
     .ltorg
@@ -957,7 +962,9 @@ ENDFUNC ui_value_valid
 @ RAM      : reads bootwin_active (CAL), 0x200080CD, 0x200080CE (key sequence states), ui_lamp_test; read-modify-writes
 @            ui_bw_state, ui_skip_sub, ui_lamp_test (cleared by a combination and when the window is closed); lcd_shadow and
 @            0x2000805B through fn_0801A89C while the lamp test is on; through ui_version_sub and ui_request_redraw: lcd_shadow, 0x2000805B, 0x2000805D, 0x2000805E,
-@            0x20008060..0x20008063
+@            0x20008060..0x20008063; first pass: main digits blanked (fn_08019A98, 0x20008045) and the main decimal point of
+@            0x2000803F drawn (fn_0801717E); while the version is shown the sub decimal points of lcd_shadow word 0 are checked
+@            and the version drawn again when an apply has cleared them
 @ Spec     : DESIGN.md 7.1, analysis/autorange_and_scheduler.md 6 item 3: while the window is open the reading is shown in
 @            the main digits and the version on the secondary display; a window key that starts a combination stops the
 @            measurement display; the all-segments test of the RANGE key (DESIGN.md 7.1, analysis/keys_setup.md 3) stays until the
@@ -971,7 +978,8 @@ LFUNC ui_bootwin_gate
     strb r4, [r0]                           @ default: refresh everything
     ldr r0, =bootwin_active
     ldrb r0, [r0]
-    cbz r0, .Lbg_closed                     @ window closed (or not yet started): normal refresh
+    cmp r0, #0
+    beq .Lbg_closed                         @ window closed (or not yet started): normal refresh
     ldr r0, =v_200080CD
     ldrb r1, [r0]                           @ key sequence state A
     ldr r0, =v_200080CE
@@ -984,15 +992,35 @@ LFUNC ui_bootwin_gate
     ldr r0, =ui_bw_state
     ldrb r1, [r0]
     cmp r1, #1
-    beq .Lbg_skipsub                        @ version already on the sub display
+    beq .Lbg_keepver                        @ version already on the sub display
     cmp r1, #2
-    bne .Lbg_showver
+    bne .Lbg_first
     bl ui_request_redraw                    @ back from a combination screen: redraw the live display
+    b .Lbg_showver
+.Lbg_first:
+    @ first pass of the window (state 0): the splash "V-2.05" is still on the main digits, which now belong to the
+    @ reading: blank them and draw the decimal point of the applied range (0x2000803F; fn_080171FA did not draw it
+    @ while the splash owned the main display), as an apply shows it before the first value
+    movs r0, #0
+    bl fn_08019A98                          @ five spaces on the main digits, main minus sign off
+    ldr r0, =v_2000803F
+    ldrb r0, [r0]
+    bl fn_0801717E                          @ main decimal point of the applied range (0 = none)
 .Lbg_showver:
     ldr r0, =ui_bw_state
     movs r1, #1
     strb r1, [r0]                           @ window open, version shown
-    bl ui_version_sub                       @ "V-2.05" on the sub display
+    bl ui_version_sub                       @ "V-2.05" on the sub display (sets the commit request)
+    b .Lbg_skipsub
+.Lbg_keepver:
+    @ an apply in the window (fn_0800A560 through meter_apply_mode_range) clears the sub decimal points in the shadow while
+    @ the sub-display blocks are skipped; the version is drawn again before anything commits that shadow
+    ldr r0, =lcd_shadow
+    ldr r0, [r0]                            @ shadow word 0: sub decimal points at bits 21, 23, 25, 27 (fn_08017FB4)
+    and r0, r0, #0x0AA00000
+    cmp r0, #0x00800000                     @ only sub point 2 ("V-2.05") set: the version is intact
+    beq .Lbg_skipsub
+    bl ui_version_sub                       @ draw the version again (text, point, unit group; commit request)
 .Lbg_skipsub:
     movs r1, #1
     ldr r0, =ui_skip_sub
@@ -1035,6 +1063,43 @@ LFUNC ui_bootwin_gate
     pop {r4, pc}
     .ltorg
 ENDFUNC ui_bootwin_gate
+
+@ -----------------------------------------------------------------------------
+@ ui_bootwin_main_busy - does a power-on window screen own the main display
+@ Replaces : nothing (new, IMP-02)
+@ In       : -
+@ Out      : r0 = 1 while the window is open and the main display shows a window screen: the splash before the first
+@            pass of ui_bootwin_gate (ui_bw_state 0), a key-combination screen (ui_bw_state 2, or a sequence state
+@            0x200080CD / 0x200080CE non-zero) or the all-segments test (ui_lamp_test); else 0
+@ Clobbers : r0, r1, flags
+@ Context  : main only; called by fn_080171FA
+@ RAM      : reads bootwin_active (CAL), ui_bw_state, 0x200080CD, 0x200080CE, ui_lamp_test
+@ Spec     : DESIGN.md 7.1
+@ Deviation: IMP-02
+@ -----------------------------------------------------------------------------
+FUNC ui_bootwin_main_busy
+    ldr r0, =bootwin_active
+    ldrb r0, [r0]
+    cbz r0, 9f                              @ window closed: r0 = 0
+    ldr r0, =v_200080CD
+    ldrb r0, [r0]
+    ldr r1, =v_200080CE
+    ldrb r1, [r1]
+    orrs r0, r0, r1
+    bne 8f                                  @ a key combination is in progress
+    ldr r0, =ui_lamp_test
+    ldrb r0, [r0]
+    cbnz r0, 8f                             @ all segments lit
+    ldr r0, =ui_bw_state
+    ldrb r0, [r0]
+    cmp r0, #1
+    bne 8f                                  @ splash (0) or combination screen (2)
+    movs r0, #0                             @ the main digits show the reading
+    bx lr
+8:  movs r0, #1
+9:  bx lr
+    .ltorg
+ENDFUNC ui_bootwin_main_busy
 
 @ -----------------------------------------------------------------------------
 @ ui_version_sub - draw the version "V-2.05" on the sub display

@@ -3,7 +3,8 @@
 @
 @ Replaces adc_ch5_process 0x080134DA, FUN_080135B0 (20-value history with trimmed mean), FUN_0801368A (sort)
 @ and FUN_08013728 (ADC code -> battery value by the table 0x08028C9C) (v2.05).
-@ The table is v205_tab_08028C9C (16 words, firmware/tools/extract_tables.py, src/pwr/tables_v205.s).
+@ OF-52: the conversion follows the hardware divider (fn_08013728); the v2.05 table v205_tab_08028C9C (src/pwr/tables_v205.s,
+@ generated) has no reader in the port.
 @ =============================================================================
 
     .syntax unified
@@ -19,7 +20,8 @@
     .equ PWR_BAT_LOW_LIMIT, 41              @ value / 10 below this: low battery (0x0801353A cmp #0x29)
     .equ PWR_BAT_DEBOUNCE,  11              @ readings needed to change the low-battery symbol (0x08013586)
     .equ PWR_HIST_LEN,      20              @ history length (0x080135BE)
-    .equ PWR_TABLE_PREV,    0x000186A0      @ the word before the table, image 0x08028C98 (see fn_08013728)
+    .equ PWR_BAT_NUM,       1330            @ OF-52: B+ (0.01 V) = code x 1330 / 4095 = code x 3.3 / 4095 x (1M + 330k) / 330k x 100
+    .equ PWR_BAT_DEN,       4095            @ 12-bit ADC full-scale code (VDDA = VREF+ = 3.300 V)
 
     .section .text.pwr.battery, "ax", %progbits
 
@@ -49,7 +51,7 @@ FUNC adc_ch5_process
     it gt                                   @ above the clamp (0x08013510)
     movgt r4, #PWR_BAT_ADC_MAX              @ code > 0xC30: clamp down
     mov r0, r4
-    bl fn_08013728                          @ table conversion (0x0801351A)
+    bl fn_08013728                          @ code -> B+ in 0.01 V (0x0801351A; OF-52 hardware relation)
     bl fn_080135B0                          @ history and trimmed mean (0x08013522)
     movs r1, #10
     udiv r0, r0, r1                         @ 0x0801352A
@@ -237,58 +239,29 @@ LFUNC fn_0801368A
 ENDFUNC fn_0801368A
 
 @ -----------------------------------------------------------------------------
-@ fn_08013728 - battery value from the clamped ADC code (linear interpolation in the 16-entry table)
+@ fn_08013728 - battery voltage from the clamped ADC code (hardware divider relation, OF-52)
 @ Replaces : 0x08013728 FUN_08013728 (v2.05)
 @ In       : r0 = ADC code, 0x3FC..0xC30 (clamped by the caller)
-@ Out      : r0 = (0x41A - 50 * i + (int)((float)((code - T[i]) * 50) / (float)(T[i-1] - T[i]))) & 0xFFFF,
-@            i = first index with code >= T[i]
-@ Clobbers : r1-r3, r12, flags
+@ Out      : r0 = B+ in 0.01 V = (code * 1330 + 2047) / 4095 (rounded to the nearest 0.01 V), 331..1013
+@ Clobbers : r1, flags
 @ Context  : main
-@ Note     : for i = 0 (code = 0xC30 = T[0]) v2.05 reads T[-1], the word at 0x08028C98 just before the table
-@            (0x0801377A..0x08013784), which is 0x000186A0 in the image; the same value is used here as the
-@            constant PWR_TABLE_PREV, so the float operations are those of v2.05 for every input
-@            (numerator 0, result 0x41A).
+@ Deviation: OF-52 (ORIGINAL_FIRMWARE_ISSUES.md; DESIGN.md 12.2): v2.05 interpolates the table 0x08028C9C (T[i] = 3120 -
+@            140 i, value = 1050 - 50 i + 50 (code - T[i]) / 140), i.e. code / 280 - 0.643 V, which does not match the
+@            hardware: B+ - R69 1M - PA5 - R70 330k - VSS (ratio 330/1330), ADC reference VDDA = 3.300 V (NJU7200U33)
+@            (analysis/frontend_netlist.md sections 7 and 9).  B+ = code x 3.3 / 4095 / (330/1330) V
+@            = code x 1330 / 4095 in 0.01 V (the 3.30 V and the 330 kOhm cancel).  The caller's low-battery limit stays
+@            41 (4.1 V).  The v2.05 table stays in tables_v205.s (generated, compared with the image by the build check)
+@            and has no reader in the port.
+@            Range: code * 1330 <= 3120 * 1330 = 4 149 600, no overflow; udiv truncates, the +2047 rounds half up.
 @ -----------------------------------------------------------------------------
 LFUNC fn_08013728
-    push {r4-r9, lr}
-    sub sp, sp, #4
-    mov r4, r0                              @ r4 = code
-    ldr r6, =v205_tab_08028C9C              @ r6 = table T
-    movs r5, #0                             @ r5 = index i
-.L3728_find:                                @ 0x08013738..0x08013754
-    ldr r0, [r6, r5, lsl #2]
-    cmp r4, r0
-    bhs .L3728_found                        @ code >= T[i]
-    adds r5, r5, #1
-    uxtb r5, r5
-    b .L3728_find
-.L3728_found:
-    movw r0, #0x41A
-    movs r1, #50
-    mls r7, r1, r5, r0                      @ r7 = 0x41A - 50 * i (0x0801375E)
-    ldr r0, [r6, r5, lsl #2]
-    subs r0, r4, r0
-    muls r0, r1, r0                         @ (code - T[i]) * 50
-    bl fn_08012F74                          @ unsigned to float (RT) (0x08013774)
-    mov r9, r0
-    cbnz r5, .L3728_prev_tab
-    ldr r0, =PWR_TABLE_PREV                 @ T[-1] (see Note)
-    b .L3728_prev
-.L3728_prev_tab:
-    sub r0, r5, #1
-    ldr r0, [r6, r0, lsl #2]                @ T[i-1] (0x08013784)
-.L3728_prev:
-    ldr r1, [r6, r5, lsl #2]
-    subs r0, r0, r1                         @ T[i-1] - T[i]
-    bl fn_08012F74                          @ 0x08013794
-    mov r1, r0
-    mov r0, r9
-    bl fn_08012F94                          @ float divide (RT) (0x0801379C)
-    bl fn_08013370                          @ float to int, truncating (RT) (0x080137A0)
-    add r0, r7, r0
-    uxth r0, r0                             @ 0x080137AA
-    add sp, sp, #4
-    pop {r4-r9, pc}
+    movw r1, #PWR_BAT_NUM
+    muls r0, r1, r0                         @ code * 1330
+    movw r1, #(PWR_BAT_DEN / 2)
+    adds r0, r0, r1                         @ + 2047: round to the nearest 0.01 V
+    movw r1, #PWR_BAT_DEN
+    udiv r0, r0, r1                         @ / 4095
+    bx lr
 ENDFUNC fn_08013728
 
     .ltorg

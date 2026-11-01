@@ -81,6 +81,11 @@ ENDFUNC fn_080170AC
 @ RAM      : writes 0x2000803F; reads meter_mode, meter_range
 @ Spec     : DESIGN.md Appendix C (decimal_position_for_mode_range, MODE)
 @ Clobbers : r0, r1, r2, r3 (v2.05 regeffects.txt)
+@ Deviation: IMP-02 (production only): while the power-on window shows its own screen on the main display (the splash
+@            before the version has moved to the sub display, a key-combination screen or the all-segments test), the
+@            position is stored but neither drawn nor committed: v2.05 applies no mode inside the window, and drawing the
+@            point would show it inside that screen ("U.-205", "5.DCAL").  ui_bootwin_gate draws it when the main digits
+@            are handed to the reading, and every later value draw sets it from 0x2000803F.
 @ -----------------------------------------------------------------------------
 FUNC fn_080171FA
     @ d = decimal_position_for_mode_range(mode, range) -> 0x2000803F, then set the main decimal point (fn_0801717E) and commit
@@ -93,11 +98,15 @@ FUNC fn_080171FA
     bl decimal_position_for_mode_range       @ 08017208
     ldr r1, =v_2000803F                      @ 0801720C &main decimal-point position
     strb r0, [r1, #0]                        @ 08017210
+    .if LOOP_V205 == 0
+    bl ui_bootwin_main_busy                  @ IMP-02: r0 = 1 while a window screen owns the main display
+    cbnz r0, 1f                              @ position stored, not drawn (see Deviation)
+    .endif
     ldr r0, =v_2000803F                      @ 08017212 &main decimal-point position
     ldrb r0, [r0, #0]                        @ 08017216
     bl fn_0801717E                           @ 08017218
     bl lcd_commit_shadow                     @ 0801721C
-    pop {r0, pc}                             @ 08017220
+1:  pop {r0, pc}                             @ 08017220
 ENDFUNC fn_080171FA
     .ltorg
 

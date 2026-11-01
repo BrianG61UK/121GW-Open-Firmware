@@ -1,13 +1,15 @@
 @ =============================================================================
 @ isr_tim2.s - SYS: TIM2 update interrupt (IRQ28, every 10.02 ms at MSI 4.194 MHz)
 @
-@ Replaces IRQ28_Handler 0x0802428C..0x08024720 (v2.05) step for step, with three changes:
+@ Replaces IRQ28_Handler 0x0802428C..0x08024720 (v2.05) step for step, with these changes:
 @  - the BLE frame start 0x08024630..0x0802465A (test of BLE-on 0x2000802B, 0x20008031 = 0, first frame byte
 @    into USART2_DR, TXE interrupt on) is the BLE routine ble_tx_start_frame (OF-10, DESIGN.md 6.26);
 @  - the setup page 7 blink drawing fn_0801896C(1) (0x080246FC) is replaced by setting rtc_blink_request; the
 @    main loop draws on its next pass (NF-11, DESIGN.md 3.4).
 @  - every tick calls ble_tx_tick (BLE) after the 500 ms block, before the 1 s counter; it starts a frame that
 @    NF-04 deferred during SD access.
+@  - production image: the FREQ / PULSE / DUTY no-signal timeout that publishes a zero result also increments
+@    ar_freq_tmo_count (AR), which ends the OF-32 blanking of the main digits (owner decision).
 @ Only ISR-safe routines are called: fn_080153AC (UI), pe7_on_with_timeout (BZB), ble_tx_start_frame and
 @ ble_tx_tick (BLE).
 @ =============================================================================
@@ -32,9 +34,9 @@
 @            0x200080AA, 0x20008062, 0x20007FC4, 0x200080A3, 0x20007FC6, 0x20007FC0, 0x20007D64, 0x2000803D,
 @            0x20008052, 0x20008051, 0x20007FB2, 0x2000805D, 0x2000804B, 0x2000803E, 0x20007D84, 0x20007F00,
 @            0x200080D1, 0x2000802C, 0x20007F04, 0x200080D3, 0x20008077, 0x2000806F, 0x200080D5, 0x20007F08,
-@            rtc_blink_request (port, RTC)
+@            rtc_blink_request (port, RTC), ar_freq_tmo_count (port, AR; production only, this handler is its only writer)
 @ Spec     : DESIGN.md 3.4 (table row IRQ28), 6.1
-@ Deviation: NF-11, OF-10 (frame start in BLE), NF-04 (ble_tx_tick)
+@ Deviation: NF-11, OF-10 (frame start in BLE), NF-04 (ble_tx_tick), OF-32 (production: ar_freq_tmo_count)
 @ -----------------------------------------------------------------------------
 FUNC sys_tim2_isr
     push {r4, lr}                           @ r4 = meter_mode copy where noted; keeps 8-byte stack alignment
@@ -213,6 +215,12 @@ FUNC sys_tim2_isr
     movs r0, #1
     ldr r1, =v_2000805D
     strb r0, [r1]                           @ new (zero) mean (0x080244B2)
+.if LOOP_V205 == 0
+    ldr r1, =ar_freq_tmo_count
+    ldrb r0, [r1]
+    adds r0, r0, #1
+    strb r0, [r1]                           @ production: count the published timeout zero (AR shows it, OF-32 decision)
+.endif
     ldr r0, =range_manual
     ldrb r0, [r0]
     cbnz r0, .Lt2_ac

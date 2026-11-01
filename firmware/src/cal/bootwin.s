@@ -26,11 +26,13 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    @ Safety margin before the first HY3131 write (DESIGN.md 7.1: never earlier than v2.05).  Measured in the emulator: v2.05
-    @ writes the TEMP row 77.74 ms after the HY3131 supply (PE9, set by the bootloader at 1.997 ms), the port without the
-    @ margin 77.44 ms (baseline) / 77.24 ms (production), because its whole start-up is 0.3..0.5 ms faster (OPT-01).  1000
-    @ iterations of fn_0800ECF6 (5 instructions each) take 1.19 ms at 4.194 MHz with one cycle per instruction, longer on
-    @ the device (flash wait states), so the first write comes at least 0.69 ms later than v2.05's.
+    @ Safety margin before the first HY3131 write (DESIGN.md 7.1: never earlier than v2.05).  Measured in the emulator with
+    @ the Cortex-M3 cycle costs (emulator/emu/cycles.py, 2026-11-01; scenario boot_v, end of the 20-byte TEMP row frame):
+    @ v2.05 82.27 ms after reset; the port without the margin 83.16 ms (baseline) / 82.83 ms (production), with it 84.86 ms /
+    @ 84.53 ms.  The 1000 iterations of fn_0800ECF6 take 1.70 ms (about 7 cycles each at 4.194 MHz: cmp, bcs not taken, nop,
+    @ adds, taken b with its refill and flash wait state, plus the timer interrupts that fall into them).  The port's start-up
+    @ (OPT-01: copy instead of lz77 unpack) is not slower than v2.05's on the device, where every path only gets longer, so
+    @ the margin is kept: the first write comes 2.26..2.59 ms after v2.05's in the emulator and never before it.
     .equ BW_HY_MARGIN_LOOPS, 1000
     .equ BW_A,  v_200080CD                  @ window sequence state A (MODE / SETUP path)
     .equ BW_B,  v_200080CE                  @ window sequence state B (MEM path)

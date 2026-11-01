@@ -246,7 +246,7 @@ build switch `LOOP_V205` in `config.inc`:
 | Item | `LOOP_V205 = 1` (verification baseline) | `LOOP_V205 = 0` (production, IMP-06) |
 |---|---|---|
 | LCD commit | `lcd_commit_shadow` busy-waits on LCD_SR UDR as v2.05 (0x0801B304, 0x08020492); in v2.05 this locks the pass to the 13.84 ms LCD frame (ARS 11 item 1) | commit only when the shadow changed; deferred to a later pass while UDR is still set; never waits |
-| Blocking routines | run to completion (counter restart delay(10000) 0x0800BFCE, `pe7_on_blocking_100_ticks` 1 s, SD card operations, calibration-backup operations) | the same routines as state machines (`*_start`, `*_step` returning 0 = busy / 1 = done), stepped once per pass; in baseline mode the loop calls `*_step` until it returns 1, which is the v2.05 order |
+| Blocking routines | run to completion (counter restart delay(10000) 0x0800BFCE (17.1 ms in v2.05, ARS re-measured 2026-11-01), `pe7_on_blocking_100_ticks` 1 s, SD card operations, calibration-backup operations) | the same routines as state machines (`*_start`, `*_step` returning 0 = busy / 1 = done), stepped once per pass; in baseline mode the loop calls `*_step` until it returns 1, which is the v2.05 order |
 | HY3131 read | full 0x34-byte burst from register 0 per event (0x08006158) | per-event read sets (6.13) |
 | Sleep | none (v2.05 never sleeps) | `wfi` at the end of each pass; wake-ups are the interrupts v2.05 already enables (TIM3 every 0.996 ms, TIM2, USART2, SDIO, DMA2); no new interrupt source |
 
@@ -334,6 +334,12 @@ Port mechanism:
    The peak restart moves from MAC into HY as `hy_peak_restart` (Appendix C.2).
 4. `hy_write_frame(r0 = first register, r1 = pointer, r2 = count)` is internal to HY and refuses any (first register,
    count) shape not in {(0x20, 20), (0x1E, 2), (0x1E, 1), (0x20, 1), (0x1B, 3), (0x29, 1)}.
+   The one-byte INTF acknowledge (0x1E, 1) after an event service carries 0 for the flags read as set and 1 for the
+   others (OF-53, decision 12.2), where v2.05 writes 0x00: any value with bits 6:5 clear is accepted. INTF is a flag
+   register, not a configuration register: a written 0 clears a flag, a written 1 has no effect ("INTF register can be
+   written as 0 by SPI Interface, but not 1", DS p19 10.2 (7)); bits 6:5 carry no flag ("-", DS p19) and stay 0 as in
+   v2.05's value. `check_hy.py` (INTF_ACK) and the emulator whitelist (`emulator/diff/run.py` INTF_ACK_PAIRS) allow
+   exactly these values; no configuration register value is added.
 5. OF-17 is fixed by refusing the second key (PEAK while the 1 kHz filter is on, or the filter while PEAK is on), so
    row and INTE always form a v2.05 pair; no combined row is created. OF-16 changes no HY3131 write.
 6. Reads are not configuration writes: the per-event read sets of production mode (6.13) change only which registers
@@ -544,7 +550,8 @@ Conventions for all modules:
   `sys_fault_safe`, `sys_crit_enter`, `sys_crit_exit`).
 - RAM: tick counters and flags 0x20007F00..0x20007F08, 0x200080D0..0x200080D3, 0x2000802C, 0x20008031 (Appendix B SYS).
 - Context: `sys_tim2_isr` calls only ISR-safe routines: `pe7_on_with_timeout` (BZB), `fn_080153AC` (UI, 3.4),
-  `ble_tx_start_frame` (BLE), and sets `rtc_blink_request` (NF-11).
+  `ble_tx_start_frame` (BLE), and sets `rtc_blink_request` (NF-11); in production it also increments `ar_freq_tmo_count`
+  (AR) at the FREQ / PULSE / DUTY no-signal timeout (OF-32 decision, 12.2).
 - Depends on: NVM (reset lock, error clear), BRD, PWR, and every module called from the loop.
 - Deviations: NF-02, NF-03, NF-11, NF-12, NF-13, NF-14, NF-18, IMP-02 (window during measuring), IMP-06 (loop modes).
 
@@ -693,7 +700,7 @@ A module with a narrow interface, so that the faster auto-ranging (IMP-01, ARS s
   the peak restart in `FUN_0800A7FC` (as `hy_peak_restart`).
 - Mechanism: 4.1.
 - Read sets (production mode, IMP-06): v2.05 reads 0x34 bytes from register 0 on every event (0x08006158), about
-  2.2 ms at its bit timing (ARS 5.2 P1), too long for the 640 sps rows (BEEP, ACV r3, DCmV r1, LowZ AC; period
+  3.26 ms at its bit timing (7.8 us per bit, ARS 5.2 P1, re-measured 2026-11-01), too long for the 640 sps rows (BEEP, ACV r3, DCmV r1, LowZ AC; period
   1.5625 ms). The port reads per event only the registers consumed for that event, as auto-increment bursts with the
   same read command format: INTF/INTE 0x1E..0x1F on every event (v2.05 computes the event mask rx[0x1E] & rx[0x1F] in
   `hy3131_service_irq` 0x0800614E; reading INTF has the side effect of clearing it, DS p19, as in v2.05's burst), AD1
@@ -929,10 +936,15 @@ loop runs during the window; the dial is latched with the v2.05 rule and its mod
 in the main digits with the version on the secondary display; a window key that starts a combination stops the
 measurement display and the v2.05 combination screen takes over (the version leaves the secondary display); the RANGE
 all-segments test is kept lit until the window closes (`ui_lamp_test`, UI); the first HY3131 write comes no earlier than in v2.05
-(81 ms after reset, ARS 6; with the emulator's LCD frames timed on LCDCLK, 2026-10-31, v2.05 writes 77.74 ms after the
-HY3131 supply is switched on by the bootloader).  Both builds wait for the splash commit as v2.05 does and then a margin of
-1000 delay iterations (1.19 ms at 4.194 MHz, `BW_HY_MARGIN_LOOPS` in `bootwin.s`), because the port's faster start-up
-(OPT-01) would otherwise write 0.3..0.5 ms earlier. Ending the window early when no key is held is not done (ARS 6 item 2). OF-08: the
+(about 79 ms after reset at the start of the frame, ARS 6; in the emulator with the Cortex-M3 cycle costs, 2026-11-01, the
+20-byte TEMP row frame ends at 82.27 ms in v2.05).  Both builds wait for the splash commit as v2.05 does and then a margin
+of 1000 delay iterations (`BW_HY_MARGIN_LOOPS` in `bootwin.s`; 1.70 ms measured, about 7 cycles per iteration at 4.194 MHz):
+the frame ends at 84.86 ms (baseline) / 84.53 ms (production), 83.16 / 82.83 ms without the margin. The margin is kept
+because the emulated times are lower bounds and the port's start-up path (OPT-01) differs from v2.05's.  While a window
+screen owns the main display (the splash before the version moves to the sub display, a combination screen, the
+all-segments test), the apply's decimal point is stored but not drawn (`fn_080171FA`, `ui_bootwin_main_busy`); when the
+version moves to the sub display the main digits are blanked, and the version is drawn again when an apply has cleared
+its decimal point (`ui_bootwin_gate`). Ending the window early when no key is held is not done (ARS 6 item 2). OF-08: the
 MODE-then-REL path sets calibration mode (0x2000808A = 1, 0x20008062 = 1) and writes nothing to the EEPROM.
 
 ### 7.2 Calibration mode rules in the port
@@ -1251,6 +1263,9 @@ a build switch, default stated; required = forced by a non-negotiable requiremen
 | OF-33 | CAP | timeout range jump draws the old count with the new decimal point for one update | blank across the jump | fix | MRES, UI |
 | OF-34 | BLE | frames built during a range change report 0 | frames skipped while the value is invalid | fix | BLE |
 | OF-35 | logging | log stores the per-sample value 0x20007D68 | log stores the displayed value | fix | LOG |
+| OF-52 | battery | table conversion code / 280 - 0.643 V (`FUN_08013728`, table 0x08028C9C); low-battery symbol below 4.31 V real | B+ = code x 3.3 / 4095 / (330/1330); 4.1 V threshold kept (12.2) | fix (owner decision) | PWR |
+| OF-53 | HY3131 | INTF written 0 after the event read (0x0800616C): a flag raised in between is lost (CTF: counter not restarted) | INTF acknowledge 0 only for the flags read as set, 1 for the others (DS p19); both builds (12.2, 4.1 item 4) | fix (owner decision) | HY |
+| OF-54 | HY3131 | counter registers clocked out before INTF (burst from register 0): CTF seen with the values of the previous count | data and CTF of the same completed count (production: INTF read first; baseline: counter block read again on CTF) | fix (owner decision) | HY |
 | NF-18 | STOP | DBGMCU_CR \|= 7 at every start (0x0801BEF8) keeps the RC oscillator and FCLK/HCLK running in STOP (RM0038 DBGMCU_CR bit 1) | set only in debug builds; production enters the true STOP (hardware check in Q8) | fix | SYS |
 | IMP-01 | auto-range | `autorange_step` one range per decision | ARS 5: per-sample detection, direct target range, CP settle profile by default, TP per family only after H1..H8 (ARS 12); first value after a change from 4 clean samples (ARS 5.2 P5) | approved | AR, MDC, MAC, MRES, UI |
 | IMP-02 | boot | measuring starts after the 2 s window | ARS 6: window kept, measuring during it (7.1) | approved | CAL, SYS |
@@ -1294,7 +1309,7 @@ New optimisations are added here before they are implemented; anything that chan
 | Hardware damage | destroyed parts | HY3131 table and shape checks, GPIO policy, power order, emulator safety monitor (4) |
 | Float results differ from v2.05 | readings differ by counts | RT copies v2.05 algorithms; edge-class differential tests; routine tests of every chain |
 | Timing differences | LCD/BLE/GPIO events shift | baseline mode with v2.05 loop structure, one-tick tolerance; same delay loop counts |
-| Emulator fidelity (1 instruction = 1 cycle, no wait states, re-timing across SYSCLK changes listed as open in `docs`, ideal keys) | bug invisible in the emulator | rules that do not depend on cycle timing (bounded waits, explicit order); hardware test plan before release (Q8); ARS 12 measurements before TP profiles |
+| Emulator fidelity (Cortex-M3 best-case cycle costs and the branch flash wait state, `emulator/emu/cycles.py`; data-load wait states, bus wait states and the upper ends of the cycle ranges not modelled, so emulated times are lower bounds; ideal keys) | bug invisible in the emulator | rules that do not depend on cycle timing (bounded waits, explicit order); hardware test plan before release (Q8); ARS 12 measurements before TP profiles |
 | Unproven hardware facts (4 MHz crystal, PE9 role, NJM2870 start-up, MCU rail, pin-to-net by label position, PB7 rise time) | wrong safety margin | choices safe for every reading (HW-02, HW-03, NF-04); Q3, Q4 |
 | SD/FAT reimplementation differs in command order | file-system divergence | v2.05 call order; sd_cmd/sd_block streams compared |
 | Interface drift between workers | link errors, wrong arguments | Appendix C names and signatures; `--no-undefined`; routine tests at module boundaries |
@@ -1331,7 +1346,18 @@ New optimisations are added here before they are implemented; anything that chan
   `CAL_FIX_MARKER26_RAM` is removed and that code is ported as in v2.05. BEEP calibration stays refused (OF-07).
 - OF-52 (battery conversion, found 2026-10-31 after Phase 1): fix in PWR (`adc_ch5_process` / `fn_08013728`): battery =
   code x 3.3 / 4095 / (330/1330), low-battery threshold 4.1 V kept; implemented after Phase 2 so integration compares
-  against an unchanged target, then allowlisted for the battery value and symbol streams.
+  against an unchanged target, then allowlisted for the battery value and symbol streams. Implemented 2026-11-01 (both
+  builds): `fn_08013728` returns (code x 1330 + 2047) / 4095 in 0.01 V; the v2.05 table stays in the generated
+  `src/pwr/tables_v205.s` without a reader.
+- OF-53 and OF-54 (HY3131 event service, found 2026-10-31; owner decision 2026-11-01), both builds: the INTF write after
+  the event read clears only the flags that were read (0 for each flag seen set, 1 for the others; INTF bits clear only on
+  a written 0, DS p19 10.2 (7)), so a flag raised between the read and the write stays pending; counter data and CTF belong
+  to the same completed count (production reads INTF first and the counter block after it; the baseline keeps v2.05's
+  burst from register 0 and reads the counter block 0x14..0x1D again when CTF is seen). Only register reads and writes of
+  v2.05's kinds are used; the INTF acknowledge values are the one whitelist extension (4.1 item 4).
+- OF-32 scope (owner decision 2026-11-01), production: FREQ, PULSE and DUTY with no signal are blank only until the first
+  counter result or the first no-signal timeout (300 TIM2 ticks, v2.05 0x0802442E); after a timeout 0.000 is shown as in
+  v2.05 (`ar_result_seen`, `ar_apply`, counter `ar_freq_tmo_count` incremented by the TIM2 handler).
 - Hardware question for the EEVblog test (Q8): v2.05's SD write completion wait FUN_080232E0 (0x08023346: counter 1000,
   polls SDIO_STA.TXACT) times out after about 7 ms at 4 MHz and then skips CMD12. Whether TXACT stays set while the card
   holds D0 busy after a block is not stated in RM0038 (DPSM Busy state text; TXACT "asserted when it transmits data").
@@ -1945,8 +1971,9 @@ Exceptions decided by this design:
 | `calbin_start`, `calbin_step`, `calbin_result` | CAL | see `src/cal/calbin.s` headers | | main | power-on window (BOOTWIN), LOG/SD | cal.bin save/load as a state machine (IMP-06, OF-12) |
 | `bootwin_active` (byte) | CAL | - | - | main | UI | power-on window open |
 | `ble_tx_tick` | BLE | - | - (clobbers r0-r3) | TIM2 ISR | `isr_tim2` (SYS), every tick after the 500 ms block | starts a deferred status frame (NF-04, OF-10/11); alias of `ble_tx_kick` |
-| `lcd_commit_retry` | LCD | - | - | main (production) | `fn_08016D34` (UI), `enter_stop_and_reinit` (PWR, in the "-oFF-" beep loop) | repeats a deferred LCD commit (no busy-wait, IMP-06); every production loop that stays blocking after a screen was committed and does not run `fn_08016D34` must call it |
+| `lcd_commit_retry` | LCD | - | - | main (production) | `fn_08016D34` (UI, at the end of the pass so that the repeated commit holds the finished screen), `enter_stop_and_reinit` (PWR, in the "-oFF-" beep loop) | repeats a deferred LCD commit (no busy-wait, IMP-06); every production loop that stays blocking after a screen was committed and does not run `fn_08016D34` must call it |
 | `lcd_commit_flush` | LCD | - | - | main (production) | `bootwin_start` (CAL), after the splash commit | repeats a deferred LCD commit until it is written (bounded by LCD_WAIT_POLLS, HW-07), so the first HY3131 write of the power-on window keeps v2.05's time (7.1) |
+| `ar_freq_tmo_count` (byte, `.bss_port`) | AR | - | - | IRQ28 (write), main (read) | incremented only by `sys_tim2_isr` (SYS) at a FREQ / PULSE / DUTY no-signal timeout that publishes a zero result (production); read by `ar_result_seen` and `ar_apply` | ends the OF-32 blanking at the first timeout (decision 12.2); a single writer, so no update is lost |
 | `ui_blank_req` (byte, `.bss_port`) | UI | - | - | main | written by AR (`ar_apply`, `ar_result_seen`) and MRES (`fn_08006558`); read by `fn_08016E08`, `ui_value_valid` | main digits blank (1) or dashes (2), production only (OF-30, OF-32, IMP-01 rule P5); the OF-33 blank uses the v2.05 flag 0x2000805C |
 | `ui_value_valid` | UI | - | r0 = 1 while the main digits show a reading, 0 while blank or dashes | main | `ble_value_valid` (BLE), a tail call, so a status frame is held back whenever the main digits are blank (`W3_to_W9.md`) | OF-34 |
 | `lcd_init_fault` (byte, `.bss_port`) | LCD | - | - | main | set by `lcd_init` | 1 if `lcd_init` gave up waiting for LCD_SR.ENS or RDY (HW-07) |

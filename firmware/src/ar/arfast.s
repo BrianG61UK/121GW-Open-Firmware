@@ -41,6 +41,10 @@
     .equ AR_ST_PEND,    4               @ ar_state byte 4: 1 = ar_sample changed the range and the apply has not run yet
     .equ AR_ST_FIRST,   3               @ ar_state byte 3: blank request of FREQ / PULSE / DUTY / BEEP: 1 waiting for the
                                         @ spurious autorange_step of the apply, 2 waiting for the first real result
+    .equ AR_ST_TMO_SEEN, 5              @ ar_state byte 5: value of ar_freq_tmo_count at the last look (OF-32 decision)
+    .equ AR_ST_TMO_HOLD, 6              @ ar_state byte 6: 1 = the zero of a no-signal timeout is shown; the apply that the
+                                        @ timeout requests (same mode) keeps the digits instead of blanking them
+    .equ AR_ST_LAST_MODE, 7             @ ar_state byte 7: mode of the last apply
     .equ AR_K,          2               @ K = 2 consecutive samples confirm a decision (ARS 5.2 P2)
     .equ AR_SAT_LO,     0x7FFFFE        @ a 24-bit AD1 code from 0x7FFFFE to 0x800001 is "within one count of full scale" of
     .equ AR_SAT_SPAN,   3               @ 0x7FFFFF or 0x800000 (ARS 5.2 P2): four codes
@@ -62,9 +66,16 @@
     .section .bss_port.ar, "aw", %nobits
     .balign 4
 @ ar_state (owner AR): byte 0 samples above U in a row, byte 1 samples below L in a row, byte 2 conversions to
-@ discard, byte 3 progress of the blank request (AR_ST_FIRST), byte 4 range change awaiting its apply (AR_ST_PEND)
+@ discard, byte 3 progress of the blank request (AR_ST_FIRST), byte 4 range change awaiting its apply (AR_ST_PEND),
+@ byte 5 timeout count seen (AR_ST_TMO_SEEN), byte 6 timeout zero shown (AR_ST_TMO_HOLD), byte 7 mode of the last apply
 ar_state:
     .space 8
+@ ar_freq_tmo_count: number of FREQ / PULSE / DUTY no-signal timeouts that published a zero result (production image).
+@ Written only by sys_tim2_isr (incremented at 0x080244B2's step, SYS); read by ar_result_seen and ar_apply, so the
+@ main loop never writes it and no update can be lost.
+    .global ar_freq_tmo_count
+ar_freq_tmo_count:
+    .space 1
 
     .section .rodata.ar, "a", %progbits
     .balign 4
@@ -186,14 +197,34 @@ ENDFUNC ar_sample
 @ Out      : -
 @ Clobbers : r0-r2, flags
 @ Context  : main (first instruction block of autorange_step, once per new result)
-@ RAM      : ar_state byte 3; writes ui_blank_req (W3, port RAM) = 0
+@ RAM      : ar_state bytes 3, 5, 6; reads ar_freq_tmo_count; writes ui_blank_req (W3, port RAM) = 0
 @ Spec     : firmware/requests/W3_to_W4.md 1
 @ Deviation: OF-32
 @ Every apply sets 0x2000805D itself (FUN_0800A560, 0x0800A5A0), so the first autorange_step after it runs without a
 @ result; it only moves the state from 1 to 2.  The next call comes with a real result and releases the main digits.
+@ No-signal timeout (owner decision, OF-32 scope): FREQ / PULSE / DUTY are blank only until the first counter result or
+@ the first counter timeout.  The timeout of sys_tim2_isr (v2.05 0x0802442E..0x080244C4) sets the reading to 0 and a new
+@ result and counts itself in ar_freq_tmo_count; a call that finds the count changed releases the main digits at once, so
+@ 0.000 is shown as v2.05 shows it, and marks the zero as shown (AR_ST_TMO_HOLD) for the apply that the timeout requests
+@ in auto range.  Any other result clears that mark.
 @ -----------------------------------------------------------------------------
 FUNC ar_result_seen
     ldr r2, =ar_state
+    ldr r1, =ar_freq_tmo_count
+    ldrb r1, [r1]                           @ timeouts counted by the TIM2 handler
+    ldrb r0, [r2, #AR_ST_TMO_SEEN]
+    cmp r0, r1
+    beq 5f
+    strb r1, [r2, #AR_ST_TMO_SEEN]          @ a no-signal timeout since the last call: its zero result is this result
+    movs r0, #1
+    strb r0, [r2, #AR_ST_TMO_HOLD]          @ the apply it requests keeps the digits
+    movs r0, #0
+    strb r0, [r2, #AR_ST_FIRST]             @ no blank request in progress any more
+    ldr r1, =ui_blank_req
+    strb r0, [r1]                           @ release the main digits: 0.000 as in v2.05
+    bx lr
+5:  movs r0, #0
+    strb r0, [r2, #AR_ST_TMO_HOLD]          @ not a timeout result: the next apply blanks as usual
     ldrb r0, [r2, #AR_ST_FIRST]
     cbz r0, 9f                              @ nothing pending
     cmp r0, #1
@@ -234,8 +265,8 @@ ENDFUNC ar_decision_pending
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags (r4-r6 saved)
 @ Context  : main (tail call of fn_0800DB48, which has just stored the v2.05 settle count in 0x20000238)
-@ RAM      : writes 0x200080F8 (ar_ol_latch) = 0, ar_state (counts 0, discard n, blank progress), ui_blank_req (W3),
-@            0x20000238 (TP only); reads 0x20000238
+@ RAM      : writes 0x200080F8 (ar_ol_latch) = 0, ar_state (counts 0, discard n, blank progress, timeout mark, last mode),
+@            ui_blank_req (W3), 0x20000238 (TP only); reads 0x20000238, ar_freq_tmo_count
 @ Spec     : analysis/autorange_and_scheduler.md 5.2 P4 (settle after a change)
 @ Deviation: OF-20 (latch), OF-32 (blank request), IMP-01 (settle profiles)
 @
@@ -266,6 +297,20 @@ FUNC ar_apply
     strb r3, [r4, #AR_ST_PEND]              @ the apply that was pending has run
     uxtb r0, r0                             @ r0 = mode
     uxtb r1, r1                             @ r1 = range
+    @ OF-32 timeout decision: r12 = 1 when this apply follows a no-signal timeout of the same mode whose zero is shown (the
+    @ apply requested by the timeout in auto range): the digits are not blanked again.  Another mode: timeouts counted
+    @ so far belong to the previous mode and are taken as seen.
+    ldrb r2, [r4, #AR_ST_LAST_MODE]
+    strb r0, [r4, #AR_ST_LAST_MODE]
+    ldrb r12, [r4, #AR_ST_TMO_HOLD]
+    strb r3, [r4, #AR_ST_TMO_HOLD]          @ the mark is used by this apply only
+    cmp r2, r0
+    beq 5f
+    mov r12, r3                             @ another mode: blank as usual
+    ldr r2, =ar_freq_tmo_count
+    ldrb r2, [r2]
+    strb r2, [r4, #AR_ST_TMO_SEEN]          @ timeouts of the previous mode are not results of this one
+5:
     movs r2, #1
     lsls r2, r2, r0                         @ r2 = 1 << mode (zero for a mode above 31)
     ldr r6, =ui_blank_req                   @ r6 = address of the blank request byte (W3)
@@ -274,6 +319,8 @@ FUNC ar_apply
     ldr r3, =AR_BLANK_MASK
     tst r2, r3
     beq 6f
+    cmp r12, #0
+    bne 6f                                  @ apply of a timeout whose zero is shown: keep the digits (OF-32 decision)
     movs r5, #1                             @ FREQ, PULSE, DUTY, BEEP: the main digits stay blank until the first result
 6:  strb r5, [r6]
     strb r5, [r4, #AR_ST_FIRST]             @ 1 = still waiting for the spurious autorange_step of this apply

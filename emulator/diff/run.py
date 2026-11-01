@@ -49,6 +49,14 @@ from diff import scenario as scen          # noqa: E402
 from diff import compare as cmpm           # noqa: E402
 from emu import allowlist                  # noqa: E402
 
+# OF-53 (firmware/ORIGINAL_FIRMWARE_ISSUES.md, owner decision): after an event service the port writes to INTF (register
+# 0x1E, one-byte frame as v2.05 0x0800616C) a 0 for every flag it has read as set and a 1 for the others, where v2.05 writes
+# 0x00 and so also clears a flag raised after its read.  INTF is a flag register, not a configuration register: a written 0
+# clears a flag, a written 1 has no effect ("INTF register can be written as 0 by SPI Interface, but not 1", HY3131 data
+# sheet p19 10.2 (7)); bits 6:5 carry no flag ("-", data sheet p19) and are written 0 as in v2.05's value.  These pairs are
+# added to the whitelist (make_whitelist); the frame shape (0x1E, 1) and the configuration states are unchanged.
+INTF_ACK_PAIRS = {(0x1E, v) for v in range(256) if not v & 0x60}
+
 MUTATION_ADDR = 0x0801A856                 # movs r4, #0xCD in FUN_0801A854 (version splash)
 MUTATION_ORIG = bytes([0xCD, 0x24])        # Thumb encoding of movs r4, #0xCD
 APP_BASE = 0x08006000
@@ -349,6 +357,7 @@ def make_whitelist(args, ref, lib):
     total.pairs |= pairs
     total.frames |= shapes
     total.states |= states
+    total.pairs |= INTF_ACK_PAIRS                # the port's IRQ acknowledge values (OF-53, see INTF_ACK_PAIRS)
     header = ['Whitelist of the hardware-safety monitor (emu/safety.py): HY3131 writes and supply/enable output steps of',
               f'the original firmware (image sha256 {sha256(ref)}).',
               'Sources, united:',
@@ -363,7 +372,11 @@ def make_whitelist(args, ref, lib):
               'Regenerate (after changing scenarios or the emulator):',
               '  python -I emulator/diff/run.py --make-whitelist --ref EEVBlog2_05.bin --eeprom <calibration EEPROM image>',
               'Lines: write <reg> <value> | frame <start reg> <byte count> | state <registers 0x20..0x33, -- = not written>',
-              '       | power <changed pins> <old levels> <new levels> <PE9/PD1 before>   (levels 0, 1, Z = not driven)', '']
+              '       | power <changed pins> <old levels> <new levels> <PE9/PD1 before>   (levels 0, 1, Z = not driven)',
+              'Added to the v2.05 set (emulator/diff/run.py INTF_ACK_PAIRS): the IRQ acknowledge values "write 1E v" with bits',
+              '6:5 of v clear (OF-53, firmware/ORIGINAL_FIRMWARE_ISSUES.md: the port writes 0 only for the INTF flags it read as',
+              'set).  INTF is a flag register, not configuration: a written 0 clears a flag, a written 1 has no effect (HY3131',
+              'data sheet p19 10.2 (7)); bits 6:5 carry no flag and stay 0 as in the v2.05 write of 0x00 (0x0800616C).', '']
     if merged_from is not None:
         header = merged_from + [f'Merged on top of the lines above: runs of {", ".join(sc.name for sc in scenarios)} '
                                 f'(emulator/diff/run.py --make-whitelist --merge --scenario ...).', '']

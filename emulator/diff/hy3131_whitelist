@@ -12,6 +12,10 @@
 #   python -I emulator/diff/run.py --make-whitelist --ref EEVBlog2_05.bin --eeprom <calibration EEPROM image>
 # Lines: write <reg> <value> | frame <start reg> <byte count> | state <registers 0x20..0x33, -- = not written>
 #        | power <changed pins> <old levels> <new levels> <PE9/PD1 before>   (levels 0, 1, Z = not driven)
+# Added to the v2.05 set (emulator/diff/run.py INTF_ACK_PAIRS): the IRQ acknowledge values "write 1E v" with bits
+# 6:5 of v clear (OF-53, firmware/ORIGINAL_FIRMWARE_ISSUES.md: the port writes 0 only for the INTF flags it read as
+# set).  INTF is a flag register, not configuration: a written 0 clears a flag, a written 1 has no effect (HY3131
+# data sheet p19 10.2 (7)); bits 6:5 carry no flag and stay 0 as in the v2.05 write of 0x00 (0x0800616C).
 # Merged on top of the lines above: runs of apo_timing_wake, apo_disabled (emulator/diff/run.py --make-whitelist --merge --scenario ...).
 #
 write 1B 00
@@ -19,6 +23,69 @@ write 1C 00
 write 1D 80
 write 1D E0
 write 1E 00
+write 1E 01
+write 1E 02
+write 1E 03
+write 1E 04
+write 1E 05
+write 1E 06
+write 1E 07
+write 1E 08
+write 1E 09
+write 1E 0A
+write 1E 0B
+write 1E 0C
+write 1E 0D
+write 1E 0E
+write 1E 0F
+write 1E 10
+write 1E 11
+write 1E 12
+write 1E 13
+write 1E 14
+write 1E 15
+write 1E 16
+write 1E 17
+write 1E 18
+write 1E 19
+write 1E 1A
+write 1E 1B
+write 1E 1C
+write 1E 1D
+write 1E 1E
+write 1E 1F
+write 1E 80
+write 1E 81
+write 1E 82
+write 1E 83
+write 1E 84
+write 1E 85
+write 1E 86
+write 1E 87
+write 1E 88
+write 1E 89
+write 1E 8A
+write 1E 8B
+write 1E 8C
+write 1E 8D
+write 1E 8E
+write 1E 8F
+write 1E 90
+write 1E 91
+write 1E 92
+write 1E 93
+write 1E 94
+write 1E 95
+write 1E 96
+write 1E 97
+write 1E 98
+write 1E 99
+write 1E 9A
+write 1E 9B
+write 1E 9C
+write 1E 9D
+write 1E 9E
+write 1E 9F
 write 1F 01
 write 1F 04
 write 1F 05

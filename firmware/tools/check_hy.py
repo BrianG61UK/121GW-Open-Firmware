@@ -29,6 +29,7 @@ fn_0800B974, frame writer hy3131_write_regs).  Checks:
   5. Guard probe: with the port's loaded-row state set, every single-bit mutation of every v2.05 frame, every
      (register 0..0x3F, count 1..24) that is not one of the six shapes, and the soft-reset write 0x37 = 0x60 are offered to
      hy3131_write_regs: each must be refused (return value 1) with no pin touched; every v2.05 frame must be accepted.
+     The IRQ acknowledge (0x1E, 1) is checked against INTF_ACK (OF-53: any value with bits 6:5 clear, see INTF_ACK).
   6. Random RAM: 300 runs with flag bytes set to random values 0..255 (fixed seed): every frame that reaches the bus is a
      v2.05 frame (a corrupted RAM cannot make the port write a row that v2.05 never writes).
   7. Instruction level (module check_image): outside the HY bus routines (hy3131_spi_clock_pulse, hy3131_spi_write_byte,
@@ -81,6 +82,13 @@ MODE, RANGE = 0x2000803C, 0x2000803D
 GPIOF = 0x40021800
 BSRRL, BSRRH, ODR = GPIOF + 0x18, GPIOF + 0x1A, GPIOF + 0x14
 SHAPES = ((0x20, 20), (0x1E, 2), (0x1E, 1), (0x20, 1), (0x1B, 3), (0x29, 1))
+# The IRQ acknowledge (0x1E, 1) after an event service (v2.05 0x0800616C writes 0x00).  OF-53 (owner decision): the port
+# writes 0 for the INTF flags it has read as set and 1 for the others, so a flag raised after the read is not discarded.
+# INTF is a flag register, not a configuration register: a written 0 clears a flag, a written 1 has no effect ("INTF
+# register can be written as 0 by SPI Interface, but not 1", HY3131 data sheet p19 10.2 (7)); bits 6:5 carry no flag
+# ("-", data sheet p19) and are written 0 as v2.05 writes them.  So every value with bits 6:5 clear is allowed: none can
+# change the chip's configuration, and the value 0x00 of v2.05 is among them.
+INTF_ACK = {(0x1E, bytes([v])) for v in range(256) if not v & 0x60}
 TABLE_ADDRS = (0x080285BC, 0x080286D0, 0x08028748, 0x080288A0, 0x08028904, 0x080289C8, 0x08028D1C, 0x08028D58,
                0x08028D94, 0x08028F1C, 0x08028F44, 0x08028F6C, 0x08028F94, 0x08028FBC, 0x08029150)   # DESIGN 4.1
 EXPECT_ROWS, EXPECT_PAIRS = 41, 47                              # DESIGN 4.1
@@ -627,7 +635,7 @@ def main(argv):
         for s in sorted(extra):
             vio.append('HY-REF the v2.05 sweep sends the frame shape (0x%02X, %d), not one of the six of DESIGN 4.1' % s)
         print('v2.05 shapes outside the selector sweep: (0x29, 1) peak restart 0x0800A872 / 0x0800A88C and (0x1E, 1) IRQ '
-              'acknowledge 0x0800616C; with them the six shapes of DESIGN 4.1 are complete')
+              'acknowledge 0x0800616C (values: INTF_ACK, OF-53); with them the six shapes of DESIGN 4.1 are complete')
         # 3. port sweep
         sel, wr, rd, dl = need(syms, 'fn_0800B974', 'hy3131_write_regs', 'hy3131_read_regs_to_rxbuf', 'fn_0800ECF6')
         step = syms.get('hy_counter_restart_step')
@@ -655,7 +663,7 @@ def main(argv):
         nw = check_wire(world_port, syms, ref, vio)
         print('wire level: %d distinct sequences decoded from the GPIOF BSRR writes' % nw)
         # 5. guard probe
-        ref_frames = set(frames) | {(0x1E, b'\x00')}      # + the IRQ acknowledge of v2.05 0x0800616C (0x1E <- 0x00)
+        ref_frames = set(frames) | INTF_ACK                # + the IRQ acknowledge 0x0800616C (v2.05 0x00; port OF-53)
         npb = guard_probe(world_port, syms, ref_frames, rows, vio)
         print('guard probe: %d offered frames, each accepted or refused as required' % npb)
         # 6. random RAM
