@@ -166,7 +166,11 @@ jobs:
           python -I emulator/tools/smoke.py --url http://127.0.0.1:8131 --timeout 300 --expect-direct --expect-synthetic || {
             date -u +"fail %H:%M:%S"; tasklist | grep -i 121gw || echo "process not running"
             code=0; wait "$app_pid" || code=$?; echo "application exit code $code"
-            netstat -ano | grep 8131 || echo "nothing listens on 8131"; cat app.log; exit 1; }
+            netstat -ano | grep 8131 || echo "nothing listens on 8131"; cat app.log
+            ls -la installed/121gw-emulator.exe || echo "the installed exe is gone"
+            powershell -NoProfile -Command "Get-MpThreatDetection | Select-Object -Last 5 | Format-List; Get-MpThreat | Format-List" || true
+            powershell -NoProfile -Command "Get-WinEvent -FilterHashtable @{LogName='Application'; Level=2} -MaxEvents 5 | Format-List TimeCreated,ProviderName,Message" || true
+            exit 1; }
           curl -fsS -X POST -H 'X-121GW: quit' http://127.0.0.1:8131/quit
           sleep 2
       - name: Checksum
