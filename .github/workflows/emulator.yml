@@ -155,24 +155,22 @@ jobs:
             "$(cygpath -w "$PWD/emulator/packaging/windows/121gw_emulator.iss")"
           ls -l 121GW-Open-Firmware-Emulator-*
       - name: Install silently and start the installed application
+        shell: pwsh
         run: |
-          set -euo pipefail
-          setup="121GW-Open-Firmware-Emulator-$RELEASE_TAG-windows-x64.exe"
-          dir="$(cygpath -w "$PWD/installed")"
-          ./"$setup" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$dir"
-          date -u +"start %H:%M:%S"
-          PYTHONUNBUFFERED=1 PYTHONFAULTHANDLER=1 "installed/121gw-emulator.exe" --no-open --port 8131 > app.log 2>&1 &
-          app_pid=$!
-          python -I emulator/tools/smoke.py --url http://127.0.0.1:8131 --timeout 300 --expect-direct --expect-synthetic || {
-            date -u +"fail %H:%M:%S"; tasklist | grep -i 121gw || echo "process not running"
-            code=0; wait "$app_pid" || code=$?; echo "application exit code $code"
-            netstat -ano | grep 8131 || echo "nothing listens on 8131"; cat app.log
-            ls -la installed/121gw-emulator.exe || echo "the installed exe is gone"
-            powershell -NoProfile -Command "Get-MpThreatDetection | Select-Object -Last 5 | Format-List; Get-MpThreat | Format-List" || true
-            powershell -NoProfile -Command "Get-WinEvent -FilterHashtable @{LogName='Application'; Level=2} -MaxEvents 5 | Format-List TimeCreated,ProviderName,Message" || true
-            exit 1; }
-          curl -fsS -X POST -H 'X-121GW: quit' http://127.0.0.1:8131/quit
-          sleep 2
+          $setup = "121GW-Open-Firmware-Emulator-$env:RELEASE_TAG-windows-x64.exe"
+          $dir = Join-Path $PWD "installed"
+          Start-Process -FilePath ".\$setup" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$dir" -Wait
+          $p = Start-Process -FilePath (Join-Path $dir "121gw-emulator.exe") -ArgumentList "--no-open", "--port", "8131" `
+                 -RedirectStandardOutput app.log -RedirectStandardError app.err -PassThru -NoNewWindow
+          python -I emulator/tools/smoke.py --url http://127.0.0.1:8131 --timeout 300 --expect-direct --expect-synthetic
+          $ok = $LASTEXITCODE -eq 0
+          if (-not $ok) {
+            "has exited: $($p.HasExited)  exit code: $($p.ExitCode)  exit time: $($p.ExitTime)"
+            Get-Content app.log; Get-Content app.err
+            exit 1
+          }
+          Invoke-WebRequest -Method Post -Headers @{ "X-121GW" = "quit" } -Uri http://127.0.0.1:8131/quit | Out-Null
+          Start-Sleep 2
       - name: Checksum
         run: python -I .github/scripts/sha256sum.py "121GW-Open-Firmware-Emulator-$RELEASE_TAG-windows-x64.exe" > "121GW-Open-Firmware-Emulator-$RELEASE_TAG-windows-x64.exe.sha256"
       - uses: actions/upload-artifact@v7
