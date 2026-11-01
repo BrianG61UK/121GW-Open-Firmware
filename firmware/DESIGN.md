@@ -135,7 +135,11 @@ LSIRDY, RTCEN, RTCSEL = LSI (the LCD runs from RTCCLK).
 ### 3.2 Port start-up sequence (module SYS)
 
 1. `sys_reset` (reset vector): `cpsid i`; NVIC_ICER0/1 = 0xFFFFFFFF and NVIC_ICPR0/1 = 0xFFFFFFFF (disables and clears
-   the bootloader's IRQ28/45/53 sources); TIM2 CR1 = 0, DIER = 0, SR = 0; `nvm_reset_lock` (NVM: FLASH_PECR PELOCK = 1;
+   the bootloader's IRQ28/45/53 sources); TIM2's own registers are left as the bootloader left them (counter running,
+   UIE set), as in v2.05, so that the port's handler, once `sys_nvic_init` enables IRQ28, sees the same two start-up
+   updates as v2.05 (bootloader period expiry, UG of the TIM2 set-up; boot_v: 35.885 ms and 36.971 ms) and every
+   TIM2-derived flag keeps v2.05's phase (integration 2026-10-31: clearing DIER/SR put them 2 ticks, 20.04 ms, behind);
+   `nvm_reset_lock` (NVM: FLASH_PECR PELOCK = 1;
    RM0038 rev 15 FLASH_PECR bits 1 and 2: PRGLOCK and OPTLOCK are "set when PELOCK is set", so program memory and option
    bytes are locked too). Reason: the bootloader leaves interrupts enabled with its own TIM2 handler active and the
    flash unlocked (2.1) (NF-12, NF-13).
@@ -151,7 +155,9 @@ LSIRDY, RTCEN, RTCSEL = LSI (the LCD runs from RTCCLK).
    PWR flags, `nvm_clear_errors` = FLASH_SR <- 0x1F02 where v2.05 does it at 0x0801BEA4, VOS range 1, clock select,
    LSI/RTC, GPIO, analog pins, ADC, NVIC, TIM2, TIM3, AHBENR; every wait bounded at 0x5000 polls, the HSERDY-clear wait
    included, which replaces the endless loop at 0x0801BF58), `sample_pf8_at_boot`, `set_state_reset` (`FUN_08024DE0`),
-   `cal_cache_load` (6.20), `lcd_init(contrast, 1)`, `bootwin_start` (7.1), then the main loop (3.5).
+   `lcd_init(contrast, 1)`, `bootwin_start` (7.1; it calls `cal_cache_load` (6.20) just before the splash, whose wait
+   for the end of lcd_init's display update absorbs the 1.78 ms copy, so the copy adds no time to the start-up), then
+   the main loop (3.5).
 6. `cpsie i` after the NVIC set-up inside `sys_system_init`. v2.05 never masks interrupts (no `cpsid`/`cpsie` in the
    image); its interrupts become live when `FUN_0801BFDE` enables them in the NVIC.
 
@@ -784,8 +790,8 @@ A module with a narrow interface, so that the faster auto-ranging (IMP-01, ARS s
   `FUN_08010F8C`, `FUN_08010FB8`; `calbin_save` 0x0801CD14, `calbin_load` 0x0801CF06; power-on window `FUN_0800EA3A`
   (7.1).
 - Calibration cache (OPT-08, ARS 5.2 P6): `cal_cache_load` copies EEPROM 0x000..0x4FF into `cal_cache` at boot and
-  wake (after `set_state_reset`); the loaders read the cache with the v2.05 formats and validation; NVM updates the
-  cache after every verified byte write. The cache holds exactly the EEPROM content, so readings are identical; v2.05
+  wake (in `bootwin_start`, after `set_state_reset` and `lcd_init`, just before the splash); the loaders read the
+  cache with the v2.05 formats and validation; NVM updates the cache after every verified byte write. The cache holds exactly the EEPROM content, so readings are identical; v2.05
   reads the EEPROM at every apply (up to 13.8 ms, ARS 5.2 P6).
 - RAM: calibration words 0x20007DFC..0x20007E20, 0x20007E4C..0x20007E58, flags 0x20008088..0x2000808F, 0x20008095,
   0x2000809C..0x2000809F, cal mode 0x2000808A, 0x20007C38, 0x20007D5C, date code 0x20007F9A, board offset 0x20007FBE;
@@ -1320,6 +1326,9 @@ New optimisations are added here before they are implemented; anything that chan
   `ORIGINAL_FIRMWARE_ISSUES.md` (confirmed by execution). NF-10 is refuted: the only write of marker 0x26 / RAM flag
   0x20007FE0 (0x0800F8AE..0x0800F8B8) is in the AC gain completion FUN_0800F7B8, which never runs in mode 9; switch
   `CAL_FIX_MARKER26_RAM` is removed and that code is ported as in v2.05. BEEP calibration stays refused (OF-07).
+- OF-52 (battery conversion, found 2026-10-31 after Phase 1): fix in PWR (`adc_ch5_process` / `fn_08013728`): battery =
+  code x 3.3 / 4095 / (330/1330), low-battery threshold 4.1 V kept; implemented after Phase 2 so integration compares
+  against an unchanged target, then allowlisted for the battery value and symbol streams.
 - Q12: MPU guard added (switch `MPU_GUARD`). The emulator models the MPU (PM0056 4.2, `emulator/emu/scs.py`); the guard
   build boots and stray stores to program flash and the option bytes fault into `sys_fault_safe` with nothing written.
   The default becomes 1 once STOP/wake of the guard build passes in integration.
@@ -1928,6 +1937,7 @@ Exceptions decided by this design:
 | `bootwin_active` (byte) | CAL | - | - | main | UI | power-on window open |
 | `ble_tx_tick` | BLE | - | - (clobbers r0-r3) | TIM2 ISR | `isr_tim2` (SYS), every tick after the 500 ms block | starts a deferred status frame (NF-04, OF-10/11); alias of `ble_tx_kick` |
 | `lcd_commit_retry` | LCD | - | - | main (production) | `fn_08016D34` (UI), `enter_stop_and_reinit` (PWR, in the "-oFF-" beep loop) | repeats a deferred LCD commit (no busy-wait, IMP-06); every production loop that stays blocking after a screen was committed and does not run `fn_08016D34` must call it |
+| `lcd_commit_flush` | LCD | - | - | main (production) | `bootwin_start` (CAL), after the splash commit | repeats a deferred LCD commit until it is written (bounded by LCD_WAIT_POLLS, HW-07), so the first HY3131 write of the power-on window keeps v2.05's time (7.1) |
 | `ui_blank_req` (byte, `.bss_port`) | UI | - | - | main | written by AR (`ar_apply`, `ar_result_seen`) and MRES (`fn_08006558`); read by `fn_08016E08`, `ui_value_valid` | main digits blank (1) or dashes (2), production only (OF-30, OF-32, IMP-01 rule P5); the OF-33 blank uses the v2.05 flag 0x2000805C |
 | `ui_value_valid` | UI | - | r0 = 1 while the main digits show a reading, 0 while blank or dashes | main | `ble_value_valid` (BLE), a tail call, so a status frame is held back whenever the main digits are blank (`W3_to_W9.md`) | OF-34 |
 | `lcd_init_fault` (byte, `.bss_port`) | LCD | - | - | main | set by `lcd_init` | 1 if `lcd_init` gave up waiting for LCD_SR.ENS or RDY (HW-07) |
@@ -1954,7 +1964,7 @@ Exceptions decided by this design:
 | `ar_sample` | AR | r0 = calibrated per-sample value, r1 = raw AD1 code | - | main | MDC, MAC, MRES | production mode only (IMP-01) |
 | `hy_peak_restart` | HY | - | - | main | MAC (`FUN_0800A7FC`) | the two 0x29 writes of 0x0800A872/0x0800A88C with bytes from the row table (HW-05) |
 | `current_extra_clear` | MVA | r0 = mode (16..21) | r0 = NVM status | main | CAL | OF-08: arm USERZERO, write A5 00000000 to that mode's record, zero 0x20007E0C if the mode is active at range 0 |
-| `cal_cache_load` | CAL | - | - | main | `sys_main`, `enter_stop_and_reinit` | OPT-08 |
+| `cal_cache_load` | CAL | - | - | main | `bootwin_start` (CAL; at boot and after STOP) | OPT-08 |
 | `bootwin_start` / `bootwin_step` | CAL | - / - | - / r0 = 0 window open, 1 closed | main | `sys_main`, `enter_stop_and_reinit` | 7.1 |
 | `nvm_reset_lock` | NVM | - | - | reset | `sys_reset` | PELOCK = 1 |
 | `nvm_clear_errors` | NVM | - | - | main | `sys_system_init` | FLASH_SR <- 0x1F02 (v2.05 0x0801BEA4) |
