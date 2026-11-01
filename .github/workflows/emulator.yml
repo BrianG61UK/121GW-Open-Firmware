@@ -138,17 +138,6 @@ jobs:
         run: |
           python -I emulator/tools/prepare_data.py --dist dist
           python -I emulator/packaging/make_icons.py build/icons
-      - name: Emulator pieces on Windows (diagnostic)
-        run: |
-          python -m venv ucx && ucx/Scripts/python -m pip -q install unicorn==2.1.4 capstone==5.0.9
-          ucx/Scripts/python -X faulthandler -c "import sys; sys.path.insert(0, 'emulator'); from emu.core import Machine; Machine(); print('ok')" > p1.log 2>&1; echo "machine only (clean venv): exit $? $(tail -1 p1.log)"
-          ucx/Scripts/python -X faulthandler -c "import sys; sys.path.insert(0, 'emulator'); import app; from emu.core import Machine; Machine(); print('ok')" > p2.log 2>&1; echo "machine after importing app (clean venv): exit $? $(tail -1 p2.log)"
-          ucx/Scripts/python -X faulthandler -I emulator/scripts/example_headless.py 2_fast > p3.log 2>&1; echo "headless example (clean venv): exit $? $(tail -1 p3.log)"
-          python -X faulthandler -c "import sys; sys.path.insert(0, 'emulator'); from emu.core import Machine; Machine(); print('ok')" > p4.log 2>&1; echo "machine only (job python): exit $? $(tail -1 p4.log)"
-          for f in p1 p2 p3 p4; do echo "== $f"; tr -d '\r' < $f.log | tail -8; done
-      - name: Emulator from source (diagnostic)
-        run: |
-          python -X faulthandler -I emulator/scripts/example_headless.py 2_fast || echo "source run exit code $?"
       - name: Application folder
         working-directory: emulator
         run: |
