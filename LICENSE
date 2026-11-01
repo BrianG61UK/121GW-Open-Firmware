@@ -2,22 +2,20 @@
 
 Copyright (c) 2026 zombu4
 
-The licensors are zombu4 and EEVblog (David L. Jones).
-
 1. Permitted use
    Anyone may, free of charge, use, study, build, run and modify this software (the firmware sources, the emulator
    and the accompanying documents), and may share copies, modified or not, provided that no money or other
    consideration is charged for them and that this licence text is included unchanged.
 
 2. Restrictions
-   Except by the licensors, this software may not be
+   Except by EEVblog (David L. Jones), this software may not be
    a) sold, licensed for a fee or otherwise offered for money or other consideration, in source or binary form;
    b) bundled with, pre-installed on or distributed as part of any product, device, software package, software
       distribution or service.
 
-3. The licensors
-   The licensors may use, sell, bundle, distribute and relicense this software without the restrictions of
-   section 2.
+3. EEVblog
+   EEVblog (David L. Jones) may use, sell, bundle, distribute and relicense this software without the
+   restrictions of section 2. No one else, the copyright holder included, may sell or bundle it.
 
 4. Third-party material
    The LCD segment graphics in emulator/ui/assets/lcd are from the official 121GW app and are licensed under the MIT
@@ -26,4 +24,4 @@ The licensors are zombu4 and EEVblog (David L. Jones).
 
 5. No warranty
    This software is provided "as is", without warranty of any kind. Flashing firmware to a meter is done at the
-   user's own risk; the licensors are not liable for any damage to equipment, data or calibration.
+   user's own risk; the copyright holder and EEVblog are not liable for any damage to equipment, data or calibration.
