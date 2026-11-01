@@ -14,7 +14,7 @@ Every release (tag `v*`, see [Releases](../../releases)) carries:
 | File | Content |
 |---|---|
 | `firmware-<tag>.zip` | `2_fast/EEVBlog.bin` (production build), `1_like_v2.05/EEVBlog.bin` (strict build that behaves like v2.05 apart from the defect fixes), `FIXES.md` (the v2.05 defects fixed), `LICENSE`, `SHA256SUMS` |
-| `121GW-Open-Firmware-Emulator-<tag>-macos-arm64.dmg`, `-macos-x86_64.dmg` | emulator for macOS |
+| `121GW-Open-Firmware-Emulator-<tag>-macos-arm64.dmg` | emulator for macOS (Apple Silicon) |
 | `121GW-Open-Firmware-Emulator-<tag>-windows-x64.exe` | emulator installer for Windows |
 | `121GW-Open-Firmware-Emulator-<tag>-linux-x86_64.AppImage` | emulator for Linux |
 | `<file>.sha256` | SHA-256 of the file with that name |

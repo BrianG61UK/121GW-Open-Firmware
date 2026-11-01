@@ -1,10 +1,10 @@
 # Emulator: PyInstaller one-folder application with the two firmware builds, the v2.05 table data and the SYNTHETIC EEPROM
-# image, packaged as macOS .dmg (arm64 and x86_64), Windows installer .exe (Inno Setup) and Linux AppImage (x86_64); on a
+# image, packaged as macOS .dmg (Apple Silicon, arm64), Windows installer .exe (Inno Setup) and Linux AppImage (x86_64); on a
 # tag v* the packages are attached to the release that firmware.yml creates.  Every package is started once (the UI must
 # answer and the firmware must boot to a reading, emulator/tools/smoke.py) before it is published.
 #
 # NOTE: the macOS packaging is the part that was run on a machine before this workflow was written (macOS arm64 build,
-# .dmg, start from the mounted image).  The Windows and Linux jobs, the macOS x86_64 job and this file as a whole have
+# .dmg, start from the mounted image).  The Windows and Linux jobs and this file as a whole have
 # not run on GitHub yet.
 name: Emulator
 
@@ -51,7 +51,6 @@ jobs:
       matrix:
         include:
           - {runner: macos-15, arch: arm64}
-          - {runner: macos-15-intel, arch: x86_64}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
