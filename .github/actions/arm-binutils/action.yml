@@ -1,0 +1,39 @@
+name: GNU binutils 2.46.0 for arm-none-eabi
+description: >
+  Builds GNU binutils 2.46.0 (release tarball, SHA-256 pinned) for the target arm-none-eabi on a Linux runner, caches the
+  result and puts it on PATH.  firmware/Makefile accepts exactly binutils 2.46 (target toolcheck); the distributions'
+  packages are older (Ubuntu 24.04: 2.42, Ubuntu 26.04: 2.45.50), so they are not used.  A local build of this tarball
+  (macOS) reports 2.46.0.20260210 and produced images byte-identical to those of the binutils the code is developed with;
+  the Linux build of it has not run before the first CI run.
+runs:
+  using: composite
+  steps:
+    - name: Restore the cached toolchain
+      id: cache
+      uses: actions/cache@v6
+      with:
+        path: ~/arm-binutils-2.46.0
+        key: arm-binutils-2.46.0-${{ runner.os }}-${{ runner.arch }}-1
+    - name: Build binutils 2.46.0 (arm-none-eabi)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends build-essential texinfo
+        work="$(mktemp -d)"
+        cd "$work"
+        curl -fsSL -o binutils.tar.xz https://ftp.gnu.org/gnu/binutils/binutils-2.46.0.tar.xz
+        echo "d75a94f4d73e7a4086f7513e67e439e8fcdcbb726ffe63f4661744e6256b2cf2  binutils.tar.xz" | sha256sum -c -
+        tar -xJf binutils.tar.xz
+        mkdir build
+        cd build
+        ../binutils-2.46.0/configure --target=arm-none-eabi --prefix="$HOME/arm-binutils-2.46.0" \
+          --disable-nls --disable-gdb --disable-sim --disable-werror --disable-gprofng --without-zstd
+        make -j"$(nproc)"
+        make install
+    - name: Put the toolchain on PATH
+      shell: bash
+      run: |
+        echo "$HOME/arm-binutils-2.46.0/bin" >> "$GITHUB_PATH"
+        "$HOME/arm-binutils-2.46.0/bin/arm-none-eabi-as" --version | head -1

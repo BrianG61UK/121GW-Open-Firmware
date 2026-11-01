@@ -78,6 +78,7 @@ RAM_MODE, RAM_RANGE = 0x2000803C, 0x2000803D       # meter_mode, meter_range
 RAM_LOWZ_AC = 0x20008098                           # LowZ variant flag: 0 = DC chain (spec 4.2, 5.1)
 CAL_TABLE = 0x08028EE8                             # u16 table[mode] of EEPROM record bases (FW 0x0801167C)
 V205_BASE = 0x08006000                             # load address of the reference v2.05 application image
+FILT_FT = 0x0802501C                                # 1 kHz filter frequency table (216 words, 20..6000 Hz; acc 5.5)
 
 MODE_NAMES = ['LowZ', 'DCV', 'ACV', 'DCmV', 'ACmV', 'TEMP', 'FREQ', 'PULSE', 'DUTY', 'OHM', 'BEEP', 'DIODE',
               'CAP', 'uVA', 'mVA', 'VA', 'ACuA', 'DCuA', 'ACmA', 'DCmA', 'ACA', 'DCA', 'DCuVA', 'DCmVA',
@@ -291,9 +292,12 @@ class _Base:
         # records, and a corrupted record must then show up as a wrong reading, exactly as on a real meter.
         self.hw_cal = None
         # The inverse chains reproduce v2.05's arithmetic, so their tables (record-base table, correction tables) are
-        # read from the reference v2.05 image, never from the emulated flash: a replacement firmware places its own
-        # tables elsewhere.  Set by the application; falls back to the emulated flash if absent.
+        # never read from the emulated flash: a replacement firmware places its own tables elsewhere.  The source is, in
+        # this order: v205_image (bytes of an original v2.05 image supplied by the user, load address V205_BASE), else
+        # v205_tables (emu/v205tables.py: the tables of the firmware sources, generated at build time, no original
+        # image needed), else the emulated flash.  Set by the application.
         self.v205_image = None
+        self.v205_tables = None
         self.env = dict(ENV_DEFAULT)   # environment: mains pickup (module docstring)
         self._drift = ()               # drift terms (weight, period s, phase rad), drawn in attach()
 
@@ -518,14 +522,22 @@ class _Base:
         return self._ram8(RAM_MODE), self._ram8(RAM_RANGE)
 
     def _ref(self, a, n):
-        """n bytes at address a of the reference v2.05 application image (or the emulated flash without one)."""
+        """n bytes at address a of the reference v2.05 tables: the user-supplied original image if there is one, else the
+        table data file (emu/v205tables.py), else the emulated flash."""
         img = self.v205_image
         if img is None:
+            if self.v205_tables is not None:
+                return self.v205_tables.read(a, n)
             return bytes(self.m.uc.mem_read(a, n))
         o = a - V205_BASE
         if not 0 <= o <= len(img) - n:
             raise ValueError(f'reference image read outside the v2.05 image: 0x{a:08X}')
         return img[o:o + n]
+
+    def _from_table_data(self):
+        """True when the reference tables come from the data file, which holds the table contents only (the words
+        beside the tables are code and literal-pool words of v2.05, not data)."""
+        return self.v205_image is None and self.v205_tables is not None
 
     def cal_record(self, mode, rng):
         """EEPROM record (offset i32, gain g) of mode/range: R = u16 table 0x08028EE8[mode] + 16 * range,
@@ -809,7 +821,14 @@ class CalibratedFrontend(_Base):
         """k = first i in 0..n-1 with F <= FT[i], else n-1; t = fdiv(i2f(F - FT[k-1]), i2f(FT[k] - FT[k-1]))."""
         tab = self._tab(ft, n)
         k = next((i for i in range(n) if f <= tab[i]), n - 1)
-        p, q = self._tab(ft + 4 * (k - 1), 2)
+        if k == 0 and ft == FILT_FT and self._from_table_data():
+            # F = 20 Hz stops the search at index 0 and v2.05 reads the word before the table (0x08025018, a
+            # literal-pool word 0x4002101A, not table data).  The ratio (F - p) / (FT[0] - p) is 1.0 for every p other
+            # than 20, so p = 0 gives the same result; the replacement firmware makes the same substitution
+            # (firmware/src/mac/filter.s FILT_PREV_FT).
+            p, q = 0, tab[0]
+        else:
+            p, q = self._tab(ft + 4 * (k - 1), 2)
         return k, _fdiv(_i2f(_s32(f - p)), _i2f(_s32(q - p)))
 
     def _corr(self, d, w, idx, f, f87):
@@ -1014,6 +1033,11 @@ class CalibratedFrontend(_Base):
             return 0
         tt = self._tab(0x08028838, 13)
         i = next((k for k in range(13) if _s32(tt[k] * 1000) >= v), 12)
+        if i == 0 and self._from_table_data():
+            # v <= 0: v2.05 reads T[-1] and W[-1], the word before the table (0x08028834, code of v2.05, not table
+            # data).  The data file does not hold it; the replacement firmware returns 0 here (firmware/src/mres/ohm.s,
+            # OF-01) and c6(0) = 0 in v2.05 as well.
+            return 0
         t0, t1 = self._tab(0x08028838 + 4 * (i - 1), 2)
         w0, w1 = self._tab(0x0802886C + 4 * (i - 1), 2)
         frac = _fdiv(_i2f(_s32(v - _s32(1000 * t0))), _i2f(_s32(1000 * _s32(t1 - t0))))

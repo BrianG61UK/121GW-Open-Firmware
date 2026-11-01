@@ -746,7 +746,7 @@ flags at 55001); dBm `0x08018690` (max 6130; the only larger value is 0xFFFFFFFF
 The one path without a bound: a counter result of 1 MHz or more stores an unset register in 0x20007D84 (OF-02, `0x0800B014`..`0x0800B024`); with r7 / 10 between 100000 and 255999 the sub display
 frequency page (ACV, ACmV, AC currents, default item 10) shows a wrong first character (executed: 0x20007D84 = 1 234 567 draws 0x0C,"3456"). The emulator starts with r7 = 0, ACV at 1.5 MHz shows 0.
 Impact: none with defined inputs.
-Port: v2.05 routine kept (`fn_0801B090`).
+Port: the first digit word is reduced modulo 10 (`fn_0801B090`, src/lcd/draw.s).
 
 ### OF-50 — contrast set-up routine passes the register value, not the mask
 `FUN_0801B77A` (`0x0801B77A`..`0x0801B800`, called from the tail of `FUN_08024DE0` at `0x08024EC4`) selects on the contrast setting 0x20000237 (10..17) and builds r4 as
@@ -755,7 +755,7 @@ clear CC, OR r0). The mask itself is what `lcd_init`'s `FUN_0801B708` passes (`0
 Both callers of `FUN_08024DE0` (`main` `0x08024B56`, wake `0x08024EF2`) call `lcd_init` next (`0x08024B62`, `0x08024EFC`, same setting 0x20000237), which writes the right CC (`0x0801B48C bl 0x0801B708`).
 Execution check (Unicorn): LCD_FCR.CC = 7 before: settings 10..17 give CC = 0, 1, 2, 3, 4, 5, 6, 7 (setting - 10); CC = 0 before: CC = 0 for every setting; CC = 1 before: CC = 0 or 1 by setting.
 Impact: none (overwritten); latent. (Settings outside 10..17 are OF-05.)
-Port: v2.05 behaviour kept; the following `lcd_init` sets the contrast.
+Port: the mask itself is passed to the contrast configuration (`fn_0801B77A`, src/lcd/lcd.s).
 
 ### OF-51 — soft-float and 64-bit division helpers: deviations from IEEE 754 and the run-time ABI
 Execution of the original helpers against IEEE results (hardware float/double as reference; 4000 random pairs per class unless stated):

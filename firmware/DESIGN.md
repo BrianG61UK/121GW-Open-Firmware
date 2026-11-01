@@ -1123,6 +1123,13 @@ comment states only what is true of the code below it; a comment about v2.05 cit
   sorted path order (`LC_ALL=C`), tool versions checked and printed (binutils 2.46.0). The same sources give the same
   SHA-256.
 - `make listing`: `arm-none-eabi-objdump -d -S` of the ELF for review.
+- `make check-ci`: the checks of 9.3 that need no original image (1, 2, 4, 5, and 3 as far as it concerns `hy_rows` and
+  `brd_fe_table`), run by the GitHub workflow `.github/workflows/firmware.yml`. `tools/check_hy.py --reference-data
+  tools/hy_reference.txt` reads the v2.05 HY3131 write sequences from the committed data file instead of executing the
+  original image (`--reference --write-reference` regenerates it); the checks that compare with the image (`TABLE_V205`
+  regions, `.data_v205`, `nvm_allow`, `ram_v205.inc`) are printed as SKIPPED and run in `make check`.
+  `tools/build_dist.sh` builds both variants in the layout of the release archive, `tools/gen_fixes.py` writes its
+  `FIXES.md` from `ORIGINAL_FIRMWARE_ISSUES.md`, `tools/gen_emu_tables.py` writes the v2.05 tables of the sources for the emulator.
 
 ### 9.2 Linker script (`link/121gw.ld`)
 
@@ -1162,6 +1169,11 @@ the EEPROM image given by `--eeprom`. The differential harness `emulator/diff/` 
 signals, battery/thermistor voltages, SD card, BLE bytes, power cycles; fixed noise seed and calendar) and compares the
 streams lcd, gpio (with derived power), spi, uart_tx, eeprom, rtc, sd_cmd, sd_block, reset, fault, and the final EEPROM
 image, SD files and LCD frame. The safety monitor `emulator/emu/safety.py` runs in every session.
+
+Without a bootloader image the emulator also starts the application directly from its vector table (SP, reset vector,
+VTOR = 0x08006000) with a synthetic EEPROM and the v2.05 tables taken from the `TABLE_V205` data of this tree
+(`tools/gen_emu_tables.py`): the standalone mode of the release packages. Direct boot does not reproduce the bootloader's
+TIM2, NVIC, clock, FLASH_PECR, GPIO and LCD state of 2.1; the list is in `emulator/API.md` 2.2. The scenario levels below use the real bootloader.
 
 Test levels:
 1. RT (W2): each port helper against the v2.05 helper in a bare CPU emulation (Unicorn), at least 20 000 random operands

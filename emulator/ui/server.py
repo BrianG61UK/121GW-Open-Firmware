@@ -2,14 +2,17 @@
 
 GET  /               front panel page
 GET  /assets/...     static assets (LCD layers, bit map)
-GET  /state          JSON snapshot: LCD RAM, outputs, run state, recent log lines
+GET  /state          JSON snapshot: LCD RAM, outputs, run state, recent log lines (fields: emulator/API.md)
 POST /input          JSON command: {"key": name, "down": bool} | {"dial": position} |
                      {"jack": name, "plugged": bool} | {"run": bool} | {"reset": true} | {"speed": x} |
                      {"analog": "PA4"|"PA5", "volts": v} | {"battery": B+ volts (PA5 via R69/R70)} |
                      {"input": {"kind": "open"|"V"|"A"|"ohm"|"Hz"|"F"|"degC"|"diode"|"VA", "value": x,
                                 "ac": bool, "freq": f, "duty": d, "width": s, "dc": v, "amps": a, "board": t}} |
-                     {"environment": {"pickup_hz": 50|60, "pickup_v": v, "coupling_pf": c, "drift": d}}
-                     (stimulus fields: emu/frontend.py module docstring; app.py Emulator.command)
+                     {"environment": {"pickup_hz": 50|60, "pickup_v": v, "coupling_pf": c, "drift": d}} |
+                     {"sdcard": bool} | {"sysreset": true} | {"firmware": "2_fast"|"1_like_v2.05"}
+                     (stimulus fields: emu/frontend.py module docstring; app.py Emulator.command; all: emulator/API.md)
+POST /quit           stop the emulator process (needs the request header "X-121GW: quit", which a web page of another
+                     origin cannot send without a CORS preflight that this server does not answer)
 The emulator object passed to serve() must provide snapshot() and command(dict); it runs in its
 own thread and is shared with scripted tests, so the page always shows the machine under test.
 """
@@ -47,6 +50,12 @@ def make_handler(emu):
                 self._send(200, f.read(), TYPES.get(os.path.splitext(full)[1], 'application/octet-stream'))
 
         def do_POST(self):
+            if self.path == '/quit':
+                if self.headers.get('X-121GW') != 'quit':
+                    return self._send(400, b'{"error":"missing header X-121GW: quit"}', TYPES['.json'])
+                self._send(200, b'{"ok":true}', TYPES['.json'])
+                threading.Timer(0.2, os._exit, (0,)).start()
+                return
             if self.path != '/input':
                 return self._send(404, b'not found', 'text/plain')
             n = int(self.headers.get('Content-Length', 0))

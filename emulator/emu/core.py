@@ -86,6 +86,9 @@ class Machine:
         self._resume = None
         self._stop_reason = None
         self.nvic = None                      # set by scs.SCS()
+        self.boot_base = FLASH_BASE           # address of the vector table the core boots from on every reset.  FLASH_BASE: the
+                                              # meter (the bootloader runs and hands over).  The application's table
+                                              # (0x08006000): direct boot, no bootloader image loaded (app.py)
         self.reset_request = None
         self._in_slice = False
         self._slice_end = 0
@@ -552,12 +555,12 @@ class Machine:
     # ---------------------------------------------------------------- run loop
     def reset(self):
         """Core reset (power-on or system reset): the CPU restarts from the vector table at 0x08000000 (boot from
-        flash).  PM0056 2.1.3 (Table 2, "Core register set summary") and 2.3.2 (Reset): MSP loaded from the first
+        flash), or from boot_base when that is set to the application's table (direct boot, see app.py).  PM0056 2.1.3 (Table 2, "Core register set summary") and 2.3.2 (Reset): MSP loaded from the first
         word, PC from the reset vector, LR = 0xFFFFFFFF, PSR = 0x01000000 (Thread mode, T bit), PRIMASK, FAULTMASK,
         BASEPRI and CONTROL = 0 (privileged Thread mode on the main stack).  R0-R12 and PSP have the reset value
         "Unknown" in Table 2: they are left as they are.  Exceptions that were pending or active are dropped."""
         uc = self.uc
-        sp, pc = struct.unpack('<II', uc.mem_read(FLASH_BASE, 8))
+        sp, pc = struct.unpack('<II', uc.mem_read(self.boot_base, 8))
         # the special registers can only be written from a privileged state, and a CONTROL.nPRIV = 1 left over from
         # before the reset would refuse the write: go through Handler mode (privileged), then drop to Thread mode
         uc.reg_write(UC_ARM_REG_XPSR, (1 << 24) | 1)
@@ -572,6 +575,8 @@ class Machine:
         if uc.reg_read(UC_ARM_REG_SP) != sp or uc.reg_read(UC_ARM_REG_XPSR) & 0x1FF:
             raise RuntimeError('core reset: stack pointer or IPSR not restored')
         self.pc = pc | 1
+        if self.boot_base != FLASH_BASE:               # direct boot: the table the core booted from is the active one,
+            self.nvic.vtor = self.boot_base            # as after the bootloader's hand-over to the application (VTOR)
         self.active.clear(); self.pending.clear()
         self._asleep_at = None
         self._resume = None

@@ -5,6 +5,10 @@
 !/LICENSE
 !/firmware/
 !/emulator/
+!/.github/
 __pycache__/
 *.pyc
 /firmware/build/
+/emulator/data/
+/emulator/dist/
+/emulator/build/

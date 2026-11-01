@@ -1,13 +1,29 @@
 """121GW emulator application: builds the machine, loads the images, runs it and serves the UI.
 
 Usage:
-    python app.py [--inputs DIR] [--port 8121] [--speed 1.0] [--no-ui] [--frontend calibrated|netlist]
-DIR holds bootloader.bin, EEVBlog2_05.bin (or another application image via --app),
-option.bytes and an optional EEPROM image (--eeprom, raw bytes from offset 0).
+    python app.py [--port 8121] [--speed 1.0] [--no-ui] [--open] [--frontend calibrated|netlist]
+                  [--firmware 2_fast|1_like_v2.05 | --app FILE] [--eeprom FILE] [--sdcard PATH]
+                  [--inputs DIR | --no-inputs] [--bootloader FILE] [--option-bytes FILE] [--v205-image FILE] [--tables FILE]
+
+Without any original image the emulator needs nothing but its own data directory (emu/bundle.py):
+  * direct boot: no bootloader image is loaded and the core starts the application from its vector table at 0x08006000
+    (stack pointer = word 0, reset vector = word 1, VTOR = 0x08006000), the state the bootloader hands over in
+    (firmware/DESIGN.md 2.1) except for what DIRECT_BOOT_NOTE lists;
+  * the application is a bundled firmware build (--firmware, default 2_fast) or any image given with --app;
+  * the EEPROM is the bundled SYNTHETIC image (not a meter's calibration) unless --eeprom gives one;
+  * the v2.05 constant tables the calibrated front end needs come from the bundled table data (emu/v205tables.py).
+Original images, all optional:
+  --inputs DIR      a directory with bootloader.bin, EEVBlog2_05.bin (or another application image via --app),
+                    option.bytes and an optional EEPROM image (--eeprom, raw bytes from offset 0).  Without --inputs the
+                    directory inputs/binaries of the source tree is used when it exists (the earlier behaviour);
+                    --no-inputs ignores it.
+  --bootloader FILE the bootloader image (raw, loaded at 0x08000000): the core then boots through it as a meter does.
+  --option-bytes FILE  OpenOCD 'mdb 0x1FF80000 256' dump; without it the synthetic option bytes are used.
+  --v205-image FILE the original v2.05 application image: the front end then reads its tables from it, not from the data.
 --sdcard PATH attaches an SD card backed by the raw image file PATH (created and formatted FAT32 with --sdcard-mb MiB if
 it does not exist; nothing outside PATH is written).  Without it the SD socket is empty.
 """
-import argparse, os, sys, threading, time
+import argparse, os, sys, threading, time, webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -33,6 +49,8 @@ from emu.nju6350 import NJU6350
 from emu.hy3131 import HY3131
 from emu.frontend import make_frontend, FrontendUnavailable
 from emu.safety import Safety
+from emu.v205tables import V205Tables
+from emu import bundle
 
 APP_BASE = 0x08006000
 BAT_SENSE_RATIO = 330e3 / (1e6 + 330e3)   # PA5 / B+ (R69 1M, R70 330k; analysis/frontend_netlist.md)
@@ -52,6 +70,34 @@ def parse_option_bytes(path):
     return bytes(ob)
 
 
+def synthetic_option_bytes():
+    """Option bytes 0x1FF80000..0x1FF8001F of an unprotected meter, used when no option-byte dump is given: RDP level 0
+    (RDP = 0xAA), USER = 0xF0 (BOR off, software watchdog, no reset on STOP / STANDBY: firmware/DESIGN.md 2.1), all write
+    protection words 0 (nothing protected).  Format RM0038 3.5: RDP / USER words are the byte in bits 7:0, its complement in
+    bits 23:16 and 0xFF in bits 31:24; each WRP word holds a 16-bit value and its complement.  The rest of the 256-byte
+    block (factory information) is 0."""
+    ob = bytearray(256)
+    for off, v in ((0x00, 0xAA), (0x04, 0xF0)):
+        ob[off:off + 4] = (v | ((~v & 0xFF) << 16) | 0xFF000000).to_bytes(4, 'little')
+    for off in range(0x08, 0x20, 4):
+        ob[off:off + 4] = (0xFFFF0000).to_bytes(4, 'little')
+    return bytes(ob)
+
+
+# What direct boot (no bootloader image) does not reproduce of the state the bootloader leaves at the application's entry
+# (firmware/DESIGN.md 2.1): the bootloader's own TIM2 set-up (counter running with its update interrupt enabled, so the
+# first TIM2 updates of the application come at the bootloader's phase), NVIC enables of IRQ 28 / 45 / 53, SYSCLK = HSE
+# with the PLL on but not selected (direct boot starts on the reset clock, MSI), FLASH_PECR = 0x00000004 (EEPROM and flash
+# unlocked, direct boot: locked as after reset), the backup-domain reset, the lamp-test pattern on the LCD, and the GPIO
+# levels it set (PE9 high, PF0..PF2 and PF6..PF10 outputs, PE8 high, PD7 low).  VTOR is 0x08006000 here, not the
+# bootloader's 0x08000000, because the bootloader area is empty.  A system reset restarts the application directly again
+# (a meter would run the bootloader first).  The replacement firmware does not depend on these (its start-up sequence,
+# DESIGN.md 3.2, sets clocks, NVIC, VTOR and the flash lock itself); a firmware that does would behave differently from a
+# meter.
+DIRECT_BOOT_NOTE = ('direct boot: the application starts from its vector table (SP, reset vector, VTOR 0x08006000); the '
+                    "bootloader's TIM2/NVIC/clock/FLASH_PECR/GPIO/LCD state is not reproduced (app.py DIRECT_BOOT_NOTE)")
+
+
 class Emulator:
     # HY3131 front end: backend 'calibrated' or 'netlist' (emu/frontend.py), noise on/off and RNG seed
     frontend_kind = 'calibrated'
@@ -61,14 +107,38 @@ class Emulator:
     sdcard_path = None
     sdcard_mb = 512
 
-    def __init__(self, inputs, app=None, eeprom=None, speed=1.0, hw_cal=None):
+    def __init__(self, inputs=None, app=None, eeprom=None, speed=1.0, hw_cal=None, *, bootloader=None, option_bytes=None,
+                 v205_image=None, tables=None, firmware=None):
+        """inputs: directory with bootloader.bin, EEVBlog2_05.bin and option.bytes (None: none of them is needed).
+        app: application image (default: inputs/EEVBlog2_05.bin, else the bundled firmware `firmware`, default 2_fast).
+        eeprom: raw EEPROM image from offset 0 (default: the bundled synthetic image when `inputs` is None, else a blank
+        EEPROM as before).  Keyword-only, each overriding the file of `inputs`: bootloader (without one the core boots
+        the application directly), option_bytes (default: synthetic_option_bytes()), v205_image (original v2.05 image
+        the front end reads its tables from; default the table data `tables` / bundle), firmware (bundled build name)."""
         self.inputs = inputs
         # physical calibration of the emulated front end (frontend._Base.hw_cal): the EEPROM as first loaded, or the
         # image given here (raw bytes from EEPROM offset 0), kept across power cycles and firmware EEPROM writes
         self.hw_cal = None
         self.hw_cal_path = hw_cal
-        self.app_path = app or os.path.join(inputs, 'EEVBlog2_05.bin')
-        self.eeprom_path = eeprom
+        join = lambda name: os.path.join(inputs, name) if inputs else None
+        self.bootloader_path = bootloader or join('bootloader.bin')
+        self.option_path = option_bytes or join('option.bytes')
+        self.v205_path = v205_image or join('EEVBlog2_05.bin')
+        self.firmware_name = None
+        if app:
+            self.app_path = app
+        elif inputs:
+            self.app_path = join('EEVBlog2_05.bin')
+        else:
+            self.firmware_name = firmware or bundle.DEFAULT_FIRMWARE
+            self.app_path = bundle.firmware_path(self.firmware_name)
+        if eeprom is None and inputs is None:
+            self.eeprom_path, self.eeprom_kind = bundle.eeprom_path(), 'synthetic'
+        else:
+            self.eeprom_path, self.eeprom_kind = eeprom, ('file' if eeprom else 'blank')
+        self.tables = None                  # v2.05 tables for the front end, unless an original image is given
+        if not self.v205_path:
+            self.tables = V205Tables.load(tables or bundle.tables_path())
         self.speed = speed                  # 1.0 = real time
         self.lock = threading.RLock()
         self.running = True
@@ -153,10 +223,14 @@ class Emulator:
         self.frontend.set_environment(self.environment)
         if hasattr(self.frontend, 'set_pa4'):        # board temperature <-> PA4 thermistor (frontend.py)
             self.frontend.set_pa4(self.analog['PA4'], self.adc.vref_volts)
-        # images
-        m.load(FLASH_BASE, open(os.path.join(self.inputs, 'bootloader.bin'), 'rb').read())
+        # images.  With a bootloader image the core boots through it (boot_base 0x08000000); without one it starts the
+        # application from its vector table (direct boot, DIRECT_BOOT_NOTE)
+        if self.bootloader_path:
+            m.load(FLASH_BASE, open(self.bootloader_path, 'rb').read())
+        else:
+            m.boot_base = APP_BASE
         m.load(APP_BASE, open(self.app_path, 'rb').read())
-        m.load(INFO_BASE, parse_option_bytes(os.path.join(self.inputs, 'option.bytes')))
+        m.load(INFO_BASE, parse_option_bytes(self.option_path) if self.option_path else synthetic_option_bytes())
         if self.eeprom_path:
             m.load(EEPROM_BASE, open(self.eeprom_path, 'rb').read())
         self.flash.reset()
@@ -167,7 +241,10 @@ class Emulator:
                 hw[:len(img)] = img[:len(hw)]
             self.hw_cal = bytes(hw)
         self.frontend.hw_cal = self.hw_cal
-        self.frontend.v205_image = open(os.path.join(self.inputs, 'EEVBlog2_05.bin'), 'rb').read()
+        if self.v205_path:                      # original image supplied: its tables override the table data
+            self.frontend.v205_image = open(self.v205_path, 'rb').read()
+        else:
+            self.frontend.v205_tables = self.tables
         # board
         self.board = Board(self.gpio)
         self.board.keys = set(self.board_state['keys'])
@@ -228,6 +305,28 @@ class Emulator:
             m.reset()
 
     # ------------------------------------------------------------------ run thread
+    def _run_slice(self, cycles):
+        """Run the machine for `cycles` core clock cycles (caller holds the lock); a requested reset is performed, a stop
+        halts the run.  Returns the stop reason (None when the CPU did not stop)."""
+        stop = self.m.run(cycles)
+        if self.m.reset_request:
+            self.system_reset(self.m.reset_request)
+        if stop:
+            self.running = False
+        return stop
+
+    def advance(self, seconds, slice_ms=10):
+        """Run for `seconds` of emulated time without pacing: the headless interface (emulator/API.md, Python API).  Does
+        nothing while the meter is off (dial at OFF) or paused.  Returns the stop reason or None."""
+        done, stop = 0.0, None
+        while done < seconds - 1e-12 and stop is None:
+            with self.lock:
+                if not self.running or not self.board.powered():
+                    return None
+                stop = self._run_slice(int(self.m.sysclk_hz * slice_ms / 1000))
+            done += slice_ms / 1000
+        return stop
+
     def loop(self):
         slice_ms = 10
         while True:
@@ -236,12 +335,7 @@ class Emulator:
                 continue
             t0 = time.monotonic()
             with self.lock:
-                cyc = int(self.m.sysclk_hz * slice_ms / 1000 * self.speed)
-                stop = self.m.run(cyc)
-                if self.m.reset_request:
-                    self.system_reset(self.m.reset_request)
-                if stop:
-                    self.running = False
+                self._run_slice(int(self.m.sysclk_hz * slice_ms / 1000 * self.speed))
             dt = time.monotonic() - t0
             # always yield outside the lock: when emulation runs slower than real time the UI thread would
             # otherwise wait for an unfair lock release and /state answers late
@@ -265,6 +359,20 @@ class Emulator:
         self.sdio.set_card(self.sdcard if self.sd_inserted else None)
 
     # ------------------------------------------------------------------ UI interface
+    def machine_info(self):
+        """What the emulated meter was started with (GET /state 'machine'): the application image (bundled build name or
+        file name), the boot mode, the EEPROM source and where the v2.05 tables come from."""
+        return {'firmware': self.firmware_name or os.path.basename(self.app_path),
+                'firmware_bundled': self.firmware_name is not None,
+                'firmware_choices': [{'name': n, 'label': label} for n, label in bundle.firmware_choices()],
+                'boot': 'bootloader' if self.bootloader_path else 'direct',
+                'boot_note': None if self.bootloader_path else DIRECT_BOOT_NOTE,
+                'eeprom': self.eeprom_kind,
+                'eeprom_note': ('SYNTHETIC calibration made up for the emulator, not a real meter\'s'
+                                if self.eeprom_kind == 'synthetic' else None),
+                'option_bytes': 'file' if self.option_path else 'synthetic',
+                'v205_tables': 'original image' if self.v205_path else 'table data'}
+
     def snapshot(self):
         with self.lock:
             m = self.m
@@ -288,6 +396,7 @@ class Emulator:
                 'hy3131': self.hy.snapshot(),
                 'sdcard': self.sd_snapshot(),
                 'stop': m._stop_reason,
+                'machine': self.machine_info(),
                 'safety': list(self.safety.violations),
                 'log': [f'{c / max(1, m.sysclk_hz) * 1000:10.3f} ms  {t}' for c, t in m.log[-200:]],
             }
@@ -301,7 +410,8 @@ class Emulator:
         {'pickup_hz': 50 | 60, 'pickup_v': V rms of the open-circuit source (0 = shielded / off), 'coupling_pf': pF,
          'drift': 0..<1}; keys left out keep their value.  A 'board' temperature also sets the PA4
         thermistor voltage; an 'analog' PA4 command sets the voltage directly and the board temperature follows it.
-        Currents flow only through a plugged current jack ('jack' command, A or mA)."""
+        Currents flow only through a plugged current jack ('jack' command, A or mA).
+        {'firmware': name} switches to a bundled firmware build (machine_info()['firmware_choices']) and power cycles."""
         with self.lock:
             if 'key' in c:
                 self.board.key(c['key'], bool(c['down']))
@@ -350,30 +460,80 @@ class Emulator:
                 self.set_sdcard(c['sdcard'])
             elif 'speed' in c:
                 self.speed = float(c['speed'])
+            elif 'firmware' in c:
+                # run another bundled firmware build: power cycle with the new image (EEPROM, board inputs and clock chip
+                # stay, as when a meter is updated)
+                name = c['firmware']
+                if name not in dict(bundle.firmware_choices()):
+                    raise ValueError(f'unknown firmware {name!r}; available: {[n for n, _ in bundle.firmware_choices()]}')
+                self.firmware_name, self.app_path = name, bundle.firmware_path(name)
+                self.power_cycle(); self.running = True
             else:
                 raise ValueError('unknown command')
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--inputs', default=os.path.join(HERE, '..', 'inputs', 'binaries'))
-    ap.add_argument('--app'); ap.add_argument('--eeprom')
+def start_server(emu, port, tries=1):
+    """Start the UI server on `port`, or on the next free port of the following tries - 1.  Returns (httpd, port).
+    An occupied port is reported with the option that changes it, never swallowed."""
+    from ui.server import serve
+    last = None
+    for p in range(port, port + tries):
+        try:
+            return serve(emu, p), p
+        except OSError as e:
+            last = e
+    raise SystemExit(f'cannot start the UI server on port {port}' + (f'..{port + tries - 1}' if tries > 1 else '')
+                     + f': {last} (--port N chooses another port)')
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description='121GW emulator (module docstring: bundled data, direct boot, original images)')
+    ap.add_argument('--inputs', metavar='DIR', help='directory with bootloader.bin, EEVBlog2_05.bin, option.bytes (default: '
+                    'inputs/binaries of the source tree when it exists)')
+    ap.add_argument('--no-inputs', action='store_true', help='do not use inputs/binaries of the source tree')
+    ap.add_argument('--app', metavar='FILE', help='application image (default: inputs/EEVBlog2_05.bin, else the bundled --firmware)')
+    ap.add_argument('--firmware', choices=[n for n, _ in bundle.FIRMWARES], default=None,
+                    help='bundled firmware build (default %s)' % bundle.DEFAULT_FIRMWARE)
+    ap.add_argument('--eeprom', metavar='FILE', help='EEPROM image, raw bytes from offset 0 (default: bundled SYNTHETIC image)')
+    ap.add_argument('--bootloader', metavar='FILE', help='bootloader image: boot through it instead of starting the application directly')
+    ap.add_argument('--option-bytes', metavar='FILE', help="OpenOCD 'mdb 0x1FF80000 256' dump (default: synthetic option bytes)")
+    ap.add_argument('--v205-image', metavar='FILE', help='original v2.05 image: the front end reads its tables from it')
+    ap.add_argument('--tables', metavar='FILE', help='v2.05 table data file (default: the bundled v205_tables.json)')
     ap.add_argument('--hw-cal', help='EEPROM image describing the physical calibration of the front end '
                     '(default: the EEPROM as loaded at start)')
     ap.add_argument('--port', type=int, default=8121)
+    ap.add_argument('--port-tries', type=int, default=1, metavar='N',
+                    help='try N consecutive ports from --port until one is free (default 1)')
     ap.add_argument('--speed', type=float, default=1.0)
     ap.add_argument('--no-ui', action='store_true')
+    ap.add_argument('--open', action='store_true', help='open the UI in the default browser once the server is up')
     ap.add_argument('--frontend', choices=['calibrated', 'netlist'], default='calibrated')
     ap.add_argument('--sdcard', metavar='PATH', help='raw SD card image file (created and formatted FAT32 when missing)')
     ap.add_argument('--sdcard-mb', type=int, default=512, help='size in MiB of a newly created card image (default 512)')
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
+    if a.app and a.firmware:
+        ap.error('--app and --firmware are alternatives')
     Emulator.frontend_kind = a.frontend
     Emulator.sdcard_path, Emulator.sdcard_mb = a.sdcard, a.sdcard_mb
-    emu = Emulator(a.inputs, a.app, a.eeprom, a.speed, hw_cal=a.hw_cal)
+    inputs = a.inputs
+    if inputs is None and not a.no_inputs:                  # the earlier default, used when the directory exists
+        d = os.path.join(HERE, '..', 'inputs', 'binaries')
+        inputs = d if os.path.isdir(d) else None
+    emu = Emulator(inputs, a.app, a.eeprom, a.speed, hw_cal=a.hw_cal, bootloader=a.bootloader, option_bytes=a.option_bytes,
+                   v205_image=a.v205_image, tables=a.tables, firmware=a.firmware)
+    info = emu.machine_info()
+    print(f"121GW emulator: firmware {info['firmware']}, boot {info['boot']}, EEPROM {info['eeprom']}, "
+          f"v2.05 tables from {info['v205_tables']}", flush=True)
+    if info['boot_note']:
+        print('  ' + info['boot_note'], flush=True)
+    if info['eeprom_note']:
+        print('  EEPROM: ' + info['eeprom_note'], flush=True)
     if not a.no_ui:
-        from ui.server import serve
-        serve(emu, a.port)
-        print(f'121GW emulator UI: http://127.0.0.1:{a.port}', flush=True)
+        _, port = start_server(emu, a.port, a.port_tries)
+        url = f'http://127.0.0.1:{port}'
+        print(f'121GW emulator UI: {url}', flush=True)
+        if a.open:
+            threading.Timer(0.5, webbrowser.open, (url,)).start()
     emu.loop()
 
 

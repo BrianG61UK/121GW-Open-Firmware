@@ -3,7 +3,9 @@
 #
 #   make                  image + all build checks (build/EEVBlog.bin, its SHA-256, check report)
 #   make image            image only (assemble, link, convert, pad, size check, SHA-256)
-#   make check            build checks of DESIGN.md 9.3 on the linked image
+#   make check            build checks of DESIGN.md 9.3 on the linked image (needs the original v2.05 image, inputs/)
+#   make check-ci         the checks that do not need the original v2.05 image (what the GitHub workflow runs); every
+#                         check it cannot run is named in the output as SKIPPED with the reason, never passed silently
 #   make listing          objdump -d -S of the ELF (build/121gw.lst)
 #   make clean            remove build/
 #   make LOOP_V205=1      verification baseline (any switch of src/inc/config.inc can be given this way)
@@ -26,6 +28,9 @@ PYTHON  ?= python3
 PY      := $(PYTHON) -I
 
 BINUTILS_VERSION := 2.46
+
+# SHA-256 tool: shasum (macOS, Perl) or sha256sum (GNU coreutils)
+SHA256  := $(shell command -v shasum >/dev/null 2>&1 && echo 'shasum -a 256' || echo sha256sum)
 
 BUILD   := build
 LDS     := link/121gw.ld
@@ -69,7 +74,7 @@ LDFLAGS := -T $(LDS) --build-id=none -Map $(OMAP) --no-undefined -nostdlib
 CHECK_TOOLS := tools/check_image.py tools/check_hy.py tools/check_gpio.py tools/gen_nvm_allow.py \
                tools/gen_ram_symbols.py tools/extract_tables.py
 
-.PHONY: all image check listing clean toolcheck switches
+.PHONY: all image check check-ci listing clean toolcheck switches
 
 all: image check
 
@@ -101,7 +106,7 @@ image: toolcheck switches $(OELF)
 	size=`wc -c < $(BIN) | tr -d ' '`; \
 	if [ $$size -gt 368640 ]; then echo "error: $(BIN) is $$size bytes, limit 0x5A000"; rm -f $(BIN); exit 1; fi; \
 	echo "$(BIN): $$size bytes"
-	@cd $(BUILD) && shasum -a 256 EEVBlog.bin > EEVBlog.bin.sha256 && cat EEVBlog.bin.sha256
+	@cd $(BUILD) && $(SHA256) EEVBlog.bin > EEVBlog.bin.sha256 && cat EEVBlog.bin.sha256
 
 # DESIGN.md 9.3: every check runs on every build; a missing tool is an error, never a silent skip
 check: image
@@ -116,6 +121,34 @@ check: image
 	$(PY) tools/gen_ram_symbols.py --check >> $(REPORT)
 	$(PY) tools/extract_tables.py --verify --elf $(ELF) >> $(REPORT)
 	@cat $(REPORT)
+
+# CI-safe variant of `check`: the original v2.05 image (inputs/binaries/EEVBlog2_05.bin) and the analysis/ files are not
+# in the repository, so the checks that compare the port with them cannot run here.  What runs:
+#   check_image.py (DESIGN.md 9.3 items 1, 2, 5, 6, 7: instruction-level never-brick analysis of the linked image)
+#   check_hy.py --reference-data tools/hy_reference.txt (HY3131 write whitelist: the v2.05 sweep is read from the committed
+#       reference data instead of being executed from the image; its check 1, tables equal the image, is SKIPPED by the tool)
+#   check_gpio.py (pin policy, brd_fe_table against tools/fe_levels.txt)
+# What does not run, and is printed as SKIPPED: gen_nvm_allow.py --check, gen_ram_symbols.py --check and
+# extract_tables.py --verify, which regenerate or compare against the original image.  Run `make check` with the image
+# before a release to cover them.  A failing check stops the build with its output shown.
+CI_SKIPPED := tools/gen_nvm_allow.py --check|tools/gen_ram_symbols.py --check|tools/extract_tables.py --verify --elf $(ELF)
+
+define runcheck
+$(PY) $(1) > $(BUILD)/.check.tmp 2>&1; rc=$$?; tee -a $(REPORT) < $(BUILD)/.check.tmp; rm -f $(BUILD)/.check.tmp; \
+if [ $$rc -ne 0 ]; then echo "check FAILED (status $$rc): $(PY) $(1)"; exit $$rc; fi
+endef
+
+check-ci: image
+	@missing=0; for t in $(CHECK_TOOLS) tools/hy_reference.txt tools/fe_levels.txt; do \
+	  if [ ! -f $$t ]; then echo "error: build check file $$t is missing"; missing=1; fi; done; \
+	if [ $$missing -ne 0 ]; then exit 1; fi
+	@echo "build switches: $(if $(NONDEFAULT),$(NONDEFAULT),all at their defaults)" > $(REPORT)
+	@$(call runcheck,tools/check_image.py $(ELF) $(BIN) $(foreach s,$(NONDEFAULT),--switch $(s)))
+	@$(call runcheck,tools/check_hy.py $(ELF) --reference-data tools/hy_reference.txt)
+	@$(call runcheck,tools/check_gpio.py $(ELF))
+	@echo "$(CI_SKIPPED)" | tr '|' '\n' | while read -r c; do \
+	  echo "SKIPPED $$c: needs the original v2.05 image and the analysis/ files, which are not in the repository" | tee -a $(REPORT); done
+	@echo "check-ci: 3 checks passed, 3 SKIPPED (listed above); the SKIPPED ones need the original image: run 'make check' with it before a release" | tee -a $(REPORT)
 
 listing: image
 	$(OBJDUMP) -d -S $(ELF) > $(BUILD)/121gw.lst

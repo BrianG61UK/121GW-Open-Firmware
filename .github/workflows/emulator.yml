@@ -1,0 +1,254 @@
+# Emulator: PyInstaller one-folder application with the two firmware builds, the v2.05 table data and the SYNTHETIC EEPROM
+# image, packaged as macOS .dmg (arm64 and x86_64), Windows installer .exe (Inno Setup) and Linux AppImage (x86_64); on a
+# tag v* the packages are attached to the release that firmware.yml creates.  Every package is started once (the UI must
+# answer and the firmware must boot to a reading, emulator/tools/smoke.py) before it is published.
+#
+# NOTE: the macOS packaging is the part that was run on a machine before this workflow was written (macOS arm64 build,
+# .dmg, start from the mounted image).  The Windows and Linux jobs, the macOS x86_64 job and this file as a whole have
+# not run on GitHub yet.
+name: Emulator
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    paths: ['emulator/**', 'firmware/**', '.github/**', 'LICENSE']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: emulator-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+env:
+  # tag v1.2.3 -> v1.2.3; any other ref -> dev
+  RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
+
+jobs:
+  firmware:
+    name: Firmware builds for the emulator
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Production and strict builds (image only; firmware.yml runs the checks)
+        uses: ./.github/actions/build-firmware
+        with:
+          target: none
+      - uses: actions/upload-artifact@v7
+        with:
+          name: firmware-dist
+          path: dist
+          if-no-files-found: error
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    needs: firmware
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: macos-15, arch: arm64}
+          - {runner: macos-15-intel, arch: x86_64}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v8
+        with:
+          name: firmware-dist
+          path: dist
+      - name: Install build tools
+        run: python -m pip install unicorn==2.1.4 capstone==5.0.9 pyinstaller==6.22.3 pillow
+      - name: Prepare the emulator data (firmware builds, v2.05 tables, synthetic EEPROM) and icons
+        run: |
+          python -I emulator/tools/prepare_data.py --dist dist
+          python -I emulator/packaging/make_icons.py build/icons
+      - name: Application bundle
+        working-directory: emulator
+        run: |
+          python -I ../.github/scripts/check_no_originals.py data
+          EMU_VERSION="$RELEASE_TAG" EMU_ICON="$PWD/../build/icons/121gw-emulator.icns" \
+            pyinstaller --noconfirm packaging/121gw_emulator.spec
+          python -I ../.github/scripts/check_no_originals.py dist
+      - name: Disk image
+        working-directory: emulator
+        run: sh packaging/make_dmg.sh "dist/121GW Emulator.app" "../121GW-Open-Firmware-Emulator-$RELEASE_TAG-macos-${{ matrix.arch }}.dmg"
+      - name: Start the application from the mounted image
+        run: |
+          set -euo pipefail
+          dmg="121GW-Open-Firmware-Emulator-$RELEASE_TAG-macos-${{ matrix.arch }}.dmg"
+          mkdir mnt
+          hdiutil attach -nobrowse -readonly -mountpoint mnt "$dmg"
+          mnt/121GW\ Emulator.app/Contents/MacOS/121gw-emulator --no-open --port 8131 > app.log 2>&1 &
+          python -I emulator/tools/smoke.py --url http://127.0.0.1:8131 --expect-direct --expect-synthetic || { cat app.log; exit 1; }
+          curl -fsS -X POST -H 'X-121GW: quit' http://127.0.0.1:8131/quit
+          sleep 2
+          hdiutil detach mnt
+      - name: Checksum
+        run: python -I .github/scripts/sha256sum.py "121GW-Open-Firmware-Emulator-$RELEASE_TAG-macos-${{ matrix.arch }}.dmg" > "121GW-Open-Firmware-Emulator-$RELEASE_TAG-macos-${{ matrix.arch }}.dmg.sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: emulator-macos-${{ matrix.arch }}
+          path: 121GW-Open-Firmware-Emulator-*
+          if-no-files-found: error
+      - name: Attach to the release
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --title "121GW-Open-Firmware $RELEASE_TAG" --notes-file .github/release-notes.md \
+              || gh release view "$RELEASE_TAG" >/dev/null
+          fi
+          gh release upload "$RELEASE_TAG" 121GW-Open-Firmware-Emulator-* --clobber
+
+  windows:
+    name: Windows x64
+    needs: firmware
+    runs-on: windows-2025
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      MSYS_NO_PATHCONV: '1'            # Git Bash must not rewrite arguments such as /VERYSILENT or /DAppVersion=...
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v8
+        with:
+          name: firmware-dist
+          path: dist
+      - name: Install build tools
+        run: python -m pip install unicorn==2.1.4 capstone==5.0.9 pyinstaller==6.22.3 pillow
+      - name: Prepare the emulator data and icons
+        run: |
+          python -I emulator/tools/prepare_data.py --dist dist
+          python -I emulator/packaging/make_icons.py build/icons
+      - name: Application folder
+        working-directory: emulator
+        run: |
+          python -I ../.github/scripts/check_no_originals.py data
+          EMU_VERSION="$RELEASE_TAG" EMU_ICON="$(cygpath -m "$PWD/../build/icons/121gw-emulator.ico")" \
+            pyinstaller --noconfirm packaging/121gw_emulator.spec
+          python -I ../.github/scripts/check_no_originals.py dist
+      - name: Installer (Inno Setup)
+        run: |
+          set -euo pipefail
+          iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          if [ ! -x "$iscc" ]; then choco install innosetup -y --no-progress; fi
+          "$iscc" "/DAppVersion=$RELEASE_TAG" "/DSourceDir=$(cygpath -w "$PWD/emulator/dist/121gw-emulator")" \
+            "/DOutputDir=$(cygpath -w "$PWD")" "/DLicenseFile=$(cygpath -w "$PWD/LICENSE")" \
+            "$(cygpath -w "$PWD/emulator/packaging/windows/121gw_emulator.iss")"
+          ls -l 121GW-Open-Firmware-Emulator-*
+      - name: Install silently and start the installed application
+        run: |
+          set -euo pipefail
+          setup="121GW-Open-Firmware-Emulator-$RELEASE_TAG-windows-x64.exe"
+          dir="$(cygpath -w "$PWD/installed")"
+          ./"$setup" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART "/DIR=$dir"
+          "installed/121gw-emulator.exe" --no-open --port 8131 > app.log 2>&1 &
+          python -I emulator/tools/smoke.py --url http://127.0.0.1:8131 --expect-direct --expect-synthetic || { cat app.log; exit 1; }
+          curl -fsS -X POST -H 'X-121GW: quit' http://127.0.0.1:8131/quit
+          sleep 2
+      - name: Checksum
+        run: python -I .github/scripts/sha256sum.py "121GW-Open-Firmware-Emulator-$RELEASE_TAG-windows-x64.exe" > "121GW-Open-Firmware-Emulator-$RELEASE_TAG-windows-x64.exe.sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: emulator-windows-x64
+          path: 121GW-Open-Firmware-Emulator-*
+          if-no-files-found: error
+      - name: Attach to the release
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --title "121GW-Open-Firmware $RELEASE_TAG" --notes-file .github/release-notes.md \
+              || gh release view "$RELEASE_TAG" >/dev/null
+          fi
+          gh release upload "$RELEASE_TAG" 121GW-Open-Firmware-Emulator-* --clobber
+
+  linux:
+    name: Linux x86_64 AppImage
+    needs: firmware
+    # the oldest Ubuntu runner image: the bundled interpreter links the system C library, so an older one runs on more systems
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      APPIMAGE_EXTRACT_AND_RUN: '1'     # the runner has no FUSE
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - uses: actions/download-artifact@v8
+        with:
+          name: firmware-dist
+          path: dist
+      - name: Install build tools
+        run: python -m pip install unicorn==2.1.4 capstone==5.0.9 pyinstaller==6.22.3 pillow
+      - name: Prepare the emulator data and icons
+        run: |
+          python -I emulator/tools/prepare_data.py --dist dist
+          python -I emulator/packaging/make_icons.py build/icons
+      - name: The emulator runs from the source tree with the bundled data (direct boot, synthetic EEPROM)
+        run: |
+          set -euo pipefail
+          (cd emulator && python -I app.py --no-inputs --port 8130 > ../app-src.log 2>&1 &)
+          python -I emulator/tools/smoke.py --url http://127.0.0.1:8130 --expect-direct --expect-synthetic || { cat app-src.log; exit 1; }
+          curl -fsS -X POST -H 'X-121GW: quit' http://127.0.0.1:8130/quit
+          sleep 2
+      - name: Application folder
+        working-directory: emulator
+        run: |
+          python -I ../.github/scripts/check_no_originals.py data
+          EMU_VERSION="$RELEASE_TAG" pyinstaller --noconfirm packaging/121gw_emulator.spec
+          python -I ../.github/scripts/check_no_originals.py dist
+      - name: AppImage
+        run: |
+          set -euo pipefail
+          curl -fsSL -o appimagetool.AppImage https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool.AppImage" | sha256sum -c -
+          chmod +x appimagetool.AppImage
+          sh emulator/packaging/linux/build_appimage.sh emulator/dist/121gw-emulator \
+            "121GW-Open-Firmware-Emulator-$RELEASE_TAG-linux-x86_64.AppImage" build/icons/121gw-emulator.png "$PWD/appimagetool.AppImage"
+      - name: Start the AppImage
+        run: |
+          set -euo pipefail
+          ./"121GW-Open-Firmware-Emulator-$RELEASE_TAG-linux-x86_64.AppImage" --no-open --port 8131 > app.log 2>&1 &
+          python -I emulator/tools/smoke.py --url http://127.0.0.1:8131 --expect-direct --expect-synthetic || { cat app.log; exit 1; }
+          curl -fsS -X POST -H 'X-121GW: quit' http://127.0.0.1:8131/quit
+          sleep 2
+      - name: Checksum
+        run: python -I .github/scripts/sha256sum.py "121GW-Open-Firmware-Emulator-$RELEASE_TAG-linux-x86_64.AppImage" > "121GW-Open-Firmware-Emulator-$RELEASE_TAG-linux-x86_64.AppImage.sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: emulator-linux-x86_64
+          path: 121GW-Open-Firmware-Emulator-*
+          if-no-files-found: error
+      - name: Attach to the release
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --title "121GW-Open-Firmware $RELEASE_TAG" --notes-file .github/release-notes.md \
+              || gh release view "$RELEASE_TAG" >/dev/null
+          fi
+          gh release upload "$RELEASE_TAG" 121GW-Open-Firmware-Emulator-* --clobber

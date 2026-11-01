@@ -4,6 +4,11 @@
 Usage (from firmware/, as the Makefile does):
     python3 -I tools/check_hy.py build/121gw.elf [--map build/121gw.map] [--v205 ../inputs/binaries/EEVBlog2_05.bin]
     python3 -I tools/check_hy.py --reference            (v2.05 only: the numbers of DESIGN 4.1 from the original image)
+    python3 -I tools/check_hy.py --reference --write-reference tools/hy_reference.txt
+                                                        (v2.05 only: also write the reference data file, see below)
+    python3 -I tools/check_hy.py build/121gw.elf --reference-data tools/hy_reference.txt
+                                                        (CI-safe: the v2.05 sweep is read from the data file, the original
+                                                        image is not needed; Makefile target check-ci)
 Needs Python 3 with Capstone and Unicorn (the project Python: make check PYTHON=<python with both modules>).
 Exit status 0 = PASS, 1 = at least one violation, 2 = the tool could not do its job.
 
@@ -37,6 +42,14 @@ fn_0800B974, frame writer hy3131_write_regs).  Checks:
      GPIOF pin 0 (HY_CK) high, and no store addresses GPIOF ODR; stores that change pin 1 or 2 or clear pin 0 are allowed only in
      objects under hy/, brd/ and sys/fault.o (idle levels: board init, power-down, fault-safe state, DESIGN 4.1 item 7);
      a store to GPIOF BSRR / ODR whose value is not known and which is not in one of those objects is reported.
+Reference data file (tools/hy_reference.txt): the result of the v2.05 sweep of check 2, one line per (mode, range, flags) run
+with the HY3131 frames (register, data bytes) the original routine requests.  It holds nothing but those frames, which are the
+rows of the tables firmware/src/hy/hy_rows.s plus the short writes; the original image is not part of it.  With --reference-data
+checks 2 to 7 run exactly as with the image (the sweep result is the same data); check 1 (the 15 row tables equal the image) needs
+the image and is reported as SKIPPED, and the port's range counts come from its own .data_v205 image (equal to the original's
+574-byte RAM image by tools/extract_tables.py --verify, which needs the image).  A data file that does not give the numbers of
+DESIGN 4.1 (41 rows, 47 pairs, the six shapes) fails check 2.  Regenerate it with --reference --write-reference after the
+original image or the sweep changes.
 Limits: the flag value sets are those of the analysis documents; a flag byte holding another value is covered only by check 6
 at bus level.  Peripheral reads other than the SPI read routines return 0.  Time is not modelled.
 """
@@ -307,6 +320,50 @@ def pairs_of(results):
             rows.add(fr[0][1])
             pairs.add((fr[0][1], fr[1][1][1]))
     return rows, pairs, frames, shapes
+
+
+REF_HEADER = """# HY3131 frames requested by the original (v2.05) configuration routine 0x0800B974, one line per run of the sweep of
+# tools/check_hy.py (check 2): every mode 0..24, every range below range_count[mode], every combination of the RAM flags the
+# routine reads.  Line: run <mode> <range> <flags> <frame>[;<frame>...]
+#   flags  <RAM address>=<value>[,...] in ascending address order, or - for none
+#   frame  <first register hex>:<data bytes hex>
+# Source image SHA-256 8f885f12f567c2cccd9862d9fe26f127e2a674c9afbce9f7a38d441b3f396722 (firmware/ORIGINAL_FIRMWARE_ISSUES.md).
+# Written by: python3 -I tools/check_hy.py --reference --write-reference tools/hy_reference.txt
+"""
+
+
+def write_reference(path, ref):
+    """Write the sweep result `ref` (as returned by sweep) to the reference data file."""
+    lines = []
+    for (mode, rng, key), (fr, ret) in sorted(ref.items()):
+        flags = ','.join('0x%08X=%d' % kv for kv in key) if key else '-'
+        lines.append('run %d %d %s %s' % (mode, rng, flags, ';'.join('%02X:%s' % (r, d.hex()) for r, d in fr)))
+    with open(path, 'w') as f:
+        f.write(REF_HEADER + '\n'.join(lines) + '\n')
+    return len(lines)
+
+
+def read_reference(path):
+    """Read a reference data file into the structure sweep returns.  Any malformed line is an error."""
+    out = {}
+    with open(path) as f:
+        for n, line in enumerate(f, 1):
+            line = line.rstrip('\n')
+            if not line or line.startswith('#'):
+                continue
+            m = re.fullmatch(r'run (\d+) (\d+) (-|[0-9A-Fa-fx=,]+) ((?:[0-9A-F]{2}:[0-9a-f]*)(?:;[0-9A-F]{2}:[0-9a-f]*)*)', line)
+            if not m:
+                raise CheckError('%s:%d: not a reference line' % (path, n))
+            mode, rng = int(m.group(1)), int(m.group(2))
+            key = () if m.group(3) == '-' else tuple((int(a, 16), int(v)) for a, v in
+                                                     (kv.split('=') for kv in m.group(3).split(',')))
+            frames = [(int(r, 16), bytes.fromhex(d)) for r, d in (fr.split(':') for fr in m.group(4).split(';'))]
+            if (mode, rng, key) in out:
+                raise CheckError('%s:%d: duplicate run' % (path, n))
+            out[(mode, rng, key)] = (frames, None)
+    if not out:
+        raise CheckError('%s holds no runs' % path)
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------- port image
@@ -602,14 +659,24 @@ def main(argv):
     ap.add_argument('--reference', action='store_true', help='only run the v2.05 sweep and compare its numbers with DESIGN 4.1 (no ELF)')
     ap.add_argument('--map')
     ap.add_argument('--v205', default=v205.IMAGE)
+    ap.add_argument('--write-reference', metavar='FILE', help='with --reference: write the sweep result to FILE')
+    ap.add_argument('--reference-data', metavar='FILE',
+                    help='read the v2.05 sweep from FILE instead of executing the original image (CI-safe, see the docstring)')
     a = ap.parse_args(argv)
     vio = []
     try:
-        ref_img = open(a.v205, 'rb').read()
-        from_ram = bytearray(0x23E)
-        ram = extract_ram()
-        from_ram[0:len(ram)] = ram
-        range_count = ram[0:25]
+        if a.reference_data and (a.reference or a.write_reference):
+            ap.error('--reference-data cannot be combined with --reference or --write-reference')
+        if a.write_reference and not a.reference:
+            ap.error('--write-reference needs --reference')
+        if a.reference_data:
+            ref_img = from_ram = ram = range_count = None          # no original image, no analysis files
+        else:
+            ref_img = open(a.v205, 'rb').read()
+            from_ram = bytearray(0x23E)
+            ram = extract_ram()
+            from_ram[0:len(ram)] = ram
+            range_count = ram[0:25]
         if a.reference:
             world_ref = World([(APP_BASE, ref_img)], bytes(from_ram), {}, False)
             ref = sweep(world_ref, V205_SELECT, V205_WRITE, V205_READ, V205_DELAY, None, range_count, 'v2.05')
@@ -618,6 +685,8 @@ def main(argv):
                   % (len(ref), len(rows), len(pairs), sorted((hex(r), n) for r, n in shapes)))
             if len(rows) != EXPECT_ROWS or len(pairs) != EXPECT_PAIRS:
                 vio.append('HY-REF the v2.05 sweep gives %d rows / %d pairs, DESIGN 4.1 states %d / %d' % (len(rows), len(pairs), EXPECT_ROWS, EXPECT_PAIRS))
+            if a.write_reference and not vio:
+                print('check_hy (reference): wrote %d runs to %s' % (write_reference(a.write_reference, ref), a.write_reference))
             for v in vio:
                 print('VIOLATION ' + v)
             print('check_hy (reference): %s' % ('PASS' if not vio else 'FAIL'))
@@ -626,16 +695,25 @@ def main(argv):
             ap.error('ELF is required unless --reference is given')
         mp = a.map or re.sub(r'\.elf$', '.map', a.elf)
         img, elf, syms, port_ram = load_port(a.elf, mp)
-        print('check_hy: %s against %s' % (a.elf, a.v205))
-        # 1. tables
-        nt = check_tables(img, elf, vio, ref_img)
-        print('tables: %d of %d row tables equal the v2.05 image' % (nt, len(TABLE_ADDRS)))
-        # 2. reference sweep on v2.05
-        world_ref = World([(APP_BASE, ref_img)], bytes(from_ram), {}, False)
-        ref = sweep(world_ref, V205_SELECT, V205_WRITE, V205_READ, V205_DELAY, None, range_count, 'v2.05')
+        if a.reference_data:
+            print('check_hy: %s against the reference data %s (original v2.05 image not used)' % (a.elf, a.reference_data))
+            print('tables: SKIPPED (check 1 compares the 15 row tables with the original image, which is not available here; '
+                  'tools/extract_tables.py --verify does the same comparison for every table when the image is present)')
+            ref = read_reference(a.reference_data)
+            range_count = port_ram[0:25]
+            print('range counts: taken from the port .data_v205 image (equal to the original RAM image only when '
+                  'tools/extract_tables.py --verify has run with the image)')
+        else:
+            print('check_hy: %s against %s' % (a.elf, a.v205))
+            # 1. tables
+            nt = check_tables(img, elf, vio, ref_img)
+            print('tables: %d of %d row tables equal the v2.05 image' % (nt, len(TABLE_ADDRS)))
+            # 2. reference sweep on v2.05
+            world_ref = World([(APP_BASE, ref_img)], bytes(from_ram), {}, False)
+            ref = sweep(world_ref, V205_SELECT, V205_WRITE, V205_READ, V205_DELAY, None, range_count, 'v2.05')
         rows, pairs, frames, shapes = pairs_of(ref)
-        print('v2.05 sweep: %d runs, %d distinct rows, %d distinct (row, INTE) pairs, %d frame shapes %s'
-              % (len(ref), len(rows), len(pairs), len(shapes), sorted((hex(r), n) for r, n in shapes)))
+        print('v2.05 sweep%s: %d runs, %d distinct rows, %d distinct (row, INTE) pairs, %d frame shapes %s'
+              % (' (from the reference data)' if a.reference_data else '', len(ref), len(rows), len(pairs), len(shapes), sorted((hex(r), n) for r, n in shapes)))
         if len(rows) != EXPECT_ROWS or len(pairs) != EXPECT_PAIRS:
             vio.append('HY-REF the v2.05 sweep gives %d rows / %d pairs, DESIGN 4.1 states %d / %d' % (len(rows), len(pairs), EXPECT_ROWS, EXPECT_PAIRS))
         extra = shapes - set(SHAPES)
