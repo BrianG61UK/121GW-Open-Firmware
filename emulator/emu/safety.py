@@ -266,7 +266,7 @@ class Safety:
         m.log.append((m.cycles, msg))
         if m._stop_reason is None:
             m._stop_reason = msg
-        m._stop_req = True                       # the run loop stops at the next basic block
+        m.stop_soon()                            # the run loop stops at the next basic block start
         return False
 
     # ------------------------------------------------------------------ 1. HY3131 writes

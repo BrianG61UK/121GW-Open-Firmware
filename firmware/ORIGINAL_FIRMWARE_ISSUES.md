@@ -66,6 +66,7 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-51 | Runtime library | Soft-float and 64-bit division helpers differ from IEEE 754 / the ARM run-time ABI in listed cases (fdiv exponent 254, subnormal operands of fadd/fsub/dadd/dsub, dsqrt special operands, division by zero); none reached by v2.05 code | low | open |
 | OF-52 | Battery | The ADC-to-battery conversion is a straight line that matches the hardware divider only near 6.4 V: the gauge reads up to 6 % low near empty and the low-battery warning starts at 4.31 V instead of the displayed 4.1 V | low | open |
 | OF-53 | Measurement | HY3131 interrupt flags are cleared by writing 0 after the status burst read: a flag raised in between is lost; a lost counter-done flag freezes the frequency reading until the next mode or range apply | medium | open |
+| OF-54 | Measurement | The status burst reads the counter registers before INTF: a count that completes in between is seen as done with stale counter values; in AC modes the frequency correction then uses frequency 0 | medium | open |
 
 ## Details
 
@@ -798,4 +799,19 @@ Impact: the frequency shown on the sub display (AC modes) or the main display fr
 event is lost depends on sub-millisecond timing.
 Port: clear only the flags that were read: write a value that is 0 for the flags seen set in the burst and 1 for all
 other flags (INTF bits are cleared only by writing 0, data sheet p19), so no flag raised after the read is discarded.
+
+### OF-54 — counter completion seen together with stale counter values
+`hy3131_service_irq` reads the 0x34-byte status burst in register order (`0x08006150`..`0x08006158`), so the counter
+registers CTA/CTB/CTC (0x15..0x1D) are read before INTF (0x1E). If the count completes after the counter registers
+were clocked out and before INTF is, the firmware sees CTF set but computes the frequency from the values read before
+completion (`counter_compute_frequency` wrote 0 to 0x20007C40 in the observed case); the frequency range byte
+0x2000803E then drops to 0 and the AC frequency correction is evaluated for that frequency. Related to OF-53 (same
+burst/clear sequence) but a distinct effect: a flag seen with stale data rather than a lost flag.
+Execution check (emulator with the HY3131 model, original image): ACV, 2.3456 V at 1000 Hz shows 2.3334 (-0.52 %) for
+about 0.45 s after such an event; the same episodes occur at other timings. What the real chip returns in the counter
+registers while a count is running is not stated in the data sheet (the model returns the values of the last completed
+count), so the size of the error on hardware is unproven; the inconsistency itself follows from the read order.
+Impact: occasional short wrong AC readings (-0.5 % observed) and a wrong frequency value.
+Port: read INTF first (or read the counter registers again after seeing CTF) so that counter data and the flag belong
+to the same completed count; together with the OF-53 fix.
 

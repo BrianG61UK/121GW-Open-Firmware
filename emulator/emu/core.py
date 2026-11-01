@@ -3,18 +3,33 @@
 Execution model
 - The CPU runs in slices.  Between slices the run loop delivers pending exceptions and advances
   peripheral events on the virtual clock.
-- Instruction counting: a block hook adds the number of instructions in each executed basic block
-  (counted once per block start with Capstone), so the virtual clock is exact to the block.
+- Virtual clock: a block hook adds the core clock cycles of each translated block when the block is entered: the
+  Cortex-M3 cycle estimate of its instructions (emu/cycles.py, computed once per translated block with Capstone) plus
+  the pipeline refill of a taken branch when the block is not entered from the end of the block before.  A block left
+  before its end (slice limit, emu_stop from a hook or MMIO callback, WFI/WFE, MPU fault) is corrected when the CPU
+  stops (_settle): the cycles of the instructions from the stop address to the block end are taken off again, because
+  Unicorn resumes at that address as a new translated block that is counted on entry.  Every executed instruction is
+  thus counted exactly once.  Inside a block the clock reads the value at the block end; a slice ends at the first
+  block start at or after its end cycle (or earlier, at the Unicorn instruction count), so an event is handled at most
+  one block late.  The clock never goes back behind a value a peripheral access has seen (_vis): a correction that
+  would do so is kept as prepaid cycles (_prepay), taken from the next charges instead (_charge / _refund).
 - Exception entry is done here (ARMv7-M: 8-word frame, EXC_RETURN in LR).  Exception return is the
   Unicorn M-class "exception exit" interrupt (intno 8): the frame is popped here and execution resumes.
 - WFI/WFE: Unicorn rejects them as invalid instructions; run() catches that and emulates the sleep (_sleep,
   semantics in add_idle_hook), at no cost to code that does not sleep.
 """
 import struct
+from bisect import bisect_left
 from fractions import Fraction
 from unicorn import Uc, UcError, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_BLOCK, UC_HOOK_INTR, UC_HOOK_CODE, UC_HOOK_MEM_INVALID, UC_PROT_READ, UC_PROT_EXEC, UC_PROT_ALL
 from unicorn.arm_const import *
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB, CS_MODE_MCLASS
+from .cycles import CycleModel
+import unicorn as _unicorn
+
+# Unicorn 2.1.4 (the version this was checked with) reports a rejected WFE / WFI with PC past the instruction; later
+# versions are assumed to do the same (unverified), older ones report the instruction address (run())
+_UC_PC_PAST_WFX = tuple(int(x) for x in _unicorn.__version__.split('.')[:3]) >= (2, 1, 4)
 
 FLASH_BASE, FLASH_SIZE = 0x08000000, 0x60000          # 384 KB (STM32L152ZD)
 EEPROM_BASE, EEPROM_SIZE = 0x08080000, 0x3000         # 12 KB data EEPROM
@@ -33,7 +48,13 @@ class Machine:
     def __init__(self, sysclk_hz=16_000_000):
         self.uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)
         self.cs = Cs(CS_ARCH_ARM, CS_MODE_THUMB | CS_MODE_MCLASS)
-        self.cycles = 0                       # virtual time in core clock cycles (1 instruction = 1 cycle)
+        self.cyc = CycleModel()
+        # virtual time in core clock cycles: per instruction the best-case Cortex-M3 count of ARM DDI 0337H Table 3.1
+        # with the flash branch penalty of RM0038 3.3.2 (emu/cycles.py; a lower bound of the hardware time).  Exception
+        # entry and return add 12 cycles each, a tail-chained entry 6 (ARM DDI 0337H "Exception handling": "a maximum
+        # of a 12 cycle latency ... when the memory being accessed has no wait states", "Returns from interrupts
+        # similarly take twelve cycles", "Tail chaining requires 6 cycles when using zero wait state memory").
+        self.cycles = 0
         self._sysclk_hz = sysclk_hz           # updated by the RCC model through the sysclk_hz property
         self._clk_mark = (0, Fraction(0))     # (cycles, elapsed seconds) when the core clock last changed
         self.clock_hooks = []                 # callables run after every core clock change (event re-timing)
@@ -48,14 +69,23 @@ class Machine:
         self.active = []                      # stack of active exception numbers
         self.unmodelled = {}                  # (addr, rw) -> first pc, count
         self.log = []                         # (cycle, text)
-        self._blk = {}
+        self._blk = {}                        # (block start, size) -> (instruction addresses, cumulative cycles)
+        self._cur = None                      # the block counted last: (start, end, addresses, cumulative cycles,
+                                              #   cycles taken off its first instruction, carry it consumed)
+        self._last = None                     # (end, address of the last instruction) of the block entered last; None
+                                              #   when execution continues without a branch (resume, exception)
+        self._carry = None                    # (address, cycles) of an instruction a slice stopped at: its cost in
+                                              #   the block it was cut from (pipelining / IT folding context)
+        self._tail = False                    # an exception return with no instruction since (tail-chaining)
+        self._vis = 0                         # cycles value last seen by a peripheral / SCS / EEPROM access
+        self._prepay = 0                      # cycles counted ahead of the executed instructions (see _refund)
+        self._restart = False                 # the slice ended at once to retranslate a block (no progress needed)
         self._resume = None
         self._stop_reason = None
         self.nvic = None                      # set by scs.SCS()
         self.reset_request = None
         self._in_slice = False
         self._slice_end = 0
-        self._stop_req = False                # slice stop requested by schedule(), carried out at the next block start
         self.mpu_hold = False                 # an access cancelled by the MPU model (scs.py): MMIO callbacks do nothing
         self._fault = None                    # (exception number, return address) of a synchronous fault, entered next
         self._map()
@@ -90,6 +120,7 @@ class Machine:
         return int.from_bytes(self.eeprom[off:off + size], 'little')
 
     def _ee_write(self, uc, off, size, value, ud):
+        self._vis = self.cycles
         if self.mpu_hold:
             return
         if self.flash_ctl is None:
@@ -115,6 +146,7 @@ class Machine:
         self.unmodelled[k][1] += 1
 
     def _pread(self, uc, off, size, ud):
+        self._vis = self.cycles
         if self.mpu_hold:
             return 0
         addr = PERIPH_BASE + off
@@ -124,6 +156,7 @@ class Machine:
         return mdl.read(addr - b, size) & ((1 << (8 * size)) - 1)
 
     def _pwrite(self, uc, off, size, value, ud):
+        self._vis = self.cycles
         if self.mpu_hold:
             return
         addr = PERIPH_BASE + off
@@ -166,6 +199,7 @@ class Machine:
             self._pwrite(uc, a - PERIPH_BASE, size, v, None)
 
     def _scs_read(self, uc, off, size, ud):
+        self._vis = self.cycles
         if self.mpu_hold:
             return 0
         if self.nvic is None:
@@ -173,6 +207,7 @@ class Machine:
         return self.nvic.read(off, size)
 
     def _scs_write(self, uc, off, size, value, ud):
+        self._vis = self.cycles
         if self.mpu_hold:
             return
         if self.nvic is None:
@@ -189,31 +224,96 @@ class Machine:
 
     # ---------------------------------------------------------------- time / events
     def _on_block(self, uc, addr, size, ud):
-        if self._stop_req:                    # stop before this block runs; it is counted when the slice resumes
-            self._stop_req = False
+        self._cur = None                      # the previous block ran to its end (control reached a new block)
+        self._tail = False
+        if self.cycles >= self._slice_end:    # slice over: stop before this block runs (counted when the slice resumes)
             uc.emu_stop()
             return
         if self.nvic is not None and self.nvic.mpu.ctrl & 1 and self.nvic.mpu.block_check(addr, size):
-            return                            # MPU: instruction fetch violation (or block cut at the violating instruction)
-        n = self._blk.get(addr)
-        if n is None:
-            code = uc.mem_read(addr, size)
-            insns = list(self.cs.disasm(bytes(code), addr))
-            n = len(insns) or 1
-            self._blk[addr] = n
+            self._restart = True              # MPU: instruction fetch violation (or block cut at the violating
+            return                            # instruction); the block is not run and not counted
+        key = (addr, size) if addr < SRAM_BASE else (addr, size, bytes(uc.mem_read(addr, size)))   # code in RAM
+        b = self._blk.get(key)                                                                     # may change
+        if b is None:
+            ia, cum, wfi = self.cyc.block(bytes(uc.mem_read(addr, size)), addr)
             # Unicorn executes WFI as a no-op: hook each WFI the first time its block is seen, flush the translated
             # block so the hook takes effect, and restart the block (WFE raises an error instead, handled in run())
-            wfi = [i.address for i in insns if i.mnemonic == 'wfi' and i.address not in self._wfi_hooked]
+            wfi = [a for a in wfi if a not in self._wfi_hooked]
             if wfi:
                 for a in wfi:
                     self._wfi_hooked.add(a)
                     self.add_idle_hook(a, 'wfi')
                 uc.ctl_remove_cache(addr, addr + size)
-                del self._blk[addr]
                 self._resume = addr | 1
+                self._restart = True
                 uc.emu_stop()
                 return
-        self.cycles += n
+            b = self._blk[key] = (ia, cum)
+        ia, cum = b
+        c = cum[-1]
+        last, carry = self._last, self._carry
+        self._carry = None
+        adj = 0
+        if carry is not None and carry[0] == addr:
+            adj = cum[1] - carry[1]           # resumed at a cut point: the cost it had in the block it was cut from
+        if last is not None and addr != last[0]:  # not entered from the end of the block before: a taken branch
+            c += 1 + self._flash_penalty(last[1], addr)       # refill P = 1 (DDI 0337H Table 3.1: 1 to 3)
+        if self._prepay:
+            self._charge(c - adj)
+        else:
+            self.cycles += c - adj
+        self._cur = (addr, addr + size, ia, cum, adj, carry)
+        self._last = (addr + size, ia[-1])
+
+    def _flash_penalty(self, br, target):
+        """Wait states of a taken branch from the instruction at br to target (RM0038 3.3.2 note): FLASH_ACR.LATENCY when
+        the target is in flash and in neither the 64-bit line of the branch nor, with PRFTEN, the next (prefetched)
+        line."""
+        f = self.flash_ctl
+        if f is None or not FLASH_BASE <= target < FLASH_BASE + FLASH_SIZE:
+            return 0
+        acr = f.acr
+        if not acr & 1:                                # LATENCY (FLASH_ACR bit 0): 0 wait states
+            return 0
+        tl, bl = target & ~7, br & ~7
+        if tl == bl or (acr & 2 and tl == bl + 8):     # PRFTEN (bit 1)
+            return 0
+        return 1
+
+    def _settle(self, pc):
+        """The CPU stopped with pc as the next instruction to execute.  When pc lies inside the block counted last,
+        the instructions from pc to the block end did not execute: take their cycles off (they are counted again when
+        the slice resumes at pc, which Unicorn translates as a new block).  A taken-branch refill charged on entry
+        stays (the branch was taken); execution then continues at pc without a branch."""
+        cur, self._cur = self._cur, None
+        if cur is not None and cur[0] <= pc < cur[1]:
+            ia, cum = cur[2], cur[3]
+            k = bisect_left(ia, pc)
+            sub = cum[-1] - cum[k]
+            if k == 0:
+                sub -= cur[4]                          # nothing ran: the resumed block is this block again
+                self._carry = cur[5]
+            else:
+                self._carry = (pc, cum[k + 1] - cum[k])
+            self._refund(sub)
+            self._last = None
+
+    def _charge(self, c):
+        """Add c >= 0 executed cycles; prepaid cycles are used up first."""
+        t = self.cycles - self._prepay + c
+        if t >= self.cycles:
+            self.cycles, self._prepay = t, 0
+        else:
+            self._prepay = self.cycles - t
+
+    def _refund(self, c):
+        """Take off c cycles counted for instructions that did not execute.  The clock does not go back behind _vis (a
+        peripheral may have stored that time, e.g. SysTick reload instant): the rest stays prepaid."""
+        t = self.cycles - self._prepay - c
+        if t >= self._vis:
+            self.cycles, self._prepay = t, 0
+        else:
+            self.cycles, self._prepay = self._vis, self._vis - t
 
     def schedule(self, delay_cycles, cb):
         self._seq += 1
@@ -221,12 +321,17 @@ class Machine:
         self.events.append((due, self._seq, cb))
         self.events.sort()
         # an event created during a slice that falls due before the slice ends must not wait for
-        # the slice boundary: end the slice so the run loop handles it on time.  The stop is not issued here:
-        # schedule() is mostly called from inside a peripheral register access, and Unicorn re-executes a
-        # load/store that is stopped inside its MMIO callback (the access would reach the peripheral twice).
-        # The block hook stops at the next basic block start instead.
+        # the slice boundary: the slice end moves to the due cycle, so the run loop handles it on time.  The stop is not
+        # issued here: schedule() is mostly called from inside a peripheral register access, and Unicorn re-executes a
+        # load/store that is stopped inside its MMIO callback (the access would reach the peripheral twice).  The block
+        # hook stops at the first basic block start at or after the slice end instead.
         if self._in_slice and due < self._slice_end:
-            self._stop_req = True
+            self._slice_end = due
+
+    def stop_soon(self):
+        """End the running slice at the next basic block start (safe from inside an MMIO callback, see schedule())."""
+        if self._in_slice:
+            self._slice_end = min(self._slice_end, self.cycles)
 
     @property
     def sysclk_hz(self):
@@ -299,7 +404,14 @@ class Machine:
         uc.reg_write(UC_ARM_REG_XPSR, (1 << 24) | ipsr)
         vtor = self.nvic.vtor
         handler = struct.unpack('<I', uc.mem_read(vtor + 4 * exc, 4))[0]
-        self.cycles += 12                              # Cortex-M3 exception entry latency
+        # exception entry latency (ARM DDI 0337H "Exception handling"): 12 cycles; tail-chained to an exception return
+        # with no instruction in between, the return (12, charged in _on_intr) and this entry together take 6
+        if self._tail:
+            self._refund(6)
+        else:
+            self._charge(12)
+        self._tail = False
+        self._last = self._carry = None
         if bad is not None:
             self.nvic.stacking_fault(handler | 1, bad)
         return handler | 1
@@ -312,6 +424,9 @@ class Machine:
                                      f"(MUNSTKERR is not modelled, emu/scs.py)")
                 uc.emu_stop()
                 return
+            self._cur = None                           # the EXC_RETURN branch ends its block and has executed
+            self._last = self._carry = None
+            self._tail = True
             vals = struct.unpack('<8I', uc.mem_read(sp, 32))
             for r, v in zip(FRAME_REGS, vals):
                 if r != UC_ARM_REG_PC:
@@ -323,7 +438,7 @@ class Machine:
             if self.active:
                 self.active.pop()
             self._resume = vals[6] | 1
-            self.cycles += 12
+            self._charge(12)
             uc.emu_stop()
         else:
             pc = uc.reg_read(UC_ARM_REG_PC)
@@ -342,7 +457,12 @@ class Machine:
           exception taken while the core sleeps there returns to the instruction AFTER the WFI / WFE (the exception
           that wakes the core is entered with the next instruction as return address, PM0056 3.12.11); run() does that
           with `_asleep_at`."""
+        op = 0xBF30 if kind == 'wfi' else 0xBF20
+
         def hook(uc, a, size, ud):
+            if size != 2 or int.from_bytes(uc.mem_read(a, 2), 'little') != op:
+                return                                 # the code at a changed (RAM): no longer a WFI / WFE
+            self._settle(a)                            # the code hook runs before the instruction at a
             self._resume = self._sleep(a, kind)
             uc.emu_stop()
         self.uc.hook_add(UC_HOOK_CODE, hook, begin=addr, end=addr)
@@ -353,10 +473,11 @@ class Machine:
         if self._wake_ok(kind):
             if kind == 'wfe':
                 self.event_reg = False
+            self._charge(1)                            # the WFI / WFE executes: 1 + W (DDI 0337H Table 3.1), W = 0
             return (a + 2) | 1
         self._asleep_at = a
-        if self.events:
-            self.cycles = max(self.cycles, self.events[0][0])
+        if self.events:                                # asleep until the next event
+            self._charge(max(0, self.events[0][0] - (self.cycles - self._prepay)))
         else:
             self.idle = True
         return a | 1
@@ -376,6 +497,10 @@ class Machine:
         """Collect a synchronous fault raised by the MPU model (scs.py): cancel the access and queue the exception."""
         if self.nvic is not None and self.nvic.fault_pending:
             self._fault = self.nvic.take_fault()
+            if self._fault is not None:
+                self._settle(self._fault[1] & ~1)      # the faulting instruction did not execute
+            else:                                      # lockup: the run stops at the instruction
+                self._settle(self.uc.reg_read(UC_ARM_REG_PC) & ~1)
 
     def request_reset(self, why):
         self.reset_request = why
@@ -408,7 +533,9 @@ class Machine:
         self.active.clear(); self.pending.clear()
         self._asleep_at = None
         self._resume = None
-        self._stop_req = False
+        self._cur = self._last = self._carry = None
+        self._tail = False
+        self._prepay = 0                               # the abandoned instructions never execute
 
     def run(self, max_cycles, slice_cycles=4000):
         end = self.cycles + max_cycles
@@ -433,9 +560,10 @@ class Machine:
             if self.events:
                 n = max(1, min(n, self.events[0][0] - self.cycles))
             self._resume = None
-            start = self.cycles
+            start = self.cycles - self._prepay         # executed time at the slice start
             self._slice_end = self.cycles + n
-            self._stop_req = False
+            self._restart = False
+            self._cur = None
             self._in_slice = True
             try:
                 self.uc.emu_start(self.pc, 0xFFFFFFFF, count=n)
@@ -447,18 +575,21 @@ class Machine:
                 pc = self.uc.reg_read(UC_ARM_REG_PC)
                 # WFI / WFE: Unicorn rejects them.  Unicorn 2.1.4 reports the error with PC already past the instruction
                 # (the failing WFE of v2.05 at 0x080207F6 is reported at 0x080207F8), an older one at the instruction
-                # itself: the halfword at PC is tried first, then the one before it
+                # itself: the candidate the installed version reports is tried first (with 2.1.4 the halfword at PC
+                # may be a second WFE / WFI, e.g. "wfe; wfe", which is not the one that failed)
                 wfx = None
-                for cand in (pc & ~1, (pc & ~1) - 2):
+                cands = ((pc & ~1) - 2, pc & ~1) if _UC_PC_PAST_WFX else (pc & ~1, (pc & ~1) - 2)
+                for cand in cands:
                     hw = int.from_bytes(self.uc.mem_read(cand, 2), 'little')
                     if hw in (0xBF30, 0xBF20):
                         wfx = (cand, hw)
                         break
                 if wfx is not None:                    # emulate the sleep here
                     self._in_slice = False
+                    self._settle(wfx[0])               # the WFI / WFE and the rest of its block did not execute
                     self.pc = self._sleep(wfx[0], 'wfi' if wfx[1] == 0xBF30 else 'wfe')
-                    if self.cycles == start:
-                        self.cycles += 1
+                    if self.cycles - self._prepay == start:
+                        self._charge(1)
                     if self.idle:
                         self.idle = False
                         break
@@ -470,12 +601,13 @@ class Machine:
             if self.nvic is not None and self.nvic.fault_pending:
                 self._take_fault()                     # MPU fault raised in this slice
                 continue
+            self._settle(self.uc.reg_read(UC_ARM_REG_PC) & ~1)   # block left before its end (count, emu_stop)
             if self._resume is not None:
                 self.pc = self._resume
             else:
                 self.pc = self.uc.reg_read(UC_ARM_REG_PC) | 1
-            if self.cycles == start:                   # no block executed (stopped at once)
-                self.cycles += 1
+            if self.cycles - self._prepay == start and not self._restart:   # nothing executed: keep time moving
+                self._charge(1)
             if self.idle:                              # asleep with nothing scheduled: give the caller back
                 self.idle = False                      # control; it supplies inputs and calls run() again
                 break

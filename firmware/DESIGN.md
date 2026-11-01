@@ -1332,6 +1332,12 @@ New optimisations are added here before they are implemented; anything that chan
 - OF-52 (battery conversion, found 2026-10-31 after Phase 1): fix in PWR (`adc_ch5_process` / `fn_08013728`): battery =
   code x 3.3 / 4095 / (330/1330), low-battery threshold 4.1 V kept; implemented after Phase 2 so integration compares
   against an unchanged target, then allowlisted for the battery value and symbol streams.
+- Hardware question for the EEVblog test (Q8): v2.05's SD write completion wait FUN_080232E0 (0x08023346: counter 1000,
+  polls SDIO_STA.TXACT) times out after about 7 ms at 4 MHz and then skips CMD12. Whether TXACT stays set while the card
+  holds D0 busy after a block is not stated in RM0038 (DPSM Busy state text; TXACT "asserted when it transmits data").
+  If it does, slow cards (busy up to 250 ms allowed, SD physical layer 4.6.2.2) make the write fail; the emulator's SDIO
+  model assumes it does. The port keeps the v2.05 loop until the hardware behaviour is known; HARDWARE_TEST.md asks for
+  a logging test with a slow card.
 - Q12: MPU guard added (switch `MPU_GUARD`). The emulator models the MPU (PM0056 4.2, `emulator/emu/scs.py`); the guard
   build boots and stray stores to program flash and the option bytes fault into `sys_fault_safe` with nothing written.
   The default becomes 1 once STOP/wake of the guard build passes in integration.
