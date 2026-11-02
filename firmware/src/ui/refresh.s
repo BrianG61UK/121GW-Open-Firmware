@@ -864,6 +864,13 @@ FUNC fn_08016E08
     strb r0, [r1, #0]                        @ 0801702A
     b .L08017090                             @ 0801702C
 .L0801702E:                                @ reached from 0801701C bne (not equal / non-zero)
+    .if LOOP_V205 == 0
+    bl ui_relpct_view
+    cbz r0, .Lrf_no_pct                     @ IMP-11: REL in percent off or not shown: the v2.05 draw of D
+    bl ui_relpct_draw                       @ IMP-11: D as percent of the REL base
+    b .L08017090
+.Lrf_no_pct:
+    .endif
     @ r4 = displayed reading D (0x20007D64); inside -99999..99999 it is drawn directly
     ldr r0, =v_20007D64                      @ 0801702E &displayed reading D (signed counts)
     ldr r0, [r0, #0]                         @ 08017032

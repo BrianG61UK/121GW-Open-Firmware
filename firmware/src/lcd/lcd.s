@@ -57,6 +57,7 @@ lcd_init_fault:
 @ RAM      : reads lcd_shadow (0x20007790), hold_stage2 (0x20008050), 0x20007FE1, 0x20008053; writes LCD_RAM0..7,
 @            0x20008053 (cleared by a full commit), lcd_last, lcd_last_valid, lcd_commit_pending (production)
 @ Spec     : analysis/lcd_map.md 1 (word i -> LCD_RAM 0x40002414 + 4i, partial commit rule); RM0038 16.5.3 (UDR)
+@ Deviation: IMP-11 (production: ui_relpct_mask first applies the REL percent view to the shadow)
 @ Deviation: HW-07 (the UDR wait is bounded by LCD_WAIT_POLLS; on a timeout nothing is written), IMP-06 / OF-31
 @            (production: no wait; a commit that finds UDR set is deferred and repeated by lcd_commit_retry, a deferred full
 @            commit stays a full commit; the words are written only if they differ from the last committed copy)
@@ -64,6 +65,7 @@ lcd_init_fault:
 FUNC lcd_commit_shadow
     push {r4, lr}                            @ 0801B304 r4 = HW-07 poll budget in the baseline build (v2.05: push {r7, lr})
     .if LOOP_V205 == 0
+    bl ui_relpct_mask                        @ IMP-11: unit signs off and % on while REL is shown in percent (ui/relpct.s)
     @ production: a full commit that was deferred (lcd_commit_pending = 2) stays a full commit at the retry.  The partial
     @ rule below reads state that can change between the deferral and the retry (logging flag 0x20007FE1 cleared); a switch
     @ to the partial commit would drop the non-bargraph shadow changes of the deferred commit, which v2.05 commits at once.

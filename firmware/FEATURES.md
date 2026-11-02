@@ -1,7 +1,7 @@
 # Planned features of the replacement firmware: user interface, storage, constraints
 
 Status: design. The backlight auto-off timer (2.9, IMP-07), the dBm reference (2.2, IMP-08), the Bluetooth frame rate
-(2.5, IMP-09) and the thermocouple type (2.8, IMP-10) are implemented. The other features are designs for
+(2.5, IMP-09), the thermocouple type (2.8, IMP-10) and REL in percent (2.3, IMP-11) are implemented. The other features are designs for
 the production image; none of them is in the tree as code. The EEPROM bytes of section 3 are approved (owner, 2026-11-02);
 each is added to `EEPROM_MAP.md` 4.1 and `nvm_allow` only with the code that uses it. Citations: `KS` = `analysis/keys_setup.md`, `EMAP` =
 `EEPROM_MAP.md`, `LCD` = `analysis/lcd_map.md`, `ARS` = `analysis/autorange_and_scheduler.md`, `DES` = `DESIGN.md`.
@@ -125,17 +125,21 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   for this page (`analysis/ble_packet.md` 4), so a phone application labels all four references "dBm"; for dBV that label is
   wrong. OF-46 (zero reading, five dashes) stays as fixed.
 
-### 2.3 REL in percent
+### 2.3 REL in percent (implemented, IMP-11)
 
-- Where: SETUP page `rEL` (delta or percent); REL short and REL long keep their v2.05 meaning in every mode.
-- Keys: the edit keys of 1.2 on the page; no new key action.
-- What is shown: page `rEL-d` (difference, v2.05) or `rEL-P` (percent). With percent selected and REL on, the main display
-  shows (x - ref) / ref * 100 in percent with the decimal point placed by magnitude (0.001 .. 99999), the REL annunciator on,
-  the Sub% element on (the % symbol, LCD 4.1 mode 8) and the unit annunciators of the mode off. A zero reference shows `-----`
-  in the main display (no division). The reference is the base REL captured from its first result, as in v2.05 (`fn_0800E594`, v2.05 0x0800E594, RAM 0x20007DA8).
-- Storage: bit 0 of the byte 0x020 (0 = difference, v2.05).
-- Constraints: display-side only; logging, BLE and MIN/MAX keep using the value that is not scaled (percent is a view). Modes
-  where REL is vetoed in v2.05 (flag 0x20008048, KS 2.2) stay vetoed.
+- Where: SETUP page `rEL`, item 22, after `bt` in every mode; REL short and REL long keep their v2.05 meaning in every mode.
+- Keys: the edit keys of 1.2 on the page (REL or PEAK switches between the two values); no new key action.
+- What is shown: page `rEL-d` (difference, v2.05) or `rEL-P` (percent). With percent selected the main display shows
+  (x - ref) / ref * 100 whenever v2.05 shows the REL sign (REL on, 0x20007FE1 = 0, 0x20007FE4 = 0): 0.001 % resolution
+  below 100 %, then 0.01, 0.1 and 1 % up to 99999 %, each rounded half away from zero once from the exact quotient; above
+  99999 % ` OFL ` (the OL flag is not set); a zero reference `-----`. The unit and prefix signs of the reading are off and
+  the % sign (Sub%, the sign of DUTY) is on; when the view ends every sign of the mode is redrawn. The reference is the base
+  REL captured from its first result, as in v2.05 (`fn_0800E594`, RAM 0x20007DA8).
+- Storage: bit 0 of the byte 0x020 (0 = difference, v2.05); the other bits of the byte are written back as loaded, an
+  erased byte reads as 0.
+- Constraints: display-side only; logging, BLE (0x20007D70 keeps the REL value in counts) and MIN/MAX keep using the value
+  that is not scaled. Modes where REL is vetoed in v2.05 (flag 0x20008048, KS 2.2) stay vetoed. Code: `ui/relpct.s`
+  (view, draw, sign mask applied at every full commit), `set/relp.s` (page).
 
 ### 2.4 Faster display update
 
@@ -300,7 +304,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 | 0x013 | 2.4 display | 0 level 1, 1 level 2 | level 1 | as 0x011 | approved |
 | 0x015 | 2.5 BLE | 0 2/s, 1 4/s, 2 10/s, 3 20/s | 2/s | 0x014 continuity code, 0x016 APO | approved, implemented |
 | 0x017 | 2.9 backlight | bits 6..0: 0 OFF, 1 30 s, 2..100 1..99 min; bit 7: on/off state | OFF, dark | as 0x015 | approved, implemented |
-| 0x020 | 2.3, 2.6 | bit 0 REL percent, bits 2..1 log trigger | v2.05 | none (free word 0x020..0x023) | approved |
+| 0x020 | 2.3, 2.6 | bit 0 REL percent, bits 2..1 log trigger | v2.05 | none (free word 0x020..0x023) | approved, bit 0 implemented |
 | 0x021 | 2.1 limits | `mode * 8 + range + 1` of the limits, 0 none | none | as 0x020 | approved, not used (limits RAM only) |
 | 0x022 | 2.6 | change threshold 1..255 | 1 | as 0x020 | approved |
 | 0x028..0x02B | 2.1 | LO limit, s32 big-endian | 0 | none (free word) | approved, not used (limits RAM only) |
@@ -316,7 +320,7 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 |---|---|---|---|
 | 20 | `bL` backlight | always | yes (implemented) |
 | 21 | `bt` | always | yes (implemented) |
-| 22 | `rEL` | always | yes |
+| 22 | `rEL` | always | yes (implemented) |
 | 23 | `tc` | TEMP mode only | yes (implemented) |
 | 24 | `dSP` | always | yes |
 | 25 | `Lt` | always | yes |
@@ -330,8 +334,8 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 34, 35 | `tHI`, `tLo` | MIN/MAX on | no |
 
 Item 31 is not used. v2.05 uses 0..12 and 100; the page dispatcher falls back to item 0 for an unknown item
-(`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20, 21 and 23. SETUP short steps
-20 -> 21 -> 23 (TEMP only) -> 0 (`fn_08015410`); each new page joins that chain.
+(`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 23. SETUP short steps
+20 -> 21 -> 22 -> 23 (TEMP only) -> 0 (`fn_08015410`); each new page joins that chain.
 
 ## 5. Order of work and checks
 

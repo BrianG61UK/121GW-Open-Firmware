@@ -60,6 +60,9 @@ The image has only run in the emulator. These checks confirm on hardware what th
 10. Thermocouple type (production build): TEMP, SETUP to the page tc (after bt), select J or T and save; with a J or T probe
    (or a thermocouple calibrator set to J / T) compare readings at room temperature, in ice water (0 degC) and at a known
    hot point. Dump the EEPROM after the save: only byte 0x00F may differ.
+11. REL in percent (production build): SETUP to the page rEL (after bt), select `rEL-P` and save; DCV with a source at 1 V,
+   REL, then 1.1 V: 10.000 with the % sign and no V; REL off: volts again. Dump the EEPROM after the save: only byte 0x020
+   may differ.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).
