@@ -68,6 +68,7 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-53 | Measurement | HY3131 interrupt flags are cleared by writing 0 after the status burst read: a flag raised in between is lost; a lost counter-done flag freezes the frequency reading until the next mode or range apply | medium | fixed |
 | OF-54 | Measurement | The status burst reads the counter registers before INTF: a count that completes in between is seen as done with stale counter values; in AC modes the frequency correction then uses frequency 0 | medium | fixed |
 | OF-55 | Backlight | The backlight state flag 0x2000807B stays 1 across an auto power-off (STOP): the pin PE8 is driven low by the power-down but nothing resets the flag, so after the wake the first MODE long press only clears the flag and a second one is needed to switch the backlight on | low | fixed (fast build) |
+| OF-56 | Temperature | One entry of the type K table 0x08025CF8 differs from the NIST ITS-90 table: 270 degC holds 10970 uV, NIST 10.971 mV (the NIST reference function gives 10970.95 uV); readings near 270 degC are 0.02 degC high | very low | documented (table kept) |
 
 ## Details
 
@@ -831,3 +832,11 @@ Impact: after every wake that followed a power-off with the backlight on, the ba
 Port (fast build): `set_state_reset` calls `pwr_bl_reset`, which clears the flag (and the auto-off countdown of IMP-07) at
 power-on and after the wake, so the flag follows the pin; the first MODE long press switches the backlight on. The strict
 build keeps v2.05's behaviour.
+
+### OF-56 — type K table entry at 270 degC is 1 uV low
+The type K table at 0x08025CF8 (158 x s32 uV at 10 k - 210 degC) was compared with the NIST ITS-90 type K table
+(https://its90.nist.gov/downloadFiles/type_k.tab.txt) by `firmware/tools/gen_tc_tables.py`: 157 entries are equal, entry 48
+(270 degC) holds 10970 where NIST tabulates 10.971 mV.  The NIST reference function gives 10970.95 uV at 270 degC, so the
+v2.05 value is the function truncated instead of rounded.  Effect: between 260 and 280 degC the interpolated temperature is
+at most 1 uV / 41 uV per degC = 0.024 degC high.  The table is kept as v2.05 has it in both images (K readings stay those
+of v2.05); the J and T tables of IMP-10 are the NIST values.

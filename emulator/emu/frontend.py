@@ -19,14 +19,14 @@ ADR3440/ADR3450 data sheet Rev. C, Table 3 "ADR3412 Electrical Characteristics" 
 (specification tables), SCH = 121GW circuit diagram.
 
 Stimulus (set_stimulus): {'kind': k, 'value': x, 'ac': bool, 'freq': Hz, 'duty': 0..1, 'width': s, 'dc': V,
-                          'amps': A, 'board': degC or None}
+                          'amps': A, 'board': degC or None, 'probe': 'K' | 'J' | 'T'}
     kind 'V'      volts: the DC value, or with ac the RMS of a sine of `freq` Hz plus the DC component 'dc'
     kind 'A'      amperes (DC, or RMS of a sine with ac), entering through the plugged current jack (A or mA)
     kind 'ohm'    resistance (also continuity in BEEP)
     kind 'Hz'     a signal of `value` Hz at the counter input; duty = high fraction, or 'width' = high time in s
                   (overrides duty when > 0)
     kind 'F'      capacitance in farads
-    kind 'degC'   thermocouple (hot junction) temperature
+    kind 'degC'   thermocouple (hot junction) temperature; 'probe' selects the thermocouple type (default 'K')
     kind 'diode'  forward voltage of the device under test in volts
     kind 'VA'     voltage `value` and current 'amps' at the same time (both RMS with ac)
     kind 'open'   test leads open, nothing connected (the default): every field except 'board' is ignored; what
@@ -67,6 +67,7 @@ import os
 import random
 import struct
 
+from . import tc_nist
 from .hy3131 import AD1_SCALE, AD1_MAX
 
 VREF_ADR3412 = 1.2000          # V, ADR3412 Table 3 "OUTPUT VOLTAGE" typ (min 1.1988, max 1.2012)
@@ -202,6 +203,9 @@ TH_TABLE = (3758, 3672, 3570, 3451, 3315, 3163, 2997, 2819, 2631, 2437, 2242, 20
 TH_TMIN, TH_TMAX = -2500, 8500
 TC_TABLE = 0x08025CF8                                   # 158 x i32 thermocouple EMF in uV at 10 k - 210 degC (misc 4.1)
 TC_MIN_C, TC_MAX_C = -210.0, 1360.0
+# thermocouple probe types: EMF table source and temperature span of the table (degC); K is the firmware table above,
+# J and T are the NIST ITS-90 tables of emu/tc_nist.py (the shape of the K table)
+TC_PROBES = {'K': (-210.0, 1360.0), 'J': (-210.0, 1200.0), 'T': (-210.0, 400.0)}
 # CORR tables X (address, words per row) by idx (acc 5.2)
 CORR_X = {0: (0x08028A18, 9), 1: (0x08028A60, 9), 4: (0x08028E08, 7), 5: (0x08028E40, 7), 6: (0x08028E78, 7),
           7: (0x08028EB0, 7)}
@@ -285,7 +289,7 @@ class _Base:
         self.board = None              # emu.board.Board, set by the application (dial position)
         self.noise_counts = noise_counts
         self.stim = {'kind': 'open', 'value': 0.0, 'ac': False, 'freq': 0.0, 'duty': 0.5, 'width': 0.0, 'dc': 0.0,
-                     'amps': 0.0, 'board': None}
+                     'amps': 0.0, 'board': None, 'probe': 'K'}
         self.stim_epoch = 0.0          # chip time at which the current signal started (counter edge phase)
         # Hardware truth: the calibration the physical front end actually has.  It is a frozen copy of the EEPROM taken
         # when the emulator starts (or an image given with --hw-cal), never the live EEPROM: the firmware may rewrite its
@@ -317,10 +321,13 @@ class _Base:
         if kind not in STIM_KINDS:
             raise ValueError(f'unknown stimulus kind {kind}')
         b = s.get('board', self.stim.get('board'))
+        probe = str(s.get('probe', self.stim.get('probe', 'K'))).upper()
+        if probe not in TC_PROBES:
+            raise ValueError(f'unknown thermocouple probe {probe} (K, J or T)')
         st = {'kind': kind, 'value': float(s.get('value', 0.0)), 'ac': bool(s.get('ac', False)),
               'freq': float(s.get('freq', 0.0) or 0.0), 'duty': float(s.get('duty', 0.5)),
               'width': float(s.get('width', 0.0) or 0.0), 'dc': float(s.get('dc', 0.0) or 0.0),
-              'amps': float(s.get('amps', 0.0) or 0.0), 'board': None if b is None else float(b)}
+              'amps': float(s.get('amps', 0.0) or 0.0), 'board': None if b is None else float(b), 'probe': probe}
         if kind == 'open':             # nothing connected: the other fields have no meaning
             st.update(value=0.0, ac=False, freq=0.0, duty=0.5, width=0.0, dc=0.0, amps=0.0)
         if kind == 'Hz':
@@ -722,9 +729,11 @@ class CalibratedFrontend(_Base):
             if not lo <= float(b) <= hi:
                 raise ValueError(f'board temperature must be within {lo:.2f} .. {hi:.2f} degC (thermistor table '
                                  '518..3672 used by 0x08013AAC, offset EEPROM 0x2E0)')
-        if s.get('kind', self.stim['kind']) == 'degC' and not TC_MIN_C <= float(s.get('value', 0.0)) <= TC_MAX_C:
-            raise ValueError(f'thermocouple temperature must be within {TC_MIN_C} .. {TC_MAX_C} degC (EMF table '
-                             '0x08025CF8, misc 4.1)')
+        probe = str(s.get('probe', self.stim.get('probe', 'K'))).upper()
+        lo, hi = TC_PROBES.get(probe, (TC_MIN_C, TC_MAX_C))
+        if s.get('kind', self.stim['kind']) == 'degC' and not lo <= float(s.get('value', 0.0)) <= hi:
+            raise ValueError(f'type {probe} thermocouple temperature must be within {lo} .. {hi} degC (EMF table: K '
+                             '0x08025CF8, misc 4.1; J, T NIST ITS-90, emu/tc_nist.py)')
         super().set_stimulus(s)
 
     def set_pa4(self, volts, vref):
@@ -776,12 +785,13 @@ class CalibratedFrontend(_Base):
         tth = 500 * i - 3500 + (TH_TABLE[i - 1] - avg) * 500.0 / (TH_TABLE[i - 1] - TH_TABLE[i])
         return (tth + self._th_offset()) / 100.0
 
-    def _tc_emf(self, t):
-        """Thermocouple EMF in uV at t degC: linear interpolation of the table 0x08025CF8 (t[k] at 10 k - 210 degC),
-        the curve the firmware inverts in 0x08013C40 (misc 4.1)."""
-        tab = self._tab(TC_TABLE, 158)
+    def _tc_emf(self, t, probe='K'):
+        """Thermocouple EMF in uV at t degC: linear interpolation of the probe's table (t[k] at 10 k - 210 degC).  K: the
+        table 0x08025CF8, the curve the firmware inverts in 0x08013C40 (misc 4.1); J, T: the NIST ITS-90 tables of
+        emu/tc_nist.py."""
+        tab = self._tab(TC_TABLE, 158) if probe == 'K' else (tc_nist.TC_J if probe == 'J' else tc_nist.TC_T)
         u = (t + 210.0) / 10.0
-        k = max(0, min(156, int(math.floor(u))))
+        k = max(0, min(len(tab) - 2, int(math.floor(u))))
         return tab[k] + (tab[k + 1] - tab[k]) * (u - k)
 
     # ------------------------------------------------------------------ quantities at the jacks
@@ -1253,8 +1263,9 @@ class CalibratedFrontend(_Base):
                  why='CAP counter signal: pulse train, physical method UNPROVEN (misc 5.5)')
 
     def _plan_temp(self, p, mode, rng, st):
-        """TEMP (misc 4): D (uV) = E(T_hot) - E(T_board) with E the table 0x08025CF8; the board temperature also
-        sets PA4, from which the firmware computes its cold junction (0x0801385A, 0x08013CF8)."""
+        """TEMP (misc 4): D (uV) = E(T_hot) - E(T_board) with E the EMF table of the probe type (K: 0x08025CF8; J, T:
+        emu/tc_nist.py); the board temperature also sets PA4, from which the firmware computes its cold junction
+        (0x0801385A, 0x08013CF8)."""
         if not self._need(p, 'degC'):
             return
         tb = self.board_c()
@@ -1262,7 +1273,9 @@ class CalibratedFrontend(_Base):
             p['why'] = 'board temperature unknown: PA4 voltage outside the thermistor table range 518..3672 (misc 4.2)'
             return
         off, g = self._cal(mode, rng)
-        self._set_dc(p, self._tc_emf(st['value']) - self._tc_emf(tb), off, g, f'board {tb:.2f} degC')
+        probe = st.get('probe', 'K')
+        self._set_dc(p, self._tc_emf(st['value'], probe) - self._tc_emf(tb, probe), off, g,
+                     f'type {probe}, board {tb:.2f} degC')
 
     def _plan_ohm(self, p, mode, rng, st):
         """OHM r0..r6 (spec 5.2, misc 6.3) and BEEP (OHM chain, record 0x120, range 0, misc 6.3)."""

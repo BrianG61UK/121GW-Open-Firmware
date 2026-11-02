@@ -25,6 +25,7 @@ contents, HY3131 configuration sequence) is identical to v2.05; each is verified
 | IMP-07 | Backlight auto-off timer: SETUP page bL, OFF (default) / 30 s / 1..99 min | after the chosen time without a key press or dial turn the backlight switches itself off (MODE long press switches it on, and off, as before); stored in EEPROM 0x017 (a byte v2.05 never uses, `EEPROM_MAP.md` 4.1); the flag and countdown also follow the pin after a STOP wake (v2.05 needed two MODE long presses after a wake with the backlight on) |
 | IMP-08 | Selectable dBm reference on the ACV page 11: 600 ohm (default, as v2.05), 50 ohm, 75 ohm, dBV | long SETUP on the dBm page, REL / PEAK step, long SETUP saves; RF (50 ohm), video (75 ohm) and dBV readings without conversion by hand; stored in EEPROM 0x011 (`EEPROM_MAP.md` 4.1) |
 | IMP-09 | Selectable Bluetooth frame rate: SETUP page bt, 2 (default, as v2.05) / 4 / 10 / 20 frames per second | faster live readings for a host that keeps up; the 500 ms timing of the rest of the meter is untouched; stored in EEPROM 0x015 (`EEPROM_MAP.md` 4.1) |
+| IMP-10 | Selectable thermocouple type in TEMP: SETUP page tc, K (default, as v2.05) / J / T | J and T probes read correctly (NIST ITS-90 tables), cold junction included; stored in EEPROM 0x00F (`EEPROM_MAP.md` 4.1) |
 
 All fixes of original defects are listed with their evidence in `ORIGINAL_FIRMWARE_ISSUES.md` (OF-xx) and in
 `DESIGN.md` section 10 (NF-, HW-, NVM- items). A faster analog settle profile exists but stays disabled until the

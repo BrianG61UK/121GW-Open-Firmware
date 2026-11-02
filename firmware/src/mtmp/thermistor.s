@@ -404,7 +404,7 @@ ENDFUNC fn_08013AAC
 @ RAM      : reads  v205_tab_08025CF8
 @            writes 0x20007E7C, 0x200080AC, 0x200080AF
 @ Spec     : analysis/hy3131_modes_misc.md 4.2; ORIGINAL_FIRMWARE_ISSUES.md OF-24
-@ Deviation: OF-24
+@ Deviation: OF-24; IMP-10 (production: the table of the selected type, mtmp/tctype.s)
 @ Positive, a <= 1000: k = a / 100 + 21, CJ = t[k] + (a % 100) * ((t[k+1] - t[k]) * 10 / 100) / 10.  Negative, a < 201: k = 21 - a / 100,
 @ CJ = t[k] - (a % 100) * ((t[k] - t[k-1]) * 10 / 100) / 10 (t = thermocouple table 0x08025CF8, t[21] = 0).  Otherwise (OF-24) the fault path:
 @ 0x200080AF = 1, 0x200080AC = 1, CJ = 0.
@@ -434,11 +434,23 @@ FUNC fn_08013CF8
     beq .L08013D80                     @ 0x08013D28
     @ negative: k = 21 - a / 100, CJ = t[k] - (a % 100) * ((t[k] - t[k-1]) * 10 / 100) / 10
     subs r7, r7, r2                    @ 0x08013D2A
+    .if LOOP_V205 == 0
+    ldr ip, =mtmp_tc_descp             @ IMP-10: descriptor of the selected type ...
+    ldr ip, [ip]
+    ldr ip, [ip]                       @ ... its table (K: 0x08025CF8)
+    .else
     ldr ip, =v205_tab_08025CF8         @ 0x08013D2C pool 0x08013EB8 = 0x08025CF8
+    .endif
     uxtb r7, r7                        @ 0x08013D30
     ldr.w ip, [ip, r7, lsl #2]         @ 0x08013D32
     mov r4, ip                         @ 0x08013D36
+    .if LOOP_V205 == 0
+    ldr ip, =mtmp_tc_descp             @ IMP-10: descriptor of the selected type ...
+    ldr ip, [ip]
+    ldr ip, [ip]                       @ ... its table (K: 0x08025CF8)
+    .else
     ldr ip, =v205_tab_08025CF8         @ 0x08013D38 pool 0x08013EB8 = 0x08025CF8
+    .endif
     uxtb r7, r7                        @ 0x08013D3C
     add.w ip, ip, r7, lsl #2           @ 0x08013D3E
     ldr.w ip, [ip, #-4]                @ 0x08013D42
@@ -461,11 +473,23 @@ FUNC fn_08013CF8
 .L08013D80:                              @ reached from 0x08013D28 beq
     @ positive: k = a / 100 + 21, CJ = t[k] + (a % 100) * ((t[k+1] - t[k]) * 10 / 100) / 10
     adds r7, r2, r7                    @ 0x08013D80
+    .if LOOP_V205 == 0
+    ldr ip, =mtmp_tc_descp             @ IMP-10: descriptor of the selected type ...
+    ldr ip, [ip]
+    ldr ip, [ip]                       @ ... its table (K: 0x08025CF8)
+    .else
     ldr ip, =v205_tab_08025CF8         @ 0x08013D82 pool 0x08013EB8 = 0x08025CF8
+    .endif
     uxtb r7, r7                        @ 0x08013D86
     ldr.w ip, [ip, r7, lsl #2]         @ 0x08013D88
     mov r4, ip                         @ 0x08013D8C
+    .if LOOP_V205 == 0
+    ldr ip, =mtmp_tc_descp             @ IMP-10: descriptor of the selected type ...
+    ldr ip, [ip]
+    ldr ip, [ip]                       @ ... its table (K: 0x08025CF8)
+    .else
     ldr ip, =v205_tab_08025CF8         @ 0x08013D8E pool 0x08013EB8 = 0x08025CF8
+    .endif
     uxtb r7, r7                        @ 0x08013D92
     add.w ip, ip, r7, lsl #2           @ 0x08013D94
     ldr.w ip, [ip, #4]                 @ 0x08013D98

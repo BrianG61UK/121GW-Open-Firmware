@@ -532,8 +532,8 @@ ENDFUNC fn_08011384
 @            cleared), 2, 3, 0 and, in BEEP, 10 re-read from the EEPROM (fn_080112A4, fn_08011410, fn_080112FC,
 @            fn_08011394); then a redraw is requested.  Nothing is written to the EEPROM.
 @ Note     : The call of fn_08011394 (item 10 in BEEP) now accepts the codes 0..15 (IMP-05).
-@ Note     : Production image only: item 20 (bL, set_bl_load), 21 (bt, set_bt_load) and 11 of ACV (dBm reference,
-@            set_dbm_load) are re-read from the EEPROM in the same way (IMP-07, IMP-09, IMP-08).
+@ Note     : Production image only: item 20 (bL, set_bl_load), 21 (bt, set_bt_load), 23 (tc, set_tc_load) and 11 of ACV
+@            (dBm reference, set_dbm_load) are re-read from the EEPROM in the same way (IMP-07, IMP-09, IMP-10, IMP-08).
 @ -----------------------------------------------------------------------------
 FUNC fn_0800D190
     push {r7, lr}                           @ 0800D190
@@ -637,6 +637,11 @@ FUNC fn_0800D190
     bl set_bt_load
     b .L0800D280
 .Lto_not_bt:
+    cmp r0, #23                             @ IMP-10: the same for the page tc (item 23)
+    bne .Lto_not_tc
+    bl set_tc_load
+    b .L0800D280
+.Lto_not_tc:
     cmp r0, #11                             @ IMP-08: the same for the dBm reference (item 11 of ACV)
     bne .Lto_not_dbm
     ldr.w r0, =meter_mode

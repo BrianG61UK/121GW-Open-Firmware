@@ -138,7 +138,7 @@ ENDFUNC fn_08013B76
 @ RAM      : reads  v205_tab_08025CF8, 0x20007E84, 0x20007E88
 @            writes 0x20007E80, 0x20007E84, 0x20007E88, 0x200080AD
 @ Spec     : analysis/hy3131_modes_misc.md 4.1 step 4
-@ Deviation: none
+@ Deviation: IMP-10 (production: table and window from the descriptor of the selected type, mtmp/tctype.s)
 @ The table holds 158 EMF values in uV at 10 k - 210 degC (t[0] = -6035, t[21] = 0, t[157] = 54479; these are the type K reference values, e.g. -5891 uV at -200 degC and
 @ 54138 uV at 1350 degC).  x < -5891: T = 0 and 0x200080AD = 2 ("-OFL"); x >= 54139: T = 0 and 0x200080AD = 1 (" OFL "); otherwise with i the first index where t[i] >= x:
 @ T = 1000 i - 22000 + (t[i-1] - x) * 1000 / (t[i-1] - t[i]) (integer, truncating; the i2f / f2iz pair after it does not change an integer).
@@ -146,12 +146,20 @@ ENDFUNC fn_08013B76
 FUNC fn_08013C40
     push {r4, r5, r6, lr}              @ 0x08013C40
     movs r4, r0                        @ 0x08013C42
+    .if LOOP_V205 == 0
+    ldr r12, =mtmp_tc_descp            @ IMP-10: r12 = descriptor {table, low, high} of the selected type, kept until the
+    ldr r12, [r12]                     @ last table read (no call before it)
+    .endif
     movs r6, #1                        @ 0x08013C44
     movs r0, #0                        @ 0x08013C46
     ldr r1, =v_200080AD                @ 0x08013C48 pool 0x08013EAC = 0x200080AD
     strb r0, [r1, #0]                  @ 0x08013C4A
     @ x < -5891 uV: T = 0, 0x200080AD = 2
+    .if LOOP_V205 == 0
+    ldr r0, [r12, #4]                  @ IMP-10: low limit of the type (K: -5891)
+    .else
     ldr r0, =0xFFFFE8FD                @ 0x08013C4C pool 0x08013EB0 = 0xFFFFE8FD
+    .endif
     cmp r4, r0                         @ 0x08013C4E
     bge .L08013C60                     @ 0x08013C50
     movs r0, #0                        @ 0x08013C52
@@ -163,7 +171,11 @@ FUNC fn_08013C40
     b .L08013CF6                       @ 0x08013C5E
 .L08013C60:                              @ reached from 0x08013C50 bge
     @ x >= 54139 uV: T = 0, 0x200080AD = 1
+    .if LOOP_V205 == 0
+    ldr r0, [r12, #8]                  @ IMP-10: high limit of the type (K: 54139)
+    .else
     movw r0, #54139                    @ 0x08013C60
+    .endif
     cmp r4, r0                         @ 0x08013C64
     blt .L08013C76                     @ 0x08013C66
     movs r0, #0                        @ 0x08013C68
@@ -181,7 +193,11 @@ FUNC fn_08013C40
     uxtb r6, r6                        @ 0x08013C7A
     cmp r6, #0                         @ 0x08013C7C
     beq .L08013C96                     @ 0x08013C7E
+    .if LOOP_V205 == 0
+    ldr r0, [r12]                      @ IMP-10: table of the type (K: 0x08025CF8)
+    .else
     ldr r0, =v205_tab_08025CF8         @ 0x08013C80 pool 0x08013EB8 = 0x08025CF8
+    .endif
     uxtb r5, r5                        @ 0x08013C82
     ldr.w r0, [r0, r5, lsl #2]         @ 0x08013C84
     cmp r0, r4                         @ 0x08013C88
@@ -200,18 +216,30 @@ FUNC fn_08013C40
     mla r0, r0, r5, r1                 @ 0x08013C9E
     ldr r1, =v_20007E84                @ 0x08013CA2 pool 0x08013EC0 = 0x20007E84
     str r0, [r1, #0]                   @ 0x08013CA4
+    .if LOOP_V205 == 0
+    ldr r0, [r12]                      @ IMP-10: table of the type (K: 0x08025CF8)
+    .else
     ldr r0, =v205_tab_08025CF8         @ 0x08013CA6 pool 0x08013EB8 = 0x08025CF8
+    .endif
     uxtb r5, r5                        @ 0x08013CA8
     add.w r0, r0, r5, lsl #2           @ 0x08013CAA
     ldr.w r0, [r0, #-4]                @ 0x08013CAE
     subs r0, r0, r4                    @ 0x08013CB2
     mov.w r1, #1000                    @ 0x08013CB4
     muls r0, r1                        @ 0x08013CB8
+    .if LOOP_V205 == 0
+    ldr r1, [r12]                      @ IMP-10: table of the type (K: 0x08025CF8)
+    .else
     ldr r1, =v205_tab_08025CF8         @ 0x08013CBA pool 0x08013EB8 = 0x08025CF8
+    .endif
     uxtb r5, r5                        @ 0x08013CBC
     add.w r1, r1, r5, lsl #2           @ 0x08013CBE
     ldr.w r1, [r1, #-4]                @ 0x08013CC2
+    .if LOOP_V205 == 0
+    ldr r2, [r12]                      @ IMP-10: table of the type (K: 0x08025CF8)
+    .else
     ldr r2, =v205_tab_08025CF8         @ 0x08013CC6 pool 0x08013EB8 = 0x08025CF8
+    .endif
     uxtb r5, r5                        @ 0x08013CC8
     ldr.w r2, [r2, r5, lsl #2]         @ 0x08013CCA
     subs r1, r1, r2                    @ 0x08013CCE

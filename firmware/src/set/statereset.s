@@ -73,6 +73,7 @@ FUNC fn_08024DE0
     bl set_bl_load                          @ IMP-07: load the backlight auto-off setting (EEPROM 0x017)
     bl set_dbm_load                         @ IMP-08: load the dBm reference (EEPROM 0x011)
     bl set_bt_load                          @ IMP-09: load the Bluetooth frame rate (EEPROM 0x015)
+    bl set_tc_load                          @ IMP-10: load and select the thermocouple type (EEPROM 0x00F)
     .endif
     bl fn_08010F4C                          @ 08024E1E  load the date code from EEPROM 0x001
     bl fn_08010F8C                          @ 08024E22  load the ID number from EEPROM 0x003

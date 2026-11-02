@@ -79,6 +79,7 @@
     .if LOOP_V205 == 0
     .equ SET_ITEM_BL, 20                    @ IMP-07: setup item of the backlight auto-off page bL (v2.05 uses 0..12 and 100)
     .equ SET_ITEM_BT, 21                    @ IMP-09: setup item of the Bluetooth frame rate page bt (after bL)
+    .equ SET_ITEM_TC, 23                    @ IMP-10: setup item of the thermocouple type page tc (after bt, TEMP only)
     .endif
 
     .section .text.set, "ax", %progbits
@@ -106,21 +107,31 @@
 FUNC fn_08015410
     push {r7, lr}                           @ 08015410
     .if LOOP_V205 == 0
-    @ IMP-07, IMP-09: SETUP short on the page bL (item 20, the page after the last v2.05 item) goes to the page bt (item
-    @ 21), on the page bt to item 0; both end an edit
+    @ IMP-07, IMP-09, IMP-10: SETUP short on the page bL (item 20, the page after the last v2.05 item) goes to the page bt
+    @ (item 21); on the page bt to the page tc (item 23) in TEMP (mode 5), else to item 0; on the page tc to item 0.  Each
+    @ step ends an edit.
     ldr.w r0, =set_item
     ldrb r0, [r0, #0x0]
     cmp r0, #SET_ITEM_BL
     beq .Lsn_bl
+    cmp r0, #SET_ITEM_TC
+    beq .Lsn_to0                            @ tc: next is item 0
     cmp r0, #SET_ITEM_BT
     bne .Lsn_not_bl                         @ any other item: the v2.05 sequence below
-    movs r0, #0x0                           @ bt: next is item 0
+    ldr.w r0, =meter_mode
+    ldrb r0, [r0, #0x0]
+    cmp r0, #0x5
+    bne .Lsn_to0                            @ bt outside TEMP: next is item 0
+    movs r0, #SET_ITEM_TC                   @ bt in TEMP: next is tc
+    b .Lsn_port_set
+.Lsn_to0:
+    movs r0, #0x0
     b .Lsn_port_set
 .Lsn_bl:
     movs r0, #SET_ITEM_BT                   @ bL: next is bt
 .Lsn_port_set:
     ldr.w r1, =set_item
-    strb r0, [r1, #0x0]                     @ set_item = 21 or 0
+    strb r0, [r1, #0x0]                     @ set_item = 21, 23 or 0
     movs r0, #0x0
     ldr.w r1, =set_edit
     strb r0, [r1, #0x0]                     @ set_edit = 0 (v2.05 clears it at 0x08015422 for every item but 8)
@@ -1360,6 +1371,20 @@ FUNC fn_080165F4
     bl set_dbm_edit                         @ up, down or save of the dBm reference
     b .L08016800
 .Lse_bl:
+    cmp r0, #SET_ITEM_TC                    @ IMP-10: the thermocouple type page tc (item 23)
+    bne .Lse_not_tc
+    uxtb r4, r4
+    cmp r4, #0x0                            @ query?
+    bne .Lse_tc_act
+    movs r0, #0x1
+    movs r5, r0                             @ query result: editable
+    b .L08016800
+.Lse_tc_act:
+    movs r0, r4
+    uxtb r0, r0
+    bl set_tc_edit                          @ up, down or save of the thermocouple type
+    b .L08016800
+.Lse_not_tc:
     cmp r0, #SET_ITEM_BT                    @ IMP-09: the Bluetooth frame rate page bt (item 21)
     bne .Lse_bl_item
     uxtb r4, r4
@@ -2026,7 +2051,12 @@ FUNC fn_0801797C
     bl fn_0801839A                          @ 08017F0C  draw "BAT" and the battery value [r0=set_bat_value, r1=&lcd_shadow]
     b .L08017F26                            @ 08017F10
     .if LOOP_V205 == 0
-.Lsd_port:  @ IMP-07, IMP-09: reached from 08017EF4 bne with r0 = set_item
+.Lsd_port:  @ IMP-07, IMP-09, IMP-10: reached from 08017EF4 bne with r0 = set_item
+    cmp r0, #SET_ITEM_TC                    @ IMP-10: the thermocouple type page tc (item 23)
+    bne .Lsd_not_tc
+    bl set_tc_draw                          @ draw "tc-" and the type
+    b .L08017F26
+.Lsd_not_tc:
     cmp r0, #SET_ITEM_BT                    @ IMP-09: the Bluetooth frame rate page bt (item 21)
     bne .Lsd_not_bt
     bl set_bt_draw                          @ draw "bt" and the rate

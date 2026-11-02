@@ -135,7 +135,7 @@ Formats: BE = big-endian, written MSB first, one byte program at a time. "Boot" 
 | 0x00C | 1 | u8 | rotary memory, VA position: 0x18 or 0x0F | FUN_08011098 0x0801109E | 0x080111F2 | MODE in modes 14, 15, 23, 24 (0x18 for 23/24, else 0x0F; 0x080111CE..0x080111EA) | 0x18/0x0F else 0x18 | SETTINGS |
 | 0x00D | 1 | u8 | rotary memory, uA position: 0x11, 0x10, 0x0D, 0x16 | FUN_080110B8 0x080110BE | 0x08011200 | MODE in modes 13, 16, 17, 22 | those four else 0x11 | SETTINGS |
 | 0x00E | 1 | u8 | rotary memory, A/mA position: 0x12..0x15 | FUN_080110E4 0x080110EA | 0x0801120E | MODE in modes 18..21 | 0x13/0x15 -> 0x13; 0x12/0x14 -> 0x12; else 0x13 | SETTINGS |
-| 0x00F | 1 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
+| 0x00F | 1 | - | never accessed by v2.05; port (production image only): thermocouple type code, section 4.1 | calbin_save; port: set_tc_load | calbin_load; port: set_tc_edit via nvm_write_setting | cal.bin restore; port: SETUP page tc save | port: 0..2 kept, else 0 (K) | RESTORE; SETTINGS in the production image only (4.1) |
 | 0x010 | 1 | u8 | temperature unit, 1 degC, 0 degF (0x200080AB) | 0x08011300 (Boot), FUN_0800D190 0x0800D264 | 0x0801133A (FUN_08011330) via FUN_08015BE0 0x08015C0C | SETUP item 0 save | < 2 kept else 0 (0x08011308..0x08011316) | SETTINGS |
 | 0x011 | 1 | - | never accessed by v2.05; port (production image only): dBm reference code, section 4.1 | calbin_save; port: set_dbm_load | calbin_load; port: set_dbm_edit via nvm_write_setting | cal.bin restore; port: ACV page 11 save | port: 0..3 kept, else 0 (600 ohm) | RESTORE; SETTINGS in the production image only (4.1) |
 | 0x012 | 1 | u8 | DIODE 15 V flag (0x200080B3) | 0x08011344 (Boot) | 0x0801138E (FUN_08011384) via FUN_080159C8 0x080159EE | every RANGE short in DIODE | 0/1 kept, >= 2 -> 0 (0x0801134C..0x0801136C); then forced 0 at 0x08024E76..0x08024E78 (OF-23) | read only in the port (OF-23, section 10) |
@@ -195,6 +195,7 @@ nor writes these bytes and its `nvm_allow` table does not allow them (`gen_nvm_a
 
 | Offset | Meaning | Values | Invalid or blank (0x00) reads as | Class |
 |---|---|---|---|---|
+| 0x00F | thermocouple type (SETUP page tc in TEMP, SET/MTMP, FEATURES.md 2.8) | 0 = K (v2.05), 1 = J, 2 = T | K (a value above 2, 0xFF included, is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
 | 0x011 | dBm reference of the ACV page 11 (SET, FEATURES.md 2.2) | 0 = 600 ohm (divisor 0.6, v2.05), 1 = 50 ohm (0.05), 2 = 75 ohm (0.075), 3 = dBV (1.0) | 600 ohm (a value above 3, 0xFF included, is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
 | 0x015 | Bluetooth frame rate (SETUP page bt, BLE/SET, FEATURES.md 2.5) | 0 = 2 frames per second (v2.05), 1 = 4, 2 = 10, 3 = 20 | 2 per second (a value above 3, 0xFF included, is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
 | 0x017 | backlight auto-off timer (SETUP page bL, PWR/SET, FEATURES.md 2.9) and remembered backlight state | bits 6..0: 0 OFF (never), 1 = 30 s, 2..100 = 1..99 min (code - 1); bit 7: 1 = the backlight was on after the last MODE long press, restored at power-on and wake | OFF, dark (0xFF reads as OFF and dark; a code above 100 is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
@@ -439,7 +440,7 @@ table in flash, `nvm_allow`, generated at build time from this section (`firmwar
 
 | Class | Bytes allowed | Additional condition checked inside NVM |
 |---|---|---|
-| SETTINGS | 0x008..0x00E, 0x010, 0x014, 0x016, 0x018..0x01A, 0x01B, 0x01E, and in the production image only the port-only settings of 4.1: 0x011, 0x015, 0x017 | none beyond the class (user actions of 7.1; for 0x011 the save of the ACV page 11, for 0x015 the SETUP page bt, for 0x017 the SETUP page bL) |
+| SETTINGS | 0x008..0x00E, 0x010, 0x014, 0x016, 0x018..0x01A, 0x01B, 0x01E, and in the production image only the port-only settings of 4.1: 0x00F, 0x011, 0x015, 0x017 | none beyond the class (user actions of 7.1; for 0x00F the SETUP page tc, for 0x011 the save of the ACV page 11, for 0x015 the SETUP page bt, for 0x017 the SETUP page bL) |
 | IDENT | 0x001..0x002 (date code), 0x003..0x006 (serial) | exactly length 2 at 0x001, only while RAM 0x2000808B != 0 (v2.05 gate 0x08015F46..0x08015F4E); exactly length 4 at 0x003 (setup item 8 save, 0x08015F90) |
 | USERZERO | 0x4D0..0x4D4, 0x4D8..0x4DC, 0x4E0..0x4E4, 0x4E8..0x4EC, 0x4F0..0x4F4, 0x4F8..0x4FC | length 5 at a record base, first byte 0xA5 |
 | CAL | 0x01F, 0x026, 0x104..0x107, 0x178..0x17B, 0x2E0..0x2E1, and the bytes R+0..R+7 of every (mode, range) record of section 5.3, R+8..R+0xF of the AC-word records (modes 2, 4, 16, 18, 20 per ac_words_base) and of the VA records, 0x2D0..0x2D7 | RAM 0x2000808A == 1 (calibration mode), and the target matches the (kind, mode, range) rule of 7.3 recomputed inside NVM from meter_mode and meter_range, with the section 10 refusals |
@@ -503,5 +504,6 @@ DESIGN.md 6.5).
 | IMP-07 | 0x017 never accessed | production image only: 0x017 holds the backlight auto-off timer code (4.1); written only by the SETUP page bL save and the MODE long press (bit 7, backlight state) through the SETTINGS class, validated on read (0xFF reads as OFF and dark, a code above 100 as OFF); the strict image does not allow it in `nvm_allow` | 0x017 only |
 | IMP-08 | 0x011 never accessed | production image only: 0x011 holds the dBm reference code (4.1); written only by the save of the ACV page 11 through the SETTINGS class, validated on read (above 3 reads as 600 ohm); the strict image does not allow it in `nvm_allow` | 0x011 only |
 | IMP-09 | 0x015 never accessed | production image only: 0x015 holds the Bluetooth frame rate code (4.1); written only by the save of the SETUP page bt through the SETTINGS class, validated on read (above 3 reads as 2 per second); the strict image does not allow it in `nvm_allow` | 0x015 only |
+| IMP-10 | 0x00F never accessed | production image only: 0x00F holds the thermocouple type code (4.1); written only by the save of the SETUP page tc through the SETTINGS class, validated on read (above 2 reads as K); the strict image does not allow it in `nvm_allow` | 0x00F only |
 
 No other EEPROM behaviour changes. Changes not yet approved are listed as open questions in DESIGN.md section 12.

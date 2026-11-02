@@ -183,11 +183,12 @@ and `board`, which keep their present value.
 | `dc` | 0 | V, DC component of an AC voltage (AC+DC) |
 | `amps` | 0 | A, the current of the `VA` kind |
 | `board` | present | board temperature in degC at the cold junction (sets the PA4 thermistor voltage), or `null`: the board temperature follows the PA4 voltage |
+| `probe` | present (`K` at start) | thermocouple type of the `degC` kind: `K`, `J` or `T`; the EMF follows the K table of the firmware image or the NIST ITS-90 J / T tables (`emu/tc_nist.py`); temperature span K -210..1360, J -210..1200, T -210..400 degC |
 
 Kinds: `open` test leads open, nothing connected (the default; every field except `board` is ignored); `V` volts (DC, or RMS
 with `ac`); `A` amperes (DC, or RMS with `ac`) entering through the plugged current jack; `ohm` resistance in ohms (also
 continuity in BEEP); `Hz` a signal of `value` hertz at the counter input (FREQ, PULSE, DUTY); `F` capacitance in farads;
-`degC` thermocouple hot-junction temperature; `diode` forward voltage of the device under test in volts; `VA` voltage `value`
+`degC` thermocouple hot-junction temperature (type from `probe`); `diode` forward voltage of the device under test in volts; `VA` voltage `value`
 and current `amps` at the same time (both RMS with `ac`). The stimulus must fit the firmware's present mode: `GET /state`
 `frontend.supported` and `frontend.reason` say whether it does. Validation errors (HTTP 400): unknown kind; non-finite
 numbers; negative `width`, `freq`, resistance or capacitance; a negative AC value; `duty` outside (0, 1); `width` without
