@@ -268,6 +268,8 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   a CRC32 of the whole file are checked against the header sent first, and only then is the file renamed to `EEVBlog.bin`.
   The meter then asks for the usual update sequence (HOLD+MEM at power-on, SETUP). The application never writes flash.
 - Host side: a sender program (computer Bluetooth; packaged with the emulator) that splits, sends and resends.
+- Owner test (2026-11-02): the official iPhone application connects to a meter running the production image and shows
+  live readings (meter to phone direction works; the application's display glitches are its own).
 - Open, measured on a meter first: whether the BLE112 module passes arbitrary bytes from the host to USART2 at the full rate
   (the official application writes only 5-byte F4 frames, `analysis/ble_packet.md` 7), and the real throughput. The UART bound
   is 1920 bytes per second (141 124 bytes: 74 s at least); receive is deaf while the card is accessed (`src/ble/usart.s`
