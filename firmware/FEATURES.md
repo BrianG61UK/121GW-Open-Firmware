@@ -165,6 +165,8 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   rate is a maximum and a frame is never torn; command echoes keep their queue between frames. Frame format, checksum and
   sub-display content are unchanged.
 - Storage: one byte 0x015 (0 = 2 per second). Any other value reads as 0.
+- Owner test (2026-11-02): a meter with the production image at 20 frames per second works with the official iPhone
+  application without issues.
 - Constraints: the link is raw serial through the module on USART2; whether the phone application keeps up with 20 frames per
   second is not known here (no hardware test); the option is therefore a setting, default v2.05.
 
