@@ -11,7 +11,7 @@
 @
 @ Page text (five characters, font of analysis/lcd_map.md 2):
 @     OFF      "bLOFF"
-@     30 s     "bL 0.5"  the characters 'b' 'L' ' ' '0' '5' with the sub decimal point after the '0': 0.5 minute
+@     30 s     "bL30S"   the characters 'b' 'L' '3' '0' 'S' (the font draws S as the 7-segment S, same shape as 5)
 @     1..9     "bL  1" .. "bL  9"   minutes
 @     10..99   "bL 10" .. "bL 99"   minutes
 @ (the value is in minutes; the five characters are b, L, a blank and the two-character field)
@@ -53,13 +53,44 @@ FUNC set_bl_load
     push {r4, lr}
     movs r0, #SET_BL_EEPROM
     bl eeprom_read_u8                       @ r0 = EEPROM byte 0x017 (cache or EEPROM, NVM reader)
+    movs r4, #0                             @ r4 = remembered backlight state (bit 7)
+    cmp r0, #0xFF
+    beq 2f                                  @ erased or corrupt byte: everything off
+    lsrs r4, r0, #7                         @ bit 7: the backlight was on at the last MODE long press
+    and r0, r0, #0x7F                       @ bits 6..0: auto-off code
     cmp r0, #SET_BL_CODE_MAX
     bls 1f                                  @ 0..100: valid
-    movs r0, #0                             @ above 100: OFF
+2:  movs r0, #0                             @ above 100 (or 0xFF): OFF
 1:  ldr r1, =pwr_bl_setting
     strb r0, [r1]
+    ldr r1, =pwr_bl_saved_on
+    strb r4, [r1]
     pop {r4, pc}
 ENDFUNC set_bl_load
+
+@ -----------------------------------------------------------------------------
+@ set_bl_store - write EEPROM 0x017: auto-off code in bits 6..0, remembered backlight state in bit 7
+@ Replaces : nothing in v2.05 (new: EEPROM 0x017 is not accessed by v2.05)
+@ In       : -
+@ Out      : -
+@ Clobbers : r0-r3, r12, flags (AAPCS)
+@ Context  : main only (save of the backlight page; pwr_bl_remember after a MODE long press)
+@ RAM      : reads pwr_bl_setting and pwr_bl_saved_on
+@ Spec     : EEPROM_MAP.md 4.1, 9.2 (SETTINGS class through set_nvm_store; NVM skips an unchanged byte, OPT-03)
+@ -----------------------------------------------------------------------------
+    .global set_bl_store
+FUNC set_bl_store
+    push {r4, lr}
+    ldr r0, =pwr_bl_setting
+    ldrb r1, [r0]                           @ code 0..100
+    ldr r0, =pwr_bl_saved_on
+    ldrb r0, [r0]
+    orr r1, r1, r0, lsl #7                  @ value = code | state << 7
+    movs r0, #SET_BL_EEPROM                 @ offset 0x017
+    movs r2, #1                             @ width: one byte
+    bl set_nvm_store                        @ SETTINGS class, armed inside
+    pop {r4, pc}
+ENDFUNC set_bl_store
 
 @ -----------------------------------------------------------------------------
 @ set_bl_edit - edit action of the backlight page (setup item 20)
@@ -81,12 +112,8 @@ FUNC set_bl_edit
     beq .Lbe_up
     cmp r4, #2
     beq .Lbe_down
-@ save (100): EEPROM 0x017 = code
-    ldr r0, =pwr_bl_setting
-    ldrb r1, [r0]                           @ r1 = value
-    movs r0, #SET_BL_EEPROM                 @ r0 = offset
-    movs r2, #1                             @ width: one byte
-    bl set_nvm_store                        @ SETTINGS class, armed inside
+@ save (100): EEPROM 0x017 = code | remembered state << 7
+    bl set_bl_store
     b .Lbe_redraw
 .Lbe_up:
     ldr r1, =pwr_bl_setting
@@ -128,10 +155,7 @@ FUNC set_bl_draw
     push {r4, r5, lr}
     mov r4, r0                              @ r4 = code
     movs r0, #0                             @ decimal point code 0: none
-    cmp r4, #SET_BL_CODE_30S
-    bne 1f
-    movs r0, #1                             @ 30 s: point after position 3 ("0.5" minute)
-1:  bl fn_08017FB4                          @ clear the sub display decimal points, set the one of r0
+    bl fn_08017FB4                          @ clear the sub display decimal points
     ldr r5, =set_bl_text5
     movs r0, #'b'
     strb r0, [r5, #0]
@@ -157,12 +181,12 @@ FUNC set_bl_draw
     strb r3, [r5, #4]
     b .Lbd_draw
 .Lbd_half:
-    movs r0, #0x20
+    movs r0, #'3'
     strb r0, [r5, #2]
     movs r0, #'0'
-    strb r0, [r5, #3]                       @ "0" and the decimal point (set above) ...
-    movs r0, #'5'
-    strb r0, [r5, #4]                       @ ... "5": 0.5 minute
+    strb r0, [r5, #3]
+    movs r0, #'S'
+    strb r0, [r5, #4]                       @ "30S": 30 seconds (font 'S' = 0x9E, the 7-segment S, owner)
     b .Lbd_draw
 .Lbd_off:
     movs r0, #'O'

@@ -78,6 +78,7 @@ FUNC fn_08024DE0
     bl fn_0800ED26                          @ 08024E2A  reload the auto-power-off counter
     .if LOOP_V205 == 0
     bl pwr_bl_reset                         @ IMP-07: backlight flag and countdown follow PE8 (low after power-on and STOP wake)
+    bl pwr_bl_restore                       @ IMP-07: switch the backlight on again if it was on at the last MODE long press
     .endif
     movs r0, #0x0                           @ 08024E2E
     ldr.w r1, =set_bat_low                  @ 08024E30

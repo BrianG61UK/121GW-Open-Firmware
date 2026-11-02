@@ -15,7 +15,8 @@
 @ (flag 0x2000807B cleared, PE8 low through GPIOE BSRR bit 24); there is no beep.  After such a timer switch-off the next
 @ key press switches the backlight on again for the set time and is otherwise swallowed (no short or long action), and the
 @ next dial change switches it on again and acts as usual (pwr_bl_wake); a backlight switched off by the MODE long press
-@ stays off.
+@ stays off.  The state of the user's own switching (MODE long press) is remembered in EEPROM 0x017 bit 7 and
+@ restored at power-on and wake (pwr_bl_remember, pwr_bl_restore).
 @
 @ The start value is the time plus one second: the 1 s flag is not in phase with the restart, so the first decrement comes
 @ 0..1 s after it, and the backlight therefore stays on for at least the chosen time and at most one second longer.
@@ -52,6 +53,9 @@ pwr_bl_count:   .space 2
 @ (pwr_bl_wake); 0 = the backlight is on, or was switched off by the MODE long press (owner PWR)
     .global pwr_bl_auto
 pwr_bl_auto:    .space 1
+@ pwr_bl_saved_on: the backlight state remembered in EEPROM 0x017 bit 7 (1 = on), loaded at boot and wake (owner PWR)
+    .global pwr_bl_saved_on
+pwr_bl_saved_on: .space 1
 @ pwr_bl_setting: backlight auto-off code 0..100, loaded from EEPROM 0x017 at boot and wake, edited by SET (owner SET)
     .global pwr_bl_setting
 pwr_bl_setting: .space 1
@@ -185,6 +189,54 @@ FUNC pwr_bl_reset
     strb r0, [r1]                           @ no wake pending: the backlight was not switched off by the timer
     bx lr
 ENDFUNC pwr_bl_reset
+
+@ -----------------------------------------------------------------------------
+@ pwr_bl_remember - store the backlight state after a MODE long press (EEPROM 0x017 bit 7)
+@ Replaces : nothing in v2.05 (new: v2.05 does not keep the backlight state over a power-off)
+@ In/Out   : - / -
+@ Clobbers : r0-r3, r12, flags (AAPCS)
+@ Context  : main (handle_pg8_15_long_press, MODE, after the toggle)
+@ RAM      : reads 0x2000807B; writes pwr_bl_saved_on
+@ Note     : only the user's own switching is remembered: the timer's switch-off (pwr_bl_second) and its wake
+@            (pwr_bl_wake) do not write, so the EEPROM is written once per MODE long press at most
+@ -----------------------------------------------------------------------------
+FUNC pwr_bl_remember
+    push {r4, lr}
+    ldr r0, =pwr_bl_on
+    ldrb r0, [r0]
+    ldr r1, =pwr_bl_saved_on
+    strb r0, [r1]                           @ remembered state = the state after the toggle
+    bl set_bl_store                         @ EEPROM 0x017 = code | state << 7
+    pop {r4, pc}
+ENDFUNC pwr_bl_remember
+
+@ -----------------------------------------------------------------------------
+@ pwr_bl_restore - switch the backlight on at power-on or wake if it was on when last switched
+@ Replaces : nothing in v2.05 (new)
+@ In/Out   : - / -
+@ Clobbers : r0, r1, flags
+@ Context  : main (set_state_reset, after pwr_bl_reset; PE8 is an output by then: board_gpio_init runs in
+@            sys_system_init before set_state_reset)
+@ RAM      : reads pwr_bl_saved_on; writes 0x2000807B, 0x20007FB8, GPIOE BSRR (PE8), pwr_bl_count
+@ -----------------------------------------------------------------------------
+FUNC pwr_bl_restore
+    ldr r0, =pwr_bl_saved_on
+    ldrb r0, [r0]
+    cbz r0, 1f                              @ remembered off: stay off
+    movs r0, #1
+    ldr r1, =pwr_bl_on
+    strb r0, [r1]                           @ flag 0x2000807B = 1, as the MODE long press (0x080162EE..0x080162F4)
+    movs r0, #0x78
+    ldr r1, =v_20007FB8
+    strh r0, [r1]                           @ 0x20007FB8 = 0x78, as the MODE long press (0x080162F6..0x080162FC)
+    mov.w r0, #PWR_BL_PE8
+    ldr r1, =(GPIOE_BASE + GPIO_BSRRL)
+    strh r0, [r1]                           @ PE8 high
+    push {lr}
+    bl pwr_bl_restart                       @ the auto-off countdown starts
+    pop {lr}
+1:  bx lr
+ENDFUNC pwr_bl_restore
 
     .ltorg
 

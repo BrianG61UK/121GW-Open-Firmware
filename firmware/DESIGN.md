@@ -583,7 +583,8 @@ Conventions for all modules:
   backlight auto-off timer of IMP-07 (FEATURES.md 2.9): `pwr_bl_second` (called by `sys_main` in loop step 9 after
   `pwr_apo_second`), `pwr_bl_restart` (called by KEY at every tick with a key down, by DIAL at a latched position change,
   by `fn_08014AE6` for an injected key, by the MODE long press that switches the backlight on, and by the SET edit),
-  `pwr_bl_reset` (called by `set_state_reset`). RAM `pwr_bl_setting` (u8) and `pwr_bl_count` (u16) in `.bss_port`.
+  `pwr_bl_reset` and `pwr_bl_restore` (called by `set_state_reset`; `pwr_bl_restore` switches the backlight on again when
+  0x017 bit 7, written by `pwr_bl_remember` after each MODE long press, says it was on). RAM `pwr_bl_setting` (u8) and `pwr_bl_count` (u16) in `.bss_port`.
 
 ### 6.4 BZB: buzzer, backlight, TIM3 handler (W1)
 
@@ -1309,7 +1310,7 @@ a build switch, default stated; required = forced by a non-negotiable requiremen
 | IMP-04 | beep/diode | latency 6..8 ms / 0.356 s | ARS 8.2: every conversion; DIODE on K = 2 samples | approved | MRES |
 | IMP-05 | continuity | codes 0..3 in EEPROM 0x14 | ARS 9: codes 0..15 (0..3 unchanged), boot accepts < 16 | approved | SET, MRES |
 | IMP-06 | main loop | LCD-locked loop, full HY3131 burst, blocking routines, no sleep | production mode of 3.5 (no busy-wait, per-event reads, state machines, `wfi`) | approved | SYS, LCD, HY, LOG, SD, BZB, CAL |
-| IMP-07 | backlight | on and off only by the MODE long press (0x080162E4..0x0801631A); RAM flag 0x2000807B stays 1 across a STOP while PE8 is low (the only references to the flag are the three loads of the MODE long press, listing 0x08016C84) | production only: SETUP page bL (item 20) sets an auto-off time, OFF (default) / 30 s / 1..99 min, stored in EEPROM 0x017 (EMAP 4.1); countdown on the 1 s flag while the backlight is on, restarted by any key press, dial change, injected key and edit step; at zero the backlight is switched off as the MODE long press does (flag and PE8, no beep); the flag and the countdown are cleared at power-on and STOP wake so that they follow PE8. The strict image is unchanged | approved (owner, 2026-11-02: one new EEPROM byte) | PWR, SET, KEY, DIAL |
+| IMP-07 | backlight | on and off only by the MODE long press (0x080162E4..0x0801631A); RAM flag 0x2000807B stays 1 across a STOP while PE8 is low (the only references to the flag are the three loads of the MODE long press, listing 0x08016C84) | production only: SETUP page bL (item 20) sets an auto-off time, OFF (default) / 30 s / 1..99 min, stored in EEPROM 0x017 (EMAP 4.1); countdown on the 1 s flag while the backlight is on, restarted by any key press, dial change, injected key and edit step; at zero the backlight is switched off as the MODE long press does (flag and PE8, no beep); the flag and the countdown are cleared at power-on and STOP wake so that they follow PE8, then the state of the last MODE long press (0x017 bit 7, written by that press only) is restored (owner, 2026-11-02). The strict image is unchanged | approved (owner, 2026-11-02: one new EEPROM byte) | PWR, SET, KEY, DIAL |
 
 Each deviation gets entries in `firmware/deviations.txt` and at least one scenario showing v2.05 and port behaviour.
 
@@ -2029,9 +2030,9 @@ Exceptions decided by this design:
 | `brd_fe_apply` | BRD | r0 = mode, r1 = range | - | main | MODE, CAL (BOOTWIN), MVA | = `fn_0800FBE8`, table-driven (4.4) |
 | `brd_exti_isr` | BRD | - | - | EXTI IRQs | vectors | clear pending bits |
 | `pwr_apo_second` | PWR | - | - | main | `sys_main` step 9 | v2.05 APO block 0x08024CAE..0x08024D1A |
-| `pwr_bl_second`, `pwr_bl_restart`, `pwr_bl_reset` (production only) | PWR | - | - (`pwr_bl_restart` keeps r0, r1 and the registers it does not use; flags clobbered) | main | `sys_main` step 9; KEY (`process_pg8_15_press_release`, `fn_08014AE6`, `handle_pg8_15_long_press`), DIAL (`debounce_pg0_7_onehot`), SET (`set_bl_edit`); `set_state_reset` | IMP-07 backlight auto-off timer: countdown, restart, state at power-on and wake |
+| `pwr_bl_second`, `pwr_bl_restart`, `pwr_bl_reset`, `pwr_bl_wake`, `pwr_bl_remember`, `pwr_bl_restore` (production only) | PWR | - | - (`pwr_bl_restart` keeps r0, r1 and the registers it does not use; flags clobbered) | main | `sys_main` step 9; KEY (`process_pg8_15_press_release`, `fn_08014AE6`, `handle_pg8_15_long_press`), DIAL (`debounce_pg0_7_onehot`), SET (`set_bl_edit`); `set_state_reset` | IMP-07 backlight auto-off timer: countdown, restart, state at power-on and wake |
 | `pwr_bl_setting` (byte), `pwr_bl_count` (u16), `.bss_port`, production only | PWR | - | - | main | written by SET (`set_bl_load`, `set_bl_edit`) and PWR; read by PWR and SET | setting code 0 OFF, 1 = 30 s, 2..100 = 1..99 min; seconds left |
-| `set_bl_load`, `set_bl_edit`, `set_bl_draw` (production only) | SET | `set_bl_edit`: r0 = 1 up, 2 down, 100 save; `set_bl_draw`: r0 = code | - | main | `set_state_reset`, `fn_0800D190` (load); `fn_080165F4` (edit); `fn_0801797C` (draw) | IMP-07 setup item 20 (page bL), EEPROM 0x017 through `nvm_write_setting` |
+| `set_bl_load`, `set_bl_edit`, `set_bl_draw`, `set_bl_store` (production only) | SET | `set_bl_edit`: r0 = 1 up, 2 down, 100 save; `set_bl_draw`: r0 = code | - | main | `set_state_reset`, `fn_0800D190` (load); `fn_080165F4` (edit); `fn_0801797C` (draw) | IMP-07 setup item 20 (page bL), EEPROM 0x017 through `nvm_write_setting` |
 | `bzb_tim3_isr` | BZB | - | - | IRQ29 | vector | replaces IRQ29 0x08024722 |
 | `bzb_silence` | BZB | - | - | main | PWR, `sys_fault_safe` | clear buzzer state, PE7 low (HW-08) |
 | `func_smooth_hist` | FUNC | r0 = value, r1 = threshold, r2 = depth, r3 = state pointer | r0 = smoothed value | main | MAC, MVA, MDC | `FUN_0800B754` algorithm on a caller-owned state block (OF-28) |

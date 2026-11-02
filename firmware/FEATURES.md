@@ -1,8 +1,8 @@
 # Planned features of the replacement firmware: user interface, storage, constraints
 
-Status: design. Only the backlight auto-off timer (2.9, IMP-07) is implemented. The other eight features are designs for
-the production image; none of them is in the tree as code, and every EEPROM byte they need (section 3) waits for an owner
-decision before it is used (`EEPROM_MAP.md` 9.1 item 2). Citations: `KS` = `analysis/keys_setup.md`, `EMAP` =
+Status: design. Only the backlight auto-off timer (2.9, IMP-07) is implemented. The other nine features are designs for
+the production image; none of them is in the tree as code. The EEPROM bytes of section 3 are approved (owner, 2026-11-02);
+each is added to `EEPROM_MAP.md` 4.1 and `nvm_allow` only with the code that uses it. Citations: `KS` = `analysis/keys_setup.md`, `EMAP` =
 `EEPROM_MAP.md`, `LCD` = `analysis/lcd_map.md`, `ARS` = `analysis/autorange_and_scheduler.md`, `DES` = `DESIGN.md`.
 
 ## 1. Rules that hold for every feature
@@ -100,10 +100,13 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Range: switching the test on freezes the range as MIN/MAX does (`range_manual = 1`, the saved value is restored when the
   test ends), and RANGE short is refused while it is on. A mode change (dial, MODE) switches the test off. Reason: the limits
   are counts of one range; a limit compared across ranges would need a table of 10^exponent per (mode, range).
-- Storage: LO and HI as s32 big-endian at 0x028..0x02B and 0x02C..0x02F, the range they belong to as `mode * 8 + range + 1` at
-  0x021 (0 = none). Saving a limit page binds both limits to the present mode and range. The on/off state is RAM only (off at
-  power-on, so a meter never measures with a forgotten test). A tag that is invalid (mode above 24, range at or above the
-  mode's range count, EMAP header) reads as "none", and the test then refuses to start.
+- Storage: RAM only (owner, 2026-11-02: limits are forgotten at power-off). LO and HI as s32 and the range they belong to as
+  `mode * 8 + range + 1` (0 = none) in RAM; saving a limit page binds both limits to the present mode and range. The on/off state is RAM only (off at
+  power-on, so a meter never measures with a forgotten test). Until a limit is saved after power-on the tag is "none" and the
+  test refuses to start.
+- Limit entry (owner, 2026-11-02, left to the design): the value is taken from the present reading (long SETUP on `Lo` or `HI`
+  captures the displayed value 0x20007D64) rather than typed digit by digit; the digit editor above is the fallback if capture
+  proves unusable.
 - Constraints: counts are limited to -99999..99999 by the display (`0x08017036`..`0x08017040`, OF-49); the editor does not
   accept more. Limits in LowZ and BEEP are accepted (single range). Logging with trigger "limits" (2.6) uses the same verdict.
 
@@ -232,31 +235,57 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Where: SETUP page `bL` (item 20), after the last v2.05 page of every mode.
 - Keys: the edit keys of 1.2. The MODE long press still switches the backlight on and off (KS 2.2); every key press, every dial
   position change, an injected remote key and every edit step restart the countdown.
-- What is shown: `bLOFF` (never, default), `bL 0.5` (30 s: the point after the 0 of the two-character field, 0.5 minute),
+- What is shown: `bLOFF` (never, default), `bL30S` (30 s; the 7-segment S, the shape of a 5, owner 2026-11-02),
   `bL  1` .. `bL 99` (minutes). Sub display only; the main display keeps the reading. REL steps OFF, 30 s, 1 .. 99 min and wraps;
   PEAK goes the other way.
 - Behaviour: while the backlight is on and the setting is not OFF, `pwr_bl_second` counts the 1 s flag down (the same flag as the
   APO countdown). The start value is the time plus one second, so the backlight stays on for the chosen time and at most one
   second more. At zero the backlight is switched off as the MODE long press does it (RAM flag 0x2000807B and PE8), without a
-  beep. No countdown runs while it is off. Power-on and STOP wake clear the flag and the count, because PE8 is low in both.
-- Storage: byte 0x017 (EMAP 4.1): 0 OFF, 1 = 30 s, 2..100 = 1..99 min; above 100 reads as OFF. Word 0x014..0x017 holds the
+  beep. No countdown runs while it is off. Power-on and STOP wake clear the flag and the count, because PE8 is low in both, then
+  restore the state of bit 7 below. Any key press or dial change after a timer switch-off switches the backlight on again
+  (the key press is consumed; the dial acts normally).
+- Storage: byte 0x017 (EMAP 4.1), bits 6..0: 0 OFF, 1 = 30 s, 2..100 = 1..99 min; above 100 reads as OFF. Bit 7: the
+  backlight state after the last MODE long press, restored at power-on and wake (owner, 2026-11-02); the timer's own
+  switch-off and wake do not write it. 0xFF (erased) reads as OFF and dark. Word 0x014..0x017 holds the
   continuity code and the APO flag only.
 - Constraints: no HY3131 access; absent from the strict image.
+
+### 2.10 Firmware update over Bluetooth
+- Request (owner, 2026-11-02): update the firmware without taking the SD card out.
+- Facts (bootloader `inputs/binaries/bootloader.bin`, base 0x08000000, disassembly): update mode is entered only by the keys at
+  reset (GPIOG IDR 0x40021C10 read at 0x0800486C..0x080048B2: MEM PG11 and HOLD PG13 low, then SETUP PG9 low within the wait
+  loop 0x080048FE..0x0800490A); no RAM, EEPROM, RTC backup or reset-cause flag is read, so the application cannot start an
+  update by itself. The only source is `EEVBlog.bin` on the card root (string 0x08004EF4); no serial port is referenced. The
+  bootloader erases 0x08006000..0x0805FF00 (0x08004B8C) before it reads the file, ignores the erase and `f_read` results, and
+  checks only the initial stack pointer of the programmed image (0x08004994..0x080049A0): a truncated file is programmed. It
+  never writes below 0x08006000, so a bad image is recovered by a good file and the key sequence.
+- Design: a receive mode in the production image (entry by a key combination to be chosen, shown on the display) takes the
+  image over the Bluetooth link (USART2, 19200 baud, `analysis/ble_packet.md` 1) in numbered chunks with a CRC per chunk and an
+  acknowledgement; a new frame type is needed, because the receive interrupt accepts only F4 and F8 frames (0x08024820). The
+  chunks are written to a temporary file on the card (`fat_f_write`, `src/sd/fat_file.s`); after the last chunk the length and
+  a CRC32 of the whole file are checked against the header sent first, and only then is the file renamed to `EEVBlog.bin`.
+  The meter then asks for the usual update sequence (HOLD+MEM at power-on, SETUP). The application never writes flash.
+- Host side: a sender program (computer Bluetooth; packaged with the emulator) that splits, sends and resends.
+- Open, measured on a meter first: whether the BLE112 module passes arbitrary bytes from the host to USART2 at the full rate
+  (the official application writes only 5-byte F4 frames, `analysis/ble_packet.md` 7), and the real throughput. The UART bound
+  is 1920 bytes per second (141 124 bytes: 74 s at least); receive is deaf while the card is accessed (`src/ble/usart.s`
+  header), which the acknowledgement covers.
+- Storage: none.
 
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
 |---|---|---|---|---|---|
-| 0x00F | 2.8 thermocouple | 0 K, 1 J, 2 T | K | 0x00C..0x00E rotary memory | needs approval |
-| 0x011 | 2.2 dBm | 0 600 ohm, 1 50 ohm, 2 75 ohm, 3 dBV | 600 ohm | 0x010 temperature unit, 0x012 DIODE flag | needs approval |
-| 0x013 | 2.4 display | 0 level 1, 1 level 2 | level 1 | as 0x011 | needs approval |
-| 0x015 | 2.5 BLE | 0 2/s, 1 4/s, 2 10/s, 3 20/s | 2/s | 0x014 continuity code, 0x016 APO | needs approval |
-| 0x017 | 2.9 backlight | 0 OFF, 1 30 s, 2..100 1..99 min | OFF | as 0x015 | approved, implemented |
-| 0x020 | 2.3, 2.6 | bit 0 REL percent, bits 2..1 log trigger | v2.05 | none (free word 0x020..0x023) | needs approval |
-| 0x021 | 2.1 limits | `mode * 8 + range + 1` of the limits, 0 none | none | as 0x020 | needs approval |
-| 0x022 | 2.6 | change threshold 1..255 | 1 | as 0x020 | needs approval |
-| 0x028..0x02B | 2.1 | LO limit, s32 big-endian | 0 | none (free word) | needs approval |
-| 0x02C..0x02F | 2.1 | HI limit, s32 big-endian | 0 | none (free word) | needs approval |
+| 0x00F | 2.8 thermocouple | 0 K, 1 J, 2 T | K | 0x00C..0x00E rotary memory | approved |
+| 0x011 | 2.2 dBm | 0 600 ohm, 1 50 ohm, 2 75 ohm, 3 dBV | 600 ohm | 0x010 temperature unit, 0x012 DIODE flag | approved |
+| 0x013 | 2.4 display | 0 level 1, 1 level 2 | level 1 | as 0x011 | approved |
+| 0x015 | 2.5 BLE | 0 2/s, 1 4/s, 2 10/s, 3 20/s | 2/s | 0x014 continuity code, 0x016 APO | approved |
+| 0x017 | 2.9 backlight | bits 6..0: 0 OFF, 1 30 s, 2..100 1..99 min; bit 7: on/off state | OFF, dark | as 0x015 | approved, implemented |
+| 0x020 | 2.3, 2.6 | bit 0 REL percent, bits 2..1 log trigger | v2.05 | none (free word 0x020..0x023) | approved |
+| 0x021 | 2.1 limits | `mode * 8 + range + 1` of the limits, 0 none | none | as 0x020 | approved, not used (limits RAM only) |
+| 0x022 | 2.6 | change threshold 1..255 | 1 | as 0x020 | approved |
+| 0x028..0x02B | 2.1 | LO limit, s32 big-endian | 0 | none (free word) | approved, not used (limits RAM only) |
+| 0x02C..0x02F | 2.1 | HI limit, s32 big-endian | 0 | none (free word) | approved, not used (limits RAM only) |
 
 0x023 stays unused. Every offset above is in the never-accessed list of EMAP 4. The alternative locations 0x4B0..0x4CF (32
 bytes, never accessed by any code, outside `cal.bin`) would keep the settings out of a restored backup, but EMAP 9.1 item 2
@@ -292,5 +321,6 @@ Item 31 is not used. v2.05 uses 0..12 and 100; the page dispatcher falls back to
    (`setup_navigate_dcv`, entries IMP-07 in `deviations.txt`).
 2. 2.8, 2.2, 2.3, 2.4, 2.5: independent display or host-link changes; each with a routine-level test and an induced emulator test.
 3. 2.1 and 2.6 together (the log trigger uses the verdict), then 2.7 with the RT fix of OF-51.
+4. 2.10 after a link test on a meter (throughput and transparency of the module).
 For each: the owner decision on its bytes first, then EMAP 4.1 rows and `gen_nvm_allow.py`, then code, then
 `OPTIMIZATIONS.md` and `DESIGN.md` entries, `make check` for both images, and a byte comparison of the strict image.

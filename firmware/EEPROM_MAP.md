@@ -195,7 +195,7 @@ nor writes these bytes and its `nvm_allow` table does not allow them (`gen_nvm_a
 
 | Offset | Meaning | Values | Invalid or blank (0x00) reads as | Class |
 |---|---|---|---|---|
-| 0x017 | backlight auto-off timer (SETUP page bL, PWR/SET, FEATURES.md 2.9) | 0 OFF (never), 1 = 30 s, 2..100 = 1..99 min (code - 1) | OFF (a value above 100 is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
+| 0x017 | backlight auto-off timer (SETUP page bL, PWR/SET, FEATURES.md 2.9) and remembered backlight state | bits 6..0: 0 OFF (never), 1 = 30 s, 2..100 = 1..99 min (code - 1); bit 7: 1 = the backlight was on after the last MODE long press, restored at power-on and wake | OFF, dark (0xFF reads as OFF and dark; a code above 100 is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
 
 Owner decision for 0x017: approved (2026-11-02). Why this byte: the word 0x014..0x017 holds the continuity code 0x014
 and the APO flag 0x016, both SETTINGS; v2.05's own setting saves already rewrite this word (0x014 at 0x080113D6, 0x016 at
@@ -204,7 +204,10 @@ the file and `calbin_load` restores it; a v2.05 backup has 0x00 there (the suppl
 paragraph above), which reads as OFF. A meter flashed back to v2.05 ignores the byte; a v2.05 calbin_load of a backup made by the
 port writes the stored value to 0x017, which v2.05 never reads. Further candidates for other port-only settings (words with SETTINGS bytes only: 0x00F, 0x011,
 0x013, 0x015; words that are entirely free: 0x020..0x023, 0x028..0x02B, 0x02C..0x02F) are listed in FEATURES.md 3; none of
-them is allowed until it appears in the table above.
+them is allowed until it appears in the table above. Owner decision (2026-11-02): the bytes 0x00F, 0x011, 0x013, 0x015,
+0x020, 0x021, 0x022 and 0x028..0x02F are approved for the features of FEATURES.md 3; each enters the table above (and
+`nvm_allow`) only with the code that uses it. The limits of FEATURES.md 2.1 are not kept over a power-off (owner, same day),
+so 0x021 and 0x028..0x02F stay unused.
 
 ## 5. Calibration records
 
@@ -495,6 +498,6 @@ DESIGN.md 6.5).
 | NVM-3 (switch, default off) | writes regardless of battery state | with the switch on, NVM refuses writes while the low-battery flag of `adc_ch5_process` is set (DESIGN.md Q10) | none |
 | NF-17 (switch, default off = v2.05) | contrast 10 or 11 saved by the setup editor is replaced by 14 at boot (0x08011264..0x0801127C) | with the switch on, boot keeps 10..17 (DESIGN.md Q11) | none written; read validation of 0x01A only |
 | IMP-05 | continuity threshold byte 0x14 holds 0..3; boot and the setup timeout keep < 4, else 0 (0x080113A0..0x080113AE) | codes 0..15 in the same byte (0..3 unchanged; 4..15 per `analysis/autorange_and_scheduler.md` section 9); boot and the setup timeout keep < 16, else 0; written only by the SETUP item 10 save in BEEP, as v2.05. If v2.05 is flashed back, its own < 4 test turns codes 4..15 into 0 | 0x14 values only |
-| IMP-07 | 0x017 never accessed | production image only: 0x017 holds the backlight auto-off timer code (4.1); written only by the SETUP page bL save through the SETTINGS class, validated on read (above 100 reads as OFF); the strict image does not allow it in `nvm_allow` | 0x017 only |
+| IMP-07 | 0x017 never accessed | production image only: 0x017 holds the backlight auto-off timer code (4.1); written only by the SETUP page bL save and the MODE long press (bit 7, backlight state) through the SETTINGS class, validated on read (0xFF reads as OFF and dark, a code above 100 as OFF); the strict image does not allow it in `nvm_allow` | 0x017 only |
 
 No other EEPROM behaviour changes. Changes not yet approved are listed as open questions in DESIGN.md section 12.

@@ -170,6 +170,9 @@ FUNC handle_pg8_15_long_press
     strh r0, [r1]                       @ 0801631A
 @ reached from 08016308 b (jump)
 .Llp_mode_beep:
+    .if LOOP_V205 == 0
+    bl pwr_bl_remember                  @ owner PWR: remember the new state in EEPROM 0x017 bit 7 for the next power-on
+    .endif
     bl fn_0800EE5E                      @ 0801631C
     b .Llp_end                          @ 08016320
 
