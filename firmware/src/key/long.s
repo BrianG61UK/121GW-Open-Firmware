@@ -138,6 +138,11 @@ FUNC handle_pg8_15_long_press
 @ Long beep
 @ reached from 08016236 beq (equal / zero) after cmp r0, #1
 .Llp_key_mode:
+    .if LOOP_V205 == 0
+    movs r0, #0
+    ldr r1, =pwr_bl_auto
+    strb r0, [r1]                       @ IMP-07: a manual switch (on or off) ends any pending wake of the auto-off timer
+    .endif
     ldr r0, =key_backlight_on           @ 080162E4
     ldrb r0, [r0]                       @ 080162E8
     cmp r0, #0                          @ 080162EA
