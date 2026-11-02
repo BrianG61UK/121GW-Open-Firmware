@@ -71,6 +71,7 @@ FUNC fn_08024DE0
     bl fn_08011410                          @ 08024E1A  load the buzzer setting
     .if LOOP_V205 == 0
     bl set_bl_load                          @ IMP-07: load the backlight auto-off setting (EEPROM 0x017)
+    bl set_dbm_load                         @ IMP-08: load the dBm reference (EEPROM 0x011)
     .endif
     bl fn_08010F4C                          @ 08024E1E  load the date code from EEPROM 0x001
     bl fn_08010F8C                          @ 08024E22  load the ID number from EEPROM 0x003

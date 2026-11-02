@@ -19,7 +19,7 @@ Sources of truth and how this document cites them:
 - Original defects: `firmware/ORIGINAL_FIRMWARE_ISSUES.md` (OF-01..OF-29).
 - Data EEPROM: `firmware/EEPROM_MAP.md` (complete map, write paths, protection), cited as EMAP.
 - Planned user-visible features and their key, display and storage design: `firmware/FEATURES.md` (the backlight auto-off
-  timer, IMP-07, is implemented).
+  timer, IMP-07, and the selectable dBm reference, IMP-08, are implemented).
 - Hardware documents: `inputs/docs` (RM0038 rev 15 reference manual, datasheet, PM0056, HY3131, NJU6350, schematic,
   manual).
 - Anything not established by these sources is marked UNPROVEN. Times given as "estimate" are instruction counts, not
@@ -49,7 +49,7 @@ Appendix C: cross-module interface routines (C.1 replaced v2.05 functions, C.2 n
 | Requirement | Mechanism in this design | Where |
 |---|---|---|
 | Calibration, serial number and option/settings locations in data EEPROM preserved exactly | Same offsets, widths, byte order, validation and triggers as v2.05; one NVM module holds the only EEPROM write path; write classes with an allowed-byte table generated from EMAP; caller-side arming token; range re-check at the store; instruction-level build checks; emulator EEPROM comparison | EMAP 9-10; 6.21; 9.3 |
-| No erase, no reformat, no new locations without approval | NVM sets only PELOCK and clears FTDW in FLASH_PECR, never ERASE/PROG/DATA/FPRG/OBL_LAUNCH; nothing outside 0x000..0x4FC is in any write class; the cal.bin extension (OF-12) adds no EEPROM location; the only new locations are the owner-approved port-only settings of EMAP 4.1 (production image only; so far 0x017, IMP-07) | EMAP 4.1, 9.1-9.2, 10 |
+| No erase, no reformat, no new locations without approval | NVM sets only PELOCK and clears FTDW in FLASH_PECR, never ERASE/PROG/DATA/FPRG/OBL_LAUNCH; nothing outside 0x000..0x4FC is in any write class; the cal.bin extension (OF-12) adds no EEPROM location; the only new locations are the owner-approved port-only settings of EMAP 4.1 (production image only; so far 0x011, IMP-08, and 0x017, IMP-07) | EMAP 4.1, 9.1-9.2, 10 |
 | RAM copies of calibration, serial and options keep their v2.05 RAM addresses | every v2.05 RAM variable keeps its address; port-only variables live at 0x20008100 and above | 5 |
 | Never brick | program flash, the bootloader region 0x08000000..0x08005FFF, option bytes, RDP and WRP are never written (no instruction with a statically known address may address PRGKEYR, OPTKEYR, WRPR or 0x1FF8xxxx, and the FLASH
 block may only be addressed through its own literal with offset 0: coding rule 8.2 and build check 9.3); PELOCK set at reset (the bootloader leaves FLASH_PECR = 0x4, EMAP 2.5); the v2.05 option-byte BOR rewrite (EMAP 2.4) is not carried over; every hardware wait is bounded; the bootloader update path (MEM+HOLD at power-up, then SETUP) works whatever the application does | 2, 3, 9 |
@@ -893,6 +893,9 @@ A module with a narrow interface, so that the faster auto-ranging (IMP-01, ARS s
 - RAM: settings bytes (0x20008039, 0x20008078, 0x200080A5..0x200080BA), setup item 0x20008037, edit 0x2000806E..
   0x20008071, interval 0x2000022C, contrast 0x20000237, ID 0x20007D14/0x20007D18.
 - Deviations: OF-23, NF-17 (switch), IMP-05 (continuity codes 4..15 in setup item 10 of BEEP).
+- Production image only: `src/set/dbm.s` (`set_dbm_load`, `set_dbm_edit`, `set_dbm_draw`): item 11 of ACV becomes editable
+  (the dBm reference, EEPROM 0x011, IMP-08); `fn_080165F4` dispatches it from `.Lse_port`, `fn_0801797C` draws the reference
+  text instead of `fn_08018590` while `set_edit` is set.
 - Production image only: `src/set/bl.s` (`set_bl_load`, `set_bl_edit`, `set_bl_draw`) and the setup item 20 (page bL, the
   backlight auto-off setting, EEPROM 0x017, IMP-07). Item 20 follows the last v2.05 item of every mode: the wrap of
   `fn_08015410` to item 0 lands on item 20, and SETUP short on item 20 goes to item 0; `fn_080165F4`, `fn_0801797C` and
@@ -1311,6 +1314,7 @@ a build switch, default stated; required = forced by a non-negotiable requiremen
 | IMP-05 | continuity | codes 0..3 in EEPROM 0x14 | ARS 9: codes 0..15 (0..3 unchanged), boot accepts < 16 | approved | SET, MRES |
 | IMP-06 | main loop | LCD-locked loop, full HY3131 burst, blocking routines, no sleep | production mode of 3.5 (no busy-wait, per-event reads, state machines, `wfi`) | approved | SYS, LCD, HY, LOG, SD, BZB, CAL |
 | IMP-07 | backlight | on and off only by the MODE long press (0x080162E4..0x0801631A); RAM flag 0x2000807B stays 1 across a STOP while PE8 is low (the only references to the flag are the three loads of the MODE long press, listing 0x08016C84) | production only: SETUP page bL (item 20) sets an auto-off time, OFF (default) / 30 s / 1..99 min, stored in EEPROM 0x017 (EMAP 4.1); countdown on the 1 s flag while the backlight is on, restarted by any key press, dial change, injected key and edit step; at zero the backlight is switched off as the MODE long press does (flag and PE8, no beep); the flag and the countdown are cleared at power-on and STOP wake so that they follow PE8, then the state of the last MODE long press (0x017 bit 7, written by that press only) is restored (owner, 2026-11-02). The strict image is unchanged | approved (owner, 2026-11-02: one new EEPROM byte) | PWR, SET, KEY, DIAL |
+| IMP-08 | dBm reference | ACV page 11 shows 10 log10(x^2 / 0.6), dBm into 600 ohm only (`mac_dbm` 0x0800A74C, constant 0x0800A7C6..0x0800A7CA); the page is not editable (`fn_080165F4` returns 0 for item 11 of ACV) | production only: long SETUP on the page edits the reference, 600 ohm (v2.05, default) / 50 ohm / 75 ohm / dBV, shown as `r 600`, `r  50`, `r  75`, `r dbV` while editing; the divisor 0.6 / 0.05 / 0.075 / 1.0 comes from `set_dbm_divisor` (entry 0 is the v2.05 double); stored in EEPROM 0x011 (EMAP 4.1), a value above 3 reads as 600 ohm; units dB m, or dB alone for dBV. The BLE frame keeps sub-mode 0xB4 (a phone application labels every reference dBm). The strict image is unchanged | approved (owner, 2026-11-02: EEPROM bytes of FEATURES.md 3) | SET, MAC, LCD |
 
 Each deviation gets entries in `firmware/deviations.txt` and at least one scenario showing v2.05 and port behaviour.
 
@@ -2032,6 +2036,7 @@ Exceptions decided by this design:
 | `pwr_apo_second` | PWR | - | - | main | `sys_main` step 9 | v2.05 APO block 0x08024CAE..0x08024D1A |
 | `pwr_bl_second`, `pwr_bl_restart`, `pwr_bl_reset`, `pwr_bl_wake`, `pwr_bl_remember`, `pwr_bl_restore` (production only) | PWR | - | - (`pwr_bl_restart` keeps r0, r1 and the registers it does not use; flags clobbered) | main | `sys_main` step 9; KEY (`process_pg8_15_press_release`, `fn_08014AE6`, `handle_pg8_15_long_press`), DIAL (`debounce_pg0_7_onehot`), SET (`set_bl_edit`); `set_state_reset` | IMP-07 backlight auto-off timer: countdown, restart, state at power-on and wake |
 | `pwr_bl_setting` (byte), `pwr_bl_count` (u16), `.bss_port`, production only | PWR | - | - | main | written by SET (`set_bl_load`, `set_bl_edit`) and PWR; read by PWR and SET | setting code 0 OFF, 1 = 30 s, 2..100 = 1..99 min; seconds left |
+| `set_dbm_load`, `set_dbm_edit`, `set_dbm_draw` (production only) | SET | `set_dbm_edit`: r0 = 1 up, 2 down, 100 save | - | main | `set_state_reset` (load); `fn_080165F4` (edit, item 11 in ACV); `fn_0801797C` (draw while `set_edit`) | IMP-08 dBm reference of the ACV page 11, EEPROM 0x011 through `nvm_write_setting`; `set_dbm_divisor` read by `mac_dbm`, `set_dbm_ref` by `FUN_0801A440` (no m for dBV) |
 | `set_bl_load`, `set_bl_edit`, `set_bl_draw`, `set_bl_store` (production only) | SET | `set_bl_edit`: r0 = 1 up, 2 down, 100 save; `set_bl_draw`: r0 = code | - | main | `set_state_reset`, `fn_0800D190` (load); `fn_080165F4` (edit); `fn_0801797C` (draw) | IMP-07 setup item 20 (page bL), EEPROM 0x017 through `nvm_write_setting` |
 | `bzb_tim3_isr` | BZB | - | - | IRQ29 | vector | replaces IRQ29 0x08024722 |
 | `bzb_silence` | BZB | - | - | main | PWR, `sys_fault_safe` | clear buzzer state, PE7 low (HW-08) |

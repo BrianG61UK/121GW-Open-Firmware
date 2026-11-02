@@ -1332,7 +1332,25 @@ FUNC fn_080165F4
     bl fn_08015F7C                          @ 080167FC  ID edit action
     .if LOOP_V205 == 0
     b .L08016800
-.Lse_port:  @ IMP-07: reached from 080167EA bne with r0 = set_item
+.Lse_port:  @ IMP-07, IMP-08: reached from 080167EA bne with r0 = set_item
+    cmp r0, #0xb                            @ IMP-08: item 11 ...
+    bne .Lse_bl
+    ldr r1, =meter_mode
+    ldrb r1, [r1]
+    cmp r1, #0x2                            @ ... in ACV (mode 2): the dBm page, editable reference
+    bne .L08016800                          @ item 11 of another mode (VA: handled above): nothing more
+    uxtb r4, r4
+    cmp r4, #0x0                            @ query?
+    bne .Lse_dbm_act
+    movs r0, #0x1
+    movs r5, r0                             @ query result: editable
+    b .L08016800
+.Lse_dbm_act:
+    movs r0, r4
+    uxtb r0, r0
+    bl set_dbm_edit                         @ up, down or save of the dBm reference
+    b .L08016800
+.Lse_bl:
     cmp r0, #SET_ITEM_BL                    @ the backlight page bL (item 20)
     bne .L08016800                          @ any other item: not editable, query result 0
     uxtb r4, r4
@@ -1588,6 +1606,14 @@ FUNC fn_0801797C
     ldrb r0, [r0, #0x0]                     @ 08017B60  r0 = meter_mode
     cmp r0, #0x2                            @ 08017B62  compare meter_mode with 2
     bne .L08017B6C                          @ 08017B64  if meter_mode != 2
+    .if LOOP_V205 == 0
+    ldr r0, =set_edit
+    ldrb r0, [r0]
+    cbz r0, 1f                              @ IMP-08: no edit: the dBm value as in v2.05
+    bl set_dbm_draw                         @ IMP-08: edit active (blink phase on): the reference text
+    b .L08017F26
+1:
+    .endif
     bl fn_08018590                          @ 08017B66  draw the ACV scaled value (item 11) [r0=meter_mode]
     b .L08017F26                            @ 08017B6A
 .L08017B6C:  @ reached from 08017B64 bne (meter_mode != 2)

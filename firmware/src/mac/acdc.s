@@ -254,7 +254,8 @@ ENDFUNC fn_0800A6A8
 @ RAM      : reads  0x20007D64 reading, 0x2000803D meter_range
 @            writes 0x20007E94 dbm
 @ Spec     : analysis/hy3131_modes_ac_current.md 4 notes; ORIGINAL_FIRMWARE_ISSUES.md OF-04
-@ Deviation: OF-04 (x = 1.0 when meter_range > 3, where v2.05 used an unset register)
+@ Deviation: OF-04 (x = 1.0 when meter_range > 3, where v2.05 used an unset register); IMP-08 (production: the divisor 0.6
+@            is the entry of set_dbm_ref in set_dbm_divisor, set/dbm.s)
 @ -----------------------------------------------------------------------------
 FUNC fn_0800A74C
     push {r3, r4, r5, lr}                @ 0800A74C
@@ -308,8 +309,18 @@ FUNC fn_0800A74C
     bl fn_08013090                       @ 0800A7BE  RT: float32 r0 = r0 * r1
     @ divided by 0.6 (0x3FE3333333333333)
     bl fn_08013168                       @ 0800A7C2  RT: double r0:r1 = (double)float32 r0
+    .if LOOP_V205 == 0
+    @ IMP-08: divisor of the selected reference (0.6 / 0.05 / 0.075 / 1.0; code 0 is the v2.05 constant, FEATURES.md 2.2)
+    ldr r2, =set_dbm_ref
+    ldrb r2, [r2]                        @ r2 = reference code (0..3, set_dbm_load and set_dbm_edit keep it in range)
+    and r2, r2, #3                       @ index inside the 4-entry table
+    ldr r3, =set_dbm_divisor
+    add r3, r3, r2, lsl #3               @ 8 bytes per double
+    ldrd r2, r3, [r3]                    @ r2:r3 = divisor (low word, high word)
+    .else
     movs r2, #0x33333333                 @ 0800A7C6  = 858993459
     ldr r3, =0x3FE33333                  @ 0800A7CA  0x3FE33333:33333333 = 0.6 (double)
+    .endif
     bl fn_0801B874                       @ 0800A7CE  RT: double r0:r1 = r0:r1 / r2:r3
     @ rounded to float32, back to double, log10, times 10.0 (0x40240000:0), to float32
     bl fn_0801BACC                       @ 0800A7D2  RT: float32 r0 = (float)double r0:r1

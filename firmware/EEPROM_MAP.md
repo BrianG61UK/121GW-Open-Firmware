@@ -137,13 +137,13 @@ Formats: BE = big-endian, written MSB first, one byte program at a time. "Boot" 
 | 0x00E | 1 | u8 | rotary memory, A/mA position: 0x12..0x15 | FUN_080110E4 0x080110EA | 0x0801120E | MODE in modes 18..21 | 0x13/0x15 -> 0x13; 0x12/0x14 -> 0x12; else 0x13 | SETTINGS |
 | 0x00F | 1 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
 | 0x010 | 1 | u8 | temperature unit, 1 degC, 0 degF (0x200080AB) | 0x08011300 (Boot), FUN_0800D190 0x0800D264 | 0x0801133A (FUN_08011330) via FUN_08015BE0 0x08015C0C | SETUP item 0 save | < 2 kept else 0 (0x08011308..0x08011316) | SETTINGS |
-| 0x011 | 1 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
+| 0x011 | 1 | - | never accessed by v2.05; port (production image only): dBm reference code, section 4.1 | calbin_save; port: set_dbm_load | calbin_load; port: set_dbm_edit via nvm_write_setting | cal.bin restore; port: ACV page 11 save | port: 0..3 kept, else 0 (600 ohm) | RESTORE; SETTINGS in the production image only (4.1) |
 | 0x012 | 1 | u8 | DIODE 15 V flag (0x200080B3) | 0x08011344 (Boot) | 0x0801138E (FUN_08011384) via FUN_080159C8 0x080159EE | every RANGE short in DIODE | 0/1 kept, >= 2 -> 0 (0x0801134C..0x0801136C); then forced 0 at 0x08024E76..0x08024E78 (OF-23) | read only in the port (OF-23, section 10) |
 | 0x013 | 1 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
 | 0x014 | 1 | u8 | continuity threshold step 0..3 (0x200080B6) | 0x08011398 (Boot), FUN_0800D190 0x0800D27C | 0x080113D6 (FUN_080113CC) via FUN_08015C20 0x08015C7C | SETUP item 10 save in BEEP | < 4 kept else 0 (0x080113A0..0x080113AE) | SETTINGS (port value range 0..15: section 10, IMP-05) |
 | 0x015 | 1 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
 | 0x016 | 1 | u8 | auto-power-off disable (0x20008039) | 0x080112A8 (Boot), FUN_0800D190 0x0800D244 | 0x080112F6 (FUN_080112EC) via FUN_08015A22 0x08015A5E | SETUP item 2 save | 1 -> 1, else 0 (0x080112B0..0x080112D0) | SETTINGS |
-| 0x017 | 1 | - | never accessed by v2.05; port (production image only): backlight auto-off timer code, section 4.1 | calbin_save; port: set_bl_load | calbin_load; port: set_bl_edit via nvm_write_setting | cal.bin restore; port: SETUP page bL save | port: 0..100 kept, else 0 (OFF) | RESTORE; SETTINGS in the production image only (4.1) |
+| 0x017 | 1 | - | never accessed by v2.05; port (production image only): backlight auto-off timer code (bits 6..0) and backlight state (bit 7), section 4.1 | calbin_save; port: set_bl_load | calbin_load; port: set_bl_store via nvm_write_setting | cal.bin restore; port: SETUP page bL save, MODE long press | port: 0xFF reads as OFF and dark; code 0..100 kept, else 0 (OFF) | RESTORE; SETTINGS in the production image only (4.1) |
 | 0x018..0x019 | 2 | u16 BE | logging interval in s (0x2000022C) | 0x0801121C (Boot) | 0x08011252 (FUN_08011248) via FUN_08015AC0 0x08015B30 | SETUP item 9 save | < 1000 kept, else 1 (0x08011224..0x08011234) | SETTINGS |
 | 0x01A | 1 | u8 | LCD contrast (0x20000237, lcd_init argument at 0x08024B5C..0x08024B62) | 0x0801125C (Boot) | 0x0801129E (FUN_08011294) via FUN_08015B54 0x08015BB2 | SETUP item 4 save (values 10..17, 0x08015B64, 0x08015B8E) | 12..17 kept, else 14 (0x08011264..0x0801127C): a saved 10 or 11 becomes 14 after power-up (DESIGN.md NF-17, switch, default v2.05) | SETTINGS |
 | 0x01B | 1 | u8 | VA "bd" option (0x200080A8) | 0x080113E0 (Boot) | 0x0801140A (FUN_08011400) via FUN_08016190 0x080161AC | SETUP item 11 save in modes 13, 14, 15, 22, 23, 24 | == 1 -> 1 else 0 | SETTINGS |
@@ -195,6 +195,7 @@ nor writes these bytes and its `nvm_allow` table does not allow them (`gen_nvm_a
 
 | Offset | Meaning | Values | Invalid or blank (0x00) reads as | Class |
 |---|---|---|---|---|
+| 0x011 | dBm reference of the ACV page 11 (SET, FEATURES.md 2.2) | 0 = 600 ohm (divisor 0.6, v2.05), 1 = 50 ohm (0.05), 2 = 75 ohm (0.075), 3 = dBV (1.0) | 600 ohm (a value above 3, 0xFF included, is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
 | 0x017 | backlight auto-off timer (SETUP page bL, PWR/SET, FEATURES.md 2.9) and remembered backlight state | bits 6..0: 0 OFF (never), 1 = 30 s, 2..100 = 1..99 min (code - 1); bit 7: 1 = the backlight was on after the last MODE long press, restored at power-on and wake | OFF, dark (0xFF reads as OFF and dark; a code above 100 is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
 
 Owner decision for 0x017: approved (2026-11-02). Why this byte: the word 0x014..0x017 holds the continuity code 0x014
@@ -437,7 +438,7 @@ table in flash, `nvm_allow`, generated at build time from this section (`firmwar
 
 | Class | Bytes allowed | Additional condition checked inside NVM |
 |---|---|---|
-| SETTINGS | 0x008..0x00E, 0x010, 0x014, 0x016, 0x018..0x01A, 0x01B, 0x01E, and in the production image only the port-only settings of 4.1: 0x017 | none beyond the class (user actions of 7.1; for 0x017 the SETUP page bL) |
+| SETTINGS | 0x008..0x00E, 0x010, 0x014, 0x016, 0x018..0x01A, 0x01B, 0x01E, and in the production image only the port-only settings of 4.1: 0x011, 0x017 | none beyond the class (user actions of 7.1; for 0x011 the save of the ACV page 11, for 0x017 the SETUP page bL) |
 | IDENT | 0x001..0x002 (date code), 0x003..0x006 (serial) | exactly length 2 at 0x001, only while RAM 0x2000808B != 0 (v2.05 gate 0x08015F46..0x08015F4E); exactly length 4 at 0x003 (setup item 8 save, 0x08015F90) |
 | USERZERO | 0x4D0..0x4D4, 0x4D8..0x4DC, 0x4E0..0x4E4, 0x4E8..0x4EC, 0x4F0..0x4F4, 0x4F8..0x4FC | length 5 at a record base, first byte 0xA5 |
 | CAL | 0x01F, 0x026, 0x104..0x107, 0x178..0x17B, 0x2E0..0x2E1, and the bytes R+0..R+7 of every (mode, range) record of section 5.3, R+8..R+0xF of the AC-word records (modes 2, 4, 16, 18, 20 per ac_words_base) and of the VA records, 0x2D0..0x2D7 | RAM 0x2000808A == 1 (calibration mode), and the target matches the (kind, mode, range) rule of 7.3 recomputed inside NVM from meter_mode and meter_range, with the section 10 refusals |
@@ -499,5 +500,6 @@ DESIGN.md 6.5).
 | NF-17 (switch, default off = v2.05) | contrast 10 or 11 saved by the setup editor is replaced by 14 at boot (0x08011264..0x0801127C) | with the switch on, boot keeps 10..17 (DESIGN.md Q11) | none written; read validation of 0x01A only |
 | IMP-05 | continuity threshold byte 0x14 holds 0..3; boot and the setup timeout keep < 4, else 0 (0x080113A0..0x080113AE) | codes 0..15 in the same byte (0..3 unchanged; 4..15 per `analysis/autorange_and_scheduler.md` section 9); boot and the setup timeout keep < 16, else 0; written only by the SETUP item 10 save in BEEP, as v2.05. If v2.05 is flashed back, its own < 4 test turns codes 4..15 into 0 | 0x14 values only |
 | IMP-07 | 0x017 never accessed | production image only: 0x017 holds the backlight auto-off timer code (4.1); written only by the SETUP page bL save and the MODE long press (bit 7, backlight state) through the SETTINGS class, validated on read (0xFF reads as OFF and dark, a code above 100 as OFF); the strict image does not allow it in `nvm_allow` | 0x017 only |
+| IMP-08 | 0x011 never accessed | production image only: 0x011 holds the dBm reference code (4.1); written only by the save of the ACV page 11 through the SETTINGS class, validated on read (above 3 reads as 600 ohm); the strict image does not allow it in `nvm_allow` | 0x011 only |
 
 No other EEPROM behaviour changes. Changes not yet approved are listed as open questions in DESIGN.md section 12.

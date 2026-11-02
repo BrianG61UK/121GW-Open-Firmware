@@ -1,6 +1,7 @@
 # Planned features of the replacement firmware: user interface, storage, constraints
 
-Status: design. Only the backlight auto-off timer (2.9, IMP-07) is implemented. The other nine features are designs for
+Status: design. The backlight auto-off timer (2.9, IMP-07) and the dBm reference (2.2, IMP-08) are implemented. The other
+eight features are designs for
 the production image; none of them is in the tree as code. The EEPROM bytes of section 3 are approved (owner, 2026-11-02);
 each is added to `EEPROM_MAP.md` 4.1 and `nvm_allow` only with the code that uses it. Citations: `KS` = `analysis/keys_setup.md`, `EMAP` =
 `EEPROM_MAP.md`, `LCD` = `analysis/lcd_map.md`, `ARS` = `analysis/autorange_and_scheduler.md`, `DES` = `DESIGN.md`.
@@ -110,13 +111,14 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Constraints: counts are limited to -99999..99999 by the display (`0x08017036`..`0x08017040`, OF-49); the editor does not
   accept more. Limits in LowZ and BEEP are accepted (single range). Logging with trigger "limits" (2.6) uses the same verdict.
 
-### 2.2 Selectable dBm reference
+### 2.2 Selectable dBm reference (implemented, IMP-08)
 
 - Where: the existing ACV page 11 (the dBm value; KS 4 "dBm = 10 log10(x^2 / 0.6)"), which becomes editable. No new item.
 - Keys: long SETUP on the page starts the edit (v2.05 refuses it there), REL/PEAK step the reference, long SETUP saves.
 - What is shown: normally the dB value as in v2.05 with the sub units dB and m (dBm) or dB only (dBV). During the edit the page
   shows the reference as text: `r 600`, `r  50`, `r  75`, `r dbV` (r, a blank, the load in ohm; V is drawn like U) in the order
-  600, 50, 75, dBV; the value returns after the save.
+  600, 50, 75, dBV; the value returns after the save. For dBV the sub units show dB alone: the V element of the sub unit row
+  sits below dB, not beside it (element boxes of `emulator/ui/assets/lcd`), so it is not lit.
 - Storage: one byte 0x011: 0 = 600 ohm (v2.05: the constant 0.6, `0x0800A7C6`..`0x0800A7E8`), 1 = 50 ohm (0.05), 2 = 75 ohm
   (0.075), 3 = dBV (1.0); any other value reads as 0. Blank = v2.05 behaviour.
 - Constraints: display-side arithmetic only (the constant of the dBm formula). The BLE packet keeps its sub-mode byte 0xB4
@@ -277,7 +279,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
 |---|---|---|---|---|---|
 | 0x00F | 2.8 thermocouple | 0 K, 1 J, 2 T | K | 0x00C..0x00E rotary memory | approved |
-| 0x011 | 2.2 dBm | 0 600 ohm, 1 50 ohm, 2 75 ohm, 3 dBV | 600 ohm | 0x010 temperature unit, 0x012 DIODE flag | approved |
+| 0x011 | 2.2 dBm | 0 600 ohm, 1 50 ohm, 2 75 ohm, 3 dBV | 600 ohm | 0x010 temperature unit, 0x012 DIODE flag | approved, implemented |
 | 0x013 | 2.4 display | 0 level 1, 1 level 2 | level 1 | as 0x011 | approved |
 | 0x015 | 2.5 BLE | 0 2/s, 1 4/s, 2 10/s, 3 20/s | 2/s | 0x014 continuity code, 0x016 APO | approved |
 | 0x017 | 2.9 backlight | bits 6..0: 0 OFF, 1 30 s, 2..100 1..99 min; bit 7: on/off state | OFF, dark | as 0x015 | approved, implemented |

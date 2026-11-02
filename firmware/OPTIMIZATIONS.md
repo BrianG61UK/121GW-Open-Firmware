@@ -23,6 +23,7 @@ contents, HY3131 configuration sequence) is identical to v2.05; each is verified
 | IMP-05 | Extended continuity thresholds (EEPROM byte 0x14, codes 4..15: 1, 5, 10, 50, 100, 200 ohm, both directions) | same setting byte; codes 0..3 keep v2.05's meaning |
 | IMP-06 | No busy-waiting: deferred LCD commits, blocking routines as state machines, WFI sleep between loop passes | every HY3131 conversion is processed (v2.05 drops most of them, OF-31); lower supply current |
 | IMP-07 | Backlight auto-off timer: SETUP page bL, OFF (default) / 30 s / 1..99 min | after the chosen time without a key press or dial turn the backlight switches itself off (MODE long press switches it on, and off, as before); stored in EEPROM 0x017 (a byte v2.05 never uses, `EEPROM_MAP.md` 4.1); the flag and countdown also follow the pin after a STOP wake (v2.05 needed two MODE long presses after a wake with the backlight on) |
+| IMP-08 | Selectable dBm reference on the ACV page 11: 600 ohm (default, as v2.05), 50 ohm, 75 ohm, dBV | long SETUP on the dBm page, REL / PEAK step, long SETUP saves; RF (50 ohm), video (75 ohm) and dBV readings without conversion by hand; stored in EEPROM 0x011 (`EEPROM_MAP.md` 4.1) |
 
 All fixes of original defects are listed with their evidence in `ORIGINAL_FIRMWARE_ISSUES.md` (OF-xx) and in
 `DESIGN.md` section 10 (NF-, HW-, NVM- items). A faster analog settle profile exists but stays disabled until the

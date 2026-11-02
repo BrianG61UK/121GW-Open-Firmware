@@ -1870,6 +1870,12 @@ FUNC fn_0801A440
     orrs.w r0, r0, #524288                   @ 0801A54C
     ldr r1, =lcd_shadow                      @ 0801A550 &LCD shadow
     str r0, [r1, #0]                         @ 0801A554 w0 |= 0x80000: sub dB (SubdB; the digit-4 x slot)
+    .if LOOP_V205 == 0
+    ldr r0, =set_dbm_ref                     @ IMP-08: reference code
+    ldrb r0, [r0, #0]
+    cmp r0, #3
+    beq .L0801A6CA                           @ IMP-08: dBV: dB alone, no m
+    .endif
     ldr r0, =lcd_shadow                      @ 0801A556 &LCD shadow
     ldr r0, [r0, #0]                         @ 0801A55A
     orrs.w r0, r0, #262144                   @ 0801A55C
