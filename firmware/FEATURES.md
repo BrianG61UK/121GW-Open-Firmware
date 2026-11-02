@@ -1,7 +1,7 @@
 # Planned features of the replacement firmware: user interface, storage, constraints
 
-Status: design. The backlight auto-off timer (2.9, IMP-07) and the dBm reference (2.2, IMP-08) are implemented. The other
-eight features are designs for
+Status: design. The backlight auto-off timer (2.9, IMP-07), the dBm reference (2.2, IMP-08) and the Bluetooth frame rate
+(2.5, IMP-09) are implemented. The other features are designs for
 the production image; none of them is in the tree as code. The EEPROM bytes of section 3 are approved (owner, 2026-11-02);
 each is added to `EEPROM_MAP.md` 4.1 and `nvm_allow` only with the code that uses it. Citations: `KS` = `analysis/keys_setup.md`, `EMAP` =
 `EEPROM_MAP.md`, `LCD` = `analysis/lcd_map.md`, `ARS` = `analysis/autorange_and_scheduler.md`, `DES` = `DESIGN.md`.
@@ -152,16 +152,18 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   small changes is not slower than before. The option does not touch BEEP, DIODE and the counter modes (FREQ, PULSE, DUTY, CAP):
   they have their own update rules (ARS 8, 5.2 P5).
 
-### 2.5 Faster Bluetooth streaming
+### 2.5 Faster Bluetooth streaming (implemented, IMP-09)
 
-- Where: SETUP page `bt` (the BT annunciator and the PEAK long press that switch the transfer on and off are unchanged, KS 2.2).
+- Where: SETUP page `bt`, item 21, after `bL` (the BT annunciator and the PEAK long press that switch the transfer on and off are unchanged, KS 2.2).
 - Keys: the edit keys of 1.2.
 - What is shown: the number of frames per second: `bt  2` (as v2.05), `bt  4`, `bt 10`, `bt 20`.
 - Meaning: v2.05 starts a 19-byte frame every 50 TIM2 ticks (0.501 s) and builds it 10 ticks before (`analysis/ble_packet.md`
-  2). USART2 runs at 19200 baud, 8N1: a frame takes 19 x 10 / 19200 = 9.9 ms, about one tick. The options use periods of 50, 25,
-  10 and 5 ticks; the build is moved to stay at least one tick before the start, and the command echoes of OF-10 keep their
-  queue between frames (at 5 ticks, four idle ticks remain for them). Frame format, checksum and sub-display content are
-  unchanged. Frames with an invalid value are still skipped (OF-34), so the rate is a maximum.
+  2). USART2 runs at 19200 baud, 8N1: a frame takes 19 x 10 / 19200 = 9.9 ms, about one tick. The same 50-tick counter also
+  makes the 500 ms flag, the blink phases and the jack-warning beep, so the faster rates run on their own counter
+  (`ble/rate.s`): periods 25, 10 and 5 ticks with the build requested 10, 5 and 2 ticks before the start; 2 per second keeps
+  the v2.05 counter. The port's transmit side (OF-10) sends only complete frames and skips a start that finds none, so the
+  rate is a maximum and a frame is never torn; command echoes keep their queue between frames. Frame format, checksum and
+  sub-display content are unchanged.
 - Storage: one byte 0x015 (0 = 2 per second). Any other value reads as 0.
 - Constraints: the link is raw serial through the module on USART2; whether the phone application keeps up with 20 frames per
   second is not known here (no hardware test); the option is therefore a setting, default v2.05.
@@ -276,6 +278,16 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   header), which the acknowledgement covers.
 - Storage: none.
 
+### 2.11 Bluetooth viewer for computers
+- Request (owner, 2026-11-02): the official phone application connects but draws badly (glitches, colours, unreadable
+  text); a viewer of our own.
+- Design: a desktop program (macOS, Windows, Linux) that connects to the meter over the computer's Bluetooth LE, decodes
+  the status frame (`analysis/ble_packet.md` 3) and draws the display with the emulator's LCD renderer
+  (`emulator/ui/assets/lcd`), so the picture is the meter's own segments. Additions: CSV logging, a trend graph,
+  statistics. It is the host side of 2.10 as well (sender of a firmware image).
+- Open: the BLE112's GATT service and characteristic that carry the frames (to be read from a meter with a BLE scanner);
+  no firmware change is needed for viewing.
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
@@ -283,7 +295,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 | 0x00F | 2.8 thermocouple | 0 K, 1 J, 2 T | K | 0x00C..0x00E rotary memory | approved |
 | 0x011 | 2.2 dBm | 0 600 ohm, 1 50 ohm, 2 75 ohm, 3 dBV | 600 ohm | 0x010 temperature unit, 0x012 DIODE flag | approved, implemented |
 | 0x013 | 2.4 display | 0 level 1, 1 level 2 | level 1 | as 0x011 | approved |
-| 0x015 | 2.5 BLE | 0 2/s, 1 4/s, 2 10/s, 3 20/s | 2/s | 0x014 continuity code, 0x016 APO | approved |
+| 0x015 | 2.5 BLE | 0 2/s, 1 4/s, 2 10/s, 3 20/s | 2/s | 0x014 continuity code, 0x016 APO | approved, implemented |
 | 0x017 | 2.9 backlight | bits 6..0: 0 OFF, 1 30 s, 2..100 1..99 min; bit 7: on/off state | OFF, dark | as 0x015 | approved, implemented |
 | 0x020 | 2.3, 2.6 | bit 0 REL percent, bits 2..1 log trigger | v2.05 | none (free word 0x020..0x023) | approved |
 | 0x021 | 2.1 limits | `mode * 8 + range + 1` of the limits, 0 none | none | as 0x020 | approved, not used (limits RAM only) |
@@ -300,8 +312,8 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | Item | Page | Shown | Editable |
 |---|---|---|---|
 | 20 | `bL` backlight | always | yes (implemented) |
-| 21 | `dSP` | always | yes |
-| 22 | `bt` | always | yes |
+| 21 | `bt` | always | yes (implemented) |
+| 22 | `dSP` | always | yes |
 | 23 | `rEL` | always | yes |
 | 24 | `Lt` | always | yes |
 | 25 | `Lo` | always | yes (digits) |
@@ -315,7 +327,8 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 34, 35 | `tHI`, `tLo` | MIN/MAX on | no |
 
 Item 31 is not used. v2.05 uses 0..12 and 100; the page dispatcher falls back to item 0 for an unknown item
-(`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for item 20.
+(`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 and 21. SETUP short steps
+20 -> 21 -> 0 (`fn_08015410`); each new page joins that chain.
 
 ## 5. Order of work and checks
 
@@ -325,6 +338,6 @@ Item 31 is not used. v2.05 uses 0..12 and 100; the page dispatcher falls back to
    (`setup_navigate_dcv`, entries IMP-07 in `deviations.txt`).
 2. 2.8, 2.2, 2.3, 2.4, 2.5: independent display or host-link changes; each with a routine-level test and an induced emulator test.
 3. 2.1 and 2.6 together (the log trigger uses the verdict), then 2.7 with the RT fix of OF-51.
-4. 2.10 after a link test on a meter (throughput and transparency of the module).
+4. 2.10 after a link test on a meter (throughput and transparency of the module), together with 2.11.
 For each: the owner decision on its bytes first, then EMAP 4.1 rows and `gen_nvm_allow.py`, then code, then
 `OPTIMIZATIONS.md` and `DESIGN.md` entries, `make check` for both images, and a byte comparison of the strict image.
