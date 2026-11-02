@@ -211,6 +211,9 @@ FUNC sys_main
     strb r0, [r1]                           @ log-write request (0x08024CAC)
 .Lmain_apo:
     bl pwr_apo_second                       @ APO block 0x08024CAE..0x08024D1A (PWR)
+    .if LOOP_V205 == 0
+    bl pwr_bl_second                        @ IMP-07: backlight auto-off countdown, same 1 s flag (PWR, src/pwr/backlight.s)
+    .endif
     @ 0x200080E6 = (APO counter < 60) (0x08024D1C..0x08024D30)
     ldr r0, =apo_countdown                  @ 0x20000230 (u16)
     ldrh r0, [r0]

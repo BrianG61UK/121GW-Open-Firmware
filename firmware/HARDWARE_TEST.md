@@ -46,6 +46,10 @@ The image has only run in the emulator. These checks confirm on hardware what th
 | H7 | VA channel switch: the conversions after a c4 toggle, as in H1 | a shorter VA channel dwell |
 | H8 | Range change with the delay(10000) of `hy3131_counter_restart` (0x0800BFCE) removed: counter and AD1 results after the change compared with the delay kept | t_apply of about 7 ms instead of 24 ms |
 6. Continuity beep latency and the new thresholds (SETUP, codes 4..15).
+7. Backlight auto-off timer (production build): SETUP page bL, set 30 s, switch the backlight on with MODE long, count the
+   time to switch-off (30..31 s after the last key press or dial turn), check that a key press restarts it, that OFF never
+   switches it off, and that after an auto power-off and wake the first MODE long press switches the backlight on. Dump the
+   EEPROM after the save: only byte 0x017 may differ.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

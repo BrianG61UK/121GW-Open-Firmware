@@ -151,6 +151,9 @@ FUNC handle_pg8_15_long_press
     mov.w r0, #0x100                    @ 080162FE
     ldr r1, =GPIOE_BASE + GPIO_BSRRL    @ 08016302
     strh r0, [r1]                       @ 08016306
+    .if LOOP_V205 == 0
+    bl pwr_bl_restart                   @ IMP-07: the backlight is on: start the auto-off countdown
+    .endif
     b .Llp_mode_beep                    @ 08016308
 @ reached from 080162EC bne (not equal / non-zero) after cmp r0, #0
 .Llp_0801630A:

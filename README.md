@@ -33,7 +33,8 @@ No file of a release contains an original EEVblog image (bootloader, v2.05) or t
   `gen_nvm_allow --check`, `gen_ram_symbols --check`, `extract_tables --verify`, which compare with the original image). On a
   tag `v*` the workflow publishes `firmware-<tag>.zip`.
 - `DESIGN.md` design and deviation list, `EEPROM_MAP.md` every EEPROM byte, `ORIGINAL_FIRMWARE_ISSUES.md` the defects
-  found in v2.05 (with evidence), `OPTIMIZATIONS.md`, `HARDWARE_TEST.md` checklist for the first run on a meter.
+  found in v2.05 (with evidence), `OPTIMIZATIONS.md`, `FEATURES.md` planned user-visible features (keys, display, storage; the backlight auto-off timer is
+  implemented), `HARDWARE_TEST.md` checklist for the first run on a meter.
 - Status: both builds match v2.05 in the emulator's 93 test scenarios and the STOP/wake scenario except documented
   deviations; not yet run on hardware. The strict build is compared frame by frame; in the production build the
   display during range changes is checked by the scenarios' assertions and final states.

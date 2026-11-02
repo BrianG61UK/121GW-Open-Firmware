@@ -18,6 +18,8 @@ Sources of truth and how this document cites them:
   below as ARS).
 - Original defects: `firmware/ORIGINAL_FIRMWARE_ISSUES.md` (OF-01..OF-29).
 - Data EEPROM: `firmware/EEPROM_MAP.md` (complete map, write paths, protection), cited as EMAP.
+- Planned user-visible features and their key, display and storage design: `firmware/FEATURES.md` (the backlight auto-off
+  timer, IMP-07, is implemented).
 - Hardware documents: `inputs/docs` (RM0038 rev 15 reference manual, datasheet, PM0056, HY3131, NJU6350, schematic,
   manual).
 - Anything not established by these sources is marked UNPROVEN. Times given as "estimate" are instruction counts, not
@@ -47,7 +49,7 @@ Appendix C: cross-module interface routines (C.1 replaced v2.05 functions, C.2 n
 | Requirement | Mechanism in this design | Where |
 |---|---|---|
 | Calibration, serial number and option/settings locations in data EEPROM preserved exactly | Same offsets, widths, byte order, validation and triggers as v2.05; one NVM module holds the only EEPROM write path; write classes with an allowed-byte table generated from EMAP; caller-side arming token; range re-check at the store; instruction-level build checks; emulator EEPROM comparison | EMAP 9-10; 6.21; 9.3 |
-| No erase, no reformat, no new locations without approval | NVM sets only PELOCK and clears FTDW in FLASH_PECR, never ERASE/PROG/DATA/FPRG/OBL_LAUNCH; nothing outside 0x000..0x4FC is in any write class; the cal.bin extension (OF-12) adds no EEPROM location | EMAP 9.1-9.2, 10 |
+| No erase, no reformat, no new locations without approval | NVM sets only PELOCK and clears FTDW in FLASH_PECR, never ERASE/PROG/DATA/FPRG/OBL_LAUNCH; nothing outside 0x000..0x4FC is in any write class; the cal.bin extension (OF-12) adds no EEPROM location; the only new locations are the owner-approved port-only settings of EMAP 4.1 (production image only; so far 0x017, IMP-07) | EMAP 4.1, 9.1-9.2, 10 |
 | RAM copies of calibration, serial and options keep their v2.05 RAM addresses | every v2.05 RAM variable keeps its address; port-only variables live at 0x20008100 and above | 5 |
 | Never brick | program flash, the bootloader region 0x08000000..0x08005FFF, option bytes, RDP and WRP are never written (no instruction with a statically known address may address PRGKEYR, OPTKEYR, WRPR or 0x1FF8xxxx, and the FLASH
 block may only be addressed through its own literal with offset 0: coding rule 8.2 and build check 9.3); PELOCK set at reset (the bootloader leaves FLASH_PECR = 0x4, EMAP 2.5); the v2.05 option-byte BOR rewrite (EMAP 2.4) is not carried over; every hardware wait is bounded; the bootloader update path (MEM+HOLD at power-up, then SETUP) works whatever the application does | 2, 3, 9 |
@@ -233,7 +235,7 @@ The loop body is v2.05's, step for step, with the same flags and order (0x08024B
 | 6 | 0x200080D2 | clear (no setter exists in v2.05; kept) |
 | 7 | 0x2000802C | clear; if BLE on 0x2000802B: `FUN_0800C5D2` BLE (build frame) |
 | 8 | 500 ms flag 0x200080D3 | if setup edit 0x2000806E: `FUN_0800D190` SET |
-| 9 | 1 s flag 0x200080D4 | `FUN_0800FF18`; 0x20007FFA = 0; logging interval; `pwr_apo_second` (3.6); 0x200080E6; `FUN_08019CBC` LCD |
+| 9 | 1 s flag 0x200080D4 | `FUN_0800FF18`; 0x20007FFA = 0; logging interval; `pwr_apo_second` (3.6); production only: `pwr_bl_second` (IMP-07); 0x200080E6; `FUN_08019CBC` LCD |
 | 10 | 0x20007FE1 and 0x20007FE2 | `FUN_08010B64` LOG |
 | 11 | 0x20008030 | `FUN_0800C332` BLE |
 | 12 | 0x2000801C | `FUN_0801D126` LOG (SD log write) and its error handling |
@@ -577,6 +579,11 @@ Conventions for all modules:
   `pwr_apo_second`, called at the same place in loop step 9.
 - RAM: APO 0x20000230, 0x200080E6..0x200080E9, other Appendix B PWR addresses.
 - Deviations: NF-06, HW-08 (with BZB).
+- Production image only (`LOOP_V205 == 0`, file assembles to nothing in the strict image): `src/pwr/backlight.s`, the
+  backlight auto-off timer of IMP-07 (FEATURES.md 2.9): `pwr_bl_second` (called by `sys_main` in loop step 9 after
+  `pwr_apo_second`), `pwr_bl_restart` (called by KEY at every tick with a key down, by DIAL at a latched position change,
+  by `fn_08014AE6` for an injected key, by the MODE long press that switches the backlight on, and by the SET edit),
+  `pwr_bl_reset` (called by `set_state_reset`). RAM `pwr_bl_setting` (u8) and `pwr_bl_count` (u16) in `.bss_port`.
 
 ### 6.4 BZB: buzzer, backlight, TIM3 handler (W1)
 
@@ -652,7 +659,7 @@ Conventions for all modules:
   (auto-repeat), `FUN_08016B7C` (one-hot check, also used by DIAL), `FUN_08016B4C`, `FUN_08016BB8` (`keys_setup.md` 1, 2).
 - RAM: 0x20008067..0x2000806D, 0x20008072, 0x20008073, 0x200080ED..0x200080F3, 0x20007FAA, 0x20007FB8, 0x20008044.
 - Deviations: OF-17 (PEAK and the 1 kHz filter refused together, either order: refusal beep, nothing changes), OF-07
-  key-side refusal (7.2), NF-07 switch.
+  key-side refusal (7.2), NF-07 switch, IMP-07 (production: key activity restarts the backlight auto-off countdown).
 
 ### 6.10 DIAL: dial and jack sense (W4)
 
@@ -885,6 +892,13 @@ A module with a narrow interface, so that the faster auto-ranging (IMP-01, ARS s
 - RAM: settings bytes (0x20008039, 0x20008078, 0x200080A5..0x200080BA), setup item 0x20008037, edit 0x2000806E..
   0x20008071, interval 0x2000022C, contrast 0x20000237, ID 0x20007D14/0x20007D18.
 - Deviations: OF-23, NF-17 (switch), IMP-05 (continuity codes 4..15 in setup item 10 of BEEP).
+- Production image only: `src/set/bl.s` (`set_bl_load`, `set_bl_edit`, `set_bl_draw`) and the setup item 20 (page bL, the
+  backlight auto-off setting, EEPROM 0x017, IMP-07). Item 20 follows the last v2.05 item of every mode: the wrap of
+  `fn_08015410` to item 0 lands on item 20, and SETUP short on item 20 goes to item 0; `fn_080165F4`, `fn_0801797C` and
+  `fn_0800D190` dispatch item 20 to the three routines. Items 0..12 and 100 are unchanged. Every reader of the item byte
+  0x20008037 outside SET tests it for equality with 1, 7, 10, 11, 12 or 100 (checked in ui/refresh.s, mdc/dc.s, mac/ac.s,
+  mva/va.s, sys/isr_tim2.s, pwr/battery.s, lcd/annun.s, ble/packet.s), so item 20 is treated like items 3, 4, 8 and 9
+  there (BLE packet: sub display zeros).
 
 ### 6.25 RTC: NJU6350 driver and date/time editing (W9)
 
@@ -1287,6 +1301,7 @@ a build switch, default stated; required = forced by a non-negotiable requiremen
 | OF-52 | battery | table conversion code / 280 - 0.643 V (`FUN_08013728`, table 0x08028C9C); low-battery symbol below 4.31 V real | B+ = code x 3.3 / 4095 / (330/1330); 4.1 V threshold kept (12.2) | fix (owner decision) | PWR |
 | OF-53 | HY3131 | INTF written 0 after the event read (0x0800616C): a flag raised in between is lost (CTF: counter not restarted) | INTF acknowledge 0 only for the flags read as set, 1 for the others (DS p19); both builds (12.2, 4.1 item 4) | fix (owner decision) | HY |
 | OF-54 | HY3131 | counter registers clocked out before INTF (burst from register 0): CTF seen with the values of the previous count | data and CTF of the same completed count (production: INTF read first; baseline: counter block read again on CTF) | fix (owner decision) | HY |
+| OF-55 | backlight | RAM flag 0x2000807B survives an auto power-off while PE8 is driven low (OF-55 evidence); the first MODE long press after the wake only clears the flag | `set_state_reset` clears the flag and the IMP-07 countdown (`pwr_bl_reset`) at power-on and after the wake, production image only | fix | PWR, SET |
 | NF-18 | STOP | DBGMCU_CR \|= 7 at every start (0x0801BEF8) keeps the RC oscillator and FCLK/HCLK running in STOP (RM0038 DBGMCU_CR bit 1) | set only in debug builds; production enters the true STOP (hardware check in Q8) | fix | SYS |
 | IMP-01 | auto-range | `autorange_step` one range per decision | ARS 5: per-sample detection, direct target range, CP settle profile by default, TP per family only after H1..H8 (ARS 12); first value after a change from 4 clean samples (ARS 5.2 P5) | approved | AR, MDC, MAC, MRES, UI |
 | IMP-02 | boot | measuring starts after the 2 s window | ARS 6: window kept, measuring during it (7.1) | approved | CAL, SYS |
@@ -1294,6 +1309,7 @@ a build switch, default stated; required = forced by a non-negotiable requiremen
 | IMP-04 | beep/diode | latency 6..8 ms / 0.356 s | ARS 8.2: every conversion; DIODE on K = 2 samples | approved | MRES |
 | IMP-05 | continuity | codes 0..3 in EEPROM 0x14 | ARS 9: codes 0..15 (0..3 unchanged), boot accepts < 16 | approved | SET, MRES |
 | IMP-06 | main loop | LCD-locked loop, full HY3131 burst, blocking routines, no sleep | production mode of 3.5 (no busy-wait, per-event reads, state machines, `wfi`) | approved | SYS, LCD, HY, LOG, SD, BZB, CAL |
+| IMP-07 | backlight | on and off only by the MODE long press (0x080162E4..0x0801631A); RAM flag 0x2000807B stays 1 across a STOP while PE8 is low (the only references to the flag are the three loads of the MODE long press, listing 0x08016C84) | production only: SETUP page bL (item 20) sets an auto-off time, OFF (default) / 30 s / 1..99 min, stored in EEPROM 0x017 (EMAP 4.1); countdown on the 1 s flag while the backlight is on, restarted by any key press, dial change, injected key and edit step; at zero the backlight is switched off as the MODE long press does (flag and PE8, no beep); the flag and the countdown are cleared at power-on and STOP wake so that they follow PE8. The strict image is unchanged | approved (owner, 2026-11-02: one new EEPROM byte) | PWR, SET, KEY, DIAL |
 
 Each deviation gets entries in `firmware/deviations.txt` and at least one scenario showing v2.05 and port behaviour.
 
@@ -2013,6 +2029,9 @@ Exceptions decided by this design:
 | `brd_fe_apply` | BRD | r0 = mode, r1 = range | - | main | MODE, CAL (BOOTWIN), MVA | = `fn_0800FBE8`, table-driven (4.4) |
 | `brd_exti_isr` | BRD | - | - | EXTI IRQs | vectors | clear pending bits |
 | `pwr_apo_second` | PWR | - | - | main | `sys_main` step 9 | v2.05 APO block 0x08024CAE..0x08024D1A |
+| `pwr_bl_second`, `pwr_bl_restart`, `pwr_bl_reset` (production only) | PWR | - | - (`pwr_bl_restart` keeps r0, r1 and the registers it does not use; flags clobbered) | main | `sys_main` step 9; KEY (`process_pg8_15_press_release`, `fn_08014AE6`, `handle_pg8_15_long_press`), DIAL (`debounce_pg0_7_onehot`), SET (`set_bl_edit`); `set_state_reset` | IMP-07 backlight auto-off timer: countdown, restart, state at power-on and wake |
+| `pwr_bl_setting` (byte), `pwr_bl_count` (u16), `.bss_port`, production only | PWR | - | - | main | written by SET (`set_bl_load`, `set_bl_edit`) and PWR; read by PWR and SET | setting code 0 OFF, 1 = 30 s, 2..100 = 1..99 min; seconds left |
+| `set_bl_load`, `set_bl_edit`, `set_bl_draw` (production only) | SET | `set_bl_edit`: r0 = 1 up, 2 down, 100 save; `set_bl_draw`: r0 = code | - | main | `set_state_reset`, `fn_0800D190` (load); `fn_080165F4` (edit); `fn_0801797C` (draw) | IMP-07 setup item 20 (page bL), EEPROM 0x017 through `nvm_write_setting` |
 | `bzb_tim3_isr` | BZB | - | - | IRQ29 | vector | replaces IRQ29 0x08024722 |
 | `bzb_silence` | BZB | - | - | main | PWR, `sys_fault_safe` | clear buzzer state, PE7 low (HW-08) |
 | `func_smooth_hist` | FUNC | r0 = value, r1 = threshold, r2 = depth, r3 = state pointer | r0 = smoothed value | main | MAC, MVA, MDC | `FUN_0800B754` algorithm on a caller-owned state block (OF-28) |

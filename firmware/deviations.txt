@@ -291,6 +291,13 @@ IMP-05  eeprom_final  setup_beep_threshold  offset == 0x14
 # of line 30 and switch the buzzer on (16.204 s), production reaches DN 50 and stays silent.
 IMP-05  gpio          setup_beep_threshold  build == production and pin == buzzer and step in 30..32
 
+# IMP-07 (DESIGN 10, FEATURES.md 2.9): the production image adds the setup page bL (item 20) behind the last v2.05 page of every
+# mode, so the SETUP press that wraps the item list to 0 in v2.05 shows "bLOFF" instead of the board temperature page.
+# setup_navigate_dcv: DCV has items 0..9; the tenth press (line 24) wraps.  The LCD events after that press (1 s window) and
+# the final frame differ in the sub display only; the main display is "0.0000" in both.  The EEPROM is not written.
+IMP-07  lcd        setup_navigate_dcv  build == production and step == 24 and since in 0.0..1.0
+IMP-07  lcd_final  setup_navigate_dcv  build == production and main == "0.0000"
+
 # OPT-01 (DESIGN 3.2 step 4, 11): the RAM image is copied instead of lz77-unpacked, so the port's start-up takes another
 # path to the same state.  Measured on boot_v with the Cortex-M3 cycle costs (2026-11-01): the TIM2 interrupts come
 # 0.22..0.70 ms after v2.05's with the same tick count (first 39.084 / 38.385 ms, then 48.645 / 48.390 ms; 96 interrupts in

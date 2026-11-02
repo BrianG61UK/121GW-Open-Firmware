@@ -622,6 +622,15 @@ FUNC fn_0800D190
     bl fn_080112FC                          @ 0800D264  load the temperature unit [r0=set_item]
     b .L0800D280                            @ 0800D268
 .L0800D26A:  @ reached from 0800D262 bne (set_item != 0)
+    .if LOOP_V205 == 0
+    ldr.w r0, =set_item                     @ IMP-07: an unsaved edit of the page bL (item 20) is dropped: setting re-read from the EEPROM
+    ldrb r0, [r0, #0x0]
+    cmp r0, #20
+    bne .Lto_not_bl
+    bl set_bl_load
+    b .L0800D280
+.Lto_not_bl:
+    .endif
     ldr.w r0, =meter_mode                   @ 0800D26A
     ldrb r0, [r0, #0x0]                     @ 0800D26C  r0 = meter_mode
     cmp r0, #0xa                            @ 0800D26E  compare meter_mode with 10 (0xA)

@@ -76,6 +76,10 @@
     .equ set_hour_edit,         v_200080E0   @ hour edit buffer (item 7)
     .equ set_minute_edit,       v_200080E1   @ minute edit buffer (item 7)
 
+    .if LOOP_V205 == 0
+    .equ SET_ITEM_BL, 20                    @ IMP-07: setup item of the backlight auto-off page bL (v2.05 uses 0..12 and 100)
+    .endif
+
     .section .text.set, "ax", %progbits
 
 @ -----------------------------------------------------------------------------
@@ -100,6 +104,20 @@
 @ -----------------------------------------------------------------------------
 FUNC fn_08015410
     push {r7, lr}                           @ 08015410
+    .if LOOP_V205 == 0
+    @ IMP-07: SETUP short on the page bL (item 20, the page after the last v2.05 item) goes to item 0 and ends an edit
+    ldr.w r0, =set_item
+    ldrb r0, [r0, #0x0]
+    cmp r0, #SET_ITEM_BL
+    bne .Lsn_not_bl                         @ any other item: the v2.05 sequence below
+    movs r0, #0x0
+    ldr.w r1, =set_item
+    strb r0, [r1, #0x0]                     @ set_item = 0
+    ldr.w r1, =set_edit
+    strb r0, [r1, #0x0]                     @ set_edit = 0 (v2.05 clears it at 0x08015422 for every item but 8)
+    pop {r7, pc}
+.Lsn_not_bl:
+    .endif
     ldr.w r0, =set_item                     @ 08015412
     ldrb r0, [r0, #0x0]                     @ 08015416  r0 = set_item
     cmp r0, #0x8                            @ 08015418  compare set_item with 8
@@ -361,6 +379,16 @@ FUNC fn_08015410
     ldr.w r1, =set_item                     @ 0801567A
     strb r0, [r1, #0x0]                     @ 0801567E  set_item = 0
 .L08015680:  @ reached from 08015462 b, 0801548E blt (set_item <s 12 (0xC)), 0801549A b, 08015544 bne (set_item != 12 (0xC)), 08015550 b, 08015594 b, 0801559E blt (set_item <s 12 (0xC)), 080155A8 b, 080155EC b, 08015600 blt (set_item <s 12 (0xC)), 0801560A b, 08015614 blt (set_item <s 11 (0xB)), 0801561E b, 08015654 blt (set_item <s 11 (0xB)), 0801565E b, 08015676 blt (set_item <s 10 (0xA))
+    .if LOOP_V205 == 0
+    @ IMP-07: a wrap of the item to 0 (set_item + 1 reached the mode's limit) lands on the page bL instead; an item that is
+    @ already 0 here can only come from a wrap, because the item-8 digit cursor path keeps 8 and every other path adds 1
+    ldr.w r0, =set_item
+    ldrb r1, [r0, #0x0]
+    cbnz r1, .Lsn_no_wrap
+    movs r1, #SET_ITEM_BL
+    strb r1, [r0, #0x0]                     @ set_item = 20
+.Lsn_no_wrap:
+    .endif
     ldr.w r0, =set_item                     @ 08015680
     ldrb r0, [r0, #0x0]                     @ 08015684  r0 = set_item
     cmp r0, #0x5                            @ 08015686  compare set_item with 5
@@ -1287,7 +1315,11 @@ FUNC fn_080165F4
     ldr.w r0, =set_item                     @ 080167E2
     ldrb r0, [r0, #0x0]                     @ 080167E6  r0 = set_item
     cmp r0, #0x8                            @ 080167E8  compare set_item with 8
+    .if LOOP_V205 == 0
+    bne .Lse_port                           @ 080167EA  if set_item != 8: IMP-07 checks the page bL before leaving
+    .else
     bne .L08016800                          @ 080167EA  if set_item != 8
+    .endif
     uxtb r4, r4                             @ 080167EC
     cmp r4, #0x0                            @ 080167EE  compare r4 with 0
     bne .L080167F8                          @ 080167F0  if r4 != 0
@@ -1298,6 +1330,22 @@ FUNC fn_080165F4
     movs r0, r4                             @ 080167F8
     uxtb r0, r0                             @ 080167FA
     bl fn_08015F7C                          @ 080167FC  ID edit action
+    .if LOOP_V205 == 0
+    b .L08016800
+.Lse_port:  @ IMP-07: reached from 080167EA bne with r0 = set_item
+    cmp r0, #SET_ITEM_BL                    @ the backlight page bL (item 20)
+    bne .L08016800                          @ any other item: not editable, query result 0
+    uxtb r4, r4
+    cmp r4, #0x0                            @ query?
+    bne .Lse_bl_act
+    movs r0, #0x1
+    movs r5, r0                             @ query result: editable
+    b .L08016800
+.Lse_bl_act:
+    movs r0, r4
+    uxtb r0, r0
+    bl set_bl_edit                          @ up, down or save of the backlight setting
+    .endif
 .L08016800:  @ reached from 080166AC b, 080166B6 b, 080166D6 b, 080166E0 b, 080166F6 b, 08016700 b, 08016716 b, 08016720 b, 08016736 b, 08016740 b, 08016756 b, 08016760 b, 08016776 b, 08016780 b, 08016796 b, 080167A0 b, 080167B6 b, 080167C0 b, 080167D6 b, 080167E0 b, 080167EA bne (set_item != 8), 080167F6 b
     movs r0, r5                             @ 08016800
     uxtb r0, r0                             @ 08016802
@@ -1914,7 +1962,11 @@ FUNC fn_0801797C
     ldr.w r0, =set_item                     @ 08017EEC
     ldrb r0, [r0, #0x0]                     @ 08017EF0  r0 = set_item
     cmp r0, #0x1                            @ 08017EF2  compare set_item with 1
+    .if LOOP_V205 == 0
+    bne .Lsd_port                           @ 08017EF4  if set_item != 1: IMP-07 checks the page bL before the item-0 fallback
+    .else
     bne .L08017F12                          @ 08017EF4  if set_item != 1
+    .endif
     ldr.w r0, =lcd_shadow                   @ 08017EF6
     ldr r0, [r0, #0x8]                      @ 08017EFA  r0 = lcd_shadow+8
     orrs r0, r0, #0x20000                   @ 08017EFC  r0 = lcd_shadow+8 | 0x20000
@@ -1924,6 +1976,15 @@ FUNC fn_0801797C
     ldrh r0, [r0, #0x0]                     @ 08017F0A  r0 = set_bat_value
     bl fn_0801839A                          @ 08017F0C  draw "BAT" and the battery value [r0=set_bat_value, r1=&lcd_shadow]
     b .L08017F26                            @ 08017F10
+    .if LOOP_V205 == 0
+.Lsd_port:  @ IMP-07: reached from 08017EF4 bne with r0 = set_item
+    cmp r0, #SET_ITEM_BL                    @ the backlight page bL (item 20)
+    bne .L08017F12                          @ any other item: v2.05 fallback (item 0, board temperature)
+    ldr.w r0, =pwr_bl_setting
+    ldrb r0, [r0, #0x0]                     @ r0 = setting code
+    bl set_bl_draw                          @ draw "bL" and the value
+    b .L08017F26
+    .endif
 .L08017F12:  @ reached from 08017EF4 bne (set_item != 1)
     movs r0, #0x0                           @ 08017F12
     ldr.w r1, =set_item                     @ 08017F14

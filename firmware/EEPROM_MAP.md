@@ -143,7 +143,7 @@ Formats: BE = big-endian, written MSB first, one byte program at a time. "Boot" 
 | 0x014 | 1 | u8 | continuity threshold step 0..3 (0x200080B6) | 0x08011398 (Boot), FUN_0800D190 0x0800D27C | 0x080113D6 (FUN_080113CC) via FUN_08015C20 0x08015C7C | SETUP item 10 save in BEEP | < 4 kept else 0 (0x080113A0..0x080113AE) | SETTINGS (port value range 0..15: section 10, IMP-05) |
 | 0x015 | 1 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
 | 0x016 | 1 | u8 | auto-power-off disable (0x20008039) | 0x080112A8 (Boot), FUN_0800D190 0x0800D244 | 0x080112F6 (FUN_080112EC) via FUN_08015A22 0x08015A5E | SETUP item 2 save | 1 -> 1, else 0 (0x080112B0..0x080112D0) | SETTINGS |
-| 0x017 | 1 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
+| 0x017 | 1 | - | never accessed by v2.05; port (production image only): backlight auto-off timer code, section 4.1 | calbin_save; port: set_bl_load | calbin_load; port: set_bl_edit via nvm_write_setting | cal.bin restore; port: SETUP page bL save | port: 0..100 kept, else 0 (OFF) | RESTORE; SETTINGS in the production image only (4.1) |
 | 0x018..0x019 | 2 | u16 BE | logging interval in s (0x2000022C) | 0x0801121C (Boot) | 0x08011252 (FUN_08011248) via FUN_08015AC0 0x08015B30 | SETUP item 9 save | < 1000 kept, else 1 (0x08011224..0x08011234) | SETTINGS |
 | 0x01A | 1 | u8 | LCD contrast (0x20000237, lcd_init argument at 0x08024B5C..0x08024B62) | 0x0801125C (Boot) | 0x0801129E (FUN_08011294) via FUN_08015B54 0x08015BB2 | SETUP item 4 save (values 10..17, 0x08015B64, 0x08015B8E) | 12..17 kept, else 14 (0x08011264..0x0801127C): a saved 10 or 11 becomes 14 after power-up (DESIGN.md NF-17, switch, default v2.05) | SETTINGS |
 | 0x01B | 1 | u8 | VA "bd" option (0x200080A8) | 0x080113E0 (Boot) | 0x0801140A (FUN_08011400) via FUN_08016190 0x080161AC | SETUP item 11 save in modes 13, 14, 15, 22, 23, 24 | == 1 -> 1 else 0 | SETTINGS |
@@ -183,6 +183,28 @@ rewrites the whole word, section 1): 0x000..0x003 (date, ID MSB), 0x004..0x007 (
 (rotary), 0x010..0x013 (unit, DIODE), 0x014..0x017 (threshold, APO), 0x018..0x01B (interval, contrast, bd),
 0x01C..0x01F (buzzer, marker 0x1F), 0x024..0x027 (marker 0x26). Calibration fields are 4-byte aligned (records
 16-aligned, fields at +0, +4, +8, +0xC), so each u32 field is exactly one word; AC words (u16) share words pairwise.
+
+### 4.1 Port-only settings (bytes v2.05 never accesses, used by the production image only)
+
+Each byte below is in the never-accessed list above, so v2.05 neither reads nor writes it; the production port stores one
+user setting in it. Every byte needs an owner decision before it is used (rule of 9.1 item 2), and every one is chosen so
+that its 4-byte word holds no calibration, serial, date or marker byte: a byte write rewrites its whole word (section 1),
+so an interrupted write can only damage the settings that share the word. The strict image (LOOP_V205 = 1) neither reads
+nor writes these bytes and its `nvm_allow` table does not allow them (`gen_nvm_allow.py` emits their bits as
+`mask * (1 - LOOP_V205)`). The table is read by `gen_nvm_allow.py` (first cell = offset, last cell = class).
+
+| Offset | Meaning | Values | Invalid or blank (0x00) reads as | Class |
+|---|---|---|---|---|
+| 0x017 | backlight auto-off timer (SETUP page bL, PWR/SET, FEATURES.md 2.9) | 0 OFF (never), 1 = 30 s, 2..100 = 1..99 min (code - 1) | OFF (a value above 100 is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
+
+Owner decision for 0x017: approved (2026-11-02). Why this byte: the word 0x014..0x017 holds the continuity code 0x014
+and the APO flag 0x016, both SETTINGS; v2.05's own setting saves already rewrite this word (0x014 at 0x080113D6, 0x016 at
+0x080112F6), so 0x017 adds no new kind of exposure. 0x017 lies inside the cal.bin range 0x000..0x4AF: `calbin_save` writes it to
+the file and `calbin_load` restores it; a v2.05 backup has 0x00 there (the supplied backup of a real meter does, see the
+paragraph above), which reads as OFF. A meter flashed back to v2.05 ignores the byte; a v2.05 calbin_load of a backup made by the
+port writes the stored value to 0x017, which v2.05 never reads. Further candidates for other port-only settings (words with SETTINGS bytes only: 0x00F, 0x011,
+0x013, 0x015; words that are entirely free: 0x020..0x023, 0x028..0x02B, 0x02C..0x02F) are listed in FEATURES.md 3; none of
+them is allowed until it appears in the table above.
 
 ## 5. Calibration records
 
@@ -392,7 +414,7 @@ FUN_08008138), both after the calibration offset and gain and only at range 0; t
    width, byte order, sign treatment and the same validation and defaults as v2.05 (sections 4 to 6), except where
    section 10 lists an approved change.
 2. The port writes only the locations, values and formats of section 7, under the same user actions, except where
-   section 10 lists an approved change. It adds no location, erases nothing, never formats the EEPROM, never writes
+   section 10 lists an approved change. It adds no location (except the port-only settings of 4.1, production image only), erases nothing, never formats the EEPROM, never writes
    0x4B0..0x4CF, the unused bytes +5..+7 of the user-zero slots, or anything at 0x500 and above.
 3. The port uses the same programming method: one byte at a time, FTDW = 0, PEKEYR keys 0x89ABCDEF then 0x02030405
    written only when PELOCK reads 1, PELOCK set again after every byte, at most 10 attempts per byte. It never sets PECR ERASE, PROG, DATA, FPRG or
@@ -412,7 +434,7 @@ table in flash, `nvm_allow`, generated at build time from this section (`firmwar
 
 | Class | Bytes allowed | Additional condition checked inside NVM |
 |---|---|---|
-| SETTINGS | 0x008..0x00E, 0x010, 0x014, 0x016, 0x018..0x01A, 0x01B, 0x01E | none beyond the class (user actions of 7.1) |
+| SETTINGS | 0x008..0x00E, 0x010, 0x014, 0x016, 0x018..0x01A, 0x01B, 0x01E, and in the production image only the port-only settings of 4.1: 0x017 | none beyond the class (user actions of 7.1; for 0x017 the SETUP page bL) |
 | IDENT | 0x001..0x002 (date code), 0x003..0x006 (serial) | exactly length 2 at 0x001, only while RAM 0x2000808B != 0 (v2.05 gate 0x08015F46..0x08015F4E); exactly length 4 at 0x003 (setup item 8 save, 0x08015F90) |
 | USERZERO | 0x4D0..0x4D4, 0x4D8..0x4DC, 0x4E0..0x4E4, 0x4E8..0x4EC, 0x4F0..0x4F4, 0x4F8..0x4FC | length 5 at a record base, first byte 0xA5 |
 | CAL | 0x01F, 0x026, 0x104..0x107, 0x178..0x17B, 0x2E0..0x2E1, and the bytes R+0..R+7 of every (mode, range) record of section 5.3, R+8..R+0xF of the AC-word records (modes 2, 4, 16, 18, 20 per ac_words_base) and of the VA records, 0x2D0..0x2D7 | RAM 0x2000808A == 1 (calibration mode), and the target matches the (kind, mode, range) rule of 7.3 recomputed inside NVM from meter_mode and meter_range, with the section 10 refusals |
@@ -473,5 +495,6 @@ DESIGN.md 6.5).
 | NVM-3 (switch, default off) | writes regardless of battery state | with the switch on, NVM refuses writes while the low-battery flag of `adc_ch5_process` is set (DESIGN.md Q10) | none |
 | NF-17 (switch, default off = v2.05) | contrast 10 or 11 saved by the setup editor is replaced by 14 at boot (0x08011264..0x0801127C) | with the switch on, boot keeps 10..17 (DESIGN.md Q11) | none written; read validation of 0x01A only |
 | IMP-05 | continuity threshold byte 0x14 holds 0..3; boot and the setup timeout keep < 4, else 0 (0x080113A0..0x080113AE) | codes 0..15 in the same byte (0..3 unchanged; 4..15 per `analysis/autorange_and_scheduler.md` section 9); boot and the setup timeout keep < 16, else 0; written only by the SETUP item 10 save in BEEP, as v2.05. If v2.05 is flashed back, its own < 4 test turns codes 4..15 into 0 | 0x14 values only |
+| IMP-07 | 0x017 never accessed | production image only: 0x017 holds the backlight auto-off timer code (4.1); written only by the SETUP page bL save through the SETTINGS class, validated on read (above 100 reads as OFF); the strict image does not allow it in `nvm_allow` | 0x017 only |
 
 No other EEPROM behaviour changes. Changes not yet approved are listed as open questions in DESIGN.md section 12.

@@ -67,6 +67,7 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-52 | Battery | The ADC-to-battery conversion is a straight line that matches the hardware divider only near 6.4 V: the gauge reads up to 6 % low near empty and the low-battery warning starts at 4.31 V instead of the displayed 4.1 V | low | fixed |
 | OF-53 | Measurement | HY3131 interrupt flags are cleared by writing 0 after the status burst read: a flag raised in between is lost; a lost counter-done flag freezes the frequency reading until the next mode or range apply | medium | fixed |
 | OF-54 | Measurement | The status burst reads the counter registers before INTF: a count that completes in between is seen as done with stale counter values; in AC modes the frequency correction then uses frequency 0 | medium | fixed |
+| OF-55 | Backlight | The backlight state flag 0x2000807B stays 1 across an auto power-off (STOP): the pin PE8 is driven low by the power-down but nothing resets the flag, so after the wake the first MODE long press only clears the flag and a second one is needed to switch the backlight on | low | fixed (fast build) |
 
 ## Details
 
@@ -816,3 +817,17 @@ Impact: occasional short wrong AC readings (-0.5 % observed) and a wrong frequen
 Port: read INTF first (or read the counter registers again after seeing CTF) so that counter data and the flag belong
 to the same completed count; together with the OF-53 fix.
 
+### OF-55 — backlight flag survives an auto power-off, the first MODE long press after the wake does nothing visible
+The MODE long press (`0x080162E4`..`0x0801631A`) toggles the RAM flag 0x2000807B and drives PE8 (GPIOE BSRR bit 8): flag 0 -> 1 with
+PE8 high, flag 1 -> 0 with PE8 low. The only references to the address of that flag in the image are the three loads of this
+routine (literal pool word `0x08016C84`, listing references `0x080162E4`, `0x080162F0`, `0x0801630C`). The power-down before
+a STOP (`power_down_peripherals` `0x0801C584`, PE8 low at `0x0801C596`) and the start-up after the wake (`FUN_08024DE0`,
+which resets the run state but does not store to this flag) leave it as it was, so with the backlight on at the power-off
+the flag is still 1 while PE8 is low.
+Execution check (emulator booted through the bootloader image, original v2.05 image, dial on V, auto power-off enabled): MODE
+long press: PE8 high, flag 1. The APO counter 0x20000230 put to 3: the meter powers down (PE8 low, flag 1). A dial change
+wakes it: PE8 low, flag 1. First MODE long press: PE8 stays low, flag 0. Second: PE8 high, flag 1.
+Impact: after every wake that followed a power-off with the backlight on, the backlight needs two long presses of MODE.
+Port (fast build): `set_state_reset` calls `pwr_bl_reset`, which clears the flag (and the auto-off countdown of IMP-07) at
+power-on and after the wake, so the flag follows the pin; the first MODE long press switches the backlight on. The strict
+build keeps v2.05's behaviour.
