@@ -86,7 +86,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 
 ## 2. The features
 
-### 2.1 Limit test (pass/fail) (implemented, IMP-20)
+### 2.1 Limit test (pass/fail) (implemented, IMP-20; verified working on a meter)
 
 - Where: SETUP pages `Lt` (item 27), `Lo` (28), `HI` (29) after `CL`, and the verdict page (36) while the test is on.
 - Keys (decisions 2026-11-02: limits captured from the reading, not typed; RAM only): `Lt`: long SETUP, REL or PEAK
@@ -105,7 +105,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Constraints: counts are limited to -99999..99999 by the display. Logging with trigger "limits" (2.6) uses the same
   verdict.
 
-### 2.2 Selectable dBm reference (implemented, IMP-08)
+### 2.2 Selectable dBm reference (implemented, IMP-08; verified working on a meter)
 
 - Where: the existing ACV page 11 (the dBm value; KS 4 "dBm = 10 log10(x^2 / 0.6)"), which becomes editable. No new item.
 - Keys: long SETUP on the page starts the edit (v2.05 refuses it there), REL/PEAK step the reference, long SETUP saves.
@@ -119,7 +119,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   for this page (`analysis/ble_packet.md` 4), so a phone application labels all four references "dBm"; for dBV that label is
   wrong. OF-46 (zero reading, five dashes) stays as fixed.
 
-### 2.3 REL in percent (implemented, IMP-11)
+### 2.3 REL in percent (implemented, IMP-11; verified working on a meter)
 
 - Where: SETUP page `rEL`, item 22, after `bt` in every mode; REL short and REL long keep their v2.05 meaning in every mode.
 - Keys: the edit keys of 1.2 on the page (REL or PEAK switches between the two values); no new key action.
@@ -135,7 +135,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   that is not scaled. Modes where REL is vetoed in v2.05 (flag 0x20008048, KS 2.2) stay vetoed. Code: `ui/relpct.s`
   (view, draw, sign mask applied at every full commit), `set/relp.s` (page).
 
-### 2.4 Faster display response (implemented, IMP-12)
+### 2.4 Faster display response (implemented, IMP-12; verified working on a meter)
 
 - Where: SETUP page `dSP`, item 24, the last port page in every mode (after `rEL`, or after `tc` in TEMP).
 - Keys: the edit keys of 1.2 (REL or PEAK switches between the two levels).
@@ -172,7 +172,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Constraints: the link is raw serial through the module on USART2; whether the phone application keeps up with 20 frames per
   second is not known here (no hardware test); the option is therefore a setting, default v2.05.
 
-### 2.6 Smarter SD logging (implemented, IMP-21)
+### 2.6 Smarter SD logging (implemented, IMP-21; verified working on a meter)
 
 - Where: SETUP pages `tr` (item 30, after the limit pages) and `Ch` (item 31, with `tr-Ch` only); the existing page 9
   `In nnn` (interval) keeps its meaning. Logging is started and stopped as in v2.05 (MEM long, MEM+HOLD long).
@@ -200,7 +200,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Constraints: LOG is state-machine code in production (IMP-06); the trigger only decides when the request flag is set. No
   change to what a record contains.
 
-### 2.7 Statistics: standard deviation and count (implemented, IMP-14)
+### 2.7 Statistics: standard deviation and count (implemented, IMP-14; verified working on a meter)
 
 - Where: SETUP pages `n` (item 32) and `Sd` (item 33), only while MIN/MAX is on; switching MIN/MAX on shows `n`. SETUP
   short goes `n` -> `Sd` -> item 0; from `CL` it reaches `n` while MIN/MAX is on. When MIN/MAX ends (its long press, HOLD,
@@ -240,7 +240,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   voltage chain and do not depend on the type. The log and BLE carry the converted temperature, so they follow the type; the
   CSV unit text is unchanged. Finding while generating the tables: OF-56 (one K entry 1 uV low, kept).
 
-### 2.9 Backlight auto-off timer (implemented, IMP-07)
+### 2.9 Backlight auto-off timer (implemented, IMP-07; verified working on a meter)
 
 - Where: SETUP page `bL` (item 20), after the last v2.05 page of every mode.
 - Keys: the edit keys of 1.2. The MODE long press still switches the backlight on and off (KS 2.2); every key press, every dial
@@ -294,7 +294,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Open: the BLE112's GATT service and characteristic that carry the frames (to be read from a meter with a BLE scanner);
   no firmware change is needed for viewing.
 
-### 2.12 12-hour clock (implemented, IMP-13)
+### 2.12 12-hour clock (implemented, IMP-13; verified working on a meter)
 - Where: SETUP page `CL`, item 25, the last port page (after `dSP`): `CL 24` (v2.05, default) or `CL 12`.
 - What is shown: the time page (item 7) keeps its form `HH-MM` with the blinking separator; with `CL 12` the hour is 1..12
   (0 -> 12, 13..23 -> 1..11) with the leading zero blank (` 2-30`). No AM/PM mark (decision, 2026-11-02: the five
@@ -303,7 +303,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   is given. The clock chip, the hour edit (0..23 internally), the log timestamps and the BLE clock command stay 24-hour.
 - Storage: bit 3 of the byte 0x020 (shared with 2.3; each page's save changes only its bit, `set_b20_store`).
 
-### 2.13 Continuity beep hold time (implemented, IMP-16)
+### 2.13 Continuity beep hold time (implemented, IMP-16; verified working on a meter)
 - Request (forum, 2026-11-03): the continuity beep latches a little too long; a setting for it.
 - Where: SETUP page `bH`, item 26, offered in BEEP only (between `dSP` and `CL`): `bH100` (v2.05, default), `bH 50`,
   `bH 25`, `bHOFF`.
