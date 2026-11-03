@@ -73,6 +73,11 @@ The image has only run in the emulator. These checks confirm on hardware what th
    MIN/MAX long press: back to the normal page. No EEPROM change.
 15. Continuity hold (production build): BEEP, SETUP to the page bH (after dSP), select `bHOFF` and save; tap the probes
    together: the beep ends about 15 ms after the touch; with `bH100` a tap gives a beep of about 0.1 s. Only byte 0x021 may differ.
+16. HY3131 write timing (production build, IMP-19): the configuration writes now run at the bit timing of the v2.05 read
+   loop. Check that every function reads correctly and ranges correctly: DCV with a known source on every range (auto and
+   manual RANGE), ACV, Ohm (short, 1 k, 100 k, 1 M), continuity, diode, capacitance, frequency, temperature, the current
+   modes with a known current, peak hold in ACV. Any wrong range, frozen reading or wrong value: report it with the build
+   and the function; the strict build is unchanged and can be flashed back.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

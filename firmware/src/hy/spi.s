@@ -69,8 +69,56 @@ ENDFUNC hy3131_spi_clock_pulse
 @ Spec     : analysis/hy3131_model.md 1.2
 @ Deviation: none
 @ Per bit: set or reset PF2 to the bit value, then one hy3131_spi_clock_pulse.  Afterwards DI is left high.
+@ Deviation: IMP-19 (production: bit timing of the v2.05 read loop instead of delay(1) calls; same waveform order)
 @ -----------------------------------------------------------------------------
 FUNC hy3131_spi_write_byte
+    .if LOOP_V205 == 0
+    @ IMP-19 (production): the same bits, levels and order with the bit timing of v2.05's own read loop instead of two
+    @ delay(1) calls per bit.  v2.05 reads with no delay (hy3131_spi_read_byte below: CK high for 6..9 instructions,
+    @ 0x0800C14E..0x0800C162), a timing every meter runs; here CK is high for at least 6 instructions and DI is set at least
+    @ 3 instructions before the rising edge (datasheet figures: TCKHI 20 ns, TCKLO 60 ns, TDISET 60 ns, TDIHOLD 20 ns, DS
+    @ p13; one instruction is 238 ns at 4.19 MHz).  DI changes only while CK is low, as before.
+    push {r4, r5, lr}
+    mov r4, r0                              @ byte
+    ldr r2, =(GPIOF_BASE + GPIO_BSRRL)
+    ldr r3, =(GPIOF_BASE + GPIO_BSRRH)
+    movs r5, #0x80                          @ bit mask, MSB first
+.Lwb_bit:
+    movs r0, #HY_PIN_DI
+    tst r4, r5
+    ite ne
+    strhne r0, [r2]                         @ bit set: DI high
+    strheq r0, [r3]                         @ bit clear: DI low
+    nop                                     @ DI setup: 3 instructions to the rising edge
+    movs r0, #HY_PIN_CK
+    strh r0, [r2]                           @ CK high: the chip latches DI
+    nop
+    nop
+    nop
+    nop
+    nop                                     @ CK high for 6 instructions (5 nop and the store below)
+    strh r0, [r3]                           @ CK low
+    lsrs r5, r5, #1
+    bne .Lwb_bit
+    cmp r1, #1
+    bne .Lwb_idle                           @ no extra clock
+    movs r0, #HY_PIN_DI
+    strh r0, [r3]                           @ the extra clock of a read header ("SPI read period", DS p14): DI low
+    nop
+    nop
+    movs r0, #HY_PIN_CK
+    strh r0, [r2]                           @ CK high
+    nop
+    nop
+    nop
+    nop
+    nop
+    strh r0, [r3]                           @ CK low
+.Lwb_idle:
+    movs r0, #HY_PIN_DI
+    strh r0, [r2]                           @ DI left high (idle level), as v2.05
+    pop {r4, r5, pc}
+    .else
     push {r4, r5, r6, lr}              @ 0x0800C16C
     movs r4, r0                        @ 0x0800C16E
     movs r5, r1                        @ 0x0800C170
@@ -113,6 +161,7 @@ FUNC hy3131_spi_write_byte
     ldr r1, =(GPIOF_BASE + GPIO_BSRRL) @ 0x0800C1B0 pool 0x0800C280 = 0x40021818
     strh r0, [r1, #0]                  @ 0x0800C1B2
     pop {r4, r5, r6, pc}               @ 0x0800C1B4
+    .endif
     .ltorg
 ENDFUNC hy3131_spi_write_byte
 
