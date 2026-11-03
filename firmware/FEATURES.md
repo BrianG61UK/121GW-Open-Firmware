@@ -1,8 +1,8 @@
 # Planned features of the replacement firmware: user interface, storage, constraints
 
 Status: design. The backlight auto-off timer (2.9, IMP-07), the dBm reference (2.2, IMP-08), the Bluetooth frame rate
-(2.5, IMP-09), the thermocouple type (2.8, IMP-10), REL in percent (2.3, IMP-11), the display level (2.4, IMP-12) and the 12-hour
-clock (2.12, IMP-13) are implemented. The other features are designs for
+(2.5, IMP-09), the thermocouple type (2.8, IMP-10), REL in percent (2.3, IMP-11), the display level (2.4, IMP-12), the 12-hour
+clock (2.12, IMP-13) and the statistics (2.7, IMP-14) are implemented. The other features are designs for
 the production image; none of them is in the tree as code. The EEPROM bytes of section 3 are approved (owner, 2026-11-02);
 each is added to `EEPROM_MAP.md` 4.1 and `nvm_allow` only with the code that uses it. Citations: `KS` = `analysis/keys_setup.md`, `EMAP` =
 `EEPROM_MAP.md`, `LCD` = `analysis/lcd_map.md`, `ARS` = `analysis/autorange_and_scheduler.md`, `DES` = `DESIGN.md`.
@@ -202,30 +202,25 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Constraints: LOG is state-machine code in production (IMP-06); the trigger only decides when the request flag is set. No
   change to what a record contains.
 
-### 2.7 Statistics: standard deviation and count
+### 2.7 Statistics: standard deviation and count (implemented, IMP-14)
 
-- Where: extra SETUP pages `n` (item 32) and `Sd` (item 33), visible only while MIN/MAX is on, the way v2.05 adds
-  mode-specific items (KS 4); switching MIN/MAX on makes `n` the page shown.
-- Keys: SETUP short moves between pages, nothing else. The statistics restart with MIN/MAX (first MIN/MAX press clears the
-  registers, `FUN_08015974`) and end with it (MIN/MAX long). No page is editable (long SETUP: refusal beep).
-- What is shown: `n` page: `n` followed by the count, capped at 9999 on the display (the count itself is kept to
-  1 000 000, as v2.05's `func_mm_count`); `Sd` page: sub `Sd   `, main the sample standard deviation in display counts with the
-  decimal point of the range; `-----` while fewer than two readings exist.
-- How: v2.05 already keeps the count and a running mean (`minmax.s`: mean as integer plus remainder, count to 1 000 000). The
-  deviation uses Welford's update on those: M2 += d * (x - mean_new) in an unsigned 64-bit sum (d is at most 2 * 10^5 and the
-  count 10^6, so M2 stays below 4 * 10^16 < 2^64), and sigma = sqrt(M2 / (n - 1)) with an unsigned 64-bit divide by n - 1, the
-  unsigned-to-double conversion and `dsqrt`. M2 is non-negative by construction, so no catastrophic-cancellation formula
-  (sum of squares minus square of the sum) is used. v2.05 keeps the mean as an integer and a remainder; whether the integer
-  part alone is accurate enough for d (the display resolution is one count) is to be bounded when this is implemented.
-- OF-51: statistics are the first caller that feeds data-dependent operands to these helpers. The helper deviations of OF-51
-  that matter are `dsqrt` for a negative or negative-zero operand (it writes errno 0x20000228 and returns a wrong value) and
-  the 64-bit divide by zero (returns the dividend). Neither occurs when n >= 2 and M2 >= 0, and the statistics code checks
-  both; in addition the production runtime library gets the fixed behaviour for those two cases (`dsqrt`: NaN result and no
-  errno store for a negative operand; divmod: documented result for a zero divisor), under `.if LOOP_V205 == 0`, because a
-  silent wrong value would be a silently wrong measurement. The other OF-51 cases (float divide exponent 254, add/subtract with a
-  subnormal operand) cannot be reached: the operands are integers converted from 64-bit values. OF-51's status changes to "fixed
-  (fast build)" when the fix is made.
-- Storage: none (RAM only: M2 u64, the two time stamps of 2.6).
+- Where: SETUP pages `n` (item 32) and `Sd` (item 33), only while MIN/MAX is on; switching MIN/MAX on shows `n`. SETUP
+  short goes `n` -> `Sd` -> item 0; from `CL` it reaches `n` while MIN/MAX is on. When MIN/MAX ends (its long press, HOLD,
+  a mode change) a selected statistics page is replaced by item 0 at the next result.
+- Keys: SETUP short only; the pages are not editable (long SETUP: refusal beep).
+- What is shown: page `n`: `n` and the count right-aligned up to 9999, from 10000 the count in thousands with the sub k
+  sign (`n 125` k); page `Sd`: `Sd` on the sub display and the sample standard deviation on the main digits in the unit,
+  range and decimal point of the reading, with one more decimal where the range allows (decimal point code below 4 and at
+  most 99999), rounded to nearest; `-----` for fewer than two readings, ` OFL ` above 99999 counts. Nothing is redrawn
+  while HOLD is active. The BLE value keeps the MIN/MAX value.
+- How: the readings that enter v2.05's running mean (MIN/MAX on, HOLD off, no overload; fn_0800E604) are given to
+  Welford's update in binary64 (`func/stats.s`): n, mean, m2; sigma = sqrt(m2 / (n - 1)). Each added term equals
+  delta^2 (n - 1) / n >= 0, so m2 never goes negative and no difference of large sums is formed. Readings (|x| < 2^24)
+  and n convert exactly. At 1 000 000 readings (v2.05's own count limit) the statistics freeze.
+- OF-51: the production runtime library answers a negative dsqrt operand with NaN (-0 with -0, no errno) and gives a
+  64-bit division by zero a defined result (unsigned: quotient all ones, signed: -1; remainder = dividend). The
+  statistics never reach either case (m2 >= 0, n - 1 >= 1).
+- Storage: none (RAM only).
 
 ### 2.8 Thermocouple types J and T (and K) (implemented, IMP-10)
 

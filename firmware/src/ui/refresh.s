@@ -626,6 +626,9 @@ FUNC fn_08016E08
     movs r0, #0                              @ 08016E12
     ldr r1, =v_2000805F                      @ 08016E14 &display request (second)
     strb r0, [r1, #0]                        @ 08016E18
+    .if LOOP_V205 == 0
+    bl ui_stats_tick                         @ IMP-14: keep the statistics page current (new count, MIN/MAX ended)
+    .endif
     @ OHM (mode 9) in auto range, outside calibration, MIN/MAX off: the first updates after a range change are skipped (counter 0x2000805A set by the apply)
     ldr r0, =meter_mode                      @ 08016E1A &meter_mode
     ldrb r0, [r0, #0]                        @ 08016E1E
@@ -865,6 +868,11 @@ FUNC fn_08016E08
     b .L08017090                             @ 0801702C
 .L0801702E:                                @ reached from 0801701C bne (not equal / non-zero)
     .if LOOP_V205 == 0
+    bl ui_stats_view
+    cbz r0, .Lrf_no_sd                      @ IMP-14: not the page Sd while MIN/MAX is on
+    bl ui_stats_draw                        @ IMP-14: the standard deviation on the main digits
+    b .L08017090
+.Lrf_no_sd:
     bl ui_relpct_view
     cbz r0, .Lrf_no_pct                     @ IMP-11: REL in percent off or not shown: the v2.05 draw of D
     bl ui_relpct_draw                       @ IMP-11: D as percent of the REL base

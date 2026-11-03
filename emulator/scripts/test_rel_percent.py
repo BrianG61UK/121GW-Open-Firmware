@@ -2,7 +2,7 @@
 
     python -I emulator/scripts/test_rel_percent.py [image]      default firmware/build/EEVBlog.bin (production build)
 
-Drives the emulated meter in DCV: SETUP page rEL (bL -> bt -> rEL -> item 0 outside TEMP) set to percent and saved, REL on
+Drives the emulated meter in DCV: SETUP page rEL (bL -> bt -> rEL -> dSP outside TEMP) set to percent and saved, REL on
 at 1 V, then other inputs; checks the main display (percent with the decimal point by magnitude, minus sign), the signs
 (V off and % on while the view is shown, V back after REL off), that the BLE value 0x20007D70 keeps the REL value in
 counts, the base-0 dashes and the over-99999 % OFL (base set in RAM, the OL flag untouched), that only EEPROM byte 0x020
@@ -82,7 +82,7 @@ def run_tests(image, a_relp):
     diff = {i: (before[i], e.m.eeprom[i]) for i in range(len(before)) if before[i] != e.m.eeprom[i]}
     T.check('save wrote only 0x020 = 0x07 (bits 2..1 kept)', diff == {0x20: (0x06, 0x07)}, 'diff=%r' % (diff,))
     T.press(e, 'SETUP', gap=0.5)
-    T.check('outside TEMP: SETUP short on rEL goes to item 0', T.rd(e, ADDR_ITEM) == 0)
+    T.check('outside TEMP: SETUP short on rEL goes to dSP (item 24)', T.rd(e, ADDR_ITEM) == 24)
 
     print('T2 the percent view')
     volts(e, 1.0)

@@ -82,6 +82,8 @@
     .equ SET_ITEM_RELP, 22                  @ IMP-11: setup item of the REL view page rEL (after bt)
     .equ SET_ITEM_DSP, 24                   @ IMP-12: setup item of the display level page dSP (the last port page)
     .equ SET_ITEM_CLK, 25                   @ IMP-13: setup item of the clock page CL (the last port page)
+    .equ SET_ITEM_ST_N, 32                  @ IMP-14: statistics page n (only while MIN/MAX is on)
+    .equ SET_ITEM_ST_SD, 33                 @ IMP-14: statistics page Sd (only while MIN/MAX is on)
     .equ SET_ITEM_TC, 23                    @ IMP-10: setup item of the thermocouple type page tc (after bt, TEMP only)
     .endif
 
@@ -112,15 +114,29 @@ FUNC fn_08015410
     .if LOOP_V205 == 0
     @ IMP-07, IMP-09, IMP-11, IMP-10, IMP-12: SETUP short on the page bL (item 20, the page after the last v2.05 item) goes
     @ to the page bt (item 21), on bt to the page rEL (item 22); on rEL to the page tc (item 23) in TEMP (mode 5), else to
-    @ the page dSP (item 24); on tc to dSP; on dSP to the page CL (item 25); on CL to item 0.  Each step ends an edit.
+    @ the page dSP (item 24); on tc to dSP; on dSP to the page CL (item 25); on CL to item 0, or while MIN/MAX is on to
+    @ the statistics page n (item 32, IMP-14); on n to Sd (item 33); on Sd to item 0.  Each step ends an edit.
     ldr.w r0, =set_item
     ldrb r0, [r0, #0x0]
     cmp r0, #SET_ITEM_BL
     beq .Lsn_bl
     cmp r0, #SET_ITEM_BT
     beq .Lsn_bt
+    cmp r0, #SET_ITEM_ST_SD
+    beq .Lsn_to0                            @ Sd: next is item 0
+    cmp r0, #SET_ITEM_ST_N
+    beq .Lsn_to_sd                          @ n: next is Sd
     cmp r0, #SET_ITEM_CLK
-    beq .Lsn_to0                            @ CL: next is item 0
+    bne .Lsn_not_clk
+    ldr.w r0, =minmax_state
+    ldrb r0, [r0, #0x0]
+    cbz r0, .Lsn_to0                        @ CL, MIN/MAX off: next is item 0
+    movs r0, #SET_ITEM_ST_N                 @ CL, MIN/MAX on: next is n
+    b .Lsn_port_set
+.Lsn_to_sd:
+    movs r0, #SET_ITEM_ST_SD
+    b .Lsn_port_set
+.Lsn_not_clk:
     cmp r0, #SET_ITEM_DSP
     beq .Lsn_to_clk                         @ dSP: next is CL
     cmp r0, #SET_ITEM_TC
@@ -149,7 +165,7 @@ FUNC fn_08015410
     movs r0, #SET_ITEM_BT                   @ bL: next is bt
 .Lsn_port_set:
     ldr.w r1, =set_item
-    strb r0, [r1, #0x0]                     @ set_item = 21..25 or 0
+    strb r0, [r1, #0x0]                     @ set_item = 21..25, 32, 33 or 0
     movs r0, #0x0
     ldr.w r1, =set_edit
     strb r0, [r1, #0x0]                     @ set_edit = 0 (v2.05 clears it at 0x08015422 for every item but 8)
@@ -2112,6 +2128,22 @@ FUNC fn_0801797C
     b .L08017F26                            @ 08017F10
     .if LOOP_V205 == 0
 .Lsd_port:  @ IMP-07, IMP-09, IMP-10: reached from 08017EF4 bne with r0 = set_item
+    cmp r0, #SET_ITEM_ST_N                  @ IMP-14: the statistics pages n (32) and Sd (33) ...
+    beq .Lsd_stats
+    cmp r0, #SET_ITEM_ST_SD
+    bne .Lsd_not_stats
+.Lsd_stats:
+    ldr.w r1, =minmax_state
+    ldrb r1, [r1, #0x0]
+    cbnz r1, .Lsd_stats_on
+    movs r0, #0x0                           @ ... exist only while MIN/MAX is on: item 0 again (MIN/MAX ended by its key,
+    ldr.w r1, =set_item                     @ HOLD or a mode change)
+    strb r0, [r1, #0x0]
+    b .L08017F12                            @ v2.05 item-0 page
+.Lsd_stats_on:
+    bl ui_stats_page                        @ r0 = item
+    b .L08017F26
+.Lsd_not_stats:
     cmp r0, #SET_ITEM_TC                    @ IMP-10: the thermocouple type page tc (item 23)
     bne .Lsd_not_tc
     bl set_tc_draw                          @ draw "tc-" and the type

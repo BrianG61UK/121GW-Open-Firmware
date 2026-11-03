@@ -16,12 +16,19 @@
 @ errno (RAM 0x20000228, v_20000228); the tail preserves r0-r3.
 @
 @ Context: ISR-safe; the only memory write is the errno word 0x20000228 (DESIGN.md 6.5).
+@
+@ OF-51 (production image only, LOOP_V205 = 0): the operands with the sign bit set are answered before the v2.05 sequence
+@ as IEEE 754 requires: sqrt(-0) = -0; a negative NaN is returned quiet (quiet bit 0x00080000 of the high word set); every
+@ other negative operand (negative finite, -infinity) gives the default quiet NaN 0x7FF8000000000000; errno is not written.
+@ Operands without the sign bit take the v2.05 sequence, which is IEEE-correct for them (+0, +infinity, a positive NaN
+@ returned unchanged, positive finite operands correctly rounded).  The strict image keeps the v2.05 behaviour.
 @ =============================================================================
 
     .syntax unified
     .cpu cortex-m3
     .thumb
     .include "macros.inc"
+    .include "config.inc"
 
     .section .text.rt, "ax", %progbits
 
@@ -34,9 +41,33 @@
 @ Context  : ISR-safe (stack use only); writes errno 0x20000228 for a negative operand
 @ RAM      : writes v_20000228 (errno) through fn_08023EDC
 @ Spec     : DESIGN.md 6.5
-@ Deviation: none (copy of the v2.05 sequence)
+@ Deviation: none in the strict image (copy of the v2.05 sequence); OF-51 in the production image (negative operands)
 @ -----------------------------------------------------------------------------
 FUNC fn_08013EF4
+    .if LOOP_V205 == 0
+    tst r1, #0x80000000                    @ OF-51: sign bit set?
+    beq .Ldsqrt_v205                       @ no: the v2.05 sequence
+    bic r2, r1, #0x80000000                @ r2 = high word without the sign
+    orrs r3, r2, r0
+    beq .Ldsqrt_ret                        @ -0: sqrt(-0) = -0, returned unchanged
+    movw r3, #0
+    movt r3, #0x7FF0                       @ r3 = exponent field all ones
+    cmp r2, r3
+    bhi .Ldsqrt_nan                        @ above: a NaN with a non-zero high mantissa
+    bne .Ldsqrt_inval                      @ below: negative finite (or subnormal): invalid
+    cmp r0, #0
+    beq .Ldsqrt_inval                      @ exactly 0x7FF00000:0 = -infinity: invalid
+.Ldsqrt_nan:
+    orr r1, r1, #0x00080000                @ a negative NaN is returned quiet
+    bx lr
+.Ldsqrt_inval:
+    movs r0, #0
+    movw r1, #0
+    movt r1, #0x7FF8                       @ default quiet NaN 0x7FF8000000000000
+.Ldsqrt_ret:
+    bx lr
+.Ldsqrt_v205:
+    .endif
     movw r12, #0x7ff                       @ r12 = 0x7FF, exponent mask
     lsrs r3, r1, #0x14                     @ r3 = sign and exponent of the operand (12 bits)
     beq .Ldsqrt_08013F98                   @ zero (+0) or a positive subnormal: separate path

@@ -68,6 +68,9 @@ The image has only run in the emulator. These checks confirm on hardware what th
    byte 0x013 may differ.
 13. 12-hour clock (production build): SETUP to the page CL (last page), select `CL 12` and save; the time page shows the
    hour 1..12 (for example 14:30 as ` 2-30`); the clock keeps running correctly. Only byte 0x020 may differ.
+14. Statistics (production build): DCV, MIN/MAX on: page `n` counts the readings; SETUP to `Sd`: the standard deviation
+   on the main digits (a steady source: a few counts; switching between two voltages: about half their difference);
+   MIN/MAX long press: back to the normal page. No EEPROM change.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

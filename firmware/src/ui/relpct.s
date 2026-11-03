@@ -97,11 +97,15 @@ ENDFUNC ui_relpct_view
 @            ui_rp_last_drawn
 @ Note     : q_k = round(|D| * 10^(5 - k) / |base|) for k = 0, 1, 2, 3 (decimals 3, 2, 1, 0), the first q_k <= 99999 is
 @            drawn; |D| * 10^5 < 2^48 and |base| * 10^k < 2^41, so the unsigned 64-bit divide fn_08014028 is exact.
-@            The value is drawn with skip-while-held (r3 = 1), as the D draw of v2.05; 0x20007D70 then gets D unless
-@            hold is active (the drawer did not draw).
+@            Nothing is drawn while HOLD is active (the dashes and OFL texts as the digits, which lcd_show_value_pos5_9
+@            skips with r3 = 1, the D draw of v2.05); 0x20007D70 then keeps its value.
 @ -----------------------------------------------------------------------------
 FUNC ui_relpct_draw
     push {r4, r5, r6, r7, lr}
+    ldr r0, =hold_active
+    ldrb r0, [r0]
+    cmp r0, #0
+    bne .Lrp_held                           @ HOLD: the held display stays (also for the dashes and OFL texts)
     ldr r0, =ui_rp_base
     ldr r5, [r0]                            @ r5 = base
     cbnz r5, 1f
@@ -167,7 +171,9 @@ FUNC ui_relpct_draw
     movs r0, #1
     ldr r1, =v_2000805B
     strb r0, [r1]                           @ commit request (the dashes and OFL drawers do not set it themselves)
-2:  pop {r4, r5, r6, r7, pc}
+2:
+.Lrp_held:
+    pop {r4, r5, r6, r7, pc}
 ENDFUNC ui_relpct_draw
 
 @ -----------------------------------------------------------------------------

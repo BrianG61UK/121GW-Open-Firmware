@@ -770,7 +770,12 @@ Reachability: `dsqrt` has two callers (`0x0800A73C`, `0x080082BE`), both precede
 `fdiv` (40 call sites), `fadd` / `fsub` (12), `dadd` / `dsub` (28, including the log10 library): the operands are converted counts (0 or at least 1.0), calibration words converted from unsigned integers, constants and thermocouple tables; a subnormal operand (below 1.2e-38 / 2.3e-308) or a quotient of 1.7e38 or more did not occur in any of 102 runs (hooks on every entry: 0 subnormal operands, 0 candidate quotients) and was not found in the call sites that were read; not every site was traced by hand.
 `uldivmod` (14 sites): divisors are the constants 1, 10, 100, 1000, 10000 (`0x0800AF1C`..`0x0800AFE0`, `0x0800B0A2`, `0x0800B272`..`0x0800B2B2`, `0x0800B6A2`) or `0x20007E48 / 10` at `0x0800B662` (at least 0x200000 / 10: T = 0x1000000 - (word at 0x2000001C << 8) + CTA, and the word is 0xE000 after start-up, `analysis/decompile/ram_init.txt`), `(0x20007E18 / 1000) x 0x20007E40` at `0x0800B6B6` and `0x20007E40 x 100` at `0x0800B71A`: 0x20007E18 is at least 40 000 000 (`analysis/hy3131_modes_misc.md` 5.2) and 0x20007E40 is the counter's whole-cycle count, so a zero divisor needs a counter result with zero cycles. No zero divisor in any run, including PULSE and DUTY with no signal.
 Impact: none found; the helpers were kept bit for bit in the port, so that any future caller sees the v2.05 results.
-Port: kept bit for bit (`firmware/src/rt/*.s`, deviation none).
+Port: kept bit for bit in the strict image. Production image (IMP-14 is the first caller with data-dependent operands):
+`dsqrt` answers a negative operand as IEEE 754 requires (-0 gives -0, a negative NaN is returned quiet, every other
+negative operand gives the default quiet NaN, no errno) and the 64-bit divisions give a zero divisor a defined result
+(unsigned quotient all ones, signed quotient -1, remainder = dividend); verified against the strict image for 4000
+non-negative square roots and 12000 non-zero divisions (identical) and for the special operands. The float divide, float
+add/subtract and double add/subtract cases stay as v2.05 (no caller reaches them).
 
 ### OF-52 — battery conversion does not match the hardware divider
 Hardware (wire-traced, `analysis/frontend_netlist.md` sections 7 and 9): B+ (BAT1 through the dial contact) - R69 1M -

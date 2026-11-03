@@ -28,6 +28,7 @@
     .thumb
     .include "macros.inc"
     .include "ram_v205.inc"
+    .include "config.inc"
 
     .section .text.func, "ax", %progbits
 
@@ -94,6 +95,10 @@ FUNC fn_0800E604
     ldr r0, =func_reading
     ldr r0, [r0, #0]                       @ r4 = reading
     movs r4, r0
+    .if LOOP_V205 == 0
+    mov r0, r4
+    bl func_stats_add                      @ IMP-14: the same reading into the statistics (r4 preserved)
+    .endif
     ldr r0, =func_reading
     ldr r0, [r0, #0]                       @ reading
     ldr r1, =func_mm_last
@@ -385,9 +390,10 @@ ENDFUNC fn_080158D4
 @ Replaces : 0x08015974 (v2.05 FUN_08015974)
 @ In       : none
 @ Out      : none
-@ Clobbers : r0, r1
+@ Clobbers : r0, r1 (production: r0-r3, r12, through func_stats_clear and the page switch)
 @ Context  : main
-@ RAM      : writes minmax_state, func_mm_max, func_mm_min, func_mm_mean, func_mm_count, func_mm_rem
+@ RAM      : writes minmax_state, func_mm_max, func_mm_min, func_mm_mean, func_mm_count, func_mm_rem; production: the
+@            statistics (IMP-14), set_item 32 (unless 100), set_edit, sub display redraw
 @ Spec     : analysis/keys_setup.md section 2 (MIN/MAX)
 @ Deviation: none (copy of the v2.05 sequence)
 @ -----------------------------------------------------------------------------
@@ -410,7 +416,26 @@ FUNC fn_08015974
     movs r0, #0                            @ r0 = 0
     ldr r1, =func_mm_rem
     str r0, [r1, #0]                       @ remainder = 0
+    .if LOOP_V205 == 0
+    @ IMP-14: empty the statistics and show their page n (item 32), unless the MEM view / logging page (100) is shown
+    push {r4, lr}
+    bl func_stats_clear
+    ldr r1, =v_20008037
+    ldrb r0, [r1]
+    cmp r0, #100
+    beq 1f
+    movs r0, #32
+    strb r0, [r1]                          @ set_item = 32
+    movs r0, #0
+    ldr r1, =v_2000806E
+    strb r0, [r1]                          @ an edit of the page left is ended, as SETUP short does (0x08015422)
+    movs r0, #1
+    ldr r1, =v_20008062
+    strb r0, [r1]                          @ sub display redraw
+1:  pop {r4, pc}
+    .else
     bx lr                                  @ return
+    .endif
 ENDFUNC fn_08015974
     .ltorg
 

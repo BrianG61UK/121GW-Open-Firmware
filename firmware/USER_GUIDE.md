@@ -98,6 +98,18 @@ setting (meter at 25 °C). Set `tc` to the probe you plug in.
 
 Tip: `dSP 2` while adjusting a trimmer or watching something warm up or charge; `dSP 1` for the steadiest reading.
 
+## Statistics (MIN/MAX)
+
+- **Where:** press **MIN/MAX** as usual; the small display now shows `n` and the number of readings collected (from 10000
+  in thousands with the k sign). Press **SETUP** for `Sd`: the main display then shows the **standard deviation** of the
+  readings, in the unit of the reading and with one more decimal where the range allows. Press **SETUP** again to return
+  to the normal pages.
+- The statistics use the same readings as the MIN/MAX average (HOLD pauses them, overloads are left out) and restart each
+  time MIN/MAX is switched on. With fewer than two readings `Sd` shows `-----`.
+
+Tip: leave the probes on a source for a while with MIN/MAX on; `Sd` tells how much the reading wanders, `n` how many
+readings that is based on.
+
 ## 12-hour clock
 
 - **Where:** page `CL`, the last of the new pages: `CL 24` (default, as the original) or `CL 12`.
