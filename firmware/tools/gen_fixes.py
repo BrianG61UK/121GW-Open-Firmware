@@ -74,14 +74,21 @@ def render(rs):
         if fixed_l:
             words += ' %s %s fixed anyway;' % (' and '.join(fixed_l) if len(fixed_l) < 3 else ', '.join(fixed_l),
                                                 'are' if len(fixed_l) > 1 else 'is')
-        if kept_l:
+        whole = [r for r in kept_l if 'fast build' not in r[4]]
+        part = [r for r in kept_l if 'fast build' in r[4]]
+        if whole:
             words += ' %s is kept identical to v2.05 so that every calculation the meter does stays bit-identical.' % \
-                     ', '.join('%s (%s)' % (r[0], LATENT_NOTE.get(r[0], r[1].lower())) for r in kept_l)
-        else:
+                     ', '.join('%s (%s)' % (r[0], LATENT_NOTE.get(r[0], r[1].lower())) for r in whole)
+        for r in part:                                   # kept in 1_like_v2.05, partly fixed in the fast build
+            words += ' %s (%s) is kept identical to v2.05 in `1_like_v2.05`; %s.' % \
+                     (r[0], LATENT_NOTE.get(r[0], r[1].lower()), r[4][r[4].index(';') + 1:].rstrip(')').strip()
+                      if ';' in r[4] else r[4])
+        if not kept_l:
             words = words.rstrip(';') + '.'
         out += ['', '## Latent defects (never reachable on the meter)', '', words, '',
                 '| ID | Area | v2.05 defect | New firmware |', '|---|---|---|---|']
-        out += ['| %s | %s | %s | %s |' % (i, area, issue, 'kept' if st.startswith('kept') else st) for i, area, issue, sev, st in latent]
+        out += ['| %s | %s | %s | %s |' % (i, area, issue, 'kept' if st.startswith('kept') and 'fast build' not in st else st)
+                for i, area, issue, sev, st in latent]
     if other:
         out += ['', '## Documented, not changed in this release', '',
                 '| ID | Severity | Area | v2.05 defect | Status |', '|---|---|---|---|---|']

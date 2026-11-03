@@ -63,12 +63,12 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-48 | Keys | Setup edit: REL or PEAK held longer than 0.5 s steps once more when the key is released (the press is queued, the MEM view excludes it) | low | fixed |
 | OF-49 | Display | `FUN_0801B090`: the first digit word is n / 10000 without reduction, so n >= 100000 draws a blank or wrong first character; no defined v2.05 input reaches it | low | fixed |
 | OF-50 | Display | `FUN_0801B77A` passes `LCD_FCR AND mask` instead of the mask to `LCD_ContrastConfig`; the result is always overwritten by the following `lcd_init` | low | fixed |
-| OF-51 | Runtime library | Soft-float and 64-bit division helpers differ from IEEE 754 / the ARM run-time ABI in listed cases (fdiv exponent 254, subnormal operands of fadd/fsub/dadd/dsub, dsqrt special operands, division by zero); none reached by v2.05 code | low | dsqrt and 64-bit division fixed (fast build); float/double add, float divide kept (unreachable) |
+| OF-51 | Runtime library | Soft-float and 64-bit division helpers differ from IEEE 754 / the ARM run-time ABI in listed cases (fdiv exponent 254, subnormal operands of fadd/fsub/dadd/dsub, dsqrt special operands, division by zero); none reached by v2.05 code | low | kept (latent; dsqrt and 64-bit division fixed in the fast build) |
 | OF-52 | Battery | The ADC-to-battery conversion is a straight line that matches the hardware divider only near 6.4 V: the gauge reads up to 6 % low near empty and the low-battery warning starts at 4.31 V instead of the displayed 4.1 V | low | fixed |
 | OF-53 | Measurement | HY3131 interrupt flags are cleared by writing 0 after the status burst read: a flag raised in between is lost; a lost counter-done flag freezes the frequency reading until the next mode or range apply | medium | fixed |
 | OF-54 | Measurement | The status burst reads the counter registers before INTF: a count that completes in between is seen as done with stale counter values; in AC modes the frequency correction then uses frequency 0 | medium | fixed |
 | OF-55 | Backlight | The backlight state flag 0x2000807B stays 1 across an auto power-off (STOP): the pin PE8 is driven low by the power-down but nothing resets the flag, so after the wake the first MODE long press only clears the flag and a second one is needed to switch the backlight on | low | fixed (fast build) |
-| OF-56 | Temperature | One entry of the type K table 0x08025CF8 differs from the NIST ITS-90 table: 270 degC holds 10970 uV, NIST 10.971 mV (the NIST reference function gives 10970.95 uV); readings near 270 degC are 0.02 degC high | very low | documented (table kept) |
+| OF-56 | Temperature | One entry of the type K table 0x08025CF8 differs from the NIST ITS-90 table: 270 degC holds 10970 uV, NIST 10.971 mV (the NIST reference function gives 10970.95 uV); readings near 270 degC are 0.02 degC high | low | kept (documented) |
 
 ## Details
 
