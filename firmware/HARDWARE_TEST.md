@@ -71,6 +71,8 @@ The image has only run in the emulator. These checks confirm on hardware what th
 14. Statistics (production build): DCV, MIN/MAX on: page `n` counts the readings; SETUP to `Sd`: the standard deviation
    on the main digits (a steady source: a few counts; switching between two voltages: about half their difference);
    MIN/MAX long press: back to the normal page. No EEPROM change.
+15. Continuity hold (production build): BEEP, SETUP to the page bH (after dSP), select `bHOFF` and save; tap the probes
+   together: the beep ends about 15 ms after the touch; with `bH100` a tap gives a beep of about 0.1 s. Only byte 0x021 may differ.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

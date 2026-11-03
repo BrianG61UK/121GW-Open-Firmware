@@ -76,6 +76,7 @@ FUNC fn_08024DE0
     bl set_tc_load                          @ IMP-10: load and select the thermocouple type (EEPROM 0x00F)
     bl set_relp_load                        @ IMP-11, IMP-13: load the REL view and the clock (EEPROM 0x020 bits 0, 3)
     bl set_dsp_load                         @ IMP-12: load the display level (EEPROM 0x013)
+    bl set_bh_load                          @ IMP-16: load the continuity hold time (EEPROM 0x021)
     .endif
     bl fn_08010F4C                          @ 08024E1E  load the date code from EEPROM 0x001
     bl fn_08010F8C                          @ 08024E22  load the ID number from EEPROM 0x003

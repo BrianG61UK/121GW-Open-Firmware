@@ -23,7 +23,8 @@ setting is kept over a power-off.
 The new pages come after the original SETUP pages, in this order:
 
 `bL` (backlight) → `bt` (Bluetooth speed) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) → `dSP` (display
-level) → `CL` (12 / 24-hour clock) → back to the first page
+level) → `bH` (continuity hold, BEEP only) → `CL` (12 / 24-hour clock) → back to the first page (while MIN/MAX is on,
+the statistics pages `n` and `Sd` come before the first page)
 
 The dBm reference is not a new page: it is edited on the existing dBm page of ACV.
 
@@ -97,6 +98,16 @@ setting (meter at 25 °C). Set `tc` to the probe you plug in.
 - **Cost:** the last digit can be a little less steady (for example a temperature that toggles between 99.9 and 100.0).
 
 Tip: `dSP 2` while adjusting a trimmer or watching something warm up or charge; `dSP 1` for the steadiest reading.
+
+## Continuity beep hold time
+
+- **Where:** in the continuity (BEEP) function, page `bH`: `bH100` (default, as the original), `bH 50`, `bH 25`, `bHOFF`.
+- **Effect:** how long the beep continues after the probes lose contact: 100, 50 or 25 ms, or with `bHOFF` about 15 ms,
+  the shortest time that still gives a clean, unbroken beep on a steady contact. The beep still starts 1 to 4 ms after
+  contact.
+
+Tip: `bH100` makes even the shortest touch audible (good for scratching along a trace); `bHOFF` shows intermittent
+contacts as broken beeps.
 
 ## Statistics (MIN/MAX)
 

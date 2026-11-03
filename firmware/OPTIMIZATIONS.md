@@ -31,6 +31,7 @@ contents, HY3131 configuration sequence) is identical to v2.05; each is verified
 | IMP-13 | 12-hour clock: SETUP page CL, 24-hour (default, as v2.05) / 12-hour | the time page shows 1..12 (` 2-30`); stored in EEPROM 0x020 bit 3 (`EEPROM_MAP.md` 4.1) |
 | IMP-14 | Statistics while MIN/MAX is on: pages n (count) and Sd (standard deviation) | the spread of a reading without a computer; numerically stable (Welford, binary64); no EEPROM |
 | IMP-15 | Bargraph sign steady at zero | with no bar lit the bargraph sign (LCD and Bluetooth) follows the digits instead of flickering with the noise |
+| IMP-16 | Continuity beep hold time: SETUP page bH in BEEP, 100 ms (default, as v2.05) / 50 / 25 ms / off (15 ms) | the tone can follow the contact closely instead of latching 100 ms; stored in EEPROM 0x021 (`EEPROM_MAP.md` 4.1) |
 
 All fixes of original defects are listed with their evidence in `ORIGINAL_FIRMWARE_ISSUES.md` (OF-xx) and in
 `DESIGN.md` section 10 (NF-, HW-, NVM- items). A faster analog settle profile exists but stays disabled until the

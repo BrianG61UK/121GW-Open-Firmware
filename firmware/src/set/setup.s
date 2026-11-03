@@ -84,6 +84,7 @@
     .equ SET_ITEM_CLK, 25                   @ IMP-13: setup item of the clock page CL (the last port page)
     .equ SET_ITEM_ST_N, 32                  @ IMP-14: statistics page n (only while MIN/MAX is on)
     .equ SET_ITEM_ST_SD, 33                 @ IMP-14: statistics page Sd (only while MIN/MAX is on)
+    .equ SET_ITEM_BH, 26                    @ IMP-16: continuity hold page bH (BEEP only, between dSP and CL)
     .equ SET_ITEM_TC, 23                    @ IMP-10: setup item of the thermocouple type page tc (after bt, TEMP only)
     .endif
 
@@ -114,7 +115,8 @@ FUNC fn_08015410
     .if LOOP_V205 == 0
     @ IMP-07, IMP-09, IMP-11, IMP-10, IMP-12: SETUP short on the page bL (item 20, the page after the last v2.05 item) goes
     @ to the page bt (item 21), on bt to the page rEL (item 22); on rEL to the page tc (item 23) in TEMP (mode 5), else to
-    @ the page dSP (item 24); on tc to dSP; on dSP to the page CL (item 25); on CL to item 0, or while MIN/MAX is on to
+    @ the page dSP (item 24); on tc to dSP; on dSP to the page bH (item 26, IMP-16) in BEEP (mode 10), else to the page CL
+    @ (item 25); on bH to CL; on CL to item 0, or while MIN/MAX is on to
     @ the statistics page n (item 32, IMP-14); on n to Sd (item 33); on Sd to item 0.  Each step ends an edit.
     ldr.w r0, =set_item
     ldrb r0, [r0, #0x0]
@@ -137,8 +139,17 @@ FUNC fn_08015410
     movs r0, #SET_ITEM_ST_SD
     b .Lsn_port_set
 .Lsn_not_clk:
+    cmp r0, #SET_ITEM_BH
+    beq .Lsn_to_clk                         @ bH: next is CL
     cmp r0, #SET_ITEM_DSP
-    beq .Lsn_to_clk                         @ dSP: next is CL
+    bne .Lsn_not_dsp
+    ldr.w r0, =meter_mode
+    ldrb r0, [r0, #0x0]
+    cmp r0, #0xa
+    bne .Lsn_to_clk                         @ dSP outside BEEP: next is CL
+    movs r0, #SET_ITEM_BH                   @ dSP in BEEP: next is bH
+    b .Lsn_port_set
+.Lsn_not_dsp:
     cmp r0, #SET_ITEM_TC
     beq .Lsn_to_dsp                         @ tc: next is dSP
     cmp r0, #SET_ITEM_RELP
@@ -165,7 +176,7 @@ FUNC fn_08015410
     movs r0, #SET_ITEM_BT                   @ bL: next is bt
 .Lsn_port_set:
     ldr.w r1, =set_item
-    strb r0, [r1, #0x0]                     @ set_item = 21..25, 32, 33 or 0
+    strb r0, [r1, #0x0]                     @ set_item = 21..26, 32, 33 or 0
     movs r0, #0x0
     ldr.w r1, =set_edit
     strb r0, [r1, #0x0]                     @ set_edit = 0 (v2.05 clears it at 0x08015422 for every item but 8)
@@ -1447,6 +1458,20 @@ FUNC fn_080165F4
     bl set_dsp_edit                         @ switch or save of the display level
     b .L08016800
 .Lse_not_dsp:
+    cmp r0, #SET_ITEM_BH                    @ IMP-16: the continuity hold page bH (item 26)
+    bne .Lse_not_bh
+    uxtb r4, r4
+    cmp r4, #0x0                            @ query?
+    bne .Lse_bh_act
+    movs r0, #0x1
+    movs r5, r0                             @ query result: editable
+    b .L08016800
+.Lse_bh_act:
+    movs r0, r4
+    uxtb r0, r0
+    bl set_bh_edit                          @ up, down or save of the hold time
+    b .L08016800
+.Lse_not_bh:
     cmp r0, #SET_ITEM_CLK                   @ IMP-13: the clock page CL (item 25)
     bne .Lse_not_clk
     uxtb r4, r4
@@ -2159,6 +2184,11 @@ FUNC fn_0801797C
     bl set_dsp_draw                         @ draw "dSP 1" or "dSP 2"
     b .L08017F26
 .Lsd_not_dsp:
+    cmp r0, #SET_ITEM_BH                    @ IMP-16: the continuity hold page bH (item 26)
+    bne .Lsd_not_bh
+    bl set_bh_draw                          @ draw "bH" and the hold time
+    b .L08017F26
+.Lsd_not_bh:
     cmp r0, #SET_ITEM_CLK                   @ IMP-13: the clock page CL (item 25)
     bne .Lsd_not_clk
     bl set_clk_draw                         @ draw "CL 24" or "CL 12"

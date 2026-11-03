@@ -19,6 +19,7 @@
 | Display level | SETUP page `dSP` | less smoothing: small changes show about 4x sooner |
 | 12-hour clock | SETUP page `CL` | time page in 12-hour form |
 | Statistics | MIN/MAX, pages `n` and `Sd` | count and standard deviation of the readings |
+| Continuity hold time | BEEP, SETUP page `bH` | beep latch 100 / 50 / 25 ms or off (15 ms) |
 
 How to set and use each one: [`firmware/USER_GUIDE.md`](firmware/USER_GUIDE.md). The `1_like_v2.05` build has none of
 these and behaves like the original firmware apart from the defect fixes.
@@ -51,7 +52,7 @@ No file of a release contains an original EEVblog image (bootloader, v2.05) or t
 - `DESIGN.md` design and deviation list, `EEPROM_MAP.md` every EEPROM byte, `ORIGINAL_FIRMWARE_ISSUES.md` the defects
   found in v2.05 (with evidence), `OPTIMIZATIONS.md`, `FEATURES.md` user-visible features (keys, display, storage; implemented in the production build: backlight
   auto-off timer with remembered on/off state, selectable dBm reference, Bluetooth frame rate 2/4/10/20 per second,
-  thermocouple type K/J/T, REL in percent, display level, 12-hour clock, statistics), `HARDWARE_TEST.md` checklist for the first run on a meter.
+  thermocouple type K/J/T, REL in percent, display level, 12-hour clock, statistics, continuity hold time), `HARDWARE_TEST.md` checklist for the first run on a meter.
 - Status: both builds match v2.05 in the emulator's 93 test scenarios and the STOP/wake scenario except documented
   deviations. Verified working on a meter (both builds). The strict build is compared frame by frame; in the production build the
   display during range changes is checked by the scenarios' assertions and final states.

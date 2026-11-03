@@ -2,7 +2,7 @@
 
 Status: design. The backlight auto-off timer (2.9, IMP-07), the dBm reference (2.2, IMP-08), the Bluetooth frame rate
 (2.5, IMP-09), the thermocouple type (2.8, IMP-10), REL in percent (2.3, IMP-11), the display level (2.4, IMP-12), the 12-hour
-clock (2.12, IMP-13) and the statistics (2.7, IMP-14) are implemented. The other features are designs for
+clock (2.12, IMP-13), the statistics (2.7, IMP-14) and the continuity hold time (2.13, IMP-16) are implemented. The other features are designs for
 the production image; none of them is in the tree as code. The EEPROM bytes of section 3 are approved (owner, 2026-11-02);
 each is added to `EEPROM_MAP.md` 4.1 and `nvm_allow` only with the code that uses it. Citations: `KS` = `analysis/keys_setup.md`, `EMAP` =
 `EEPROM_MAP.md`, `LCD` = `analysis/lcd_map.md`, `ARS` = `analysis/autorange_and_scheduler.md`, `DES` = `DESIGN.md`.
@@ -305,6 +305,17 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   is given. The clock chip, the hour edit (0..23 internally), the log timestamps and the BLE clock command stay 24-hour.
 - Storage: bit 3 of the byte 0x020 (shared with 2.3; each page's save changes only its bit, `set_b20_store`).
 
+### 2.13 Continuity beep hold time (implemented, IMP-16)
+- Request (forum, 2026-11-03): the continuity beep latches a little too long; a setting for it.
+- Where: SETUP page `bH`, item 26, offered in BEEP only (between `dSP` and `CL`): `bH100` (v2.05, default), `bH 50`,
+  `bH 25`, `bHOFF`.
+- What it does: v2.05 keeps the tone 100 TIM3 ticks after the last reading that passed the threshold
+  (`pe7_on_with_timeout(100)`, 0x08007902 / 0x08007920), so a short contact gives an audible beep. The page sets that
+  time to 100, 50 or 25 ms, or 15 ms (`bHOFF`: the shortest hold that never chops a steady contact; the re-arms of a
+  steady contact come every 4.0 ms, 3.1 .. 10.0 ms in the emulator, so 10 ms or less would interrupt the tone). The threshold, the detection per
+  conversion (IMP-04) and the time to the tone are unchanged.
+- Storage: one byte 0x021 (0 = 100 ms); a value above 3 reads as 0.
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
@@ -315,7 +326,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 | 0x015 | 2.5 BLE | 0 2/s, 1 4/s, 2 10/s, 3 20/s | 2/s | 0x014 continuity code, 0x016 APO | approved, implemented |
 | 0x017 | 2.9 backlight | bits 6..0: 0 OFF, 1 30 s, 2..100 1..99 min; bit 7: on/off state | OFF, dark | as 0x015 | approved, implemented |
 | 0x020 | 2.3, 2.6, 2.12 | bit 0 REL percent, bits 2..1 log trigger, bit 3 12-hour clock | v2.05 | none (free word 0x020..0x023) | approved, bits 0 and 3 implemented |
-| 0x021 | 2.1 limits | `mode * 8 + range + 1` of the limits, 0 none | none | as 0x020 | approved, not used (limits RAM only) |
+| 0x021 | 2.13 continuity | hold code 0..3 (100 / 50 / 25 ms / off = 15 ms) | 100 ms | as 0x020 | approved, implemented (the limits of 2.1 are RAM only) |
 | 0x022 | 2.6 | change threshold 1..255 | 1 | as 0x020 | approved |
 | 0x028..0x02B | 2.1 | LO limit, s32 big-endian | 0 | none (free word) | approved, not used (limits RAM only) |
 | 0x02C..0x02F | 2.1 | HI limit, s32 big-endian | 0 | none (free word) | approved, not used (limits RAM only) |
@@ -334,19 +345,20 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 23 | `tc` | TEMP mode only | yes (implemented) |
 | 24 | `dSP` | always | yes (implemented) |
 | 25 | `CL` | always | yes (implemented) |
-| 26 | `Lt` | always | yes |
-| 27 | `Lo` | always | yes (digits) |
-| 28 | `HI` | always | yes (digits) |
-| 29 | `tr` (log trigger) | always | yes |
-| 30 | `Ch` | always | yes (digits) |
-| 31 | verdict `PASS`/`HI`/`Lo` | while the limit test is on (also the default page) | no |
+| 26 | `bH` | BEEP mode only | yes (implemented) |
+| 27 | `Lt` | always | yes |
+| 28 | `Lo` | always | yes (digits) |
+| 29 | `HI` | always | yes (digits) |
+| 30 | `tr` (log trigger) | always | yes |
+| 31 | `Ch` | always | yes (digits) |
+| 36 | verdict `PASS`/`HI`/`Lo` | while the limit test is on (also the default page) | no |
 | 32 | `n` count | MIN/MAX on | no |
 | 33 | `Sd` | MIN/MAX on | no |
 | 34, 35 | `tHI`, `tLo` | MIN/MAX on | no |
 
 Items 32..35 are the MIN/MAX pages. v2.05 uses 0..12 and 100; the page dispatcher falls back to item 0 for an unknown item
 (`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 25. SETUP short steps
-20 -> 21 -> 22 -> 23 (TEMP only) -> 24 -> 25 -> 0 (`fn_08015410`); each new page joins that chain.
+20 -> 21 -> 22 -> 23 (TEMP only) -> 24 -> 26 (BEEP only) -> 25 -> 32 -> 33 (MIN/MAX on) -> 0 (`fn_08015410`); each new page joins that chain.
 
 ## 5. Order of work and checks
 

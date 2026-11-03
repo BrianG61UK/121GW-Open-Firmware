@@ -59,7 +59,7 @@ ENDFUNC fn_080078B8
 @ RAM      : reads  0x200080B6
 @            writes 0x200080B5
 @ Spec     : analysis/hy3131_modes_misc.md 6.3; autorange_and_scheduler.md 8, 9
-@ Deviation: IMP-04, IMP-05
+@ Deviation: IMP-04, IMP-05, IMP-16 (production: the hold time of the tone from the page bH, set_bh_ticks)
 @ t = fn_08007940() (start threshold when 0x200080B5 = 0, continue threshold when 1).  DN codes (0, 2, 4..9): tone while v <= t;
 @ UP codes (1, 3, 10..15): tone while v >= t.  Tone: 0x200080B5 = 1 and pe7_on_with_timeout(100); otherwise 0x200080B5 = 0.
 @ -----------------------------------------------------------------------------
@@ -98,7 +98,11 @@ FUNC fn_080078D8
     movs r0, #1                        @ 0x080078FA
     ldr r1, =v_200080B5                @ 0x080078FC pool 0x080082D0 = 0x200080B5
     strb r0, [r1, #0]                  @ 0x08007900
+    .if LOOP_V205 == 0
+    bl set_bh_ticks                    @ IMP-16: hold time of the page bH (100 ticks by default, as v2.05)
+    .else
     movs r0, #100                      @ 0x08007902
+    .endif
     bl pe7_on_with_timeout             @ 0x08007904
     b .L08007930                       @ 0x08007908
 .L0800790A:                              @ reached from 0x080078F8 bcc
@@ -113,7 +117,11 @@ FUNC fn_080078D8
     movs r0, #1                        @ 0x08007918
     ldr r1, =v_200080B5                @ 0x0800791A pool 0x080082D0 = 0x200080B5
     strb r0, [r1, #0]                  @ 0x0800791E
+    .if LOOP_V205 == 0
+    bl set_bh_ticks                    @ IMP-16: hold time of the page bH (100 ticks by default, as v2.05)
+    .else
     movs r0, #100                      @ 0x08007920
+    .endif
     bl pe7_on_with_timeout             @ 0x08007922
     b .L08007930                       @ 0x08007926
 .L08007928:                              @ reached from 0x08007916 bcc
