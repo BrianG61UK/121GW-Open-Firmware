@@ -54,7 +54,7 @@
 @ Context  : main
 @ RAM      : reads minmax_state, hold_active, func_ol_flag, func_neg_flag, func_reading; writes func_mm_*, func_reading, (via fn_0800E758) func_ol_flag, func_neg_flag
 @ Spec     : analysis/keys_setup.md section 2 (MIN/MAX)
-@ Deviation: none (copy of the v2.05 sequence)
+@ Deviation: none (copy of the v2.05 sequence); production: IMP-14 statistics, IMP-21 time of a new extreme (ui_mmt_mark)
 @ -----------------------------------------------------------------------------
 FUNC fn_0800E604
     push {r4, lr}                          @ save r4 and the return address
@@ -74,6 +74,16 @@ FUNC fn_0800E604
     ldrb r0, [r0, #0]                      @ sign flag of the overload
     cmp r0, #0
     beq .Lmmrec_0800E648                   @ positive overload: separate case
+    .if LOOP_V205 == 0
+    ldr r0, =func_mm_min                   @ IMP-21: the minimum changes to -100000 (not that already): keep the time
+    ldr r0, [r0, #0]                       @ (ui/mmtime.s)
+    ldr r1, =0xFFFE7960
+    cmp r0, r1
+    beq 1f
+    movs r0, #1
+    bl ui_mmt_mark
+1:
+    .endif
     ldr r0, =0xFFFE7960                    @ negative overload: r0 = -100000 ...
     ldr r1, =func_mm_min                   @ ... minimum = -100000 ...
     str r0, [r1, #0]                       @ func_mm_min = r0
@@ -83,6 +93,16 @@ FUNC fn_0800E604
     b .Lmmrec_0800E738                     @ ... and show the value
     @ Positive overload: maximum = last reading = +100000.
 .Lmmrec_0800E648:
+    .if LOOP_V205 == 0
+    ldr r0, =func_mm_max                   @ IMP-21: the maximum changes to 100000 (not that already): keep the time
+    ldr r0, [r0, #0]                       @ (ui/mmtime.s)
+    ldr r1, =0x000186A0
+    cmp r0, r1
+    beq 1f
+    movs r0, #0
+    bl ui_mmt_mark
+1:
+    .endif
     ldr r0, =0x000186A0                    @ r0 = 100000 ...
     ldr r1, =func_mm_max                   @ ... maximum = 100000 ...
     str r0, [r1, #0]                       @ func_mm_max = r0
@@ -109,6 +129,10 @@ FUNC fn_0800E604
     bge .Lmmrec_0800E682                   @ no: keep it
     ldr r0, =func_mm_max
     str r4, [r0, #0]                       @ maximum = reading
+    .if LOOP_V205 == 0
+    movs r0, #0
+    bl ui_mmt_mark                         @ IMP-21: the time of the new maximum (r4 preserved)
+    .endif
     @ Minimum.
 .Lmmrec_0800E682:
     ldr r0, =func_mm_min
@@ -117,6 +141,10 @@ FUNC fn_0800E604
     bge .Lmmrec_0800E692                   @ no: keep it
     ldr r0, =func_mm_min
     str r4, [r0, #0]                       @ minimum = reading
+    .if LOOP_V205 == 0
+    movs r0, #1
+    bl ui_mmt_mark                         @ IMP-21: the time of the new minimum (r4 preserved)
+    .endif
     @ Running mean.
 .Lmmrec_0800E692:
     ldr r0, =func_mm_count

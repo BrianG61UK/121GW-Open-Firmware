@@ -655,6 +655,16 @@ IMP-06  sd_block  mem_logging_sd    build == production and lba == 2066
 IMP-06  sd_files  mem_logging_sd    build == production and path == /26010100.CSV
 IMP-06  sd_block  sd_insert_remove  build == production and lba in 2064..2068
 IMP-06  sd_files  sd_insert_remove  build == production and path == /26010100.CSV
+# The closing MAX and MIN rows of the log file end with the date and time of their row in production (log/mmtime.s,
+# IMP-21): "MAX,1,DCV,01.0000,V,2026/01/01,12:00:05," against v2.05 "MAX,1,DCV,01.0000,V," (mem_logging_sd: the last block
+# of the file, 2072, and the directory block 2064 with the file size, 40 bytes more, written at the stop of line 10; the file
+# itself is covered by the IMP-06 sd_files entry above; mem_hold_combo_logging: the stop of line 8 writes the rows into block
+# 2066 and the size into 2064, the file is 268 bytes against 228).
+IMP-21  sd_block  mem_logging_sd          build == production and lba == 2064 and step == 10
+IMP-21  sd_block  mem_logging_sd          build == production and lba == 2072 and step == 10
+IMP-21  sd_block  mem_hold_combo_logging  build == production and lba == 2064 and step == 8
+IMP-21  sd_block  mem_hold_combo_logging  build == production and lba == 2066 and step == 8
+IMP-21  sd_files  mem_hold_combo_logging  build == production and path == /26010100.CSV
 # The partial mean of the first frame after the input step of ble_stream line 6 / 7 and mem_logging_sd line 6 (v2.05 0.1542 /
 # 0.1250 at 0.053 s, production 0.4627 / 0.3750 at 0.081 s; the BLE and logging scenarios are not in the IMP-01 lists).
 IMP-01+IMP-06  lcd  ble_stream      build == production and step == 7 and since in 0.045..0.09

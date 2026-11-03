@@ -5,6 +5,6 @@ Assets of this release
 - `121GW-Open-Firmware-Emulator-<tag>-<platform>`: the emulator with its web front panel for macOS (`.dmg`), Windows (`.exe` installer) and Linux (`.AppImage`). It contains both firmware builds and a SYNTHETIC EEPROM image (made-up nominal calibration, not a meter's); no original EEVblog image and no calibration of any meter. The installers are not signed or notarised.
 - `*.sha256`: checksum of the file with the same name.
 
-New in the fast build: backlight auto-off and memory, dBm reference (600 / 50 / 75 ohm, dBV), Bluetooth speed (2 to 20 readings per second), REL in percent, thermocouple type K / J / T, display level. See `USER_GUIDE.md`.
+New in the fast build: backlight auto-off and memory, dBm reference (600 / 50 / 75 ohm, dBV), Bluetooth speed (2 to 20 readings per second), REL in percent, thermocouple type K / J / T, display level, 12-hour clock, statistics (count and standard deviation in MIN/MAX), continuity hold time, limit test, logging trigger, the time of the MIN/MAX maximum and minimum (on the meter and in the log file). See `USER_GUIDE.md`.
 
 Verified working on a meter (both builds). Flashing is at your own risk (see `LICENSE`).

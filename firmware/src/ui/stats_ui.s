@@ -11,7 +11,8 @@
 @ readings, " OFL " above 99999 counts.  The BLE value 0x20007D70 keeps the MIN/MAX value in counts (as ui_relpct_draw).
 @ The pages exist only while MIN/MAX is on (minmax_state != 0): the dispatcher (set/setup.s .Lsd_port) sends an item 32
 @ or 33 back to item 0 when MIN/MAX has ended (by its key, HOLD or a mode change), and SETUP short reaches them only
-@ while MIN/MAX is on.  Switching MIN/MAX on shows page n (fn_08015974).
+@ while MIN/MAX is on.  Switching MIN/MAX on shows page n (fn_08015974).  The time pages tHI (34) and tLo (35) of
+@ ui/mmtime.s follow Sd and share this gating, the redraw request and the sub display drawer (labels "tHI", "tLo").
 @
 @ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
@@ -29,6 +30,8 @@
 
     .equ UI_ST_ITEM_N,        32            @ setup item of the page n
     .equ UI_ST_ITEM_SD,       33            @ setup item of the page Sd
+    .equ UI_ST_ITEM_THI,      34            @ setup item of the page tHI (ui/mmtime.s, IMP-21)
+    .equ UI_ST_ITEM_TLO,      35            @ setup item of the page tLo
     .equ UI_ST_SUBK,          0x00020000    @ lcd_shadow word 4 bit 17: sub k sign
     .equ ui_st_text5,         v_20007C30    @ 5-character text buffer
     .equ ui_st_reading,       v_20007D64    @ displayed value D (counts)
@@ -57,7 +60,7 @@ FUNC ui_stats_view
 ENDFUNC ui_stats_view
 
 @ -----------------------------------------------------------------------------
-@ ui_stats_tick - request a sub display redraw while a statistics page is selected
+@ ui_stats_tick - request a sub display redraw while a statistics page or a time page (tHI, tLo) is selected
 @ Replaces : nothing in v2.05 (new; called at the entry of fn_08016E08, once per new result, overloads included)
 @ Clobbers : r0, r1, flags
 @ Context  : main only
@@ -69,8 +72,8 @@ FUNC ui_stats_tick
     ldr r0, =v_20008037
     ldrb r0, [r0]
     sub r0, r0, #UI_ST_ITEM_N
-    cmp r0, #1
-    bhi 1f                                  @ neither item 32 nor 33
+    cmp r0, #UI_ST_ITEM_TLO - UI_ST_ITEM_N
+    bhi 1f                                  @ none of the items 32..35
     movs r0, #1
     ldr r1, =v_20008062
     strb r0, [r1]                           @ sub display redraw
@@ -81,7 +84,7 @@ ENDFUNC ui_stats_tick
 @ ui_stats_text_prep - main decimal point and minus sign off before a text replaces the digits
 @ Clobbers : r0-r3, r12, flags
 @ -----------------------------------------------------------------------------
-LFUNC ui_stats_text_prep
+FUNC ui_stats_text_prep
     push {r4, lr}
     movs r0, #0
     bl fn_0801717E                          @ main decimal point: none
@@ -168,8 +171,8 @@ FUNC ui_stats_draw
 ENDFUNC ui_stats_draw
 
 @ -----------------------------------------------------------------------------
-@ ui_stats_page - draw the sub display of the page n (item 32) or Sd (item 33)
-@ In       : r0 = item (32 or 33)
+@ ui_stats_page - draw the sub display of the page n (item 32), Sd (item 33), tHI (34) or tLo (35)
+@ In       : r0 = item (32..35)
 @ Clobbers : r0-r3, r12, flags (r4-r6 saved)
 @ Context  : main only (fn_0801797C)
 @ RAM      : reads func_stats_n; writes lcd_shadow (sub minus, decimal points, k sign, five characters), commit request
@@ -185,7 +188,24 @@ FUNC ui_stats_page
     movs r0, #0
     bl fn_08017FB4                          @ sub decimal points off
     ldr r4, =ui_st_text5
-    cmp r6, #UI_ST_ITEM_SD
+    cmp r6, #UI_ST_ITEM_THI
+    blo 5f
+    movs r0, #'t'                           @ pages tHI / tLo (IMP-21): "tHI  " / "tLo  "
+    strb r0, [r4, #0]
+    cmp r6, #UI_ST_ITEM_THI
+    ite eq
+    moveq r0, #'H'
+    movne r0, #'L'
+    strb r0, [r4, #1]
+    ite eq
+    moveq r0, #'I'
+    movne r0, #'o'
+    strb r0, [r4, #2]
+    movs r0, #' '
+    strb r0, [r4, #3]
+    strb r0, [r4, #4]
+    b .Lsp_draw
+5:  cmp r6, #UI_ST_ITEM_SD
     bne .Lsp_n
     movs r0, #'S'                           @ page Sd: "Sd   "
     strb r0, [r4, #0]

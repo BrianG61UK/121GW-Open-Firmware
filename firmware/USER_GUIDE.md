@@ -24,7 +24,8 @@ The new pages come after the original SETUP pages, in this order:
 
 `bL` (backlight) → `bt` (Bluetooth speed) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) → `dSP` (display
 level) → `bH` (continuity hold, BEEP only) → `CL` (12 / 24-hour clock) → `Lt`, `Lo`, `HI` (limit test; the verdict page
-while the test is on) → `tr`, `Ch` (logging trigger) → back to the first page (while MIN/MAX is on, the statistics pages `n` and `Sd` come before it)
+while the test is on) → `tr`, `Ch` (logging trigger) → back to the first page (while MIN/MAX is on, the statistics pages
+`n` and `Sd` and the time pages `tHI` and `tLo` come before it)
 
 The dBm reference is not a new page: it is edited on the existing dBm page of ACV.
 
@@ -125,7 +126,9 @@ Logging to the SD card is started and stopped as before (hold **MEM**). The page
 - `tr-Lt`: when the limit test verdict changes (PASS / HI / Lo); with an interval above 0 also every interval while the
   reading is outside the limits.
 
-The files have the same format as the original's.
+The files have the same format as the original's, with one addition: the two closing rows `MAX,...` and `MIN,...` end
+with the date and time of the row that held the maximum and the minimum, for example
+`MAX,7,DCV,01.5000,V,2026/11/02,23:40:52,`. The first five columns are as before.
 
 Tip: `tr-Ch` with `Ch 10` and interval 0 records a slowly drifting value only when it actually moves, so a long session
 stays short and readable.
@@ -151,6 +154,14 @@ contacts as broken beeps.
 
 Tip: leave the probes on a source for a while with MIN/MAX on; `Sd` tells how much the reading wanders, `n` how many
 readings that is based on.
+
+**When did the maximum and the minimum happen?** Press **SETUP** once more after `Sd`: the small display shows `tHI` and
+the main display the time of the maximum as hours-minutes (`14-32`, in the 12- or 24-hour form chosen on `CL`); once more
+for `tLo`, the time of the minimum; once more to return to the normal pages. `-----` means there is no maximum or
+minimum yet. The times are kept until MIN/MAX is switched off. If the maximum is an overload, `tHI` shows the time of the
+first overload.
+
+Tip: start MIN/MAX in the evening on a supply rail, read `tLo` in the morning to see when it sagged.
 
 ## 12-hour clock
 

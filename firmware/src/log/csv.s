@@ -1377,7 +1377,8 @@ ENDFUNC log_header_line_start
 @ RAM       : reads log_max_func/flags/value/row and log_min_*; sets log_view_mode1 and log_view_range1 from the function code
 @ Spec      : v2.05 listing 0x0801E564..0x0801E73F
 @ Note      : each row is "MAX," or "MIN,", the row number where it occurred, the function name, the value (Overflow, -Overflow
-@             or the signed number) and the unit, then CRLF.
+@             or the signed number) and the unit, then CRLF.  The production image writes the date and time of the row
+@             before the CRLF (log/mmtime.s log_mm_write).
 @ -----------------------------------------------------------------------------
 FUNC log_write_minmax_rows
     push    {r3, r4, r5, lr}                @ 0801E564 push {r3, r4, r5, lr}
@@ -1493,6 +1494,12 @@ FUNC log_write_minmax_rows
     movs    r0, #1                          @ 0801E63C r0 = 1
     b       .Llog_write_minmax_rows_E73E    @ 0801E63E goto 0x801E73E
 .Llog_write_minmax_rows_E640:           @ v2.05 0x0801E640, reached from 0x0801E63A
+    .if LOOP_V205 == 0
+    ldr     r0, =log_max_time                @ production: "YYYY/MM/DD,hh:mm:ss," of the maximum row (log/mmtime.s)
+    bl      log_mm_write
+    cmp     r0, #0
+    bne     .Llog_write_minmax_rows_E73E    @ r0 = 1: a write failed
+    .endif
     movs    r2, #0                          @ 0801E640 r2 = 0
     movs    r1, #0                          @ 0801E642 r1 = 0
     movs    r0, #1                          @ 0801E644 r0 = 1
@@ -1609,6 +1616,12 @@ FUNC log_write_minmax_rows
     movs    r0, #1                          @ 0801E724 r0 = 1
     b       .Llog_write_minmax_rows_E73E    @ 0801E726 goto 0x801E73E
 .Llog_write_minmax_rows_E728:           @ v2.05 0x0801E728, reached from 0x0801E722
+    .if LOOP_V205 == 0
+    ldr     r0, =log_min_time                @ production: "YYYY/MM/DD,hh:mm:ss," of the minimum row (log/mmtime.s)
+    bl      log_mm_write
+    cmp     r0, #0
+    bne     .Llog_write_minmax_rows_E73E    @ r0 = 1: a write failed
+    .endif
     movs    r2, #0                          @ 0801E728 r2 = 0
     movs    r1, #0                          @ 0801E72A r1 = 0
     movs    r0, #1                          @ 0801E72C r0 = 1

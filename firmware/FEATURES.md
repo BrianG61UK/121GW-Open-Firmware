@@ -172,7 +172,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Constraints: the link is raw serial through the module on USART2; whether the phone application keeps up with 20 frames per
   second is not known here (no hardware test); the option is therefore a setting, default v2.05.
 
-### 2.6 Smarter SD logging (trigger implemented, IMP-21; MIN/MAX time stamps: below)
+### 2.6 Smarter SD logging (implemented, IMP-21)
 
 - Where: SETUP pages `tr` (item 30, after the limit pages) and `Ch` (item 31, with `tr-Ch` only); the existing page 9
   `In nnn` (interval) keeps its meaning. Logging is started and stopped as in v2.05 (MEM long, MEM+HOLD long).
@@ -185,11 +185,16 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   settles holds a partly settled mean, and the next record comes when the reading has moved the threshold from it.
 - How: the trigger only sets v2.05's record request 0x20007FE2 (sys_main step 9; `log/trigger.s`); the record format, CSV
   header and file naming are v2.05's, byte for byte (mem_logging_sd with noise off identical to v2.05).
-- MIN/MAX with timestamps: (a) in the file, the two closing rows of v2.05 (`MAX,<row>,<func>,<value>,<unit>` and `MIN,...`,
-  `log_write_minmax_rows`) get two more columns at the end, `,YYYY/MM/DD,hh:mm:ss` of the row, so a reader of the first five
-  columns sees v2.05's text; (b) on the meter, while MIN/MAX is on, two extra SETUP pages `tHI` and `tLo` (items 34, 35) show
-  hour and minute of the maximum and of the minimum in the format of page 7 (`FUN_080188A0`); the times are taken from the
-  clock chip when the extreme is recorded (`fn_0800E604`), RAM only.
+- MIN/MAX with timestamps (implemented): (a) in the file, the two closing rows of v2.05 (`MAX,<row>,<func>,<value>,<unit>,`
+  and `MIN,...`, `log_write_minmax_rows`) end with the date and time of the row they name, `YYYY/MM/DD,hh:mm:ss,` (as the data
+  rows write them), so a reader of the first five columns sees v2.05's text (`log/mmtime.s`; the time is kept when
+  `log_take_max_main` / `log_take_min_main` take the row); (b) on the meter, while MIN/MAX is on, two extra SETUP pages after
+  `Sd`: `tHI` (item 34) and `tLo` (item 35); the sub display shows the label, the main display the hour and minute of the
+  maximum / minimum as `HH-MM`, the form of page 7 (24-hour, or 12-hour with page `CL`), `-----` while the register holds
+  no value yet; not editable; nothing drawn while HOLD is active (as `Sd`). The time is taken from the clock chip copy
+  (rtc_hour / rtc_minute, read every 100 ms) whenever `fn_0800E604` changes the maximum or minimum; an overload sets the
+  register to +-100000 as in v2.05 and the time is kept only when it was not that value already (the first overload).
+  RAM only (`ui/mmtime.s`).
 - Storage: bits 2..1 of 0x020 (trigger 0, 1, 2; 3 reads as 0), 0x022 (threshold 1..255; 0 reads as 1). The interval stays at
   0x018..0x019. (Trigger and threshold implemented.)
 - Constraints: LOG is state-machine code in production (IMP-06); the trigger only decides when the request flag is set. No
@@ -318,7 +323,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 | 0x013 | 2.4 display | 0 level 1, 1 level 2 | level 1 | as 0x011 | approved, implemented |
 | 0x015 | 2.5 BLE | 0 2/s, 1 4/s, 2 10/s, 3 20/s | 2/s | 0x014 continuity code, 0x016 APO | approved, implemented |
 | 0x017 | 2.9 backlight | bits 6..0: 0 OFF, 1 30 s, 2..100 1..99 min; bit 7: on/off state | OFF, dark | as 0x015 | approved, implemented |
-| 0x020 | 2.3, 2.6, 2.12 | bit 0 REL percent, bits 2..1 log trigger, bit 3 12-hour clock | v2.05 | none (free word 0x020..0x023) | approved, bits 0 and 3 implemented |
+| 0x020 | 2.3, 2.6, 2.12 | bit 0 REL percent, bits 2..1 log trigger, bit 3 12-hour clock | v2.05 | none (free word 0x020..0x023) | approved, implemented |
 | 0x021 | 2.13 continuity | hold code 0..3 (100 / 50 / 25 ms / off = 15 ms) | 100 ms | as 0x020 | approved, implemented (the limits of 2.1 are RAM only) |
 | 0x022 | 2.6 | change threshold 1..255 | 1 | as 0x020 | approved, implemented |
 | 0x028..0x02B | 2.1 | LO limit, s32 big-endian | 0 | none (free word) | approved, not used (limits RAM only) |

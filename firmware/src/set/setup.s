@@ -84,6 +84,8 @@
     .equ SET_ITEM_CLK, 25                   @ IMP-13: setup item of the clock page CL (the last port page)
     .equ SET_ITEM_ST_N, 32                  @ IMP-14: statistics page n (only while MIN/MAX is on)
     .equ SET_ITEM_ST_SD, 33                 @ IMP-14: statistics page Sd (only while MIN/MAX is on)
+    .equ SET_ITEM_T_HI, 34                  @ IMP-21: time of the MIN/MAX maximum, page tHI (only while MIN/MAX is on)
+    .equ SET_ITEM_T_LO, 35                  @ IMP-21: time of the minimum, page tLo (only while MIN/MAX is on)
     .equ SET_ITEM_BH, 26                    @ IMP-16: continuity hold page bH (BEEP only, between dSP and CL)
     .equ SET_ITEM_LT, 27                    @ IMP-20: limit test pages Lt (27), Lo (28), HI (29), verdict (36)
     .equ SET_ITEM_LO, 28
@@ -124,15 +126,25 @@ FUNC fn_08015410
     @ the page dSP (item 24); on tc to dSP; on dSP to the page bH (item 26, IMP-16) in BEEP (mode 10), else to the page CL
     @ (item 25); on bH to CL; on CL to the limit pages Lt, Lo, HI (27..29, IMP-20); on HI to the verdict page (36) while
     @ the test is on; then to the logging pages tr (30) and, with tr-Ch, Ch (31) (IMP-21); then, while MIN/MAX is on, to
-    @ the statistics page n (item 32, IMP-14); on n to Sd (item 33); on Sd to item 0.  Each step ends an edit.
+    @ the statistics page n (item 32, IMP-14); on n to Sd (item 33); on Sd to the time pages tHI (34) and tLo (35)
+    @ (IMP-21); on tLo to item 0.  Each step ends an edit.
     ldr.w r0, =set_item
     ldrb r0, [r0, #0x0]
     cmp r0, #SET_ITEM_BL
     beq .Lsn_bl
     cmp r0, #SET_ITEM_BT
     beq .Lsn_bt
-    cmp r0, #SET_ITEM_ST_SD
-    beq .Lsn_to0                            @ Sd: next is item 0
+    cmp r0, #SET_ITEM_T_LO
+    beq .Lsn_to0                            @ tLo: next is item 0
+    cmp r0, #SET_ITEM_T_HI
+    bne 5f
+    movs r0, #SET_ITEM_T_LO                 @ tHI: next is tLo
+    b .Lsn_port_set
+5:  cmp r0, #SET_ITEM_ST_SD
+    bne 6f
+    movs r0, #SET_ITEM_T_HI                 @ Sd: next is tHI
+    b .Lsn_port_set
+6:
     cmp r0, #SET_ITEM_ST_N
     beq .Lsn_to_sd                          @ n: next is Sd
     cmp r0, #SET_ITEM_CLK
@@ -217,7 +229,7 @@ FUNC fn_08015410
     movs r0, #SET_ITEM_BT                   @ bL: next is bt
 .Lsn_port_set:
     ldr.w r1, =set_item
-    strb r0, [r1, #0x0]                     @ set_item = 21..33, 36 or 0
+    strb r0, [r1, #0x0]                     @ set_item = 21..36 or 0
     movs r0, #0x0
     ldr.w r1, =set_edit
     strb r0, [r1, #0x0]                     @ set_edit = 0 (v2.05 clears it at 0x08015422 for every item but 8)
@@ -2253,10 +2265,9 @@ FUNC fn_0801797C
     bl set_lg_draw                          @ r0 = item
     b .L08017F26
 .Lsd_not_lg:
-    cmp r0, #SET_ITEM_ST_N                  @ IMP-14: the statistics pages n (32) and Sd (33) ...
-    beq .Lsd_stats
-    cmp r0, #SET_ITEM_ST_SD
-    bne .Lsd_not_stats
+    sub r1, r0, #SET_ITEM_ST_N              @ IMP-14, IMP-21: the statistics pages n (32), Sd (33) and the time pages
+    cmp r1, #SET_ITEM_T_LO - SET_ITEM_ST_N  @ tHI (34), tLo (35) ...
+    bhi .Lsd_not_stats
 .Lsd_stats:
     ldr.w r1, =minmax_state
     ldrb r1, [r1, #0x0]

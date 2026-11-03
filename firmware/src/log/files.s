@@ -1523,7 +1523,8 @@ ENDFUNC log_track_min_main
 @ Out       : -
 @ Clobbers  : r0-r1, flags (v2.05 regeffects.txt; r4-r11 preserved)
 @ Context   : main only
-@ RAM       : reads log_row_no, log_view_func1, log_view_flags1, log_view_value1; writes log_max_row, log_max_func, log_max_flags, log_max_value
+@ RAM       : reads log_row_no, log_view_func1, log_view_flags1, log_view_value1; writes log_max_row, log_max_func, log_max_flags, log_max_value;
+@             production also log_max_time (tail call log_mm_save, log/mmtime.s)
 @ Spec      : v2.05 listing 0x0801DB34..0x0801DB63
 @ -----------------------------------------------------------------------------
 FUNC log_take_max_main
@@ -1543,7 +1544,12 @@ FUNC log_take_max_main
     ldr     r0, [r0]                        @ 0801DB5A r0 = u32 [log_view_value1]
     ldr.w   r1, =log_max_value              @ 0801DB5C r1 = &log_max_value
     str     r0, [r1]                        @ 0801DB60 u32 [log_max_value] = r0
+    .if LOOP_V205 == 0
+    ldr     r0, =log_max_time                @ production: keep the date and time of the row (log/mmtime.s)
+    b       log_mm_save                     @ tail call, returns to the caller
+    .else
     bx      lr                              @ 0801DB62 return
+    .endif
 ENDFUNC log_take_max_main
     .ltorg
 
@@ -1554,7 +1560,8 @@ ENDFUNC log_take_max_main
 @ Out       : -
 @ Clobbers  : r0-r1, flags (v2.05 regeffects.txt; r4-r11 preserved)
 @ Context   : main only
-@ RAM       : reads log_row_no, log_view_func1, log_view_flags1, log_view_value1; writes log_min_row, log_min_func, log_min_flags, log_min_value
+@ RAM       : reads log_row_no, log_view_func1, log_view_flags1, log_view_value1; writes log_min_row, log_min_func, log_min_flags, log_min_value;
+@             production also log_min_time (tail call log_mm_save, log/mmtime.s)
 @ Spec      : v2.05 listing 0x0801DB64..0x0801DB93
 @ -----------------------------------------------------------------------------
 FUNC log_take_min_main
@@ -1574,7 +1581,12 @@ FUNC log_take_min_main
     ldr     r0, [r0]                        @ 0801DB8A r0 = u32 [log_view_value1]
     ldr.w   r1, =log_min_value              @ 0801DB8C r1 = &log_min_value
     str     r0, [r1]                        @ 0801DB90 u32 [log_min_value] = r0
+    .if LOOP_V205 == 0
+    ldr     r0, =log_min_time                @ production: keep the date and time of the row (log/mmtime.s)
+    b       log_mm_save                     @ tail call, returns to the caller
+    .else
     bx      lr                              @ 0801DB92 return
+    .endif
 ENDFUNC log_take_min_main
     .ltorg
 

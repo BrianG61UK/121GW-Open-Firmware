@@ -861,8 +861,17 @@ FUNC fn_08016E08
     uxtb r0, r0                              @ 08017018
     cmp r0, #0                               @ 0801701A
     bne .L0801702E                           @ 0801701C
+    .if LOOP_V205 == 0
+    bl ui_mmt_view
+    cbz r0, .Lrf_ol_v205                    @ IMP-21: not the page tHI / tLo while MIN/MAX is on
+    movs r0, #0
+    bl ui_mmt_draw                          @ IMP-21: the time of the extreme in place of "OFL"
+    b .Lrf_ol_clear
+.Lrf_ol_v205:
+    .endif
     movs r0, #0                              @ 0801701E
     bl fn_080199B4                           @ 08017020
+.Lrf_ol_clear:
     movs r0, #0                              @ 08017024
     ldr r1, =v_20008046                      @ 08017026 &overload (OL) flag
     strb r0, [r1, #0]                        @ 0801702A
@@ -874,6 +883,12 @@ FUNC fn_08016E08
     bl ui_stats_draw                        @ IMP-14: the standard deviation on the main digits
     b .L08017090
 .Lrf_no_sd:
+    bl ui_mmt_view
+    cbz r0, .Lrf_no_mmt                     @ IMP-21: not the page tHI / tLo while MIN/MAX is on
+    movs r0, #1
+    bl ui_mmt_draw                          @ IMP-21: the time of the extreme on the main digits
+    b .L08017090
+.Lrf_no_mmt:
     bl ui_relpct_view
     cbz r0, .Lrf_no_pct                     @ IMP-11: REL in percent off or not shown: the v2.05 draw of D
     bl ui_relpct_draw                       @ IMP-11: D as percent of the REL base

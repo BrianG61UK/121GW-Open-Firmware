@@ -22,6 +22,7 @@
 | Continuity hold time | BEEP, SETUP page `bH` | beep latch 100 / 50 / 25 ms or off (15 ms) |
 | Limit test | SETUP pages `Lt`, `Lo`, `HI` | PASS / HI / Lo verdict against captured limits, with beeps |
 | Logging trigger | SETUP pages `tr`, `Ch` | SD records every interval, on a change, or on a limit verdict change |
+| MIN/MAX times | MIN/MAX, pages `tHI`, `tLo`; SD file | when the maximum and the minimum happened, on the meter and in the closing rows of the log file |
 
 How to set and use each one: [`firmware/USER_GUIDE.md`](firmware/USER_GUIDE.md). The `1_like_v2.05` build has none of
 these and behaves like the original firmware apart from the defect fixes.
@@ -54,7 +55,7 @@ No file of a release contains an original EEVblog image (bootloader, v2.05) or t
 - `DESIGN.md` design and deviation list, `EEPROM_MAP.md` every EEPROM byte, `ORIGINAL_FIRMWARE_ISSUES.md` the defects
   found in v2.05 (with evidence), `OPTIMIZATIONS.md`, `FEATURES.md` user-visible features (keys, display, storage; implemented in the production build: backlight
   auto-off timer with remembered on/off state, selectable dBm reference, Bluetooth frame rate 2/4/10/20 per second,
-  thermocouple type K/J/T, REL in percent, display level, 12-hour clock, statistics, continuity hold time, limit test, logging trigger), `HARDWARE_TEST.md` checklist for the first run on a meter.
+  thermocouple type K/J/T, REL in percent, display level, 12-hour clock, statistics, continuity hold time, limit test, logging trigger, MIN/MAX times), `HARDWARE_TEST.md` checklist for the first run on a meter.
 - Status: both builds match v2.05 in the emulator's 93 test scenarios and the STOP/wake scenario except documented
   deviations. Verified working on a meter (both builds). The strict build is compared frame by frame; in the production build the
   display during range changes is checked by the scenarios' assertions and final states.

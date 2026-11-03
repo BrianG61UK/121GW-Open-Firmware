@@ -82,7 +82,11 @@ The image has only run in the emulator. These checks confirm on hardware what th
    the high limit on `HI`; `Lt`: long SETUP, REL, long SETUP: the verdict page; values inside show `PASS`, outside `HI` /
    `Lo` with the refusal beep, back inside the accept beep; RANGE is refused; turning the dial ends the test.
 18. Logging trigger (production build): SD card in, `tr-Ch`, `Ch 10`, interval 0; log a slowly changing source: the file
-   holds a record only when the value moved 10 counts; `tr-In` logs as before.
+   holds a record only when the value moved 10 counts; `tr-In` logs as before. Stop the logging: the closing `MAX` and
+   `MIN` rows end with the date and time of the rows they name (compare with those rows in the file).
+19. MIN/MAX times (production build): DCV, MIN/MAX on; raise the input, wait for the clock minute to change, lower it;
+   SETUP past `n` and `Sd`: `tHI` shows the hour-minute of the raise, `tLo` that of the drop (12-hour form with `CL`);
+   SETUP again returns to the normal pages; long MIN/MAX ends it.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).
