@@ -1106,7 +1106,7 @@ FUNC ui_bootwin_main_busy
 ENDFUNC ui_bootwin_main_busy
 
 @ -----------------------------------------------------------------------------
-@ ui_version_sub - draw the version "V-2.05" on the sub display
+@ ui_version_sub - draw the version ("F-0.91" production, config.inc) on the sub display
 @ Replaces : nothing (new, IMP-02); same text and decimal point as the splash fn_0801A854, which uses the main digits
 @ In       : -
 @ Out      : -   (sets the commit request 0x2000805B)
@@ -1120,20 +1120,20 @@ LFUNC ui_version_sub
     push {r4, lr}
     bl fn_0801A760                          @ clear the sub-display unit group and the sub minus sign
     ldr r4, =v_20007C30                     @ text buffer
-    movs r0, #'V'
+    movs r0, #FW_VER_C0                     @ version text of the build (config.inc): "V-205" / "F-091"
     strb r0, [r4, #0]
-    movs r0, #'-'
+    movs r0, #FW_VER_C1
     strb r0, [r4, #1]
-    movs r0, #'2'
+    movs r0, #FW_VER_C2
     strb r0, [r4, #2]
-    movs r0, #'0'
+    movs r0, #FW_VER_C3
     strb r0, [r4, #3]
-    movs r0, #'5'
+    movs r0, #FW_VER_C4
     strb r0, [r4, #4]
     movs r0, #1                             @ sub display (positions 0..4)
     movs r1, r4
     bl lcd_draw_5char
-    movs r0, #2                             @ sub decimal point 2: right of the third digit ("V-2.05")
+    movs r0, #2                             @ sub decimal point 2: right of the third character ("V-2.05" / "F-0.91")
     bl fn_08017FB4
     movs r0, #1
     ldr r1, =v_2000805B

@@ -739,7 +739,7 @@ ENDFUNC fn_08019A98
     .ltorg
 
 @ -----------------------------------------------------------------------------
-@ fn_0801A854 - "V-2.05" splash on the main display
+@ fn_0801A854 - version splash on the main display ("V-2.05" strict, "F-0.91" production, config.inc)
 @ Replaces : 0x0801A854 FUN_0801A854 (v2.05, 62 bytes)
 @ In       : -
 @ Out      : -   (sets the commit request 0x2000805B)
@@ -752,6 +752,23 @@ ENDFUNC fn_08019A98
 @ -----------------------------------------------------------------------------
 FUNC fn_0801A854
     push {r4, lr}                            @ 0801A854
+    .if LOOP_V205 == 0
+    @ production: the version text of config.inc ("F-0.91"), all five characters written, point 2 as v2.05
+    bl fn_0801A81C                           @ clear the shadow, as v2.05
+    ldr r1, =v_20007C30                      @ 5-char text buffer
+    movs r0, #FW_VER_C0
+    strb r0, [r1, #0]
+    movs r0, #FW_VER_C1
+    strb r0, [r1, #1]
+    movs r0, #FW_VER_C2
+    strb r0, [r1, #2]
+    movs r0, #FW_VER_C3
+    strb r0, [r1, #3]
+    movs r0, #FW_VER_C4
+    strb r0, [r1, #4]
+    movs r0, #0
+    bl lcd_draw_5char                        @ main display
+    .else
     movs r4, #205                            @ 0801A856
     bl fn_0801A81C                           @ 0801A858
     movs r0, r4                              @ 0801A85C
@@ -767,6 +784,7 @@ FUNC fn_0801A854
     ldr r1, =v_20007C30                      @ 0801A878 &5-char text buffer
     movs r0, #0                              @ 0801A87C
     bl lcd_draw_5char                        @ 0801A87E
+    .endif
     movs r0, #2                              @ 0801A882
     bl fn_0801717E                           @ 0801A884
     movs r0, #1                              @ 0801A888
