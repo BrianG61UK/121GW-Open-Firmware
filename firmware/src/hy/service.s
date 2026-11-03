@@ -185,12 +185,13 @@ ENDFUNC hy3131_service_irq
 @ Clobbers : r0-r3, r12, flags (r4 preserved)
 @ Context  : main only
 @ RAM      : reads  0x200080BA acdc_active, 0x200077D0 adc_regs, 0x2000807E, 0x2000807F
-@            writes 0x20007DC4, 0x2000807D, 0x2000807E, 0x2000807F
+@            writes 0x20007DC4, 0x2000807E, 0x2000807F; reads hy_row_r29
 @ Spec     : DESIGN.md 6.13 (read sets); analysis/hy3131_modes_misc.md 8 (mirror readers); hy3131_model.md 2.1
-@ Deviation: IMP-06, OF-16, OF-53 (INTF acknowledge value); OF-54 needs no extra read here: INTF is read first and the
+@ Deviation: IMP-06, IMP-18 (no R20 read; R29 read only for a row with ENPKH), OF-16, OF-53 (INTF acknowledge value); OF-54 needs no extra read here: INTF is read first and the
 @            counter block only after CTF has been seen, so data and flag always belong to the same completed count
 @ Read sets (all with the v2.05 read command format and bit timing, hy_read_frame):
-@   every event  registers 0x1E..0x20 (INTF, INTE, R20; reading INTF clears it, DS p19) and 0x29 (R29: ENPKH test)
+@   every event  registers 0x1E..0x1F (INTF, INTE; reading INTF clears it, DS p19); 0x29 (R29, ENPKH test) only when
+@                the loaded row sets ENPKH (IMP-18)
 @   AD1F         registers 0x00..0x02 (AD1 data, read by FUN_080062F8)
 @   peak gate    registers 0x0E..0x13 (PKHMIN, PKHMAX, read by FUN_0800A7FC)
 @   CTF          registers 0x14..0x1D (CTSTA, whose read clears CTBOV, DS p36, then CTC, CTB, CTA read by FUN_0800AB48)
@@ -199,8 +200,9 @@ ENDFUNC hy3131_service_irq
 FUNC hy3131_service_irq
     push {r4, lr}
     movs r0, #0x1E
-    movs r1, #3
-    bl hy_read_frame                        @ mirror[0x1E..0x20] = INTF, INTE, R20
+    movs r1, #2
+    bl hy_read_frame                        @ mirror[0x1E..0x1F] = INTF, INTE (IMP-18: R20 is not read back, its copy
+                                            @ 0x2000807D has no reader; hy_row_r20 holds the R20 written)
     ldr r0, =adc_regs
     ldrb r0, [r0, #30]                      @ INTF as read
     mvns r0, r0                             @ OF-53: 0 for the flags seen set, 1 for the others (a written 1 has no effect,
@@ -211,21 +213,28 @@ FUNC hy3131_service_irq
     movs r1, #30                            @ register 0x1E = INTF
     ldr r0, =v_20007DC4
     bl hy3131_write_regs                    @ INTF <- acknowledge value (v2.05 0x0800616C writes 0; OF-53)
+    @ IMP-18: R29 is read back only when the loaded row sets ENPKH (bit 2, the peak rows).  Every R29 write leaves the chip
+    @ at hy_row_r29: the row write sets both or neither (whitelist refusal), hy_peak_restart clears ENPKH and writes
+    @ hy_row_r29 back inside one call.  With ENPKH clear in hy_row_r29 the read returns hy_row_r29, so it is not made (only
+    @ after a chip brown-out reset, whose R29 value the datasheet does not state, could the read differ).
+    ldr r0, =hy_row_r29
+    ldrb r1, [r0]
+    tst r1, #4
+    beq .Lps_r29_known                      @ ENPKH clear in the loaded row: R29 = hy_row_r29
     movs r0, #0x29
     movs r1, #1
     bl hy_read_frame                        @ mirror[0x29] = R29
+    ldr r0, =adc_regs
+    ldrb r1, [r0, #41]                      @ R29 as read
+.Lps_r29_known:
+    ldr r3, =v_2000807E
+    strb r1, [r3]                           @ copy of R29 (ENPKH test below)
     ldr r0, =adc_regs
     ldrb r1, [r0, #30]                      @ INTF
     ldrb r2, [r0, #31]                      @ INTE
     ands r1, r2                             @ enabled events
     ldr r3, =v_2000807F
     strb r1, [r3]                           @ event mask (v2.05 0x08006182)
-    ldrb r1, [r0, #32]                      @ R20
-    ldr r3, =v_2000807D
-    strb r1, [r3]                           @ copy of R20 (v2.05 0x08006190; no consumer left after HW-05)
-    ldrb r1, [r0, #41]                      @ R29
-    ldr r3, =v_2000807E
-    strb r1, [r3]                           @ copy of R29 (ENPKH test below)
     ldr r0, =v_2000807F
     ldrb r0, [r0]
     lsls r0, r0, #29                        @ mask bit 2 = AD1F

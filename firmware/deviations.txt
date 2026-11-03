@@ -791,3 +791,6 @@ IMP-15  mask:lcd:bar  setup_id    build == production
 # which sits at a segment boundary: the final frames differ in one bargraph segment (w6 bit 6, 16.490 s) and are equal
 # otherwise.
 IMP-01  lcd_final  acmv_values  build == production and main == "400.00"
+# The same in peak_acv: the final frames (1.0000 V, 50.00 Hz) differ in one bargraph segment (w4 bit 2), the count of the
+# last per-sample value; equal otherwise (present before IMP-17 / IMP-18, checked with the image of a66d119).
+IMP-01  lcd_final  peak_acv  build == production and main == "1.0000"

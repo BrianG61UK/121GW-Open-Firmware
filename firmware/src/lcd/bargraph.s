@@ -76,6 +76,28 @@ FUNC lcd_update_bargraph
     push {r7, lr}                            @ 08018B80
     @ fn_08018F14 computes the bar count in 0x20008041 and the scale / polarity
     bl fn_08018F14                           @ 08018B82
+    .if LOOP_V205 == 0
+    @ IMP-17: the same end state in one pass over the segment table: segments 1..count set, count+1..25 cleared, no other
+    @ bit touched.  v2.05 calls fn_08019408(25, k) for every k above the count (up to 25 calls of up to 25 clear blocks);
+    @ the production image updates the bargraph on every conversion, where that cascade took 28 % of the CPU in BEEP.
+    ldr r0, =v_20008041
+    ldrb r0, [r0]                            @ r0 = count (0..25)
+    ldr r1, =lcd_bar_seg_table               @ entries of 2 bytes: word offset, bit mask (segment 1 first)
+    ldr r2, =lcd_shadow
+    movs r3, #1                              @ k = 1
+1:  ldrb r12, [r1], #1                       @ word offset (0, 8, 16, 24)
+    ldrb r7, [r1], #1                        @ bit mask (r7 and lr are saved by the push at the entry)
+    ldr lr, [r2, r12]
+    cmp r3, r0
+    ite ls
+    orrls lr, lr, r7                         @ k <= count: segment on
+    bichi lr, lr, r7                         @ k > count: segment off
+    str lr, [r2, r12]
+    adds r3, r3, #1
+    cmp r3, #25
+    bls 1b
+    b .L08018F0A                             @ the commit request, as v2.05
+    .endif
     @ segment 1 (w2 bit 1): count >= 1 sets it, otherwise clear segments 1..25
     ldr r0, =v_20008041                      @ 08018B86 &bargraph segment count
     ldrb r0, [r0, #0]                        @ 08018B8A
@@ -483,6 +505,21 @@ FUNC lcd_update_bargraph
     strb r0, [r1, #0]                        @ 08018F10
     pop {r0, pc}                             @ 08018F12
 ENDFUNC lcd_update_bargraph
+
+    .if LOOP_V205 == 0
+    .ltorg                                   @ production: the literals of the IMP-17 block
+    .section .rodata.lcd.bar, "a", %progbits
+@ lcd_bar_seg_table: bargraph segments 1..25 (analysis/lcd_map.md 3, the blocks of lcd_update_bargraph above): byte offset
+@ of the lcd_shadow word, bit mask
+lcd_bar_seg_table:
+    .byte 8, 0x02,  16, 0x02,  24, 0x02,  24, 0x04,  16, 0x04    @ 1 w2b1, 2 w4b1, 3 w6b1, 4 w6b2, 5 w4b2
+    .byte 8, 0x04,   0, 0x04,   0, 0x08,   8, 0x08,  16, 0x08    @ 6 w2b2, 7 w0b2, 8 w0b3, 9 w2b3, 10 w4b3
+    .byte 24, 0x08, 24, 0x10,  16, 0x10,   8, 0x10,   0, 0x10    @ 11 w6b3, 12 w6b4, 13 w4b4, 14 w2b4, 15 w0b4
+    .byte 0, 0x20,   8, 0x20,  16, 0x20,  24, 0x20,  24, 0x40    @ 16 w0b5, 17 w2b5, 18 w4b5, 19 w6b5, 20 w6b6
+    .byte 16, 0x40,  8, 0x40,   0, 0x40,   0, 0x80,   8, 0x80    @ 21 w4b6, 22 w2b6, 23 w0b6, 24 w0b7, 25 w2b7
+    .size lcd_bar_seg_table, . - lcd_bar_seg_table
+    .previous
+    .endif
     .ltorg
 
 @ -----------------------------------------------------------------------------
