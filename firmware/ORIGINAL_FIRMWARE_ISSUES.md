@@ -77,6 +77,7 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-62 | Calibration | After the ACV range-0 calibration writes its marker (EEPROM 0x01F) the RAM flag that selects the CORR70 correction keeps its boot value until the next power-on; the (unreachable) Ohm range-6 branch stores the opposite of what the next boot reads | low | fixed |
 | OF-63 | Buzzer | The buzzer setting (SETUP "b-OFF") does not silence the diode short-circuit tone, the auto-hold capture beep, the auto power-off warning and the power-off beep | low | fixed |
 | OF-64 | SD card | FatFs R0.08a error paths fixed by ChaN in R0.10a..R0.10c: f_write stores the result of create_chain as the start cluster before checking it (a disk error writes 0xFFFFFFFF into the directory entry), create_chain links a new cluster behind an entry it could not read, move_window keeps the old sector number after a failed read, put_fat marks the window dirty after a failed load | medium | fixed |
+| OF-65 | BLE | The status frame's bar byte (14) carries the raw segment count, which exceeds the 25 segments of the display on an overload (45..55 seen); an application that masks the byte (the official one reads it & 0x1F) shows a wrong bar | low | fixed |
 
 ## Details
 
@@ -962,3 +963,12 @@ start cluster 0xFFFFFFFF and size 0, the retries could not reopen it and a secon
 Port (both builds, `src/sd/fat.s`, `src/sd/fat_file.s`): the four changes above as in R0.10a..R0.10c (window invalid =
 sector number 0xFFFFFFFF).  Kept as v2.05: the write results of the second FAT copy and of the FSInfo sector are not checked
 (the first FAT is the one read back).
+
+### OF-65 — the status frame's bar byte exceeds the display's 25 segments on an overload
+The frame builder (`0x0800C7B6`..`0x0800C7C0`) copies the bargraph count 0x20008041 into byte 14 unchanged.  The display lights
+segments 1..25 when the count is at least their number (`lcd_update_bargraph` `0x08018B80`), so every count from 25 up looks the
+same; on an overload the count is larger: 45 in the emulator (v2.05 image, DCV manual range 0, 9.0 V) and 46 / 55 on a meter
+(DCV range 0 with a 9.35 V battery; BEEP with open probes), read over Bluetooth.  The official application takes the bar value
+as `& 0x1F` (analysis/ble_packet.md 3), so 46 reads as 14 segments.
+Impact: a wrong bargraph in applications during an overload.
+Port (both builds): byte 14 = min(count, 25), the segments the display shows.

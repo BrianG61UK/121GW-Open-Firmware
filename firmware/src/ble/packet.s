@@ -44,7 +44,7 @@
     .equ ble_bat_low,           v_2000803B   @ debounced low-battery flag
     .equ ble_freq_range,        v_2000803E   @ frequency range 0..? (>= 2 sets the sub "k" in the BLE helper 0x0800CE78)
     .equ ble_sub_dp,            v_20008040   @ decimal-point code of the secondary display (lcd_show_value_pos0_4 argument)
-    .equ ble_bar_count,         v_20008041   @ bar segment count 0..25
+    .equ ble_bar_count,         v_20008041   @ bar segment count (above 25 on an overload; the frame carries at most 25, OF-65)
     .equ ble_ovl,               v_20008046   @ overload flag (drawn once)
     .equ ble_sub_ovl,           v_20008047   @ sub display overload flag (BLE helper 0x0800CE78)
     .equ ble_ovl_latch,         v_20008048   @ latched overload flag
@@ -421,6 +421,10 @@ FUNC build_status_packet_19b
     strb r5, [r0, #0xd]                     @ 0800C7B4  ble_frame_b+13 = r5
     ldr.w r0, =ble_bar_count                @ 0800C7B6
     ldrb r0, [r0, #0x0]                     @ 0800C7BA  r0 = ble_bar_count
+    cmp r0, #25
+    it hi
+    movhi r0, #25                           @ OF-65: the segments the display shows (1..25 lit from 25 up); v2.05 sends the raw
+                                            @ count, 26..55 on an overload, which an app masking the byte reads as a short bar
     ldr.w r1, =ble_frame_b                  @ 0800C7BC
     strb r0, [r1, #0xe]                     @ 0800C7C0  ble_frame_b+14 = ble_bar_count
     ldr.w r0, =filter_1khz                  @ 0800C7C2
