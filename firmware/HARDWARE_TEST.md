@@ -81,6 +81,8 @@ The image has only run in the emulator. These checks confirm on hardware what th
 17. Limit test (production build): DCV, a source at the low limit: SETUP to `Lo`, long SETUP, REL, long SETUP; the same at
    the high limit on `HI`; `Lt`: long SETUP, REL, long SETUP: the verdict page; values inside show `PASS`, outside `HI` /
    `Lo` with the refusal beep, back inside the accept beep; RANGE is refused; turning the dial ends the test.
+18. Logging trigger (production build): SD card in, `tr-Ch`, `Ch 10`, interval 0; log a slowly changing source: the file
+   holds a record only when the value moved 10 counts; `tr-In` logs as before.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

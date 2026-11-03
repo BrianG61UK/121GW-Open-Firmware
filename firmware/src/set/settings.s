@@ -663,6 +663,15 @@ FUNC fn_0800D190
     bl set_bh_load
     b .L0800D280
 .Lto_not_bh:
+    cmp r0, #30                             @ IMP-21: the same for the page tr (item 30; byte 0x020)
+    bne 1f
+    bl set_relp_load
+    b .L0800D280
+1:  cmp r0, #31                             @ IMP-21: and for the page Ch (item 31)
+    bne .Lto_not_lg
+    bl set_ch_load
+    b .L0800D280
+.Lto_not_lg:
     cmp r0, #11                             @ IMP-08: the same for the dBm reference (item 11 of ACV)
     bne .Lto_not_dbm
     ldr.w r0, =meter_mode

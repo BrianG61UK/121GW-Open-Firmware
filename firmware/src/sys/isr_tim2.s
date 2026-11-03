@@ -69,6 +69,11 @@ FUNC sys_tim2_isr
     ldr r0, =v_2000022C
     ldrh r0, [r0]
     cbnz r0, .Lt2_memview                   @ interval > 0: counted by the main loop
+    .if LOOP_V205 == 0
+    ldr r0, =log_trig
+    ldrb r0, [r0]
+    cbnz r0, .Lt2_memview                   @ IMP-21: tr-Ch / tr-Lt: interval 0 means the trigger only
+    .endif
     ldr r0, =v_20008050
     ldrb r0, [r0]
     cbnz r0, .Lt2_memview                   @ auto-hold stage 2

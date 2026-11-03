@@ -777,16 +777,19 @@ OF-30  lcd  lowz_values  build == baseline and since in 0..2.6
 # IMP-02 (DESIGN 10; ARS 6, 7.1): the production image measures during the power-on window, so the first reading after a
 # power-on in DCV is on the main digits at 2.708 s where v2.05 draws it at 3.039 s (setup_navigate_dcv, ble_stream: the
 # first lcd event after the window, its digits "0.0000" in both).  The window 2.70..3.05 s holds that first frame of
-# both runs only: the first reaction to a scenario key in these scenarios is at 3.12 s or later and is compared.
+# both runs only: the first reaction to a scenario key in these scenarios is at 3.12 s or later and is compared.  The
+# logging scenarios (mem_*) start the same way (dial v, wait 3).
 IMP-02  lcd  setup_*  build == production and boot in 2.70..3.05
 IMP-02  lcd  ble_*    build == production and boot in 2.70..3.05
+IMP-02  lcd  mem_*    build == production and boot in 2.70..3.05
 # IMP-15 (DESIGN 10): with no bar lit the bargraph polarity follows the sign of the digits (lcd_bar_negative; the BLE bar
 # sign of byte 13 the same) instead of the per-sample noise.  v2.05's own polarity shows "-" for one 14 ms frame in
-# setup_date at 14.690 s and in setup_id at the same moment (a per-sample value below -1.5 counts, OF-15) while the digits
-# read 0.0000; the production image keeps "+".  Only those menu scenarios have the bargraph masked (the measurement
-# scenarios compare it).
+# setup_date at 14.690 s and in setup_id and mem_hold_combo_logging at the same moment (a per-sample value below -1.5
+# counts, OF-15) while the digits read 0.0000; the production image keeps "+".  Only those scenarios have the bargraph
+# masked (the measurement scenarios compare it).
 IMP-15  mask:lcd:bar  setup_date  build == production
 IMP-15  mask:lcd:bar  setup_id    build == production
+IMP-15  mask:lcd:bar  mem_hold_combo_logging  build == production
 # IMP-01 (DESIGN 10; ARS 5): acmv_values ends at 400.00 mV with the bar count taken from the last per-sample value,
 # which sits at a segment boundary: the final frames differ in one bargraph segment (w6 bit 6, 16.490 s) and are equal
 # otherwise.

@@ -172,26 +172,26 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Constraints: the link is raw serial through the module on USART2; whether the phone application keeps up with 20 frames per
   second is not known here (no hardware test); the option is therefore a setting, default v2.05.
 
-### 2.6 Smarter SD logging
+### 2.6 Smarter SD logging (trigger implemented, IMP-21; MIN/MAX time stamps: below)
 
-- Where: SETUP pages `tr` (trigger), `Ch` (change threshold); the existing page 9 `In nnn` (interval, KS 4) stays and gets a
-  second meaning; closing MIN/MAX rows in the file; MIN/MAX time pages (below). Logging is started and stopped as in v2.05
-  (MEM long, MEM+HOLD long).
-- Keys: the edit keys of 1.2. `Ch` is a number page on the main display like `Lo`.
-- What is shown: `tr-In` (a record every interval, v2.05), `tr-Ch` (a record when the reading has moved by at least the
-  threshold since the last record, and every interval seconds if the interval is not 0), `tr-Lt` (a record at every change of
-  the limit verdict of 2.1 and every interval seconds while out of limits; needs the limit test on, else it behaves as
-  `tr-In`). Page `Ch`: sub `Ch   `, main the threshold in counts of the present range (1..255).
-- How: the trigger is evaluated on the 1 s flag at the place of the interval counter (loop step 9, `v_20007FA8`), so the
-  fastest rate is one record per second (whether a slow card keeps up is the open hardware question of DES 12.2). The record request is
-  the existing flag 0x20007FE2; the record format, CSV header and file naming are v2.05's, byte for byte.
+- Where: SETUP pages `tr` (item 30, after the limit pages) and `Ch` (item 31, with `tr-Ch` only); the existing page 9
+  `In nnn` (interval) keeps its meaning. Logging is started and stopped as in v2.05 (MEM long, MEM+HOLD long).
+- What is shown: `tr-In` (a record every interval, v2.05), `tr-Ch` (a record when the displayed reading has moved by at
+  least the threshold since the last record, tested once per second; with an interval above 0 also every interval),
+  `tr-Lt` (a record at every change of the limit verdict of 2.1; with an interval above 0 also every interval while the
+  verdict is not PASS). With `tr-Ch` and `tr-Lt` an interval of 0 means the trigger only (v2.05's 5-per-second path of
+  interval 0 is for `tr-In`). Page `Ch`: `Ch` and the threshold 1..255 counts. The first record of a `tr-Ch` session is
+  taken at the first second. The change is measured against the value of the last record; a record taken while a step
+  settles holds a partly settled mean, and the next record comes when the reading has moved the threshold from it.
+- How: the trigger only sets v2.05's record request 0x20007FE2 (sys_main step 9; `log/trigger.s`); the record format, CSV
+  header and file naming are v2.05's, byte for byte (mem_logging_sd with noise off identical to v2.05).
 - MIN/MAX with timestamps: (a) in the file, the two closing rows of v2.05 (`MAX,<row>,<func>,<value>,<unit>` and `MIN,...`,
   `log_write_minmax_rows`) get two more columns at the end, `,YYYY/MM/DD,hh:mm:ss` of the row, so a reader of the first five
   columns sees v2.05's text; (b) on the meter, while MIN/MAX is on, two extra SETUP pages `tHI` and `tLo` (items 34, 35) show
   hour and minute of the maximum and of the minimum in the format of page 7 (`FUN_080188A0`); the times are taken from the
   clock chip when the extreme is recorded (`fn_0800E604`), RAM only.
 - Storage: bits 2..1 of 0x020 (trigger 0, 1, 2; 3 reads as 0), 0x022 (threshold 1..255; 0 reads as 1). The interval stays at
-  0x018..0x019.
+  0x018..0x019. (Trigger and threshold implemented.)
 - Constraints: LOG is state-machine code in production (IMP-06); the trigger only decides when the request flag is set. No
   change to what a record contains.
 
@@ -320,7 +320,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 | 0x017 | 2.9 backlight | bits 6..0: 0 OFF, 1 30 s, 2..100 1..99 min; bit 7: on/off state | OFF, dark | as 0x015 | approved, implemented |
 | 0x020 | 2.3, 2.6, 2.12 | bit 0 REL percent, bits 2..1 log trigger, bit 3 12-hour clock | v2.05 | none (free word 0x020..0x023) | approved, bits 0 and 3 implemented |
 | 0x021 | 2.13 continuity | hold code 0..3 (100 / 50 / 25 ms / off = 15 ms) | 100 ms | as 0x020 | approved, implemented (the limits of 2.1 are RAM only) |
-| 0x022 | 2.6 | change threshold 1..255 | 1 | as 0x020 | approved |
+| 0x022 | 2.6 | change threshold 1..255 | 1 | as 0x020 | approved, implemented |
 | 0x028..0x02B | 2.1 | LO limit, s32 big-endian | 0 | none (free word) | approved, not used (limits RAM only) |
 | 0x02C..0x02F | 2.1 | HI limit, s32 big-endian | 0 | none (free word) | approved, not used (limits RAM only) |
 
@@ -342,8 +342,8 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 27 | `Lt` | always | yes (implemented) |
 | 28 | `Lo` | always | capture (implemented) |
 | 29 | `HI` | always | capture (implemented) |
-| 30 | `tr` (log trigger) | always | yes |
-| 31 | `Ch` | always | yes (digits) |
+| 30 | `tr` (log trigger) | always | yes (implemented) |
+| 31 | `Ch` | with `tr-Ch` | yes (implemented) |
 | 36 | verdict `PASS`/`HI`/`Lo` | while the limit test is on (shown when it is switched on) | no (implemented) |
 | 32 | `n` count | MIN/MAX on | no |
 | 33 | `Sd` | MIN/MAX on | no |
@@ -351,8 +351,8 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 
 Items 32..35 are the MIN/MAX pages. v2.05 uses 0..12 and 100; the page dispatcher falls back to item 0 for an unknown item
 (`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 25. SETUP short steps
-20 -> 21 -> 22 -> 23 (TEMP only) -> 24 -> 26 (BEEP only) -> 25 -> 27 -> 28 -> 29 -> 36 (test on) -> 32 -> 33 (MIN/MAX
-on) -> 0 (`fn_08015410`); each new page joins that chain.
+20 -> 21 -> 22 -> 23 (TEMP only) -> 24 -> 26 (BEEP only) -> 25 -> 27 -> 28 -> 29 -> 36 (test on) -> 30 -> 31 (tr-Ch) ->
+32 -> 33 (MIN/MAX on) -> 0 (`fn_08015410`); each new page joins that chain.
 
 ## 5. Order of work and checks
 

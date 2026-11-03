@@ -61,6 +61,7 @@ lt_on:          .space 1                    @ 1 = test on
 lt_valid:       .space 1                    @ bit 0 Lo captured, bit 1 HI captured (for lt_tag)
 lt_tag:         .space 1                    @ mode * 8 + range + 1 of the limits, 0 = none
 lt_dp:          .space 1                    @ decimal point code at the capture
+    .global lt_verdict
 lt_verdict:     .space 1                    @ LT_V_*
 lt_range_saved: .space 1                    @ range_manual before the test
 lt_show:        .space 1                    @ 1 = show the verdict page at the end of the Lt edit
@@ -296,6 +297,7 @@ FUNC lt_tick
     cmp r4, r5
     beq .Ltk_ret
     strb r4, [r1]
+    bl log_trig_verdict                     @ IMP-21: a record at the change with tr-Lt
     ldr r0, =v_20008037
     ldrb r0, [r0]
     cmp r0, #LT_ITEM_VERDICT

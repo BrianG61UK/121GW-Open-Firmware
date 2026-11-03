@@ -24,7 +24,7 @@ The new pages come after the original SETUP pages, in this order:
 
 `bL` (backlight) → `bt` (Bluetooth speed) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) → `dSP` (display
 level) → `bH` (continuity hold, BEEP only) → `CL` (12 / 24-hour clock) → `Lt`, `Lo`, `HI` (limit test; the verdict page
-while the test is on) → back to the first page (while MIN/MAX is on, the statistics pages `n` and `Sd` come before it)
+while the test is on) → `tr`, `Ch` (logging trigger) → back to the first page (while MIN/MAX is on, the statistics pages `n` and `Sd` come before it)
 
 The dBm reference is not a new page: it is edited on the existing dBm page of ACV.
 
@@ -113,6 +113,22 @@ Tip: `dSP 2` while adjusting a trimmer or watching something warm up or charge; 
 
 Tip: check a box of resistors without reading a single number: capture 99 ohm and 101 ohm, then every part shows `PASS`
 or not.
+
+## Logging trigger
+
+Logging to the SD card is started and stopped as before (hold **MEM**). The page `tr` chooses when a record is written:
+
+- `tr-In` (default, as the original): every interval (page `In`, seconds; 0 = about 5 records per second).
+- `tr-Ch`: when the reading has changed by at least the threshold of the page `Ch` (1 to 255 counts, in the last digit
+  of the reading) since the last record; checked once per second. With an interval above 0 a record is also written
+  every interval.
+- `tr-Lt`: when the limit test verdict changes (PASS / HI / Lo); with an interval above 0 also every interval while the
+  reading is outside the limits.
+
+The files have the same format as the original's.
+
+Tip: `tr-Ch` with `Ch 10` and interval 0 records a slowly drifting value only when it actually moves, so a long session
+stays short and readable.
 
 ## Continuity beep hold time
 

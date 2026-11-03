@@ -66,7 +66,7 @@ set_clk_texts:
 @ In/Out   : - / -
 @ Clobbers : r0-r3, r12, flags (AAPCS)
 @ Context  : main only (set_state_reset at boot and after a STOP wake; fn_0800D190 when an edit of rEL or CL times out)
-@ RAM      : writes set_relp, set_clk12, set_relp_byte
+@ RAM      : writes set_relp, set_clk12, log_trig (bits 2..1, IMP-21), set_relp_byte
 @ -----------------------------------------------------------------------------
 FUNC set_relp_load
     push {r4, lr}
@@ -80,6 +80,12 @@ FUNC set_relp_load
     ubfx r2, r0, #3, #1
     ldr r1, =set_clk12
     strb r2, [r1]                           @ bit 3: clock
+    ubfx r2, r0, #1, #2                     @ bits 2..1: logging trigger (IMP-21)
+    cmp r2, #2
+    it hi
+    movhi r2, #0                            @ 3 is not a trigger: tr-In
+    ldr r1, =log_trig
+    strb r2, [r1]
     and r0, r0, #1
     ldr r1, =set_relp
     strb r0, [r1]                           @ bit 0: REL view
@@ -97,7 +103,7 @@ ENDFUNC set_relp_load
 @ Note     : byte = (set_relp_byte & ~mask) | value; the RAM copy follows the stored byte.  NVM_ARM SETTINGS and
 @            nvm_write_setting through set_nvm_store; NVM skips a byte that does not change.
 @ -----------------------------------------------------------------------------
-LFUNC set_b20_store
+FUNC set_b20_store
     push {r4, lr}
     ldr r2, =set_relp_byte
     ldrb r3, [r2]

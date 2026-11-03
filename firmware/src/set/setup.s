@@ -89,6 +89,8 @@
     .equ SET_ITEM_LO, 28
     .equ SET_ITEM_HI, 29
     .equ SET_ITEM_VERDICT, 36
+    .equ SET_ITEM_TR, 30                    @ IMP-21: logging trigger page tr
+    .equ SET_ITEM_CH, 31                    @ IMP-21: change threshold page Ch (with tr-Ch only)
     .equ SET_ITEM_TC, 23                    @ IMP-10: setup item of the thermocouple type page tc (after bt, TEMP only)
     .endif
 
@@ -121,7 +123,7 @@ FUNC fn_08015410
     @ to the page bt (item 21), on bt to the page rEL (item 22); on rEL to the page tc (item 23) in TEMP (mode 5), else to
     @ the page dSP (item 24); on tc to dSP; on dSP to the page bH (item 26, IMP-16) in BEEP (mode 10), else to the page CL
     @ (item 25); on bH to CL; on CL to the limit pages Lt, Lo, HI (27..29, IMP-20); on HI to the verdict page (36) while
-    @ the test is on; then, while MIN/MAX is on, to
+    @ the test is on; then to the logging pages tr (30) and, with tr-Ch, Ch (31) (IMP-21); then, while MIN/MAX is on, to
     @ the statistics page n (item 32, IMP-14); on n to Sd (item 33); on Sd to item 0.  Each step ends an edit.
     ldr.w r0, =set_item
     ldrb r0, [r0, #0x0]
@@ -150,10 +152,20 @@ FUNC fn_08015410
     bne 3f
     ldr.w r0, =lt_on
     ldrb r0, [r0, #0x0]
-    cbz r0, .Lsn_after_lt                   @ HI, test off: the statistics or item 0
+    cbz r0, .Lsn_to_tr                      @ HI, test off: the page tr
     movs r0, #SET_ITEM_VERDICT              @ HI, test on: the verdict page
     b .Lsn_port_set
 3:  cmp r0, #SET_ITEM_VERDICT
+    beq .Lsn_to_tr                          @ verdict: the page tr
+    cmp r0, #SET_ITEM_TR
+    bne 4f
+    ldr.w r0, =log_trig
+    ldrb r0, [r0, #0x0]
+    cmp r0, #1
+    bne .Lsn_after_lt                       @ tr, not tr-Ch: the statistics or item 0
+    movs r0, #SET_ITEM_CH                   @ tr-Ch: the page Ch
+    b .Lsn_port_set
+4:  cmp r0, #SET_ITEM_CH
     bne .Lsn_not_lt
 .Lsn_after_lt:
     ldr.w r0, =minmax_state
@@ -192,6 +204,9 @@ FUNC fn_08015410
 .Lsn_to_sd:
     movs r0, #SET_ITEM_ST_SD
     b .Lsn_port_set
+.Lsn_to_tr:
+    movs r0, #SET_ITEM_TR
+    b .Lsn_port_set
 .Lsn_bt:
     movs r0, #SET_ITEM_RELP                 @ bt: next is rEL
     b .Lsn_port_set
@@ -202,7 +217,7 @@ FUNC fn_08015410
     movs r0, #SET_ITEM_BT                   @ bL: next is bt
 .Lsn_port_set:
     ldr.w r1, =set_item
-    strb r0, [r1, #0x0]                     @ set_item = 21..29, 32, 33, 36 or 0
+    strb r0, [r1, #0x0]                     @ set_item = 21..33, 36 or 0
     movs r0, #0x0
     ldr.w r1, =set_edit
     strb r0, [r1, #0x0]                     @ set_edit = 0 (v2.05 clears it at 0x08015422 for every item but 8)
@@ -1514,6 +1529,27 @@ FUNC fn_080165F4
     bl set_lt_edit                          @ switch, capture or end of the edit
     b .L08016800
 .Lse_not_lt:
+    cmp r0, #SET_ITEM_TR                    @ IMP-21: the logging pages tr (30) and Ch (31)
+    beq .Lse_lg
+    cmp r0, #SET_ITEM_CH
+    bne .Lse_not_lg
+.Lse_lg:
+    uxtb r4, r4
+    cmp r4, #0x0                            @ query?
+    bne .Lse_lg_act
+    movs r0, #0x1
+    movs r5, r0                             @ query result: editable
+    b .L08016800
+.Lse_lg_act:
+    cmp r0, #SET_ITEM_TR
+    mov r0, r4                              @ (mov and uxtb keep the flags of the compare)
+    uxtb r0, r0
+    bne 1f
+    bl set_tr_edit
+    b .L08016800
+1:  bl set_ch_edit
+    b .L08016800
+.Lse_not_lg:
     cmp r0, #SET_ITEM_CLK                   @ IMP-13: the clock page CL (item 25)
     bne .Lse_not_clk
     uxtb r4, r4
@@ -2209,6 +2245,14 @@ FUNC fn_0801797C
 .Lsd_lt_done:
     b .L08017F26
 .Lsd_not_lt:
+    cmp r0, #SET_ITEM_TR                    @ IMP-21: the logging pages tr (30) and Ch (31)
+    beq .Lsd_lg
+    cmp r0, #SET_ITEM_CH
+    bne .Lsd_not_lg
+.Lsd_lg:
+    bl set_lg_draw                          @ r0 = item
+    b .L08017F26
+.Lsd_not_lg:
     cmp r0, #SET_ITEM_ST_N                  @ IMP-14: the statistics pages n (32) and Sd (33) ...
     beq .Lsd_stats
     cmp r0, #SET_ITEM_ST_SD

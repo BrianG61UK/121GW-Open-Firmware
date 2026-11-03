@@ -193,7 +193,11 @@ FUNC sys_main
     movs r0, #0
     ldr r2, =v_20007FA8
     strh r0, [r2]                           @ interval 0: counter = 0 (0x08024C70)
+    .if LOOP_V205 == 0
+    b .Lmain_log_trig                       @ IMP-21: the trigger test of the second
+    .else
     b .Lmain_apo
+    .endif
 .Lmain_log_count:                           @ interval > 0: count seconds (0x08024C8C..0x08024CAC)
     ldr r2, =v_20007FA8
     CRIT_ENTER r3                           @ 0x20007FA8 is also incremented by sys_tim2_isr (DESIGN.md 3.4)
@@ -203,12 +207,21 @@ FUNC sys_main
     CRIT_EXIT r3
     uxth r0, r0
     cmp r0, r1
+    .if LOOP_V205 == 0
+    blo .Lmain_log_trig                     @ counter < interval (0x08024CA0 bcc)
+    movs r0, #0
+    strh r0, [r2]                           @ counter = 0
+    bl log_trig_interval                    @ IMP-21: log-write request (0x08024CAC) as the trigger allows
+.Lmain_log_trig:
+    bl log_trig_second                      @ IMP-21: tr-Ch change test (logging on, not in auto-hold stage 2)
+    .else
     blo .Lmain_apo                          @ counter < interval (0x08024CA0 bcc)
     movs r0, #0
     strh r0, [r2]                           @ counter = 0
     movs r0, #1
     ldr r1, =v_20007FE2
     strb r0, [r1]                           @ log-write request (0x08024CAC)
+    .endif
 .Lmain_apo:
     bl pwr_apo_second                       @ APO block 0x08024CAE..0x08024D1A (PWR)
     .if LOOP_V205 == 0
