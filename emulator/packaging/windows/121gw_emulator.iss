@@ -1,8 +1,10 @@
 ; Inno Setup script of the 121GW emulator installer.
 ;   ISCC /DAppVersion=1.2.3 /DSourceDir=<dist\121gw-emulator> /DOutputDir=<dir> /DLicenseFile=<LICENSE> packaging\windows\121gw_emulator.iss
 ; Installs per user (no administrator rights) into %LOCALAPPDATA%\Programs, adds a Start menu entry and an uninstaller.
-; The program is the official embeddable CPython running app\launcher.py in a console window (the server log); closing
-; the window stops the emulator.
+; The program is the official embeddable CPython running app\launcher.py without a console (pythonw.exe): the front panel
+; opens in its own window (pywebview with Microsoft Edge WebView2), closing it stops the emulator; without the WebView2
+; runtime the panel opens in the default browser and its Quit button stops the emulator.  A start-up error is shown in a
+; message box.  Start menu entry and (ticked by default) a desktop icon.
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
@@ -35,12 +37,16 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName=121GW Emulator
 WizardStyle=modern
 
+[Tasks]
+Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Additional icons:"
+
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{group}\121GW Emulator"; Filename: "{app}\python\python.exe"; Parameters: """{app}\app\launcher.py"""; WorkingDir: "{app}"; IconFilename: "{app}\app\121gw-emulator.ico"
+Name: "{group}\121GW Emulator"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\app\launcher.py"""; WorkingDir: "{app}"; IconFilename: "{app}\app\121gw-emulator.ico"
+Name: "{autodesktop}\121GW Emulator"; Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\app\launcher.py"""; WorkingDir: "{app}"; IconFilename: "{app}\app\121gw-emulator.ico"; Tasks: desktopicon
 Name: "{group}\Uninstall 121GW Emulator"; Filename: "{uninstallexe}"
 
 [Run]
-Filename: "{app}\python\python.exe"; Parameters: """{app}\app\launcher.py"""; Description: "Start the 121GW emulator now"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\python\pythonw.exe"; Parameters: """{app}\app\launcher.py"""; Description: "Start the 121GW emulator now"; Flags: postinstall nowait skipifsilent

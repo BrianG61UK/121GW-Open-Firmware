@@ -3,13 +3,16 @@
 The emulator runs the meter's firmware (STM32L152ZD core, HY3131 measurement chip, LCD, SD card, front panel) and shows
 the front panel in a browser. Everything the page does goes through the HTTP API below, so a script can do the same.
 
-Contents: 1 Starting, 2 Boot modes and bundled data, 3 GET /state, 4 POST /input, 5 POST /quit, 6 Python API,
+Contents: 1 Starting, 2 Boot modes and bundled data, 3 GET /state, 4 POST /input, 5 POST /firmware, POST /quit, 6 Python API,
 7 Errors and limits.
 
 ## 1. Starting
 
-Release packages (macOS `.dmg`, Windows installer, Linux `.AppImage`) start the emulator and open
-`http://127.0.0.1:8121` in the browser (the next free port if 8121 is taken). From the source tree:
+Release packages (macOS `.dmg`, Windows installer, Linux `.deb` / `.AppImage`; how to start them: `START.md`) run
+`launcher.py`: the front panel opens in its own window on macOS and Windows (closing it stops the emulator) and in the
+browser on Linux, or wherever the window cannot be made; the server listens on `http://127.0.0.1:8121` (the next free port
+if 8121 is taken).  The packages take every option below and also `--browser` (the browser instead of the window) and
+`--no-open` (neither).  From the source tree:
 
 ```
 sh firmware/tools/build_dist.sh /tmp/dist none          # both firmware builds (GNU binutils arm-none-eabi 2.46 on PATH)
@@ -26,7 +29,7 @@ Needs Python 3 with `unicorn` and `capstone` (`pip install unicorn capstone`); n
 | `--no-ui` | no HTTP server (the process runs the machine only) |
 | `--speed X` (1.0) | run rate: 1.0 is real time, 2.0 twice as fast (limited by the host's speed) |
 | `--firmware 2_fast\|1_like_v2.05` | bundled firmware build (default `2_fast`); also selectable in the page |
-| `--app FILE` | any application image (raw binary, loaded at 0x08006000) instead of a bundled build |
+| `--app FILE` | any application image (raw binary, loaded at 0x08006000) instead of a bundled build; in the page: **Load firmware file…** or drop the file (`POST /firmware`) |
 | `--eeprom FILE` | EEPROM image, raw bytes from EEPROM offset 0 (default: the bundled SYNTHETIC image) |
 | `--hw-cal FILE` | EEPROM image that describes the physical calibration of the emulated front end (default: the EEPROM as loaded at start) |
 | `--sdcard PATH`, `--sdcard-mb N` (512) | SD card backed by the raw image file PATH (created and formatted FAT32 when missing, at least 64 MiB); without it the socket is empty |
@@ -248,7 +251,15 @@ curl -s -X POST localhost:8121/input -d '{"firmware":"1_like_v2.05"}'
 curl -s -X POST localhost:8121/input -d '{"reset":true}'
 ```
 
-## 5. POST /quit
+## 5. POST /firmware, POST /quit
+
+`curl -X POST -H 'X-121GW: firmware' -H 'X-121GW-File: EEVBlog.bin' --data-binary @EEVBlog.bin http://127.0.0.1:8121/firmware`
+runs the application image in the body (what the page's **Load firmware file…** button and a dropped file send): the
+meter is power cycled with it, the EEPROM, board inputs and clock chip stay. The image is refused (400, with the reasons)
+when it is not an application image: at most 368 KiB (the flash above the bootloader), word 0 an initial stack pointer in
+the RAM 0x20000000..0x2000C000, word 1 a Thumb reset vector inside the image (`app.check_app_image`). A full flash dump
+that starts with the bootloader is refused for that reason. `GET /state` `machine.firmware` then names the file.
+
 
 `curl -X POST -H 'X-121GW: quit' http://127.0.0.1:8121/quit` stops the emulator process (the page has a Quit button; the
 packaged macOS application has no console to close). The header is required: a web page of another origin cannot send it

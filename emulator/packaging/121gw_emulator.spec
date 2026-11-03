@@ -6,6 +6,7 @@
 # Needs emulator/data filled by tools/prepare_data.py (firmware builds, v205_tables.json, synthetic_eeprom.bin).
 # Bundled: the UI (index.html, assets with the LCD graphics and their MIT licence), the data folder, the project LICENSE.
 # unicorn and capstone: their native libraries are collected explicitly (unicorn loads unicorn/lib/ next to the package).
+# macOS: pywebview (the application window, launcher.py) with its pyobjc frameworks; Linux builds carry no web view.
 import os
 import sys
 
@@ -37,12 +38,13 @@ a = Analysis(
            (os.path.join(root, 'ui', 'assets'), os.path.join('ui', 'assets')),
            (os.path.join(root, 'data'), 'data'),
            (os.path.join(repo, 'LICENSE'), '.')],
-    hiddenimports=['ui.server'] + collect_submodules('unicorn'),   # unicorn imports its arch modules by name
-    excludes=['tkinter', 'numpy', 'PIL', 'matplotlib'],
+    hiddenimports=['ui.server'] + collect_submodules('unicorn')    # unicorn imports its arch modules by name
+                  + (['webview', 'webview.platforms.cocoa'] if sys.platform == 'darwin' else []),
+    excludes=['tkinter', 'numpy', 'PIL', 'matplotlib'] + ([] if sys.platform == 'darwin' else ['webview']),
 )
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='121gw-emulator', icon=icon,
-          console=(sys.platform != 'darwin'))                   # macOS: windowed .app; the UI has a Quit button
+          console=(sys.platform != 'darwin'))                   # macOS: windowed .app (its own window, launcher.py)
 coll = COLLECT(exe, a.binaries, a.datas, name='121gw-emulator')
 if sys.platform == 'darwin':
     app = BUNDLE(coll, name='121GW Emulator.app', icon=icon, bundle_identifier='io.github.zombu4.121gw-open-firmware',

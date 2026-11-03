@@ -4,7 +4,7 @@
 #   sh packaging/linux/build_appimage.sh dist/121gw-emulator OUT.AppImage ICON.png APPIMAGETOOL
 #
 # APPIMAGETOOL is the path of appimagetool-x86_64.AppImage (run with --appimage-extract-and-run, so FUSE is not needed).
-# The AppImage starts the emulator in a terminal (the server log), opens the browser and stops with the terminal.
+# The AppImage opens the front panel in the default browser (no terminal); the page's Quit button stops the emulator.
 set -eu
 src=${1:?usage: build_appimage.sh DIST_DIR OUT.AppImage ICON.png APPIMAGETOOL}
 out=${2:?}
@@ -26,7 +26,7 @@ Name=121GW Emulator
 Comment=Emulator of the EEVblog 121GW multimeter with its open firmware
 Exec=121gw-emulator
 Icon=121gw-emulator
-Terminal=true
+Terminal=false
 Categories=Development;Electronics;
 DESK
 cat > "$dir/AppRun" <<'RUN'

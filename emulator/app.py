@@ -28,7 +28,7 @@ import argparse, os, sys, threading, time, webbrowser
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
-from emu.core import Machine, FLASH_BASE, EEPROM_BASE, INFO_BASE
+from emu.core import Machine, FLASH_BASE, FLASH_SIZE, EEPROM_BASE, INFO_BASE, SRAM_BASE, SRAM_SIZE
 from emu.scs import SCS
 from emu.board import Board, DIAL
 from emu.periph.rcc import RCC
@@ -53,6 +53,28 @@ from emu.v205tables import V205Tables
 from emu import bundle
 
 APP_BASE = 0x08006000
+APP_MAX = FLASH_BASE + FLASH_SIZE - APP_BASE        # room for an application image above the bootloader (368 KiB)
+
+
+def check_app_image(data):
+    """Reasons why `data` cannot be a 121GW application image (raw binary for 0x08006000, the EEVBlog.bin a meter's
+    bootloader takes from the SD card), as a list of sentences; empty when it can be run.  The test is the one the
+    bootloader's hand-over relies on (firmware/DESIGN.md 2.1): word 0 is the initial stack pointer, inside the SRAM, and
+    word 1 the reset vector, a Thumb address (bit 0 set) inside the image."""
+    problems = []
+    if len(data) < 8:
+        return [f'the file has {len(data)} bytes; an application image starts with an 8-byte vector table']
+    if len(data) > APP_MAX:
+        problems.append(f'the file has {len(data)} bytes, more than the {APP_MAX} bytes of flash above the bootloader '
+                        f'(a full flash dump that starts with the bootloader is not an application image)')
+    sp, reset = int.from_bytes(data[0:4], 'little'), int.from_bytes(data[4:8], 'little')
+    if not SRAM_BASE < sp <= SRAM_BASE + SRAM_SIZE:
+        problems.append(f'word 0 (initial stack pointer) is 0x{sp:08X}, not an address in the RAM '
+                        f'0x{SRAM_BASE:08X}..0x{SRAM_BASE + SRAM_SIZE:08X}')
+    if not reset & 1 or not APP_BASE <= reset & ~1 < APP_BASE + len(data):
+        problems.append(f'word 1 (reset vector) is 0x{reset:08X}, not a Thumb address inside the image '
+                        f'(0x{APP_BASE:08X}..0x{APP_BASE + len(data) - 1:08X})')
+    return problems
 BAT_SENSE_RATIO = 330e3 / (1e6 + 330e3)   # PA5 / B+ (R69 1M, R70 330k; analysis/frontend_netlist.md)
 
 
@@ -411,7 +433,8 @@ class Emulator:
          'drift': 0..<1}; keys left out keep their value.  A 'board' temperature also sets the PA4
         thermistor voltage; an 'analog' PA4 command sets the voltage directly and the board temperature follows it.
         Currents flow only through a plugged current jack ('jack' command, A or mA).
-        {'firmware': name} switches to a bundled firmware build (machine_info()['firmware_choices']) and power cycles."""
+        {'firmware': name} switches to a bundled firmware build (machine_info()['firmware_choices']) and power cycles;
+        load_app() runs an image given as bytes (the page's "load firmware file")."""
         with self.lock:
             if 'key' in c:
                 self.board.key(c['key'], bool(c['down']))
@@ -471,6 +494,25 @@ class Emulator:
             else:
                 raise ValueError('unknown command')
 
+    def load_app(self, data, name):
+        """Run the application image `data` (bytes, file name `name` for the display) instead of the present firmware:
+        checked with check_app_image() (ValueError with the reasons when it fails), kept in a temporary file for the
+        power cycles to come, then a power cycle as for a bundled build (EEPROM, board inputs and clock chip stay)."""
+        problems = check_app_image(data)
+        if problems:
+            raise ValueError('not a 121GW application image: ' + '; '.join(problems))
+        safe = ''.join(ch if ch.isalnum() or ch in '._-' else '_' for ch in os.path.basename(name or ''))[:80] or 'firmware.bin'
+        if not getattr(self, '_upload_dir', None):
+            import tempfile, atexit, shutil
+            self._upload_dir = tempfile.mkdtemp(prefix='121gw-fw-')
+            atexit.register(shutil.rmtree, self._upload_dir, True)
+        path = os.path.join(self._upload_dir, safe)
+        with open(path, 'wb') as f:
+            f.write(data)
+        with self.lock:
+            self.firmware_name, self.app_path = None, path
+            self.power_cycle(); self.running = True
+
 
 def start_server(emu, port, tries=1):
     """Start the UI server on `port`, or on the next free port of the following tries - 1.  Returns (httpd, port).
@@ -486,7 +528,8 @@ def start_server(emu, port, tries=1):
                      + f': {last} (--port N chooses another port)')
 
 
-def main(argv=None):
+def main(argv=None, on_ready=None):
+    """Command-line entry.  on_ready(url): called once the UI server is up (launcher.py opens its window then)."""
     ap = argparse.ArgumentParser(description='121GW emulator (module docstring: bundled data, direct boot, original images)')
     ap.add_argument('--inputs', metavar='DIR', help='directory with bootloader.bin, EEVBlog2_05.bin, option.bytes (default: '
                     'inputs/binaries of the source tree when it exists)')
@@ -534,6 +577,8 @@ def main(argv=None):
         print(f'121GW emulator UI: {url}', flush=True)
         if a.open:
             threading.Timer(0.5, webbrowser.open, (url,)).start()
+        if on_ready:
+            on_ready(url)
     emu.loop()
 
 

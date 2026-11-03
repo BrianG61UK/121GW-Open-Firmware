@@ -2,7 +2,7 @@
 """smoke.py - start-up check of a running emulator: it boots to a reading and models every access it makes.
 
     python3 -I emulator/tools/smoke.py [--url http://127.0.0.1:8121] [--timeout 90] [--volts 1.5] [--expect-direct]
-                                       [--expect-synthetic]
+                                       [--expect-synthetic] [--load FILE]
 
 The emulator is started by the caller (python emulator/app.py ..., or the packaged application) and must be listening on
 --url.  The tool then
@@ -14,11 +14,14 @@ The emulator is started by the caller (python emulator/app.py ..., or the packag
      calibration to the front end's signal,
 and fails (exit status 1) if the reading does not appear in time, if the emulator reports unmodelled peripheral accesses
 (GET /state "unmodelled" is not 0), a stop reason, or a hardware-safety violation.  --expect-direct / --expect-synthetic
-additionally check GET /state "machine": boot mode direct and EEPROM synthetic.  Standard library only.
+additionally check GET /state "machine": boot mode direct and EEPROM synthetic.  --load FILE then loads the firmware
+image FILE as the page's "Load firmware file" button does (POST /firmware), checks that a file of random bytes is refused,
+that GET /state "machine" names FILE, and waits for the reading again.  Standard library only.
 """
 import json
 import sys
 import time
+import urllib.error
 import urllib.request
 
 sys.dont_write_bytecode = True
@@ -38,6 +41,14 @@ def post(url, body):
     req = urllib.request.Request(url + '/input', data=json.dumps(body).encode(), method='POST')
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.load(r)
+
+
+def post_raw(url, path, data, name):
+    req = urllib.request.Request(url + path, data=data, method='POST',
+                                 headers={'X-121GW': 'firmware', 'X-121GW-File': name,
+                                          'Content-Type': 'application/octet-stream'})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read())
 
 
 def lit_names(state, bits):
@@ -105,6 +116,34 @@ def main(argv):
         problems.append('boot mode is %r, expected direct' % mach.get('boot'))
     if '--expect-synthetic' in argv and mach.get('eeprom') != 'synthetic':
         problems.append('EEPROM is %r, expected synthetic' % mach.get('eeprom'))
+    load = opt('--load', None)
+    if load and not problems:
+        import os
+        name = os.path.basename(load)
+        junk_ok = False
+        try:
+            post_raw(url, '/firmware', os.urandom(4096), 'junk.bin')
+        except urllib.error.HTTPError as e:
+            junk_ok = e.code == 400
+        if not junk_ok:
+            problems.append('POST /firmware accepted (or did not answer 400 to) a file of random bytes')
+        post_raw(url, '/firmware', open(load, 'rb').read(), name)
+        t1 = time.time()
+        post(url, {'input': {'kind': 'V', 'value': volts}})
+        while time.time() - t1 < timeout:
+            state = get(url, '/state')
+            m = state.get('machine', {})
+            shown = main_reading(lit_names(state, bits)) if state['lcd_on'] else None
+            try:
+                if (m.get('firmware') == name and not m.get('firmware_bundled') and shown is not None
+                        and abs(float(shown.replace(' ', '')) - volts) <= 0.002):
+                    print('smoke: loaded %s: display %s V after %.1f s' % (name, shown, time.time() - t1))
+                    break
+            except ValueError:
+                pass
+            time.sleep(0.5)
+        else:
+            problems.append('after loading %s: machine %r, display %r' % (name, state.get('machine'), shown))
     print('smoke: display %s V after %.1f s wall, emulated %.3f s, mode %s range %s, unmodelled %d'
           % (shown, time.time() - t0, state['time_ms'] / 1000, state['frontend']['mode_name'], state['frontend']['range'],
              state['unmodelled']))

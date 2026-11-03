@@ -1,0 +1,19 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='760' height='360' viewBox='0 0 760 360'>
+<rect width='760' height='360' fill='#eef1f4'/>
+<rect x='200' y='25' width='360' height='300' rx='16' fill='#f6f6f6' stroke='#c8cdd2' stroke-width='1'/>
+<rect x='345' y='45' width='70' height='70' rx='16' fill='#ffd7a8' stroke='#e8a35a' stroke-width='1'/>
+<text x='380' y='88' font-size='13' font-weight='bold' fill='#7a3d00' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>121GW</text>
+<text x='380' y='145' font-size='16' font-weight='bold' fill='#1d1d1f' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>&quot;121GW Emulator&quot; Not Opened</text>
+<text x='380' y='172' font-size='13' font-weight='normal' fill='#3a3a3c' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Apple could not verify &quot;121GW Emulator&quot; is</text>
+<text x='380' y='192' font-size='13' font-weight='normal' fill='#3a3a3c' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>free of malware that may harm your Mac or</text>
+<text x='380' y='212' font-size='13' font-weight='normal' fill='#3a3a3c' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>compromise your privacy.</text>
+<rect x='230' y='240' width='300' height='30' rx='7' fill='#0a84ff' stroke='#c8cdd2' stroke-width='1'/>
+<text x='380.0' y='260.0' font-size='14' font-weight='normal' fill='#fff' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Done</text>
+<rect x='223' y='233' width='314' height='44' rx='12' fill='none' stroke='#e01e1e' stroke-width='4'/>
+<circle cx='560' cy='255.0' r='16' fill='#e01e1e'/>
+<text x='560' y='261.0' font-size='17' font-weight='bold' fill='#fff' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>1</text>
+<text x='584' y='261.0' font-size='15' font-weight='bold' fill='#e01e1e' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>click Done</text>
+<rect x='230' y='278' width='300' height='30' rx='7' fill='#fff' stroke='#c8cdd2' stroke-width='1'/>
+<text x='380.0' y='298.0' font-size='14' font-weight='normal' fill='#1d1d1f' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Move to Trash</text>
+<text x='380.0' y='346' font-size='13' font-weight='normal' fill='#6e6e73' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>The first start of an app from the internet.  Drawing, not a screenshot</text>
+</svg>

@@ -34,9 +34,11 @@ Every release (tag `v*`, see [Releases](../../releases)) carries:
 | File | Content |
 |---|---|
 | `firmware-<tag>.zip` | `2_fast/EEVBlog.bin` (production build), `1_like_v2.05/EEVBlog.bin` (strict build that behaves like v2.05 apart from the defect fixes), `USER_GUIDE.md` (the new features and how to use them), `FIXES.md` (the v2.05 defects fixed), `LICENSE`, `SHA256SUMS` |
-| `121GW-Open-Firmware-Emulator-<tag>-macos-arm64.dmg` | emulator for macOS (Apple Silicon) |
-| `121GW-Open-Firmware-Emulator-<tag>-windows-x64.exe` | emulator installer for Windows |
-| `121GW-Open-Firmware-Emulator-<tag>-linux-x86_64.AppImage` | emulator for Linux |
+| `121GW-Open-Firmware-Emulator-<tag>-macos-arm64.dmg` | emulator for macOS on Apple chips (M1 and later) |
+| `121GW-Open-Firmware-Emulator-<tag>-macos-x86_64.dmg` | emulator for macOS on Intel |
+| `121GW-Open-Firmware-Emulator-<tag>-windows-x64.exe` | emulator installer for Windows 10 / 11 |
+| `121GW-Open-Firmware-Emulator-<tag>-linux-amd64.deb` | emulator package for Ubuntu, Debian, Mint, Pop!_OS |
+| `121GW-Open-Firmware-Emulator-<tag>-linux-x86_64.AppImage` | emulator for any other 64-bit Linux |
 | `<file>.sha256` | SHA-256 of the file with that name |
 
 No file of a release contains an original EEVblog image (bootloader, v2.05) or the calibration of any meter.
@@ -72,11 +74,11 @@ Read `firmware/HARDWARE_TEST.md` first; it is the procedure and checklist.
    calibration stay readable (same EEPROM layout).
 
 ## Emulator
-- Release packages: macOS, open the `.dmg` and start `121GW Emulator` (the application is not signed with a developer
-  identity or notarised, so macOS may ask for confirmation the first time: Control-click, Open); Windows, run the installer
-  (it is not signed either, so SmartScreen may warn); Linux, `chmod +x` the `.AppImage` and run it. The application opens
-  the front panel in the browser at http://127.0.0.1:8121.
-- It contains both firmware builds (choose one in the page), runs them without any original image (direct boot from the
+- **[How to start it, step by step with pictures](emulator/START.md).** Download, one confirmation the first time
+  (the packages are not paid-signed), then it starts with a double-click; nothing else to install. On macOS and Windows
+  the front panel opens in its own window (closing it stops the emulator); on Linux in the browser.
+- It contains both firmware builds (choose one in the page) and loads any other `EEVBlog.bin` with **Load firmware
+  file…** or by dropping the file on the window; it runs them without any original image (direct boot from the
   application's vector table) and starts with a SYNTHETIC EEPROM: made-up nominal calibration, not the calibration of any
   meter, with no serial number. Never copy it, or a `cal.bin` written by the emulator, to a meter.
 - From the source tree: `sh firmware/tools/build_dist.sh /tmp/dist none && python3 emulator/tools/prepare_data.py --dist /tmp/dist`

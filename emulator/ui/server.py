@@ -11,6 +11,9 @@ POST /input          JSON command: {"key": name, "down": bool} | {"dial": positi
                      {"environment": {"pickup_hz": 50|60, "pickup_v": v, "coupling_pf": c, "drift": d}} |
                      {"sdcard": bool} | {"sysreset": true} | {"firmware": "2_fast"|"1_like_v2.05"}
                      (stimulus fields: emu/frontend.py module docstring; app.py Emulator.command; all: emulator/API.md)
+POST /firmware       run the application image in the request body (raw bytes, at most 1 MiB; the file name in the header
+                     "X-121GW-File"); needs the request header "X-121GW: firmware" for the reason given for /quit;
+                     a file that is not an application image is refused with the reasons (app.check_app_image)
 POST /quit           stop the emulator process (needs the request header "X-121GW: quit", which a web page of another
                      origin cannot send without a CORS preflight that this server does not answer)
 The emulator object passed to serve() must provide snapshot() and command(dict); it runs in its
@@ -56,6 +59,18 @@ def make_handler(emu):
                 self._send(200, b'{"ok":true}', TYPES['.json'])
                 threading.Timer(0.2, os._exit, (0,)).start()
                 return
+            if self.path == '/firmware':
+                if self.headers.get('X-121GW') != 'firmware':
+                    return self._send(400, b'{"error":"missing header X-121GW: firmware"}', TYPES['.json'])
+                n = int(self.headers.get('Content-Length', 0))
+                if n > 1 << 20:
+                    return self._send(413, json.dumps({'error': f'the file has {n} bytes; a firmware image has at '
+                                                       f'most 368 KiB'}).encode(), TYPES['.json'])
+                try:
+                    emu.load_app(self.rfile.read(n), unquote(self.headers.get('X-121GW-File', '')))
+                    return self._send(200, b'{"ok":true}', TYPES['.json'])
+                except ValueError as e:
+                    return self._send(400, json.dumps({'error': str(e)}).encode(), TYPES['.json'])
             if self.path != '/input':
                 return self._send(404, b'not found', 'text/plain')
             n = int(self.headers.get('Content-Length', 0))

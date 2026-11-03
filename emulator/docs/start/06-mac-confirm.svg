@@ -1,0 +1,17 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='760' height='340' viewBox='0 0 760 340'>
+<rect width='760' height='340' fill='#eef1f4'/>
+<rect x='200' y='25' width='360' height='280' rx='16' fill='#f6f6f6' stroke='#c8cdd2' stroke-width='1'/>
+<rect x='345' y='45' width='70' height='70' rx='16' fill='#ffd7a8' stroke='#e8a35a' stroke-width='1'/>
+<text x='380' y='88' font-size='13' font-weight='bold' fill='#7a3d00' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>121GW</text>
+<text x='380' y='145' font-size='16' font-weight='bold' fill='#1d1d1f' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Open &quot;121GW Emulator&quot;?</text>
+<text x='380' y='172' font-size='13' font-weight='normal' fill='#3a3a3c' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Only open it if you trust its source.</text>
+<rect x='230' y='218' width='300' height='30' rx='7' fill='#0a84ff' stroke='#c8cdd2' stroke-width='1'/>
+<text x='380.0' y='238.0' font-size='14' font-weight='normal' fill='#fff' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Open Anyway</text>
+<rect x='223' y='211' width='314' height='44' rx='12' fill='none' stroke='#e01e1e' stroke-width='4'/>
+<circle cx='560' cy='233.0' r='16' fill='#e01e1e'/>
+<text x='560' y='239.0' font-size='17' font-weight='bold' fill='#fff' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>3</text>
+<text x='584' y='239.0' font-size='15' font-weight='bold' fill='#e01e1e' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>click, then your password</text>
+<rect x='230' y='256' width='300' height='30' rx='7' fill='#fff' stroke='#c8cdd2' stroke-width='1'/>
+<text x='380.0' y='276.0' font-size='14' font-weight='normal' fill='#1d1d1f' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Cancel</text>
+<text x='380.0' y='326' font-size='13' font-weight='normal' fill='#6e6e73' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Only the first time. Afterwards it opens like any app.  Drawing, not a screenshot</text>
+</svg>

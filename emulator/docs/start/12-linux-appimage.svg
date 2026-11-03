@@ -1,0 +1,19 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='760' height='340' viewBox='0 0 760 340'>
+<rect width='760' height='340' fill='#eef1f4'/>
+<rect x='120' y='20' width='520' height='290' rx='12' fill='#fff' stroke='#b9bfc6' stroke-width='1'/>
+<rect x='120' y='20' width='520' height='34' rx='0' fill='#f3f3f3' stroke='#b9bfc6' stroke-width='1'/>
+<text x='134' y='42' font-size='13' font-weight='normal' fill='#3a3a3c' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Properties</text>
+<text x='618' y='43' font-size='14' font-weight='normal' fill='#555' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>✕</text>
+<text x='150' y='80' font-size='13' font-weight='bold' fill='#1d1d1f' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>121GW-Open-Firmware-Emulator-v…-linux-x86_64.AppImage</text>
+<text x='150' y='125' font-size='14' font-weight='normal' fill='#1d1d1f' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Executable as Program</text>
+<rect x='560' y='110' width='46' height='24' rx='12' fill='#3584e4' stroke='#3584e4' stroke-width='1'/>
+<circle cx='594' cy='122' r='9' fill='#fff'/>
+<rect x='549' y='99' width='68' height='46' rx='12' fill='none' stroke='#e01e1e' stroke-width='4'/>
+<circle cx='526' cy='122.0' r='16' fill='#e01e1e'/>
+<text x='526' y='128.0' font-size='17' font-weight='bold' fill='#fff' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>2</text>
+<text x='150' y='190' font-size='14' font-weight='normal' fill='#3a3a3c' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>(1) Right-click the file  →  Properties.</text>
+<text x='150' y='214' font-size='14' font-weight='normal' fill='#3a3a3c' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>(3) Close, then double-click the file.</text>
+<text x='150' y='238' font-size='14' font-weight='normal' fill='#3a3a3c' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Older systems: tab &quot;Permissions&quot;,</text>
+<text x='150' y='262' font-size='14' font-weight='normal' fill='#3a3a3c' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>&quot;Allow executing file as program&quot;.</text>
+<text x='380.0' y='326' font-size='13' font-weight='normal' fill='#6e6e73' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Files (GNOME).  Drawing, not a screenshot</text>
+</svg>

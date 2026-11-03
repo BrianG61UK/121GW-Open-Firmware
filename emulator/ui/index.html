@@ -67,6 +67,9 @@
     </div>
     <div style="margin-top:6px">
       <label title="bundled firmware build; changing it power cycles the meter (the EEPROM stays)">firmware <select id="fw"></select></label>
+      <button id="fwload" title="run a firmware image of your own (EEVBlog.bin, the file a meter takes from the SD card); you can also drop the file on this page">Load firmware file&#8230;</button>
+      <input type="file" id="fwfile" accept=".bin,application/octet-stream" style="display:none">
+      <div id="fwmsg" style="margin-top:4px"></div>
       <button id="quit" title="stop the emulator process">Quit emulator</button>
     </div>
     <div id="machine" style="margin-top:6px"></div>
@@ -163,7 +166,24 @@ sv('eoff').onclick = () => { sv('ev').value = 0; post({environment: {pickup_v: 0
 document.getElementById('run').onclick =e => post({run: e.target.textContent === 'Resume'});
 document.getElementById('reset').onclick = () => post({reset:true});
 document.getElementById('sdcard').onchange = e => post({sdcard: e.target.checked});
-document.getElementById('fw').onchange = e => post({firmware: e.target.value});
+document.getElementById('fw').onchange = e => { if (e.target.value) post({firmware: e.target.value}); };
+// a firmware image of your own: the button's file dialog or a file dropped anywhere on the page
+async function loadFirmware(file) {
+  const msg = sv('fwmsg');
+  if (!file) return;
+  msg.className = ''; msg.textContent = 'loading ' + file.name + ' ...';
+  try {
+    const r = await fetch('/firmware', {method: 'POST', body: await file.arrayBuffer(),
+      headers: {'X-121GW': 'firmware', 'X-121GW-File': encodeURIComponent(file.name), 'Content-Type': 'application/octet-stream'}});
+    const j = await r.json().catch(() => ({error: 'no answer from the emulator'}));
+    if (r.ok) { msg.className = 'good'; msg.textContent = 'running ' + file.name + ' (the meter was power cycled; settings in the EEPROM stay)'; }
+    else { msg.className = 'bad'; msg.textContent = 'not loaded: ' + (j.error || r.status); }
+  } catch (err) { msg.className = 'bad'; msg.textContent = 'not loaded: ' + err; }
+}
+sv('fwload').onclick = () => sv('fwfile').click();
+sv('fwfile').onchange = e => { loadFirmware(e.target.files[0]); e.target.value = ''; };
+document.addEventListener('dragover', e => { e.preventDefault(); });
+document.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer.files.length) loadFirmware(e.dataTransfer.files[0]); });
 document.getElementById('quit').onclick = async () => {
   if (!confirm('Stop the emulator?')) return;
   await fetch('/quit', {method:'POST', headers:{'X-121GW':'quit'}}).catch(() => {});

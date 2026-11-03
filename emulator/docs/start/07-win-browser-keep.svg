@@ -1,0 +1,19 @@
+<svg xmlns='http://www.w3.org/2000/svg' width='860' height='300' viewBox='0 0 860 300'>
+<rect width='860' height='300' fill='#eef1f4'/>
+<rect x='60' y='25' width='740' height='240' rx='12' fill='#fff' stroke='#b9bfc6' stroke-width='1'/>
+<rect x='60' y='25' width='740' height='34' rx='0' fill='#f3f3f3' stroke='#b9bfc6' stroke-width='1'/>
+<text x='74' y='47' font-size='13' font-weight='normal' fill='#3a3a3c' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Downloads</text>
+<text x='778' y='48' font-size='14' font-weight='normal' fill='#555' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>✕</text>
+<rect x='80' y='75' width='700' height='100' rx='10' fill='#fff' stroke='#c8cdd2' stroke-width='1'/>
+<text x='100' y='105' font-size='14' font-weight='bold' fill='#1d1d1f' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>121GW-Open-Firmware-Emulator-v…-windows-x64.exe</text>
+<text x='100' y='130' font-size='13' font-weight='normal' fill='#3a3a3c' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>isn&#x27;t commonly downloaded. Make sure you trust it before you open it.</text>
+<rect x='600' y='140' width='70' height='26' rx='7' fill='#fff' stroke='#c8cdd2' stroke-width='1'/>
+<text x='635.0' y='158.0' font-size='14' font-weight='normal' fill='#1d1d1f' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>•••</text>
+<rect x='593' y='133' width='84' height='40' rx='12' fill='none' stroke='#e01e1e' stroke-width='4'/>
+<circle cx='570' cy='153.0' r='16' fill='#e01e1e'/>
+<text x='570' y='159.0' font-size='17' font-weight='bold' fill='#fff' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>1</text>
+<rect x='680' y='140' width='90' height='26' rx='7' fill='#fff' stroke='#c8cdd2' stroke-width='1'/>
+<text x='725.0' y='158.0' font-size='14' font-weight='normal' fill='#1d1d1f' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Delete</text>
+<text x='100' y='205' font-size='14' font-weight='normal' fill='#1d1d1f' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Only if the browser shows this: click  •••  →  Keep  →  Show more  →  Keep anyway.</text>
+<text x='430.0' y='286' font-size='13' font-weight='normal' fill='#6e6e73' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Microsoft Edge download list (Chrome: &quot;Keep&quot;).  Drawing, not a screenshot</text>
+</svg>
