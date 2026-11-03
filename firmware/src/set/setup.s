@@ -87,6 +87,7 @@
     .equ SET_ITEM_T_HI, 34                  @ IMP-21: time of the MIN/MAX maximum, page tHI (only while MIN/MAX is on)
     .equ SET_ITEM_T_LO, 35                  @ IMP-21: time of the minimum, page tLo (only while MIN/MAX is on)
     .equ SET_ITEM_BH, 26                    @ IMP-16: continuity hold page bH (BEEP only, between dSP and CL)
+    .equ SET_ITEM_LP, 37                    @ IMP-24: current-loop percent page LP (DCmA only, between dSP and CL)
     .equ SET_ITEM_LT, 27                    @ IMP-20: limit test pages Lt (27), Lo (28), HI (29), verdict (36)
     .equ SET_ITEM_LO, 28
     .equ SET_ITEM_HI, 29
@@ -188,12 +189,18 @@ FUNC fn_08015410
 .Lsn_not_lt:
     cmp r0, #SET_ITEM_BH
     beq .Lsn_to_clk                         @ bH: next is CL
+    cmp r0, #SET_ITEM_LP
+    beq .Lsn_to_clk                         @ LP: next is CL
     cmp r0, #SET_ITEM_DSP
     bne .Lsn_not_dsp
     ldr.w r0, =meter_mode
     ldrb r0, [r0, #0x0]
-    cmp r0, #0xa
-    bne .Lsn_to_clk                         @ dSP outside BEEP: next is CL
+    cmp r0, #19
+    bne 7f
+    movs r0, #SET_ITEM_LP                   @ dSP in DCmA: next is LP (IMP-24)
+    b .Lsn_port_set
+7:  cmp r0, #0xa
+    bne .Lsn_to_clk                         @ dSP outside BEEP and DCmA: next is CL
     movs r0, #SET_ITEM_BH                   @ dSP in BEEP: next is bH
     b .Lsn_port_set
 .Lsn_not_dsp:
@@ -1525,6 +1532,20 @@ FUNC fn_080165F4
     bl set_bh_edit                          @ up, down or save of the hold time
     b .L08016800
 .Lse_not_bh:
+    cmp r0, #SET_ITEM_LP                    @ IMP-24: the current-loop page LP (item 37)
+    bne .Lse_not_lp
+    uxtb r4, r4
+    cmp r4, #0x0                            @ query?
+    bne .Lse_lp_act
+    movs r0, #0x1
+    movs r5, r0                             @ query result: editable
+    b .L08016800
+.Lse_lp_act:
+    movs r0, r4
+    uxtb r0, r0
+    bl set_lp_edit                          @ up, down or save of the loop view
+    b .L08016800
+.Lse_not_lp:
     sub r1, r0, #SET_ITEM_LT                @ IMP-20: the limit pages Lt, Lo, HI (27..29)
     cmp r1, #2
     bhi .Lse_not_lt
@@ -2300,6 +2321,11 @@ FUNC fn_0801797C
     bl set_bh_draw                          @ draw "bH" and the hold time
     b .L08017F26
 .Lsd_not_bh:
+    cmp r0, #SET_ITEM_LP                    @ IMP-24: the current-loop page LP (item 37)
+    bne .Lsd_not_lp
+    bl set_lp_draw
+    b .L08017F26
+.Lsd_not_lp:
     cmp r0, #SET_ITEM_CLK                   @ IMP-13: the clock page CL (item 25)
     bne .Lsd_not_clk
     bl set_clk_draw                         @ draw "CL 24" or "CL 12"

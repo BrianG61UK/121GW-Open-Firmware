@@ -155,7 +155,9 @@ Formats: BE = big-endian, written MSB first, one byte program at a time. "Boot" 
 | 0x022 | 1 | - | never accessed by v2.05; port (production image only): logging change threshold, section 4.1 | calbin_save; port: set_ch_load | calbin_load; port: set_ch_edit via nvm_write_setting | cal.bin restore; port: SETUP page Ch save | port: 0 reads as 1 | RESTORE; SETTINGS in the production image only (4.1) |
 | 0x023..0x025 | 3 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
 | 0x026 | 1 | marker (hardware variant) | 0xA5 after an OHM range-6 calibration; RAM 0x20007FE0 = (byte != 0xA5); flag 1 (byte not 0xA5) clears bit 3 (PS0) of HY3131 register byte 10 in OHM range 6, flag 0 leaves PS0 closed (0x0800BE62..0x0800BE80); also read by 0x08007A92 (OHM) and 0x08008830 (VA); part of cal.bin like 0x01F; the writing branch is not reached (DEF-13), port: the flag is read back after the write (OF-62) | 0x08010F16 (Boot, store 0x08024DEA) | marker_26_write 0x08010F38, called at 0x0800F8AE; calbin_load | gain completion FUN_0800F7B8 in mode 9 range 6, which also sets RAM 0x20007FE0 = 1 (0x0800F8B2..0x0800F8B8) | != 0xA5 -> 1 | CAL |
-| 0x027..0x02F | 9 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
+| 0x027 | 1 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
+| 0x028 | 1 | - | never accessed by v2.05; port (production image only): current-loop view code, section 4.1 | calbin_save; port: set_lp_load | calbin_load; port: set_lp_edit via nvm_write_setting | cal.bin restore; port: SETUP page LP save | port: 0..2 kept, else 0 (off) | RESTORE; SETTINGS in the production image only (4.1) |
+| 0x029..0x02F | 7 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
 | 0x030..0x2CF | | records | calibration records, 16 bytes per mode and range, section 5 | | | | | CAL (accessed bytes), RESTORE (all) |
 | 0x2D0..0x2D7 | 8 | i32 BE, u32 BE | peak-hold record (table index 25): offset, gain | load path for modes 2/4 with peak_hold 0x200080B7 == 1 (0x08011798..0x080117AE) | cal_record_write 0x08011C4C (kind 0), 0x08011D38 (kind 1, address 0x2D4 at 0x08011CA0..0x08011CA6) | offset / gain calibration in modes 2, 4 with peak hold | none | CAL |
 | 0x2D8..0x2DF | 8 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
@@ -206,6 +208,7 @@ nor writes these bytes and its `nvm_allow` table does not allow them (`gen_nvm_a
 | 0x020 | REL view (SETUP page rEL, SET/UI, FEATURES.md 2.3) in bit 0; clock (SETUP page CL, FEATURES.md 2.12) in bit 3; logging trigger (SETUP page tr, FEATURES.md 2.6) in bits 2..1; bits 7..4 unused | bit 0: 0 = difference (v2.05), 1 = percent; bits 2..1: 0 = interval (v2.05), 1 = on change, 2 = on limit verdict, 3 reads as 0; bit 3: 0 = 24-hour (v2.05), 1 = 12-hour | difference (0xFF, an erased byte, reads as 0; the other bits are written back as loaded) | SETTINGS |
 | 0x021 | continuity beep hold time (SETUP page bH in BEEP, SET/MRES, FEATURES.md 2.13) | 0 = 100 ms (v2.05), 1 = 50 ms, 2 = 25 ms, 3 = off (15 ms) | 100 ms (a value above 3, 0xFF included, is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
 | 0x022 | logging change threshold (SETUP page Ch, LOG/SET, FEATURES.md 2.6) | 1..255 counts | 1 (0 reads as 1; 0xFF is 255) | SETTINGS |
+| 0x028 | current-loop percent view of DCmA (SETUP page LP in DCmA, SET/UI, FEATURES.md 2.14) | 0 = off (the current, v2.05), 1 = 4..20 mA, 2 = 0..20 mA | off (a value above 2, 0xFF included, is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
 
 Owner decision for 0x017: approved (2026-11-02). Why this byte: the word 0x014..0x017 holds the continuity code 0x014
 and the APO flag 0x016, both SETTINGS; v2.05's own setting saves already rewrite this word (0x014 at 0x080113D6, 0x016 at
@@ -217,7 +220,8 @@ port writes the stored value to 0x017, which v2.05 never reads. Further candidat
 them is allowed until it appears in the table above. Owner decision (2026-11-02): the bytes 0x00F, 0x011, 0x013, 0x015,
 0x020, 0x021, 0x022 and 0x028..0x02F are approved for the features of FEATURES.md 3; each enters the table above (and
 `nvm_allow`) only with the code that uses it. The limits of FEATURES.md 2.1 are not kept over a power-off (owner, same day),
-so 0x028..0x02F stay unused; 0x021 holds the continuity hold time of FEATURES.md 2.13 instead.
+so 0x021 holds the continuity hold time of FEATURES.md 2.13 instead; 0x028 holds the current-loop view of FEATURES.md 2.14
+(owner request 2026-11-03), 0x029..0x02F stay unused.
 
 ## 5. Calibration records
 
@@ -447,7 +451,7 @@ table in flash, `nvm_allow`, generated at build time from this section (`firmwar
 
 | Class | Bytes allowed | Additional condition checked inside NVM |
 |---|---|---|
-| SETTINGS | 0x008..0x00E, 0x010, 0x014, 0x016, 0x018..0x01A, 0x01B, 0x01E, and in the production image only the port-only settings of 4.1: 0x00F, 0x011, 0x013, 0x015, 0x017, 0x020, 0x021, 0x022 | none beyond the class (user actions of 7.1; for 0x022 the SETUP page Ch; for 0x021 the SETUP page bH; for 0x013 the SETUP page dSP, for 0x020 the SETUP pages rEL, CL and tr, for 0x00F the SETUP page tc, for 0x011 the save of the ACV page 11, for 0x015 the SETUP page bt, for 0x017 the SETUP page bL) |
+| SETTINGS | 0x008..0x00E, 0x010, 0x014, 0x016, 0x018..0x01A, 0x01B, 0x01E, and in the production image only the port-only settings of 4.1: 0x00F, 0x011, 0x013, 0x015, 0x017, 0x020, 0x021, 0x022, 0x028 | none beyond the class (user actions of 7.1; for 0x028 the SETUP page LP; for 0x022 the SETUP page Ch; for 0x021 the SETUP page bH; for 0x013 the SETUP page dSP, for 0x020 the SETUP pages rEL, CL and tr, for 0x00F the SETUP page tc, for 0x011 the save of the ACV page 11, for 0x015 the SETUP page bt, for 0x017 the SETUP page bL) |
 | IDENT | 0x001..0x002 (date code), 0x003..0x006 (serial) | exactly length 2 at 0x001, only while RAM 0x2000808B != 0 (v2.05 gate 0x08015F46..0x08015F4E); exactly length 4 at 0x003 (setup item 8 save, 0x08015F90) |
 | USERZERO | 0x4D0..0x4D4, 0x4D8..0x4DC, 0x4E0..0x4E4, 0x4E8..0x4EC, 0x4F0..0x4F4, 0x4F8..0x4FC | length 5 at a record base, first byte 0xA5 |
 | CAL | 0x01F, 0x026, 0x104..0x107, 0x178..0x17B, 0x2E0..0x2E1, and the bytes R+0..R+7 of every (mode, range) record of section 5.3, R+8..R+0xF of the AC-word records (modes 2, 4, 16, 18, 20 per ac_words_base) and of the VA records, 0x2D0..0x2D7 | RAM 0x2000808A == 1 (calibration mode), and the target matches the (kind, mode, range) rule of 7.3 recomputed inside NVM from meter_mode and meter_range, with the section 10 refusals |

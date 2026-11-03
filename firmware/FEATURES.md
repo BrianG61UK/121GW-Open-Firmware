@@ -314,6 +314,18 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   conversion (IMP-04) and the time to the tone are unchanged.
 - Storage: one byte 0x021 (0 = 100 ms); a value above 3 reads as 0.
 
+### 2.14 Current-loop percent for DC mA (implemented, IMP-24)
+- Request (forum, 2026-11-03): show a 4-20 mA (or 0-20 mA) signal as 0-100 %.
+- Where: SETUP page `LP`, item 37, offered in DCmA only (between `dSP` and `CL`): `LPOFF` (v2.05, default), `L4-20`,
+  `L0-20`.
+- What is shown: in DCmA the main display shows p = (I - 4 mA) / 16 mA x 100 % (or I / 20 mA x 100 %) with 0.01 %, rounded
+  half away from zero, the % sign on and the A sign off; below 4 mA negative (-25.00 % at 0 mA). DCmA range 0 (5.0000 mA,
+  0.1 uA) and range 1 (50.000 mA, 1 uA) are both used. REL keeps its own display; HOLD freezes the display; an overload
+  shows OFL.
+- How: `ui/loop.s` replaces the draw of D in `fn_08016E08` like the REL percent view (2.3) and shares its sign mask; logging,
+  MIN/MAX and the BLE frame keep the current in counts.
+- Storage: one byte 0x028 (0 = off); a value above 2 reads as 0 (EEPROM_MAP.md 4.1).
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
@@ -326,7 +338,8 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 | 0x020 | 2.3, 2.6, 2.12 | bit 0 REL percent, bits 2..1 log trigger, bit 3 12-hour clock | v2.05 | none (free word 0x020..0x023) | approved, implemented |
 | 0x021 | 2.13 continuity | hold code 0..3 (100 / 50 / 25 ms / off = 15 ms) | 100 ms | as 0x020 | approved, implemented (the limits of 2.1 are RAM only) |
 | 0x022 | 2.6 | change threshold 1..255 | 1 | as 0x020 | approved, implemented |
-| 0x028..0x02B | 2.1 | LO limit, s32 big-endian | 0 | none (free word) | approved, not used (limits RAM only) |
+| 0x028 | 2.14 loop | view code 0..2 (off / 4..20 / 0..20 mA) | off | none (free word 0x028..0x02B) | approved, implemented (planned for the LO limit of 2.1, which stays RAM only) |
+| 0x029..0x02B | - | - | - | as 0x028 | approved, not used |
 | 0x02C..0x02F | 2.1 | HI limit, s32 big-endian | 0 | none (free word) | approved, not used (limits RAM only) |
 
 0x023 stays unused. Every offset above is in the never-accessed list of EMAP 4. The alternative locations 0x4B0..0x4CF (32

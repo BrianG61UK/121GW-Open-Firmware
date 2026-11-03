@@ -2,7 +2,7 @@
 
 Everything on this page is in the **fast build** (`2_fast/EEVBlog.bin`). The `1_like_v2.05` build behaves like the
 original firmware apart from the defect fixes and has none of these features. At power-on the fast build shows its
-version, `F-0.95` (the release number, v0.9.5); the `1_like_v2.05` build shows `V-2.05` like the original.
+version, `F-0.96` (the release number, v0.9.6); the `1_like_v2.05` build shows `V-2.05` like the original.
 
 All settings are stored in bytes of the data EEPROM that the original firmware never uses. Calibration, serial number
 and the original settings are not touched, and a meter flashed back to v2.05 simply ignores the new bytes.
@@ -23,7 +23,7 @@ setting is kept over a power-off.
 The new pages come after the original SETUP pages, in this order:
 
 `bL` (backlight) → `bt` (Bluetooth speed) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) → `dSP` (display
-level) → `bH` (continuity hold, BEEP only) → `CL` (12 / 24-hour clock) → `Lt`, `Lo`, `HI` (limit test; the verdict page
+level) → `bH` (continuity hold, BEEP only) → `LP` (4–20 mA view, DC mA only) → `CL` (12 / 24-hour clock) → `Lt`, `Lo`, `HI` (limit test; the verdict page
 while the test is on) → `tr`, `Ch` (logging trigger) → back to the first page (while MIN/MAX is on, the statistics pages
 `n` and `Sd` and the time pages `tHI` and `tLo` come before it)
 
@@ -132,6 +132,15 @@ with the date and time of the row that held the maximum and the minimum, for exa
 
 Tip: `tr-Ch` with `Ch 10` and interval 0 records a slowly drifting value only when it actually moves, so a long session
 stays short and readable.
+
+## 4–20 mA loop in percent (DC mA)
+
+- **Where:** in DC mA (mA jack, dial A), page `LP`: `LPOFF` (default: the current, as the original), `L4-20`, `L0-20`.
+- **Effect:** the main display shows the loop signal as a percentage with the % sign: 4 mA = 0.00 %, 12 mA = 50.00 %,
+  20 mA = 100.00 % (with `L0-20`: 0 mA = 0 %, 20 mA = 100 %). Below 4 mA it goes negative, so a broken loop (0 mA) shows
+  -25.00 %. Logging, Bluetooth and MIN/MAX keep the current in mA.
+
+Tip: with `L4-20` a sensor's output reads directly in percent of its range, for example a pressure transmitter at 63.50 %.
 
 ## Continuity beep hold time
 

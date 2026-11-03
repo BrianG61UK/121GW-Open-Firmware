@@ -197,7 +197,7 @@ LFUNC ui_rp_text_prep
 ENDFUNC ui_rp_text_prep
 
 @ -----------------------------------------------------------------------------
-@ ui_relpct_mask - apply the percent view to the shadow before a full commit
+@ ui_relpct_mask - apply the percent view (REL percent, IMP-11, or the DCmA loop view, IMP-24) to the shadow before a full commit
 @ Replaces : nothing in v2.05 (new; called first by lcd_commit_shadow)
 @ In/Out   : - / -
 @ Clobbers : r0-r3, flags
@@ -208,7 +208,9 @@ ENDFUNC ui_rp_text_prep
 FUNC ui_relpct_mask
     push {r4, lr}
     bl ui_relpct_view
-    ldr r1, =ui_relpct_last
+    cbnz r0, 1f
+    bl ui_loop_view                         @ IMP-24: the DCmA loop percent view uses the same mask
+1:  ldr r1, =ui_relpct_last
     ldrb r2, [r1]
     strb r0, [r1]                           @ remember for the next commit
     cbnz r0, .Lrm_apply

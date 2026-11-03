@@ -94,6 +94,9 @@ The image has only run in the emulator. These checks confirm on hardware what th
    modified on the PC (v2.05: created 2006-02-09 22:30).
 22. Buzzer off (both builds, OF-63): SETUP page 3 `b-OFF`. Diode short, auto-hold capture, the auto power-off warning and the
    power-off beep are silent; continuity still beeps, and so do the wrong-jack and high-voltage warnings.
+23. 4-20 mA view (production build, IMP-24): DCmA, SETUP page `LP` = `L4-20`; a known current (for example a 4-20 mA
+   source or a 9 V battery through a resistor): the display shows (I - 4 mA) / 16 mA x 100 % with the % sign; `LPOFF` shows
+   the current again.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

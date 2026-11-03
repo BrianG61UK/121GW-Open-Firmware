@@ -894,6 +894,11 @@ FUNC fn_08016E08
     bl ui_relpct_draw                       @ IMP-11: D as percent of the REL base
     b .L08017090
 .Lrf_no_pct:
+    bl ui_loop_view
+    cbz r0, .Lrf_no_loop                    @ IMP-24: DCmA loop percent view off or not shown
+    bl ui_loop_draw                         @ IMP-24: the current as percent of the 4..20 / 0..20 mA span
+    b .L08017090
+.Lrf_no_loop:
     .endif
     @ r4 = displayed reading D (0x20007D64); inside -99999..99999 it is drawn directly
     ldr r0, =v_20007D64                      @ 0801702E &displayed reading D (signed counts)
