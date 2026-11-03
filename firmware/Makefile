@@ -87,9 +87,13 @@ toolcheck:
 switches:
 	@echo "build switches: $(if $(NONDEFAULT),$(NONDEFAULT),all at their defaults)"
 
-# every object depends on every include file
+# every object depends on every include file.  A source that tests a build switch of config.inc (LOOP_V205) must include
+# config.inc: without it the assembler takes the undefined symbol silently and assembles the wrong branch of the .if
+# (func/hold.s lacked the include until 2026-11-03), so such a file stops the build here.
 $(OBJDIR)/%.o: src/%.s $(wildcard src/inc/*.inc) Makefile
 	@mkdir -p $(dir $@)
+	@if grep -q 'LOOP_V205' $< && ! grep -q '\.include "config.inc"' $<; then \
+	  echo "$<: tests LOOP_V205 but does not .include \"config.inc\""; exit 1; fi
 	$(AS) $(ASFLAGS) -o $@ $<
 
 $(OELF): $(OBJS) $(LDS)

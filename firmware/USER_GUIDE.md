@@ -2,7 +2,7 @@
 
 Everything on this page is in the **fast build** (`2_fast/EEVBlog.bin`). The `1_like_v2.05` build behaves like the
 original firmware apart from the defect fixes and has none of these features. At power-on the fast build shows its
-version, `F-0.94` (the release number, v0.9.4); the `1_like_v2.05` build shows `V-2.05` like the original.
+version, `F-0.95` (the release number, v0.9.5); the `1_like_v2.05` build shows `V-2.05` like the original.
 
 All settings are stored in bytes of the data EEPROM that the original firmware never uses. Calibration, serial number
 and the original settings are not touched, and a meter flashed back to v2.05 simply ignores the new bytes.
@@ -189,6 +189,12 @@ The fast build also reacts faster, with no setting needed:
 - **Diode short tone:** designed for about 20 ms (original: 0.38 s, measured).
 - **Readings:** DC and AC currents, diode, the continuity display and the lower AC volt ranges update every 100 ms, the
   highest AC volt range every 25 ms, by design (original: about 221 ms, measured).
+- **DC volts:** twice as many updates as the original, with the same steadiness (each value is still the average of the
+  same 16 conversions, just shown twice as often). After a jump of the input the first value is the new level: the
+  original could show a value in between once (for example 4.5 V when connecting 9 V).
+- **Auto-hold in Ω and diode:** a short (0 Ω, 0 V) is captured like any other value; the original ignored readings below
+  1000 digits. Open probes (OL) are still ignored. In the volt and current functions auto-hold still ignores readings
+  near zero, because there open probes read about 0.
 
 The full list of changes and fixed defects is in `OPTIMIZATIONS.md` and `ORIGINAL_FIRMWARE_ISSUES.md`.
 

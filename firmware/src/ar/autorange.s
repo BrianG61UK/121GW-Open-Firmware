@@ -574,6 +574,19 @@ FUNC autorange_step
     cmp r0, #0                          @ 0800E240
     beq .Lar_latch                      @ 0800E242
     movs r0, #0                         @ 0800E244
+    .if LOOP_V205 == 0
+    @ IMP-22: in OHM and DIODE 0 is a value auto-hold captures, so the reference after a range change is the impossible
+    @ 1000000 (as v2.05 sets it for an OHM overload, 0x0800E47A); a reference of 0 would make a reading of 0 "not new" (the
+    @ 400-count change test of fn_0800E30C) after every range step of the auto-ranging down to the short
+    ldr r1, =meter_mode
+    ldrb r1, [r1]
+    cmp r1, #9
+    beq 1f
+    cmp r1, #11
+    bne 2f
+1:  ldr r0, =0x000F4240
+2:
+    .endif
     ldr r1, =ar_hold_value              @ 0800E246
     str r0, [r1]                        @ 0800E24A
     b .Lar_latch                        @ 0800E24C

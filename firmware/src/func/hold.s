@@ -26,6 +26,7 @@
     .thumb
     .include "macros.inc"
     .include "ram_v205.inc"
+    .include "config.inc"
 
     .section .text.func, "ax", %progbits
 
@@ -61,7 +62,7 @@
 @ RAM      : reads hold_active, hold_stage2, func_disp_blank, meter_mode, range_manual, meter_range, func_ohm_skip, func_reading,
 @            full_scale, ol_flag, func_ahold_*; writes func_ahold_*, new_result, log_hold_req
 @ Spec     : analysis/keys_setup.md section 2 (HOLD), analysis/autorange_and_scheduler.md (OHM jump)
-@ Deviation: none (copy of the v2.05 sequence)
+@ Deviation: production: IMP-22 (OHM and DIODE: any reading without overload is a signal); otherwise the v2.05 sequence
 @ -----------------------------------------------------------------------------
 FUNC fn_0800E30C
     push {r3, r4, r5, lr}                  @ save r3 (stack alignment), r4, r5, the return address
@@ -100,6 +101,60 @@ FUNC fn_0800E30C
     bne .Lahold_0800E592                   @ OHM range 1..5, auto range, OHM skip counter still running: wait
     @ Signal test.  r4 = 1000 counts, the signal threshold.
 .Lahold_0800E366:
+    .if LOOP_V205 == 0
+    @ IMP-22 (owner decision 2026-11-03): in OHM (mode 9) and DIODE (mode 11) open probes read OL, so there "no signal" is the
+    @ overload, and readings below 1000 counts, 0 included (a short, a good fuse, a shorted junction), are signals once the
+    @ auto-ranging has nowhere lower to go.  v2.05 requires 1000 counts there too (0x0800E366..0x0800E3BE), so 0 ohm and 0 V
+    @ were never captured.  The other modes keep the threshold: their open probes read about 0.
+    ldr r0, =meter_mode
+    ldrb r0, [r0, #0]
+    cmp r0, #9
+    beq 1f
+    cmp r0, #11
+    bne 2f
+1:  ldr r0, =func_ol_flag
+    ldrb r0, [r0, #0]
+    cmp r0, #0
+    bne 3f                                 @ overload (probes open): no signal
+    @ no overload.  A reading of at least 1000 counts (either sign) is a signal at once; a smaller one only where the
+    @ auto-ranging cannot go lower (range 0, or manual range): while it still steps down towards a short the value would be
+    @ captured in a higher range (0.000 kohm instead of 0.00 ohm)
+    ldr r0, =func_reading
+    ldr r0, [r0, #0]
+    cmp r0, #0
+    it mi
+    negmi r0, r0                           @ |reading|
+    cmp r0, #0x3e8
+    bhs .Lahold_0800E3BE                   @ |reading| >= 1000: signal
+    ldr r0, =meter_range
+    ldrb r0, [r0, #0]
+    cbz r0, .Lahold_0800E3BE_far           @ range 0: signal, 0 included
+    ldr r0, =range_manual
+    ldrb r0, [r0, #0]
+    cmp r0, #0
+    bne .Lahold_0800E3BE                   @ manual range: signal, 0 included
+3:  @ overload, or a small reading while the auto-ranging steps down: no signal.  As the "no signal" path below, but the
+    @ reference becomes 1000000 (an impossible reading, as v2.05 sets it for an OHM overload at 0x0800E47A) instead of the reading: the reading can already be the next
+    @ value (0 while the overload flag of a range change is still set), and a reference equal to it would make the first
+    @ real value "not new" (the 400-count change test) and block its capture
+    movs r0, #1
+    ldr r1, =func_ahold_nosignal
+    strb r0, [r1, #0]
+    movs r0, #0
+    ldr r1, =func_ahold_timeout
+    strb r0, [r1, #0]
+    ldr r1, =func_ahold_ticks
+    strh r0, [r1, #0]
+    ldr r1, =func_new_result
+    strb r0, [r1, #0]
+    ldr r0, =0x000F4240
+    ldr r1, =func_ahold_ref
+    str r0, [r1, #0]
+    b .Lahold_0800E592
+.Lahold_0800E3BE_far:
+    b .Lahold_0800E3BE
+2:
+    .endif
     mov r0, #0x3e8
     movs r4, r0                            @ r4 = 1000
     ldr r0, =meter_mode

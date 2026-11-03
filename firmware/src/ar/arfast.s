@@ -368,7 +368,23 @@ FUNC ar_apply
 @ the family has no target profile: conservative profile CP
 .Laa_cp:
     movs r3, #16                            @ M = samples per mean: 16 ...
-    cmp r0, #MODE_OHM
+    cmp r0, #1
+    bne 5f
+    ldr r6, =v_2000808A
+    ldrb r6, [r6]
+    cbnz r6, 5f                             @ calibration mode: v2.05 blocks of 16
+    @ IMP-23: DCV publishes a mean every 8 samples (mdc_dcv_accumulate), so the v2.05 count of discarded means is doubled,
+    @ (count - 1) * 2 + 1, and M = 8: the discarded time stays v2.05's, (count - 1) x 16 samples
+    movs r3, #8
+    ldr r6, =ar_settle
+    ldrb r12, [r6]
+    cmp r12, #1
+    bls 3f                                  @ 0 or 1: nothing discarded by v2.05, nothing to double
+    lsl r12, r12, #1
+    sub r12, r12, #1
+    strb r12, [r6]
+    b 3f
+5:  cmp r0, #MODE_OHM
     bne 3f
     cmp r1, #6
     bhi 3f

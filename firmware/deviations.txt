@@ -665,10 +665,12 @@ IMP-21  sd_block  mem_logging_sd          build == production and lba == 2072 an
 IMP-21  sd_block  mem_hold_combo_logging  build == production and lba == 2064 and step == 8
 IMP-21  sd_block  mem_hold_combo_logging  build == production and lba == 2066 and step == 8
 IMP-21  sd_files  mem_hold_combo_logging  build == production and path == /26010100.CSV
-# The partial mean of the first frame after the input step of ble_stream line 6 / 7 and mem_logging_sd line 6 (v2.05 0.1542 /
-# 0.1250 at 0.053 s, production 0.4627 / 0.3750 at 0.081 s; the BLE and logging scenarios are not in the IMP-01 lists).
-IMP-01+IMP-06  lcd  ble_stream      build == production and step == 7 and since in 0.045..0.09
-IMP-01+IMP-06  lcd  mem_logging_sd  build == production and step == 6 and since in 0.045..0.09
+# The first frames after the input step of ble_stream line 6 / 7 and mem_logging_sd line 6 (the BLE and logging scenarios are
+# not in the IMP-01 lists): v2.05 shows a partial mean (0.7712 at 0.08 s) and the settled value at 0.27 s; the production DCV
+# window (IMP-23) restarts on the step and shows the settled value at 0.025 s, inside the start-up window of the allowlist, so
+# v2.05's settled frame at 0.27 s has no counterpart.
+IMP-01+IMP-06+IMP-23  lcd  ble_stream      build == production and step == 7 and since in 0..0.3
+IMP-01+IMP-06+IMP-23  lcd  mem_logging_sd  build == production and step == 6 and since in 0..0.3
 # BLE: the long PEAK that switches the transfer off acts 0.15..0.19 s earlier in production (ble_stream: PF15 off at 9.016 s
 # against 9.170 s; IMP-06), so the frame v2.05 still sends 0.53..0.55 s after the key goes down is not sent.
 IMP-06  uart_tx  ble_bad_key_frame  build == production and step == 12 and since in 0.5..0.7

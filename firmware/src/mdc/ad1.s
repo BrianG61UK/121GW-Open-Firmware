@@ -69,7 +69,8 @@ ENDFUNC fn_080062F8
 @            0x20000238, 0x200080BA, 0x2000808A, 0x200080A5
 @            writes 0x20007DD0, 0x20007DD4, 0x20008080, production: mdc_first_mean
 @ Spec     : analysis/hy3131_model.md 4.1 (N), hy3131_modes_misc.md 2; analysis/autorange_and_scheduler.md 5.2 P5, 7, 8.2
-@ Deviation: IMP-03 (OHM block size, production only), IMP-04 (BEEP block of 64, production only), IMP-01 (first mean, production only)
+@ Deviation: IMP-03 (OHM block size, production only), IMP-04 (BEEP block of 64, production only), IMP-01 (first mean, production only),
+@            IMP-23 (DCV outside calibration mode: mdc_dcv_accumulate, production only)
 @ N = 16 for every mode except OHM (mode 9): v2.05 8 samples (range 5: 1 sample).  Sum and mean are signed 32-bit; the mean is
 @ sum / count with SDIV (truncation toward zero).  Production: N for OHM ranges 0..6 = 8, 8, 32, 16, 16, 1, 8 (mdc_ohm_samples).
 @ The block time is then 100 ms (r0, r1), 100 ms (r2, r3, r4) and 200 ms / 200 ms (r5, r6) at the row rates of hy3131_model.md 3.
@@ -78,6 +79,19 @@ ENDFUNC fn_080062F8
 @ the mean of those 4 samples is published (r0 = 1) without ending the block; see .Lac_early.
 @ -----------------------------------------------------------------------------
 FUNC ad1_accumulate_average
+.if LOOP_V205 == 0
+    @ IMP-23: DCV outside calibration mode: a 16-sample window published every 8 samples, restarted on a step (dcvavg.s)
+    ldr r3, =meter_mode
+    ldrb r3, [r3]
+    cmp r3, #1
+    bne 1f
+    ldr r3, =v_2000808A
+    ldrb r3, [r3]                           @ calibration mode: v2.05 blocks of 16
+    cmp r3, #0
+    bne 1f
+    b mdc_dcv_accumulate                    @ tail call, same interface (r0 = sample in, r0 = 1 mean published)
+1:
+.endif
     push {r4}                          @ 0x08006342
     movs r1, r0                        @ 0x08006344  r1 = sample
     movs r0, #0                        @ 0x08006346

@@ -93,6 +93,7 @@ FUNC fn_0800B974
     movs r0, #1
     ldr r1, =mdc_first_mean
     strb r0, [r1]                           @ IMP-01 P5: the first value after this configuration is a short mean (MDC ad1_accumulate_average)
+    bl mdc_dcv_reset                        @ IMP-23: the DCV window holds nothing of the previous configuration
 .endif
     movs r0, #0
     pop {r3, r4, r5, pc}
