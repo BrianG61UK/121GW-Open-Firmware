@@ -19,7 +19,7 @@ Sources of truth and how this document cites them:
 - Original defects: `firmware/ORIGINAL_FIRMWARE_ISSUES.md` (OF-01..OF-29).
 - Data EEPROM: `firmware/EEPROM_MAP.md` (complete map, write paths, protection), cited as EMAP.
 - Planned user-visible features and their key, display and storage design: `firmware/FEATURES.md` (the backlight auto-off
-  timer, IMP-07, the selectable dBm reference, IMP-08, the Bluetooth frame rate, IMP-09, the thermocouple type, IMP-10, REL in percent, IMP-11, and the display level, IMP-12, are implemented).
+  timer, IMP-07, the selectable dBm reference, IMP-08, the Bluetooth frame rate, IMP-09, the thermocouple type, IMP-10, REL in percent, IMP-11, the display level, IMP-12, and the 12-hour clock, IMP-13, are implemented).
 - Hardware documents: `inputs/docs` (RM0038 rev 15 reference manual, datasheet, PM0056, HY3131, NJU6350, schematic,
   manual).
 - Anything not established by these sources is marked UNPROVEN. Times given as "estimate" are instruction counts, not
@@ -900,8 +900,9 @@ A module with a narrow interface, so that the faster auto-ranging (IMP-01, ARS s
   Bluetooth frame rate, EEPROM 0x015, IMP-09), `src/set/tc.s` and the setup item 23 (page tc, the thermocouple type,
   EEPROM 0x00F, IMP-10): SETUP short on item 20 goes to item 21, on item 21 to item 23 in TEMP and to item 0 otherwise,
   on item 23 to item 0; `src/set/relp.s` and the setup item 22 (page rEL, REL in percent, EEPROM 0x020 bit 0, IMP-11) sit
-  between items 21 and 23; `src/set/dsp.s` and the setup item 24 (page dSP, display level, EEPROM 0x013, IMP-12) close the
-  chain (21 -> 22 -> 23 in TEMP -> 24 -> 0); the edit timeout re-reads items 20 to 24 and 11 of ACV from the EEPROM.
+  between items 21 and 23; `src/set/dsp.s` and the setup item 24 (page dSP, display level, EEPROM 0x013, IMP-12) and the
+  setup item 25 (page CL, 12-hour clock, EEPROM 0x020 bit 3, IMP-13, in `src/set/relp.s`) close the chain
+  (21 -> 22 -> 23 in TEMP -> 24 -> 25 -> 0); the edit timeout re-reads items 20 to 25 and 11 of ACV from the EEPROM.
 - Production image only: `src/set/bl.s` (`set_bl_load`, `set_bl_edit`, `set_bl_draw`) and the setup item 20 (page bL, the
   backlight auto-off setting, EEPROM 0x017, IMP-07). Item 20 follows the last v2.05 item of every mode: the wrap of
   `fn_08015410` to item 0 lands on item 20, and SETUP short on item 20 goes to item 0; `fn_080165F4`, `fn_0801797C` and
@@ -1325,6 +1326,7 @@ a build switch, default stated; required = forced by a non-negotiable requiremen
 | IMP-10 | thermocouple type | type K only: EMF table 0x08025CF8 and window -5891 / 54139 uV in `fn_08013C40`, the same table for the cold junction in `fn_08013CF8` | production only: SETUP page tc (item 23, after bt, TEMP only) selects K (default, v2.05) / J / T; both routines take table and window from the descriptor of the type (`mtmp/tctype.s`); J and T tables from the NIST ITS-90 tables (`mtmp/tc_tables.s`, `tools/gen_tc_tables.py`); spans K -200..1350, J -200..936 (the K input-voltage limit), T -200..400 degC; stored in EEPROM 0x00F (EMAP 4.1), a value above 2 reads as K. The strict image is unchanged | approved (owner, 2026-11-02: EEPROM bytes of FEATURES.md 3) | MTMP, SET |
 | IMP-11 | REL in percent | REL shows x - base in counts only (`fn_0800E594`, base 0x20007DA8) | production only: SETUP page rEL (item 22, after bt) selects difference (default, v2.05) / percent; in percent, while the REL sign is shown, `fn_08016E08` draws D * 100 / base with the decimal point by magnitude (`ui_relpct_draw`: 0.001 % .. 1 %, OFL above 99999 %, dashes for a zero base) and `lcd_commit_shadow` applies `ui_relpct_mask` (unit and prefix signs off, % on; redraw of all signs when the view ends); D, logging, MIN/MAX and the BLE value stay in counts; stored in EEPROM 0x020 bit 0 (EMAP 4.1). The strict image is unchanged | approved (owner, 2026-11-02: EEPROM bytes of FEATURES.md 3) | UI, SET, LCD |
 | IMP-12 | display level | smoothing depths fixed per caller (2, 5, 10, 20) | production only: SETUP page dSP (item 24, last port page) selects level 1 (default, v2.05) / level 2; at level 2 `func_avg_core` and `func_hist_core` use a quarter of the depth, at least 1 (thresholds, mean lengths, auto-ranging and HY3131 unchanged); stored in EEPROM 0x013 (EMAP 4.1). The strict image is unchanged | approved (owner, 2026-11-02: less smoothing) | FUNC, SET |
+| IMP-13 | 12-hour clock | the time page shows the hour 00..23 (`fn_080188A0`) | production only: SETUP page CL (item 25) selects 24-hour (default, v2.05) / 12-hour; `fn_080188A0` shows 1..12 with the leading zero blank, no AM/PM mark; clock chip, edit, log and BLE stay 24-hour; stored in EEPROM 0x020 bit 3 (EMAP 4.1) | approved (owner, 2026-11-02) | RTC, SET |
 
 Each deviation gets entries in `firmware/deviations.txt` and at least one scenario showing v2.05 and port behaviour.
 
@@ -2047,7 +2049,7 @@ Exceptions decided by this design:
 | `pwr_bl_second`, `pwr_bl_restart`, `pwr_bl_reset`, `pwr_bl_wake`, `pwr_bl_remember`, `pwr_bl_restore` (production only) | PWR | - | - (`pwr_bl_restart` keeps r0, r1 and the registers it does not use; flags clobbered) | main | `sys_main` step 9; KEY (`process_pg8_15_press_release`, `fn_08014AE6`, `handle_pg8_15_long_press`), DIAL (`debounce_pg0_7_onehot`), SET (`set_bl_edit`); `set_state_reset` | IMP-07 backlight auto-off timer: countdown, restart, state at power-on and wake |
 | `pwr_bl_setting` (byte), `pwr_bl_count` (u16), `.bss_port`, production only | PWR | - | - | main | written by SET (`set_bl_load`, `set_bl_edit`) and PWR; read by PWR and SET | setting code 0 OFF, 1 = 30 s, 2..100 = 1..99 min; seconds left |
 | `set_dsp_load`, `set_dsp_edit`, `set_dsp_draw` (production only) | SET | `set_dsp_edit`: r0 = 1 up, 2 down, 100 save | - | main | `set_state_reset`, `fn_0800D190` (load); `fn_080165F4` (edit, item 24); `fn_0801797C` (draw) | IMP-12 setup item 24 (page dSP), EEPROM 0x013 through `nvm_write_setting`; `func_dsp_level` read by `func_avg_core`, `func_hist_core` |
-| `set_relp_load`, `set_relp_edit`, `set_relp_draw` (production only) | SET | `set_relp_edit`: r0 = 1 up, 2 down, 100 save | - | main | `set_state_reset`, `fn_0800D190` (load); `fn_080165F4` (edit, item 22); `fn_0801797C` (draw) | IMP-11 setup item 22 (page rEL), EEPROM 0x020 bit 0 through `nvm_write_setting` |
+| `set_relp_load`, `set_relp_edit`, `set_relp_draw`, `set_clk_edit`, `set_clk_draw` (production only) | SET | `set_relp_edit`: r0 = 1 up, 2 down, 100 save | - | main | `set_state_reset`, `fn_0800D190` (load); `fn_080165F4` (edit, item 22); `fn_0801797C` (draw) | IMP-11 setup item 22 (page rEL), EEPROM 0x020 bit 0 through `nvm_write_setting` |
 | `ui_relpct_view`, `ui_relpct_draw`, `ui_relpct_mask` (production only) | UI | - | `ui_relpct_view`: r0 = 1 while the percent view is shown | main | `fn_08016E08` (view, draw); `lcd_commit_shadow` (mask) | IMP-11 REL in percent |
 | `set_tc_load`, `set_tc_edit`, `set_tc_draw` (production only) | SET | `set_tc_edit`: r0 = 1 up, 2 down, 100 save | - | main | `set_state_reset`, `fn_0800D190` (load); `fn_080165F4` (edit, item 23); `fn_0801797C` (draw) | IMP-10 setup item 23 (page tc, TEMP only), EEPROM 0x00F through `nvm_write_setting` |
 | `mtmp_tc_select` (production only) | MTMP | r0 = type | - | main | `set_tc_load`, `set_tc_edit` | IMP-10: writes `mtmp_tc_type` and `mtmp_tc_descp`, read by `fn_08013C40` and `fn_08013CF8` |

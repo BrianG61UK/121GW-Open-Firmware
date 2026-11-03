@@ -22,7 +22,7 @@ setting is kept over a power-off.
 The new pages come after the original SETUP pages, in this order:
 
 `bL` (backlight) → `bt` (Bluetooth speed) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) → `dSP` (display
-level) → back to the first page
+level) → `CL` (12 / 24-hour clock) → back to the first page
 
 The dBm reference is not a new page: it is edited on the existing dBm page of ACV.
 
@@ -96,6 +96,18 @@ setting (meter at 25 °C). Set `tc` to the probe you plug in.
 - **Cost:** the last digit can be a little less steady (for example a temperature that toggles between 99.9 and 100.0).
 
 Tip: `dSP 2` while adjusting a trimmer or watching something warm up or charge; `dSP 1` for the steadiest reading.
+
+## 12-hour clock
+
+- **Where:** page `CL`, the last of the new pages: `CL 24` (default, as the original) or `CL 12`.
+- **Effect:** the time page shows the hour as 1 to 12 instead of 0 to 23, for example 14:30 as ` 2-30`. There is no AM/PM
+  mark (the display has five characters and the time uses all of them).
+- Setting the clock works as before (hour, then minute). Log files and Bluetooth keep 24-hour time.
+
+## °C or °F (original feature)
+
+The first SETUP page shows the meter's own temperature, for example ` 25.0c`. Hold **SETUP**, press **REL** to switch
+between `c` and `F`, hold **SETUP** to save. The same setting switches the TEMP function between °C and °F.
 
 ## Faster responses without a setting
 

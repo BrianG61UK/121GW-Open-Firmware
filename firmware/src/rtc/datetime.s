@@ -551,9 +551,23 @@ ENDFUNC fn_080187D8
 @ Context  : main only
 @ RAM      : reads rtc_blink_phase; writes rtc_commit_req, rtc_lcd_digit0, rtc_lcd_digit1, rtc_text5
 @ Note     : The separator character is a dash while rtc_colon is non-zero, else a space.
+@ Deviation: IMP-13 (production: 12-hour display with the SETUP page CL, hour 1..12, leading zero blank)
 @ -----------------------------------------------------------------------------
 FUNC fn_080188A0
     push {r4, r5, r6, r7, r8, lr}           @ 080188A0
+    .if LOOP_V205 == 0
+    @ IMP-13: 12-hour clock (SETUP page CL): hour 0 -> 12, 13..23 -> 1..11; the clock chip and the edit keep 0..23
+    ldr r3, =set_clk12
+    ldrb r3, [r3]
+    cbz r3, 1f                              @ 24-hour: as v2.05
+    uxtb r1, r1
+    cmp r1, #12
+    it hs
+    subhs r1, r1, #12                       @ 12..23 -> 0..11
+    cbnz r1, 1f
+    movs r1, #12                            @ 0 -> 12
+1:
+    .endif
     movs r4, r0                             @ 080188A4
     movs r5, r1                             @ 080188A6
     movs r6, r2                             @ 080188A8
@@ -573,6 +587,16 @@ FUNC fn_080188A0
     ldr r0, [r0, #0x0]                      @ 080188CE  r0 = rtc_lcd_digit1
     ldr.w r1, =rtc_text5                    @ 080188D0
     strb r0, [r1, #0x0]                     @ 080188D2  rtc_text5 = rtc_lcd_digit1
+    .if LOOP_V205 == 0
+    ldr r3, =set_clk12
+    ldrb r3, [r3]
+    cbz r3, 2f                              @ 24-hour: the leading zero stays, as v2.05
+    cmp r0, #0x30
+    bne 2f
+    movs r0, #0x20
+    strb r0, [r1, #0x0]                     @ IMP-13: 12-hour: tens of the hour blank when 0 (" 2-30")
+2:
+    .endif
     ldr.w r0, =rtc_lcd_digit0               @ 080188D4
     ldr r0, [r0, #0x0]                      @ 080188D8  r0 = rtc_lcd_digit0
     adds r0, #0x30                          @ 080188DA  r0 = rtc_lcd_digit0 + 48 (0x30)

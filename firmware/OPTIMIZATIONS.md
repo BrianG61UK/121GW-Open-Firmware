@@ -28,6 +28,7 @@ contents, HY3131 configuration sequence) is identical to v2.05; each is verified
 | IMP-10 | Selectable thermocouple type in TEMP: SETUP page tc, K (default, as v2.05) / J / T | J and T probes read correctly (NIST ITS-90 tables), cold junction included; stored in EEPROM 0x00F (`EEPROM_MAP.md` 4.1) |
 | IMP-11 | REL in percent: SETUP page rEL, difference (default, as v2.05) / percent | tolerance checks read directly in % of the reference (0.001 % resolution below 100 %); logging and Bluetooth keep the plain REL value; stored in EEPROM 0x020 bit 0 (`EEPROM_MAP.md` 4.1) |
 | IMP-12 | Display level: SETUP page dSP, level 1 (default, as v2.05) / level 2 | small changes and drifts settle in a quarter of the smoothing depth (big steps were already immediate); readings somewhat noisier; stored in EEPROM 0x013 (`EEPROM_MAP.md` 4.1) |
+| IMP-13 | 12-hour clock: SETUP page CL, 24-hour (default, as v2.05) / 12-hour | the time page shows 1..12 (` 2-30`); stored in EEPROM 0x020 bit 3 (`EEPROM_MAP.md` 4.1) |
 
 All fixes of original defects are listed with their evidence in `ORIGINAL_FIRMWARE_ISSUES.md` (OF-xx) and in
 `DESIGN.md` section 10 (NF-, HW-, NVM- items). A faster analog settle profile exists but stays disabled until the

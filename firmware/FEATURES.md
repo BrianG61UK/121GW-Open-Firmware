@@ -1,8 +1,8 @@
 # Planned features of the replacement firmware: user interface, storage, constraints
 
 Status: design. The backlight auto-off timer (2.9, IMP-07), the dBm reference (2.2, IMP-08), the Bluetooth frame rate
-(2.5, IMP-09), the thermocouple type (2.8, IMP-10), REL in percent (2.3, IMP-11) and the display level (2.4, IMP-12) are
-implemented. The other features are designs for
+(2.5, IMP-09), the thermocouple type (2.8, IMP-10), REL in percent (2.3, IMP-11), the display level (2.4, IMP-12) and the 12-hour
+clock (2.12, IMP-13) are implemented. The other features are designs for
 the production image; none of them is in the tree as code. The EEPROM bytes of section 3 are approved (owner, 2026-11-02);
 each is added to `EEPROM_MAP.md` 4.1 and `nvm_allow` only with the code that uses it. Citations: `KS` = `analysis/keys_setup.md`, `EMAP` =
 `EEPROM_MAP.md`, `LCD` = `analysis/lcd_map.md`, `ARS` = `analysis/autorange_and_scheduler.md`, `DES` = `DESIGN.md`.
@@ -301,6 +301,15 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Open: the BLE112's GATT service and characteristic that carry the frames (to be read from a meter with a BLE scanner);
   no firmware change is needed for viewing.
 
+### 2.12 12-hour clock (implemented, IMP-13)
+- Where: SETUP page `CL`, item 25, the last port page (after `dSP`): `CL 24` (v2.05, default) or `CL 12`.
+- What is shown: the time page (item 7) keeps its form `HH-MM` with the blinking separator; with `CL 12` the hour is 1..12
+  (0 -> 12, 13..23 -> 1..11) with the leading zero blank (` 2-30`). No AM/PM mark (decision, 2026-11-02: the five
+  characters are all used by `HH-MM`, and morning and afternoon are told apart by context).
+- How: `fn_080188A0` (the only routine that draws the time; time page, its edit and the RTC module) converts the hour it
+  is given. The clock chip, the hour edit (0..23 internally), the log timestamps and the BLE clock command stay 24-hour.
+- Storage: bit 3 of the byte 0x020 (shared with 2.3; each page's save changes only its bit, `set_b20_store`).
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
@@ -310,7 +319,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 | 0x013 | 2.4 display | 0 level 1, 1 level 2 | level 1 | as 0x011 | approved, implemented |
 | 0x015 | 2.5 BLE | 0 2/s, 1 4/s, 2 10/s, 3 20/s | 2/s | 0x014 continuity code, 0x016 APO | approved, implemented |
 | 0x017 | 2.9 backlight | bits 6..0: 0 OFF, 1 30 s, 2..100 1..99 min; bit 7: on/off state | OFF, dark | as 0x015 | approved, implemented |
-| 0x020 | 2.3, 2.6 | bit 0 REL percent, bits 2..1 log trigger | v2.05 | none (free word 0x020..0x023) | approved, bit 0 implemented |
+| 0x020 | 2.3, 2.6, 2.12 | bit 0 REL percent, bits 2..1 log trigger, bit 3 12-hour clock | v2.05 | none (free word 0x020..0x023) | approved, bits 0 and 3 implemented |
 | 0x021 | 2.1 limits | `mode * 8 + range + 1` of the limits, 0 none | none | as 0x020 | approved, not used (limits RAM only) |
 | 0x022 | 2.6 | change threshold 1..255 | 1 | as 0x020 | approved |
 | 0x028..0x02B | 2.1 | LO limit, s32 big-endian | 0 | none (free word) | approved, not used (limits RAM only) |
@@ -329,19 +338,20 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 22 | `rEL` | always | yes (implemented) |
 | 23 | `tc` | TEMP mode only | yes (implemented) |
 | 24 | `dSP` | always | yes (implemented) |
-| 25 | `Lt` | always | yes |
-| 26 | `Lo` | always | yes (digits) |
-| 27 | `HI` | always | yes (digits) |
-| 28 | `tr` (log trigger) | always | yes |
-| 29 | `Ch` | always | yes (digits) |
-| 30 | verdict `PASS`/`HI`/`Lo` | while the limit test is on (also the default page) | no |
+| 25 | `CL` | always | yes (implemented) |
+| 26 | `Lt` | always | yes |
+| 27 | `Lo` | always | yes (digits) |
+| 28 | `HI` | always | yes (digits) |
+| 29 | `tr` (log trigger) | always | yes |
+| 30 | `Ch` | always | yes (digits) |
+| 31 | verdict `PASS`/`HI`/`Lo` | while the limit test is on (also the default page) | no |
 | 32 | `n` count | MIN/MAX on | no |
 | 33 | `Sd` | MIN/MAX on | no |
 | 34, 35 | `tHI`, `tLo` | MIN/MAX on | no |
 
-Item 31 is not used. v2.05 uses 0..12 and 100; the page dispatcher falls back to item 0 for an unknown item
-(`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 24. SETUP short steps
-20 -> 21 -> 22 -> 23 (TEMP only) -> 24 -> 0 (`fn_08015410`); each new page joins that chain.
+Items 32..35 are the MIN/MAX pages. v2.05 uses 0..12 and 100; the page dispatcher falls back to item 0 for an unknown item
+(`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 25. SETUP short steps
+20 -> 21 -> 22 -> 23 (TEMP only) -> 24 -> 25 -> 0 (`fn_08015410`); each new page joins that chain.
 
 ## 5. Order of work and checks
 

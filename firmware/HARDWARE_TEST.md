@@ -66,6 +66,8 @@ The image has only run in the emulator. These checks confirm on hardware what th
 12. Display level (production build): SETUP to the page dSP (last page), select `dSP 2` and save; a slowly changing
    source (or a small step) settles visibly faster; the reading is somewhat noisier. Dump the EEPROM after the save: only
    byte 0x013 may differ.
+13. 12-hour clock (production build): SETUP to the page CL (last page), select `CL 12` and save; the time page shows the
+   hour 1..12 (for example 14:30 as ` 2-30`); the clock keeps running correctly. Only byte 0x020 may differ.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).
