@@ -171,6 +171,12 @@ FUNC handle_pg8_15_short_press
     uxtb r0, r0                         @ 08014D36
     cmp r0, #0                          @ 08014D38
     bne .Lsh_refuse_beep                @ 08014D3A
+    .if LOOP_V205 == 0
+    ldr r0, =lt_on
+    ldrb r0, [r0]
+    cmp r0, #0
+    bne .Lsh_refuse_beep                @ IMP-20: the range is frozen while the limit test is on
+    .endif
     ldr r0, =minmax_state               @ 08014D3C
     ldrb r0, [r0]                       @ 08014D40
     cmp r0, #0                          @ 08014D42

@@ -7,8 +7,8 @@ recorded from the meter (func_stats_n polled every 10 ms; DCV publishes a value 
 sample standard deviation computed here with Python's statistics module from that list must equal the meter's binary64
 mean, m2 and the shown standard deviation.  Checks: page n shown when MIN/MAX is switched on, its text (count, and the
 thousands form with the k sign), page Sd on the sub display and the standard deviation on the main digits (one more
-decimal than the reading, rounded to nearest), "-----" with fewer than two readings, the navigation CL -> n -> Sd ->
-item 0 while MIN/MAX is on and CL -> item 0 while it is off, the return to item 0 when MIN/MAX ends, HOLD freezing the
+decimal than the reading, rounded to nearest), "-----" with fewer than two readings, the navigation HI -> n -> Sd ->
+item 0 while MIN/MAX is on (after the limit pages: HI -> n) and HI -> item 0 while it is off, the return to item 0 when MIN/MAX ends, HOLD freezing the
 statistics, and no change of the BLE value (0x20007D70 keeps the MIN/MAX value).
 The helpers are those of test_backlight_timer.py.
 """
@@ -145,16 +145,16 @@ def run_tests(image, sym):
     T.check('HOLD: no reading added', u32(e, a_n) == n0, 'n %d -> %d' % (n0, u32(e, a_n)))
     T.press(e, 'HOLD', gap=0.3)                      # with MIN/MAX on the second HOLD press switches HOLD off
     T.check('HOLD off again', T.rd(e, 0x2000804F) == 0)
-    e.m.uc.mem_write(ADDR_ITEM, bytes([25]))
+    e.m.uc.mem_write(ADDR_ITEM, bytes([29]))         # the last limit page (IMP-20) before the statistics
     T.press(e, 'SETUP', gap=0.3)
-    T.check('MIN/MAX on: SETUP short on CL shows n', T.rd(e, ADDR_ITEM) == 32, 'item=%d' % T.rd(e, ADDR_ITEM))
+    T.check('MIN/MAX on: SETUP short on HI shows n', T.rd(e, ADDR_ITEM) == 32, 'item=%d' % T.rd(e, ADDR_ITEM))
     T.long_press(e, 'MINMAX')
     e.advance(0.5)
     T.check('MIN/MAX off: page n left for item 0', T.rd(e, ADDR_MM_STATE) == 0 and T.rd(e, ADDR_ITEM) == 0,
             'state=%d item=%d' % (T.rd(e, ADDR_MM_STATE), T.rd(e, ADDR_ITEM)))
-    e.m.uc.mem_write(ADDR_ITEM, bytes([25]))
+    e.m.uc.mem_write(ADDR_ITEM, bytes([29]))
     T.press(e, 'SETUP', gap=0.3)
-    T.check('MIN/MAX off: SETUP short on CL goes to item 0', T.rd(e, ADDR_ITEM) == 0)
+    T.check('MIN/MAX off: SETUP short on HI goes to item 0', T.rd(e, ADDR_ITEM) == 0)
     T.press(e, 'MINMAX', gap=0.3)
     T.check('MIN/MAX on again: statistics restarted', T.rd(e, ADDR_MM_STATE) == 1 and u32(e, a_n) <= 2, 'n=%d' % u32(e, a_n))
     s = e.snapshot()

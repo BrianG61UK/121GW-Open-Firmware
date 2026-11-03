@@ -185,6 +185,11 @@ FUNC handle_pg8_15_long_press
     ldr r1, =key_mem_view               @ 08016328
     ldrb r1, [r1]                       @ 0801632C
     orrs r0, r1                         @ 0801632E
+    .if LOOP_V205 == 0
+    ldr r1, =lt_on
+    ldrb r1, [r1]
+    orrs r0, r1                         @ IMP-20: no return to auto range while the limit test is on
+    .endif
     uxtb r0, r0                         @ 08016330
     cmp r0, #0                          @ 08016332
     beq .Llp_0801633C                   @ 08016334

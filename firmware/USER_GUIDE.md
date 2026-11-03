@@ -23,8 +23,8 @@ setting is kept over a power-off.
 The new pages come after the original SETUP pages, in this order:
 
 `bL` (backlight) → `bt` (Bluetooth speed) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) → `dSP` (display
-level) → `bH` (continuity hold, BEEP only) → `CL` (12 / 24-hour clock) → back to the first page (while MIN/MAX is on,
-the statistics pages `n` and `Sd` come before the first page)
+level) → `bH` (continuity hold, BEEP only) → `CL` (12 / 24-hour clock) → `Lt`, `Lo`, `HI` (limit test; the verdict page
+while the test is on) → back to the first page (while MIN/MAX is on, the statistics pages `n` and `Sd` come before it)
 
 The dBm reference is not a new page: it is edited on the existing dBm page of ACV.
 
@@ -98,6 +98,21 @@ setting (meter at 25 °C). Set `tc` to the probe you plug in.
 - **Cost:** the last digit can be a little less steady (for example a temperature that toggles between 99.9 and 100.0).
 
 Tip: `dSP 2` while adjusting a trimmer or watching something warm up or charge; `dSP 1` for the steadiest reading.
+
+## Limit test (pass / fail)
+
+1. Put a known-good part (or source) at the **low** limit on the probes. SETUP to `Lo`, hold **SETUP**, press **REL**: the
+   reading is captured. Hold **SETUP** to finish. The page then shows `Lo` and the captured value in turn.
+2. The same with a part at the **high** limit on the page `HI`.
+3. On `Lt`: hold **SETUP**, press **REL** (`LtOn`), hold **SETUP**: the small display now shows the verdict for every
+   reading: `PASS` inside the limits, `HI` above, `Lo` below (an overload counts as `HI` or `Lo`). Leaving the limits
+   gives the refusal beep, coming back the accept beep.
+- While the test is on the range stays fixed (RANGE is refused); turning the dial ends the test. The limits are kept
+  until the meter is switched off.
+- Switching on is refused (refusal beep) until both limits are captured in the present function and range.
+
+Tip: check a box of resistors without reading a single number: capture 99 ohm and 101 ohm, then every part shows `PASS`
+or not.
 
 ## Continuity beep hold time
 

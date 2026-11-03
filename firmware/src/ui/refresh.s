@@ -628,6 +628,7 @@ FUNC fn_08016E08
     strb r0, [r1, #0]                        @ 08016E18
     .if LOOP_V205 == 0
     bl ui_stats_tick                         @ IMP-14: keep the statistics page current (new count, MIN/MAX ended)
+    bl lt_tick                               @ IMP-20: limit test verdict, end on a mode change, pages Lo / HI / verdict
     .endif
     @ OHM (mode 9) in auto range, outside calibration, MIN/MAX off: the first updates after a range change are skipped (counter 0x2000805A set by the apply)
     ldr r0, =meter_mode                      @ 08016E1A &meter_mode

@@ -85,6 +85,10 @@
     .equ SET_ITEM_ST_N, 32                  @ IMP-14: statistics page n (only while MIN/MAX is on)
     .equ SET_ITEM_ST_SD, 33                 @ IMP-14: statistics page Sd (only while MIN/MAX is on)
     .equ SET_ITEM_BH, 26                    @ IMP-16: continuity hold page bH (BEEP only, between dSP and CL)
+    .equ SET_ITEM_LT, 27                    @ IMP-20: limit test pages Lt (27), Lo (28), HI (29), verdict (36)
+    .equ SET_ITEM_LO, 28
+    .equ SET_ITEM_HI, 29
+    .equ SET_ITEM_VERDICT, 36
     .equ SET_ITEM_TC, 23                    @ IMP-10: setup item of the thermocouple type page tc (after bt, TEMP only)
     .endif
 
@@ -116,7 +120,8 @@ FUNC fn_08015410
     @ IMP-07, IMP-09, IMP-11, IMP-10, IMP-12: SETUP short on the page bL (item 20, the page after the last v2.05 item) goes
     @ to the page bt (item 21), on bt to the page rEL (item 22); on rEL to the page tc (item 23) in TEMP (mode 5), else to
     @ the page dSP (item 24); on tc to dSP; on dSP to the page bH (item 26, IMP-16) in BEEP (mode 10), else to the page CL
-    @ (item 25); on bH to CL; on CL to item 0, or while MIN/MAX is on to
+    @ (item 25); on bH to CL; on CL to the limit pages Lt, Lo, HI (27..29, IMP-20); on HI to the verdict page (36) while
+    @ the test is on; then, while MIN/MAX is on, to
     @ the statistics page n (item 32, IMP-14); on n to Sd (item 33); on Sd to item 0.  Each step ends an edit.
     ldr.w r0, =set_item
     ldrb r0, [r0, #0x0]
@@ -130,15 +135,33 @@ FUNC fn_08015410
     beq .Lsn_to_sd                          @ n: next is Sd
     cmp r0, #SET_ITEM_CLK
     bne .Lsn_not_clk
-    ldr.w r0, =minmax_state
-    ldrb r0, [r0, #0x0]
-    cbz r0, .Lsn_to0                        @ CL, MIN/MAX off: next is item 0
-    movs r0, #SET_ITEM_ST_N                 @ CL, MIN/MAX on: next is n
-    b .Lsn_port_set
-.Lsn_to_sd:
-    movs r0, #SET_ITEM_ST_SD
+    movs r0, #SET_ITEM_LT                   @ CL: next is Lt
     b .Lsn_port_set
 .Lsn_not_clk:
+    cmp r0, #SET_ITEM_LT
+    bne 1f
+    movs r0, #SET_ITEM_LO                   @ Lt: next is Lo
+    b .Lsn_port_set
+1:  cmp r0, #SET_ITEM_LO
+    bne 2f
+    movs r0, #SET_ITEM_HI                   @ Lo: next is HI
+    b .Lsn_port_set
+2:  cmp r0, #SET_ITEM_HI
+    bne 3f
+    ldr.w r0, =lt_on
+    ldrb r0, [r0, #0x0]
+    cbz r0, .Lsn_after_lt                   @ HI, test off: the statistics or item 0
+    movs r0, #SET_ITEM_VERDICT              @ HI, test on: the verdict page
+    b .Lsn_port_set
+3:  cmp r0, #SET_ITEM_VERDICT
+    bne .Lsn_not_lt
+.Lsn_after_lt:
+    ldr.w r0, =minmax_state
+    ldrb r0, [r0, #0x0]
+    cbz r0, .Lsn_to0                        @ MIN/MAX off: next is item 0
+    movs r0, #SET_ITEM_ST_N                 @ MIN/MAX on: next is n
+    b .Lsn_port_set
+.Lsn_not_lt:
     cmp r0, #SET_ITEM_BH
     beq .Lsn_to_clk                         @ bH: next is CL
     cmp r0, #SET_ITEM_DSP
@@ -166,6 +189,9 @@ FUNC fn_08015410
 .Lsn_to_clk:
     movs r0, #SET_ITEM_CLK
     b .Lsn_port_set
+.Lsn_to_sd:
+    movs r0, #SET_ITEM_ST_SD
+    b .Lsn_port_set
 .Lsn_bt:
     movs r0, #SET_ITEM_RELP                 @ bt: next is rEL
     b .Lsn_port_set
@@ -176,7 +202,7 @@ FUNC fn_08015410
     movs r0, #SET_ITEM_BT                   @ bL: next is bt
 .Lsn_port_set:
     ldr.w r1, =set_item
-    strb r0, [r1, #0x0]                     @ set_item = 21..26, 32, 33 or 0
+    strb r0, [r1, #0x0]                     @ set_item = 21..29, 32, 33, 36 or 0
     movs r0, #0x0
     ldr.w r1, =set_edit
     strb r0, [r1, #0x0]                     @ set_edit = 0 (v2.05 clears it at 0x08015422 for every item but 8)
@@ -1472,6 +1498,22 @@ FUNC fn_080165F4
     bl set_bh_edit                          @ up, down or save of the hold time
     b .L08016800
 .Lse_not_bh:
+    sub r1, r0, #SET_ITEM_LT                @ IMP-20: the limit pages Lt, Lo, HI (27..29)
+    cmp r1, #2
+    bhi .Lse_not_lt
+    uxtb r4, r4
+    cmp r4, #0x0                            @ query?
+    bne .Lse_lt_act
+    movs r0, #0x1
+    movs r5, r0                             @ query result: editable
+    b .L08016800
+.Lse_lt_act:
+    mov r1, r0                              @ item
+    movs r0, r4
+    uxtb r0, r0
+    bl set_lt_edit                          @ switch, capture or end of the edit
+    b .L08016800
+.Lse_not_lt:
     cmp r0, #SET_ITEM_CLK                   @ IMP-13: the clock page CL (item 25)
     bne .Lse_not_clk
     uxtb r4, r4
@@ -2153,6 +2195,20 @@ FUNC fn_0801797C
     b .L08017F26                            @ 08017F10
     .if LOOP_V205 == 0
 .Lsd_port:  @ IMP-07, IMP-09, IMP-10: reached from 08017EF4 bne with r0 = set_item
+    cmp r0, #SET_ITEM_VERDICT               @ IMP-20: the limit pages Lt, Lo, HI (27..29) and the verdict (36)
+    beq .Lsd_lt
+    sub r1, r0, #SET_ITEM_LT
+    cmp r1, #2
+    bhi .Lsd_not_lt
+.Lsd_lt:
+    bl set_lt_draw                          @ r0 = item; returns 0 for the verdict page without a test
+    cbnz r0, .Lsd_lt_done
+    ldr.w r1, =set_item
+    strb r0, [r1, #0x0]                     @ no test: item 0 again
+    b .L08017F12
+.Lsd_lt_done:
+    b .L08017F26
+.Lsd_not_lt:
     cmp r0, #SET_ITEM_ST_N                  @ IMP-14: the statistics pages n (32) and Sd (33) ...
     beq .Lsd_stats
     cmp r0, #SET_ITEM_ST_SD

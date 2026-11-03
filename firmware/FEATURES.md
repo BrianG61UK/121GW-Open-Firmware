@@ -2,7 +2,8 @@
 
 Status: design. The backlight auto-off timer (2.9, IMP-07), the dBm reference (2.2, IMP-08), the Bluetooth frame rate
 (2.5, IMP-09), the thermocouple type (2.8, IMP-10), REL in percent (2.3, IMP-11), the display level (2.4, IMP-12), the 12-hour
-clock (2.12, IMP-13), the statistics (2.7, IMP-14) and the continuity hold time (2.13, IMP-16) are implemented. The other features are designs for
+clock (2.12, IMP-13), the statistics (2.7, IMP-14), the continuity hold time (2.13, IMP-16) and the limit test (2.1, IMP-20) are
+implemented. The other features are designs for
 the production image; none of them is in the tree as code. The EEPROM bytes of section 3 are approved (owner, 2026-11-02);
 each is added to `EEPROM_MAP.md` 4.1 and `nvm_allow` only with the code that uses it. Citations: `KS` = `analysis/keys_setup.md`, `EMAP` =
 `EEPROM_MAP.md`, `LCD` = `analysis/lcd_map.md`, `ARS` = `analysis/autorange_and_scheduler.md`, `DES` = `DESIGN.md`.
@@ -85,32 +86,24 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 
 ## 2. The features
 
-### 2.1 Limit test (pass/fail)
+### 2.1 Limit test (pass/fail) (implemented, IMP-20)
 
-- Where: SETUP pages `Lt` (on/off), `Lo` and `HI` (limit values), and a verdict page; quick on/off by HOLD long.
-- Keys: HOLD long (0.5 s) switches the test on or off with the long beep. Refused with the refusal beep while logging, in MEM
-  view, in calibration mode, while a setup edit is active, and when the limits do not belong to the present mode and range
-  (below). HOLD short is unchanged. The pages use the edit keys of 1.2; `Lo` and `HI` are digit pages (cursor positions
-  4..0 and a sixth for the sign; SETUP short moves the cursor).
-- What is shown: `Lt` page `LtOn ` / `LtOFF`. `Lo` / `HI` pages: sub display `Lo   ` / `HI   `, main display the limit in
-  display counts with the decimal point of the range and the unit annunciators of the mode, the digit under the cursor blinks.
-  While the test is on the verdict page is the default page (it replaces item 0 or 10 in `fn_0800D718`) and shows
-  `PASS ` when Lo <= reading <= HI, `HI   ` above HI, `Lo   ` below Lo; an overload counts as `HI   ` (positive) or `Lo   `
-  (negative). A change from PASS to out of limits gives the refusal pattern of the buzzer once (`fn_0800EE6C`, if the buzzer
-  is on), and the change back gives the accept beep. The reading compared is the displayed value 0x20007D64 after REL,
-  smoothing and (in MIN/MAX) the state's value.
-- Range: switching the test on freezes the range as MIN/MAX does (`range_manual = 1`, the saved value is restored when the
-  test ends), and RANGE short is refused while it is on. A mode change (dial, MODE) switches the test off. Reason: the limits
-  are counts of one range; a limit compared across ranges would need a table of 10^exponent per (mode, range).
-- Storage: RAM only (owner, 2026-11-02: limits are forgotten at power-off). LO and HI as s32 and the range they belong to as
-  `mode * 8 + range + 1` (0 = none) in RAM; saving a limit page binds both limits to the present mode and range. The on/off state is RAM only (off at
-  power-on, so a meter never measures with a forgotten test). Until a limit is saved after power-on the tag is "none" and the
-  test refuses to start.
-- Limit entry (owner, 2026-11-02, left to the design): the value is taken from the present reading (long SETUP on `Lo` or `HI`
-  captures the displayed value 0x20007D64) rather than typed digit by digit; the digit editor above is the fallback if capture
-  proves unusable.
-- Constraints: counts are limited to -99999..99999 by the display (`0x08017036`..`0x08017040`, OF-49); the editor does not
-  accept more. Limits in LowZ and BEEP are accepted (single range). Logging with trigger "limits" (2.6) uses the same verdict.
+- Where: SETUP pages `Lt` (item 27), `Lo` (28), `HI` (29) after `CL`, and the verdict page (36) while the test is on.
+- Keys (decisions 2026-11-02: limits captured from the reading, not typed; RAM only): `Lt`: long SETUP, REL or PEAK
+  switches the test on or off, long SETUP ends the edit and shows the verdict page. `Lo` / `HI`: long SETUP, REL or PEAK
+  captures the displayed value, long SETUP ends the edit. Switching on is refused (refusal beep) unless both limits were
+  captured in the present mode and range; Lo above HI is swapped. HOLD keeps its v2.05 meaning (no HOLD long action: HOLD
+  is not a long-press key in v2.05, KS 2.2).
+- What is shown: `LtOn ` / `LtOFF`; `Lo---` / `HI---` before a capture, then the label and the value (digits and decimal
+  point of its range) alternating every 0.5 s; verdict `PASS `, `HI   ` (above HI), `Lo   ` (below Lo), an overload by
+  its sign; `-----` before the first verdict.
+- Behaviour: the verdict compares the displayed value 0x20007D64 (after REL and smoothing) for every new result; leaving
+  PASS gives the refusal pattern, returning to PASS the accept beep (both through the buzzer setting). While the test is on
+  the range is frozen as MIN/MAX freezes it and RANGE short and long are refused; a mode change ends the test (the range
+  setting is restored). A capture in another mode or range binds both limits to it (the other is captured again).
+- Storage: none (RAM only; off and no limits after power-on and STOP wake).
+- Constraints: counts are limited to -99999..99999 by the display. Logging with trigger "limits" (2.6) uses the same
+  verdict.
 
 ### 2.2 Selectable dBm reference (implemented, IMP-08)
 
@@ -346,19 +339,20 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 24 | `dSP` | always | yes (implemented) |
 | 25 | `CL` | always | yes (implemented) |
 | 26 | `bH` | BEEP mode only | yes (implemented) |
-| 27 | `Lt` | always | yes |
-| 28 | `Lo` | always | yes (digits) |
-| 29 | `HI` | always | yes (digits) |
+| 27 | `Lt` | always | yes (implemented) |
+| 28 | `Lo` | always | capture (implemented) |
+| 29 | `HI` | always | capture (implemented) |
 | 30 | `tr` (log trigger) | always | yes |
 | 31 | `Ch` | always | yes (digits) |
-| 36 | verdict `PASS`/`HI`/`Lo` | while the limit test is on (also the default page) | no |
+| 36 | verdict `PASS`/`HI`/`Lo` | while the limit test is on (shown when it is switched on) | no (implemented) |
 | 32 | `n` count | MIN/MAX on | no |
 | 33 | `Sd` | MIN/MAX on | no |
 | 34, 35 | `tHI`, `tLo` | MIN/MAX on | no |
 
 Items 32..35 are the MIN/MAX pages. v2.05 uses 0..12 and 100; the page dispatcher falls back to item 0 for an unknown item
 (`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 25. SETUP short steps
-20 -> 21 -> 22 -> 23 (TEMP only) -> 24 -> 26 (BEEP only) -> 25 -> 32 -> 33 (MIN/MAX on) -> 0 (`fn_08015410`); each new page joins that chain.
+20 -> 21 -> 22 -> 23 (TEMP only) -> 24 -> 26 (BEEP only) -> 25 -> 27 -> 28 -> 29 -> 36 (test on) -> 32 -> 33 (MIN/MAX
+on) -> 0 (`fn_08015410`); each new page joins that chain.
 
 ## 5. Order of work and checks
 

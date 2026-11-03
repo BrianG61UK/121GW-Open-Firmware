@@ -86,7 +86,7 @@ def run_tests(image, a_clk):
     diff = {i: (before[i], e.m.eeprom[i]) for i in range(len(before)) if before[i] != e.m.eeprom[i]}
     T.check('save wrote only bit 3 of 0x020: 0x07 -> 0x0F', diff == {0x20: (0x07, 0x0F)}, 'diff=%r' % (diff,))
     T.press(e, 'SETUP', gap=0.5)
-    T.check('SETUP short on CL goes to item 0', T.rd(e, ADDR_ITEM) == 0)
+    T.check('SETUP short on CL goes to the limit page Lt (item 27)', T.rd(e, ADDR_ITEM) == 27)
     to_item(e, 22)                                   # rEL: save difference, bit 3 must stay
     T.long_press(e, 'SETUP')
     T.press(e, 'REL', gap=0.5)
