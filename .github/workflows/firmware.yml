@@ -58,9 +58,9 @@ jobs:
           set -euo pipefail
           mkdir stage
           cp -R dist/1_like_v2.05 dist/2_fast stage/
-          cp dist/FIXES.md LICENSE stage/
-          (cd stage && sha256sum 1_like_v2.05/EEVBlog.bin 2_fast/EEVBlog.bin FIXES.md LICENSE > SHA256SUMS)
-          (cd stage && zip -r -X "../firmware-$TAG.zip" 1_like_v2.05 2_fast FIXES.md LICENSE SHA256SUMS)
+          cp dist/FIXES.md LICENSE firmware/USER_GUIDE.md stage/
+          (cd stage && sha256sum 1_like_v2.05/EEVBlog.bin 2_fast/EEVBlog.bin USER_GUIDE.md FIXES.md LICENSE > SHA256SUMS)
+          (cd stage && zip -r -X "../firmware-$TAG.zip" 1_like_v2.05 2_fast USER_GUIDE.md FIXES.md LICENSE SHA256SUMS)
           unzip -l "firmware-$TAG.zip"
           python3 -I .github/scripts/check_no_originals.py "firmware-$TAG.zip"
           python3 -I .github/scripts/sha256sum.py "firmware-$TAG.zip" > "firmware-$TAG.zip.sha256"

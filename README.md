@@ -7,13 +7,27 @@
 | `firmware/` | new firmware for the 121GW (STM32L152ZD) in hand-written Thumb-2 assembly, loaded by the meter's existing bootloader at 0x08006000 |
 | `emulator/` | emulator of the 121GW with a front-panel UI, used to run and test firmware without hardware |
 
+## New features of the fast build
+
+| Feature | Where | What it does |
+|---|---|---|
+| Backlight auto-off and memory | SETUP page `bL` | switches the backlight off after 30 s .. 99 min; any key or dial turn switches it on again; the on/off state is kept over a power-off |
+| dBm reference | ACV, SETUP dBm page | dBm into 600, 50 or 75 ohm, or dBV |
+| Bluetooth speed | SETUP page `bt` | 2, 4, 10 or 20 readings per second |
+| REL in percent | SETUP page `rEL` | REL shows the deviation from the reference in % |
+| Thermocouple type | TEMP, SETUP page `tc` | K, J or T probes |
+| Display level | SETUP page `dSP` | less smoothing: small changes show about 4x sooner |
+
+How to set and use each one: [`firmware/USER_GUIDE.md`](firmware/USER_GUIDE.md). The `1_like_v2.05` build has none of
+these and behaves like the original firmware apart from the defect fixes.
+
 ## Downloads
 
 Every release (tag `v*`, see [Releases](../../releases)) carries:
 
 | File | Content |
 |---|---|
-| `firmware-<tag>.zip` | `2_fast/EEVBlog.bin` (production build), `1_like_v2.05/EEVBlog.bin` (strict build that behaves like v2.05 apart from the defect fixes), `FIXES.md` (the v2.05 defects fixed), `LICENSE`, `SHA256SUMS` |
+| `firmware-<tag>.zip` | `2_fast/EEVBlog.bin` (production build), `1_like_v2.05/EEVBlog.bin` (strict build that behaves like v2.05 apart from the defect fixes), `USER_GUIDE.md` (the new features and how to use them), `FIXES.md` (the v2.05 defects fixed), `LICENSE`, `SHA256SUMS` |
 | `121GW-Open-Firmware-Emulator-<tag>-macos-arm64.dmg` | emulator for macOS (Apple Silicon) |
 | `121GW-Open-Firmware-Emulator-<tag>-windows-x64.exe` | emulator installer for Windows |
 | `121GW-Open-Firmware-Emulator-<tag>-linux-x86_64.AppImage` | emulator for Linux |
