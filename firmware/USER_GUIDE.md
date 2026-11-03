@@ -2,7 +2,7 @@
 
 Everything on this page is in the **fast build** (`2_fast/EEVBlog.bin`). The `1_like_v2.05` build behaves like the
 original firmware apart from the defect fixes and has none of these features. At power-on the fast build shows its
-version, `F-0.91`; the `1_like_v2.05` build shows `V-2.05` like the original.
+version, `F-0.92` (the release number, v0.9.2); the `1_like_v2.05` build shows `V-2.05` like the original.
 
 All settings are stored in bytes of the data EEPROM that the original firmware never uses. Calibration, serial number
 and the original settings are not touched, and a meter flashed back to v2.05 simply ignores the new bytes.

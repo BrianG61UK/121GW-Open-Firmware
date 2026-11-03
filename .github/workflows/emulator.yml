@@ -33,6 +33,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+      - name: The tag matches the version the firmware shows
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+        run: python3 -I .github/scripts/check_fw_version.py "$RELEASE_TAG"
       - name: Production and strict builds (image only; firmware.yml runs the checks)
         uses: ./.github/actions/build-firmware
         with:
