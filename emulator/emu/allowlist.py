@@ -18,6 +18,8 @@ One entry per line, '#' starts a comment:
                  safety_contention  fields pin, text        (pin name such as PE10; text = the violation message)
              A safety_* entry must use the scenario glob '*': the monitor runs in every session, with or without a
              scenario.
+             mask:lcd:bar   the same for the bargraph: its segments bar01..bar26 and its sign (Bar+, BarTick-); the
+             scale labels and ticks, the digits and every annunciator stay compared
              mask:lcd:sub | mask:lcd:main   a persistent difference of one display row (for example the board
              temperature on the secondary display): in every LCD event of the matching scenarios whose fields satisfy
              the condition, the segments of that row (digits, decimal points, minus sign) are not compared, in both
@@ -52,7 +54,7 @@ import shlex
 ONE_REF = r'(?:OF|NF|HW|NVM|IMP|OPT)-\d+'
 REF_RE = re.compile(ONE_REF + '(?:\\+' + ONE_REF + ')*')
 BUILDS = ('baseline', 'production')
-MASKS = ('lcd:sub', 'lcd:main')
+MASKS = ('lcd:sub', 'lcd:main', 'lcd:bar')
 SAFETY_STREAMS = ('safety_write', 'safety_frame', 'safety_state', 'safety_power', 'safety_contention')
 
 

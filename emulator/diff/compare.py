@@ -33,8 +33,8 @@ Every compared stream (and assert) also has t, step, since and boot (emu/allowli
 the latest step that acts on the meter, the seconds since it started and the seconds since the latest power-on or system
 reset, so that a deviation is tied to one scenario step or to the start-up (for example the stimulus that makes it
 visible) instead of to absolute times.
-The mask:lcd:sub and mask:lcd:main entries clear one display row of the matching LCD events before the comparison
-(fields as for lcd); see emu/allowlist.py.
+The mask:lcd:sub, mask:lcd:main and mask:lcd:bar entries clear one display row (or the bargraph) of the matching LCD
+events before the comparison (fields as for lcd); see emu/allowlist.py.
 The safety_* entries of the same file are applied by the hardware-safety monitor (emu/safety.py), not here; the
 tolerance:<stream> entries widen the time tolerance of that stream for the matching scenarios (the report counts each
 use as one "removed" event of the entry).
@@ -161,10 +161,15 @@ def _filter(stream, evs, devs, scenario, tl=((), ())):
 
 
 def _row_masks(group):
-    """Per LCD word, the bit mask of the segments of one display row: group 'lcd:sub' or 'lcd:main'."""
+    """Per LCD word, the bit mask of the segments of one display group: 'lcd:sub' or 'lcd:main' (a row of digits with
+    its decimal points and minus sign), or 'lcd:bar' (the bargraph segments bar01..bar26 and its sign, Bar+ / BarTick-;
+    the scale labels and ticks stay compared)."""
     dec = lcd_decoder()
-    pre, sign = ('sub', 'Sub-') if group == 'lcd:sub' else ('seg', 'Seg-')
-    rx = re.compile(pre + r'[1-5](?:[a-g]|dp)')
+    if group == 'lcd:bar':
+        rx, sign = re.compile(r'bar\d\d|Bar\+|BarTick-'), None
+    else:
+        pre, sign = ('sub', 'Sub-') if group == 'lcd:sub' else ('seg', 'Seg-')
+        rx = re.compile(pre + r'[1-5](?:[a-g]|dp)')
     masks = [0] * 8
     for (w, b), names in dec.bit_names.items():
         if any(rx.fullmatch(n) or n == sign for n in names) and w < 8:

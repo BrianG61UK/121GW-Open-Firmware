@@ -728,6 +728,9 @@ FUNC bargraph_count_from_value
     ldr r1, =v_20008041                      @ 080190FC &bargraph segment count
     strb r0, [r1, #0]                        @ 08019100
 .L08019102:                                @ reached from 080190C2 beq (equal / zero); 080190EE blt (signed <); 080190F8 b; falls in
+    .if LOOP_V205 == 0
+    bl lcd_bar_zero_sign                     @ IMP-15: with no bar lit the sign follows the digits (no flicker at zero)
+    .endif
     @ mode 11 (DIODE): a count of 16 or more is limited to 15
 
     ldr r0, =meter_mode                      @ 08019102 &meter_mode
@@ -744,6 +747,70 @@ FUNC bargraph_count_from_value
 .L0801911E:                                @ reached from 08018FD4 b; 0801910A bne (not equal / non-zero); 08019114 blt (signed <); falls in
     pop {r4, r5, r6, pc}                     @ 0801911E
 ENDFUNC bargraph_count_from_value
+
+    .if LOOP_V205 == 0
+@ -----------------------------------------------------------------------------
+@ lcd_bar_negative - is the bargraph polarity negative?  (one rule for the LCD and the BLE frame byte 13)
+@ Replaces : nothing in v2.05 (new, IMP-15)
+@ In       : -
+@ Out      : r0 = 1 negative, 0 positive
+@ Clobbers : r1, flags
+@ Context  : main only (lcd_bar_zero_sign; the BLE frame builder fn_0800C5DA, byte 13)
+@ RAM      : reads 0x20008041 (bar count), 0x20007D64 (displayed value D), 0x20007D68 (per-sample value)
+@ Note     : v2.05 takes the polarity from the sign of the per-sample value (0x08018FD6, BLE 0x0800C798), which is right
+@            while bars are lit (one bar is FS / 25 counts, far above the per-sample noise).  With no bar lit the
+@            per-sample value of a zero input is noise around 0.  v2.05 turned every per-sample value above -1.5 counts
+@            into 0 or more (its rounding of negative values, OF-15), so its polarity stayed "+" almost always (one
+@            14 ms "-" frame in setup_date at 14.69 s); the production image rounds correctly and services every
+@            conversion (IMP-01), so the polarity changed every 14..40 ms (setup_navigate_dcv, open input, 2.64..3.39 s)
+@            and the BLE bar sign with it.  With a count of 0 the polarity is therefore the sign of the displayed value
+@            D, the same sign the main minus shows.
+@ -----------------------------------------------------------------------------
+FUNC lcd_bar_negative
+    ldr r0, =v_20008041
+    ldrb r0, [r0]
+    cbz r0, 1f
+    ldr r0, =v_20007D68                      @ bars lit: the per-sample value, as v2.05
+    b 2f
+1:  ldr r0, =v_20007D64                      @ no bar lit: the displayed value
+2:  ldr r0, [r0]
+    lsrs r0, r0, #31                         @ 1 when negative
+    bx lr
+ENDFUNC lcd_bar_negative
+
+@ -----------------------------------------------------------------------------
+@ lcd_bar_zero_sign - bargraph polarity when no bar is lit (lcd_bar_negative)
+@ Replaces : nothing in v2.05 (new, IMP-15; called by bargraph_count_from_value after the count is final)
+@ In/Out   : - / -
+@ Clobbers : r0, r1, flags
+@ Context  : main only
+@ RAM      : reads 0x20008041; read-modify-writes lcd_shadow words 2, 4 (w2 b0 "+", w4 b0 "-")
+@ -----------------------------------------------------------------------------
+FUNC lcd_bar_zero_sign
+    push {r4, lr}
+    ldr r0, =v_20008041
+    ldrb r0, [r0]
+    cbnz r0, 2f                              @ bars lit: the v2.05 polarity stays
+    bl lcd_bar_negative
+    ldr r1, =lcd_shadow
+    cbz r0, 1f
+    ldr r0, [r1, #16]
+    orr r0, r0, #1                           @ w4 b0: polarity -
+    str r0, [r1, #16]
+    ldr r0, [r1, #8]
+    bic r0, r0, #1                           @ w2 b0: polarity + off
+    str r0, [r1, #8]
+    pop {r4, pc}
+1:  ldr r0, [r1, #16]
+    bic r0, r0, #1                           @ w4 b0: polarity - off
+    str r0, [r1, #16]
+    ldr r0, [r1, #8]
+    orr r0, r0, #1                           @ w2 b0: polarity +
+    str r0, [r1, #8]
+2:  pop {r4, pc}
+ENDFUNC lcd_bar_zero_sign
+    .ltorg
+    .endif
     .ltorg
 
 @ -----------------------------------------------------------------------------
