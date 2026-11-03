@@ -35,7 +35,7 @@ No file of a release contains an original EEVblog image (bootloader, v2.05) or t
 - `DESIGN.md` design and deviation list, `EEPROM_MAP.md` every EEPROM byte, `ORIGINAL_FIRMWARE_ISSUES.md` the defects
   found in v2.05 (with evidence), `OPTIMIZATIONS.md`, `FEATURES.md` user-visible features (keys, display, storage; implemented in the production build: backlight
   auto-off timer with remembered on/off state, selectable dBm reference, Bluetooth frame rate 2/4/10/20 per second,
-  thermocouple type K/J/T, REL in percent), `HARDWARE_TEST.md` checklist for the first run on a meter.
+  thermocouple type K/J/T, REL in percent, display level), `HARDWARE_TEST.md` checklist for the first run on a meter.
 - Status: both builds match v2.05 in the emulator's 93 test scenarios and the STOP/wake scenario except documented
   deviations. Verified working on a meter (both builds). The strict build is compared frame by frame; in the production build the
   display during range changes is checked by the scenarios' assertions and final states.

@@ -63,6 +63,9 @@ The image has only run in the emulator. These checks confirm on hardware what th
 11. REL in percent (production build): SETUP to the page rEL (after bt), select `rEL-P` and save; DCV with a source at 1 V,
    REL, then 1.1 V: 10.000 with the % sign and no V; REL off: volts again. Dump the EEPROM after the save: only byte 0x020
    may differ.
+12. Display level (production build): SETUP to the page dSP (last page), select `dSP 2` and save; a slowly changing
+   source (or a small step) settles visibly faster; the reading is somewhat noisier. Dump the EEPROM after the save: only
+   byte 0x013 may differ.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

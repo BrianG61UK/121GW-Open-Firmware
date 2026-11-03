@@ -1,7 +1,8 @@
 # Planned features of the replacement firmware: user interface, storage, constraints
 
 Status: design. The backlight auto-off timer (2.9, IMP-07), the dBm reference (2.2, IMP-08), the Bluetooth frame rate
-(2.5, IMP-09), the thermocouple type (2.8, IMP-10) and REL in percent (2.3, IMP-11) are implemented. The other features are designs for
+(2.5, IMP-09), the thermocouple type (2.8, IMP-10), REL in percent (2.3, IMP-11) and the display level (2.4, IMP-12) are
+implemented. The other features are designs for
 the production image; none of them is in the tree as code. The EEPROM bytes of section 3 are approved (owner, 2026-11-02);
 each is added to `EEPROM_MAP.md` 4.1 and `nvm_allow` only with the code that uses it. Citations: `KS` = `analysis/keys_setup.md`, `EMAP` =
 `EEPROM_MAP.md`, `LCD` = `analysis/lcd_map.md`, `ARS` = `analysis/autorange_and_scheduler.md`, `DES` = `DESIGN.md`.
@@ -141,20 +142,25 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   that is not scaled. Modes where REL is vetoed in v2.05 (flag 0x20008048, KS 2.2) stay vetoed. Code: `ui/relpct.s`
   (view, draw, sign mask applied at every full commit), `set/relp.s` (page).
 
-### 2.4 Faster display update
+### 2.4 Faster display response (implemented, IMP-12)
 
-- Where: SETUP page `dSP`.
-- Keys: the edit keys of 1.2.
+- Where: SETUP page `dSP`, item 24, the last port page in every mode (after `rEL`, or after `tc` in TEMP).
+- Keys: the edit keys of 1.2 (REL or PEAK switches between the two levels).
 - What is shown: `dSP 1` (as v2.05) or `dSP 2` (fast).
-- Meaning: the displayed value is the mean of N conversions (N = 16, or 8 for OHM r0..r4 and r6, 1 for OHM r5, ARS 7) followed
-  by the thresholded smoothing of `FUN_0800B754` (thr, n). Level 2 divides both lengths by 4 with a minimum of 1 (design values
-  to be fixed after a noise measurement in the emulator against the settled values, which must stay identical). The first
-  value after a range change keeps the 4-sample rule of ARS 5.2 P5. Update times follow the row rates: 16 conversions of a
-  80 sps row are 200 ms, of a 160 sps row 100 ms, of a 640 sps row 25 ms; level 2 gives a quarter of that.
+- Meaning (owner decision, 2026-11-02: less smoothing, not shorter means): every displayed value is the thresholded mean of
+  the last N means (`fn_0800B754`, `fn_08008344` and the OF-28 blocks); a step larger than the threshold restarts the
+  filter at once, a smaller change takes up to N means. Level 2 uses a quarter of every depth, at least 1 (10 -> 2,
+  20 -> 5, 5 -> 1, 2 -> 1); thresholds unchanged. The mean lengths, so the update rate of the digits (DCV 200 ms, DCmV and
+  TEMP 400 ms, Ohm, AC, currents, DIODE and BEEP 100 ms in the production build), auto-ranging, the settle counts and the
+  HY3131 rows are not changed. Shorter means were not taken: auto-ranging (`ar_apply`, M = 16), the settle counts, the AC+DC
+  and burden dwell and the Ohm range-change skip all count means.
+- Effect measured in the emulator: a 15-count step in ACV (threshold 20, depth 10) settles in 0.96 s at level 1 and 0.24 s
+  at level 2. Noise: ACV 1 V, DCmV 10 mV and OHM 1 kohm stay steady at both levels; TEMP 100 degC is steady at level 1 and
+  toggles its last digit (99.9 / 100.0, spread 0.4 counts) at level 2. A meter's noise can differ from the emulator's model;
+  MIN/MAX follows the displayed value and sees the same noise.
 - Storage: one byte 0x013 (0 = level 1). Any other value reads as 0.
-- Constraints: no HY3131 write (rows fixed, ARS 7); the cost is noise (the mean is over fewer conversions) and the settle of
-  small changes is not slower than before. The option does not touch BEEP, DIODE and the counter modes (FREQ, PULSE, DUTY, CAP):
-  they have their own update rules (ARS 8, 5.2 P5).
+- Constraints: no HY3131 write; the depth change needs no filter reset (`func/smooth.s` header). FREQ, PULSE, DUTY have no
+  smoothing; CAP uses its own depth (10), which level 2 also reduces.
 
 ### 2.5 Faster Bluetooth streaming (implemented, IMP-09)
 
@@ -301,7 +307,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 |---|---|---|---|---|---|
 | 0x00F | 2.8 thermocouple | 0 K, 1 J, 2 T | K | 0x00C..0x00E rotary memory | approved, implemented |
 | 0x011 | 2.2 dBm | 0 600 ohm, 1 50 ohm, 2 75 ohm, 3 dBV | 600 ohm | 0x010 temperature unit, 0x012 DIODE flag | approved, implemented |
-| 0x013 | 2.4 display | 0 level 1, 1 level 2 | level 1 | as 0x011 | approved |
+| 0x013 | 2.4 display | 0 level 1, 1 level 2 | level 1 | as 0x011 | approved, implemented |
 | 0x015 | 2.5 BLE | 0 2/s, 1 4/s, 2 10/s, 3 20/s | 2/s | 0x014 continuity code, 0x016 APO | approved, implemented |
 | 0x017 | 2.9 backlight | bits 6..0: 0 OFF, 1 30 s, 2..100 1..99 min; bit 7: on/off state | OFF, dark | as 0x015 | approved, implemented |
 | 0x020 | 2.3, 2.6 | bit 0 REL percent, bits 2..1 log trigger | v2.05 | none (free word 0x020..0x023) | approved, bit 0 implemented |
@@ -322,7 +328,7 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 21 | `bt` | always | yes (implemented) |
 | 22 | `rEL` | always | yes (implemented) |
 | 23 | `tc` | TEMP mode only | yes (implemented) |
-| 24 | `dSP` | always | yes |
+| 24 | `dSP` | always | yes (implemented) |
 | 25 | `Lt` | always | yes |
 | 26 | `Lo` | always | yes (digits) |
 | 27 | `HI` | always | yes (digits) |
@@ -334,8 +340,8 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 34, 35 | `tHI`, `tLo` | MIN/MAX on | no |
 
 Item 31 is not used. v2.05 uses 0..12 and 100; the page dispatcher falls back to item 0 for an unknown item
-(`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 23. SETUP short steps
-20 -> 21 -> 22 -> 23 (TEMP only) -> 0 (`fn_08015410`); each new page joins that chain.
+(`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 24. SETUP short steps
+20 -> 21 -> 22 -> 23 (TEMP only) -> 24 -> 0 (`fn_08015410`); each new page joins that chain.
 
 ## 5. Order of work and checks
 

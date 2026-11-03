@@ -25,6 +25,10 @@
 @ Calling convention (AAPCS, DESIGN.md 6): D in r0, T in r1, N in r2, r3 = state block (func_smooth_* only), result in
 @ r0; r0-r3, r12 and the flags are scratch; r4-r11 are preserved.
 @ Context: main only (the filters are called from the measurement chains in the main loop).
+@ IMP-12 (production image only): with the display level 2 of the SETUP page dSP (func_dsp_level = 1) both cores use a
+@ quarter of the depth argument, at least 1 (10 -> 2, 20 -> 5, 5 -> 1, 2 -> 1); the threshold is unchanged, so a jump
+@ larger than it still restarts the filter at once.  A depth change at run time needs no state reset: the cores average
+@ the newest min(count + 1, N) history entries, and a growing count fills its new slot by the shift of a valid entry.
 @ =============================================================================
 
     .syntax unified
@@ -32,6 +36,7 @@
     .thumb
     .include "macros.inc"
     .include "ram_v205.inc"
+    .include "config.inc"
 
 
     .equ func_mean3_last,   v_20007E70   @ last output of fn_0800B888 (s32)
@@ -219,7 +224,8 @@ ENDFUNC func_smooth_hist
 @ Context  : main
 @ RAM      : the state named by the descriptor (last output, count byte, history array)
 @ Spec     : DESIGN.md 6.6, OF-28
-@ Deviation: OF-28 (state through a descriptor); the depth is clamped to the capacity of the state
+@ Deviation: OF-28 (state through a descriptor); the depth is clamped to the capacity of the state; IMP-12 (production:
+@            a quarter of the depth at display level 2)
 @ -----------------------------------------------------------------------------
 LFUNC func_avg_core
     push {r3-r11, lr}                  @ save r4-r11 and the return address (r3 only keeps the stack 8-byte aligned)
@@ -232,6 +238,17 @@ LFUNC func_avg_core
     cmp r4, r0
     it hi
     movhi r4, r0                       @ depth above the capacity: use the capacity (never acts for the v2.05 depths 2, 5, 10)
+    .if LOOP_V205 == 0
+    @ IMP-12: display level 2 (SETUP page dSP) keeps a quarter of the depth, at least 1; a depth of 0 keeps its meaning
+    ldr r0, =func_dsp_level
+    ldrb r0, [r0]
+    cbz r0, 1f                         @ level 1: the depth of the caller, as v2.05
+    cbz r4, 1f                         @ depth 0: unchanged
+    lsrs r4, r4, #2                    @ depth / 4
+    it eq
+    moveq r4, #1                       @ at least 1 (depth 1 = the newest value)
+1:
+    .endif
     movs r6, #0                            @ r7:r6 = sum = 0 (low word)
     movs r7, #0                            @ sum, high word
     ldr r0, [r11, #FUNC_DESC_LAST]         @ r0 = address of the last output
@@ -361,7 +378,8 @@ ENDFUNC func_avg_core
 @ Context  : main
 @ RAM      : the state named by the descriptor (last output, count byte, history array)
 @ Spec     : DESIGN.md 6.6, OF-28
-@ Deviation: OF-28 (state through a descriptor); the depth is clamped to the capacity of the state
+@ Deviation: OF-28 (state through a descriptor); the depth is clamped to the capacity of the state; IMP-12 (production:
+@            a quarter of the depth at display level 2)
 @ -----------------------------------------------------------------------------
 LFUNC func_hist_core
     push {r3-r11, lr}                  @ save r4-r11 and the return address (r3 only keeps the stack 8-byte aligned)
@@ -384,6 +402,17 @@ LFUNC func_hist_core
     cmp r4, r0
     it hi
     movhi r4, r0                       @ depth above the capacity: use the capacity (never acts for the v2.05 depths 2, 5, 10)
+    .if LOOP_V205 == 0
+    @ IMP-12: display level 2 (SETUP page dSP) keeps a quarter of the depth, at least 1; a depth of 0 keeps its meaning
+    ldr r0, =func_dsp_level
+    ldrb r0, [r0]
+    cbz r0, 1f                         @ level 1: the depth of the caller, as v2.05
+    cbz r4, 1f                         @ depth 0: unchanged
+    lsrs r4, r4, #2                    @ depth / 4
+    it eq
+    moveq r4, #1                       @ at least 1 (depth 1 = the newest value)
+1:
+    .endif
     movs r6, #0                            @ r7:r6 = sum = 0 (low word)
     movs r7, #0                            @ sum, high word
     ldr r0, [r11, #FUNC_DESC_LAST]         @ r0 = address of the last output

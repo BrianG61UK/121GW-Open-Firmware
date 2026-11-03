@@ -80,6 +80,7 @@
     .equ SET_ITEM_BL, 20                    @ IMP-07: setup item of the backlight auto-off page bL (v2.05 uses 0..12 and 100)
     .equ SET_ITEM_BT, 21                    @ IMP-09: setup item of the Bluetooth frame rate page bt (after bL)
     .equ SET_ITEM_RELP, 22                  @ IMP-11: setup item of the REL view page rEL (after bt)
+    .equ SET_ITEM_DSP, 24                   @ IMP-12: setup item of the display level page dSP (the last port page)
     .equ SET_ITEM_TC, 23                    @ IMP-10: setup item of the thermocouple type page tc (after bt, TEMP only)
     .endif
 
@@ -108,24 +109,29 @@
 FUNC fn_08015410
     push {r7, lr}                           @ 08015410
     .if LOOP_V205 == 0
-    @ IMP-07, IMP-09, IMP-11, IMP-10: SETUP short on the page bL (item 20, the page after the last v2.05 item) goes to the
-    @ page bt (item 21), on bt to the page rEL (item 22); on rEL to the page tc (item 23) in TEMP (mode 5), else to item 0;
-    @ on tc to item 0.  Each step ends an edit.
+    @ IMP-07, IMP-09, IMP-11, IMP-10, IMP-12: SETUP short on the page bL (item 20, the page after the last v2.05 item) goes
+    @ to the page bt (item 21), on bt to the page rEL (item 22); on rEL to the page tc (item 23) in TEMP (mode 5), else to
+    @ the page dSP (item 24); on tc to dSP; on dSP to item 0.  Each step ends an edit.
     ldr.w r0, =set_item
     ldrb r0, [r0, #0x0]
     cmp r0, #SET_ITEM_BL
     beq .Lsn_bl
     cmp r0, #SET_ITEM_BT
     beq .Lsn_bt
+    cmp r0, #SET_ITEM_DSP
+    beq .Lsn_to0                            @ dSP: next is item 0
     cmp r0, #SET_ITEM_TC
-    beq .Lsn_to0                            @ tc: next is item 0
+    beq .Lsn_to_dsp                         @ tc: next is dSP
     cmp r0, #SET_ITEM_RELP
     bne .Lsn_not_bl                         @ any other item: the v2.05 sequence below
     ldr.w r0, =meter_mode
     ldrb r0, [r0, #0x0]
     cmp r0, #0x5
-    bne .Lsn_to0                            @ rEL outside TEMP: next is item 0
+    bne .Lsn_to_dsp                         @ rEL outside TEMP: next is dSP
     movs r0, #SET_ITEM_TC                   @ rEL in TEMP: next is tc
+    b .Lsn_port_set
+.Lsn_to_dsp:
+    movs r0, #SET_ITEM_DSP
     b .Lsn_port_set
 .Lsn_bt:
     movs r0, #SET_ITEM_RELP                 @ bt: next is rEL
@@ -137,7 +143,7 @@ FUNC fn_08015410
     movs r0, #SET_ITEM_BT                   @ bL: next is bt
 .Lsn_port_set:
     ldr.w r1, =set_item
-    strb r0, [r1, #0x0]                     @ set_item = 21, 22, 23 or 0
+    strb r0, [r1, #0x0]                     @ set_item = 21, 22, 23, 24 or 0
     movs r0, #0x0
     ldr.w r1, =set_edit
     strb r0, [r1, #0x0]                     @ set_edit = 0 (v2.05 clears it at 0x08015422 for every item but 8)
@@ -1405,6 +1411,20 @@ FUNC fn_080165F4
     bl set_relp_edit                        @ switch or save of the REL view
     b .L08016800
 .Lse_not_relp:
+    cmp r0, #SET_ITEM_DSP                   @ IMP-12: the display level page dSP (item 24)
+    bne .Lse_not_dsp
+    uxtb r4, r4
+    cmp r4, #0x0                            @ query?
+    bne .Lse_dsp_act
+    movs r0, #0x1
+    movs r5, r0                             @ query result: editable
+    b .L08016800
+.Lse_dsp_act:
+    movs r0, r4
+    uxtb r0, r0
+    bl set_dsp_edit                         @ switch or save of the display level
+    b .L08016800
+.Lse_not_dsp:
     cmp r0, #SET_ITEM_BT                    @ IMP-09: the Bluetooth frame rate page bt (item 21)
     bne .Lse_bl_item
     uxtb r4, r4
@@ -2082,6 +2102,11 @@ FUNC fn_0801797C
     bl set_relp_draw                        @ draw "rEL-d" or "rEL-P"
     b .L08017F26
 .Lsd_not_relp:
+    cmp r0, #SET_ITEM_DSP                   @ IMP-12: the display level page dSP (item 24)
+    bne .Lsd_not_dsp
+    bl set_dsp_draw                         @ draw "dSP 1" or "dSP 2"
+    b .L08017F26
+.Lsd_not_dsp:
     cmp r0, #SET_ITEM_BT                    @ IMP-09: the Bluetooth frame rate page bt (item 21)
     bne .Lsd_not_bt
     bl set_bt_draw                          @ draw "bt" and the rate
