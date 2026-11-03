@@ -24,6 +24,7 @@ import os
 import re
 import struct
 import sys
+import threading
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, '..', '..'))
@@ -40,6 +41,22 @@ ADDR_FLAG = 0x2000807B                          # backlight flag of the MODE lon
 ADDR_APO = 0x20000230                           # APO countdown (v2.05 RAM, u16)
 TMP = os.environ.get('TMPDIR', '/tmp')
 fails = []
+
+# Wall-clock guard for every test script that imports these helpers: a script still running after WALL_LIMIT_S seconds
+# (EMU_TEST_WALL_S, default 1800, at least 60; it cannot be switched off) prints a FAIL result and ends with status 1.
+# A timer thread is used, because an exception raised by a signal handler inside the emulator's callbacks is swallowed.
+WALL_LIMIT_S = max(60.0, float(os.environ.get('EMU_TEST_WALL_S', '1800') or 1800))
+
+
+def _wall_expired():
+    print('RESULT FAIL: wall-clock limit of %.0f s reached (EMU_TEST_WALL_S): the test stopped making progress or needs a '
+          'longer limit' % WALL_LIMIT_S, flush=True)
+    os._exit(1)
+
+
+_guard = threading.Timer(WALL_LIMIT_S, _wall_expired)
+_guard.daemon = True
+_guard.start()
 
 
 def check(name, cond, detail=''):

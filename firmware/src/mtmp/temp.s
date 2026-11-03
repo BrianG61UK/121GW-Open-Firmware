@@ -135,7 +135,7 @@ ENDFUNC fn_08013B76
 @ Out      : - (0x20007E80 = T in 0.01 degC, 0x200080AD = range flag)
 @ Clobbers : r0-r3, r12, flags (r4-r6 preserved)
 @ Context  : main only
-@ RAM      : reads  v205_tab_08025CF8, 0x20007E84, 0x20007E88
+@ RAM      : reads  mtmp_tc_tab_k (the NIST K table, OF-56; v2.05 0x08025CF8), 0x20007E84, 0x20007E88
 @            writes 0x20007E80, 0x20007E84, 0x20007E88, 0x200080AD
 @ Spec     : analysis/hy3131_modes_misc.md 4.1 step 4
 @ Deviation: IMP-10 (production: table and window from the descriptor of the selected type, mtmp/tctype.s)
@@ -196,7 +196,7 @@ FUNC fn_08013C40
     .if LOOP_V205 == 0
     ldr r0, [r12]                      @ IMP-10: table of the type (K: 0x08025CF8)
     .else
-    ldr r0, =v205_tab_08025CF8         @ 0x08013C80 pool 0x08013EB8 = 0x08025CF8
+    ldr r0, =mtmp_tc_tab_k    @ 0x08013C80; OF-56: NIST K table (v2.05 pool 0x08013EB8 = 0x08025CF8)
     .endif
     uxtb r5, r5                        @ 0x08013C82
     ldr.w r0, [r0, r5, lsl #2]         @ 0x08013C84
@@ -219,7 +219,7 @@ FUNC fn_08013C40
     .if LOOP_V205 == 0
     ldr r0, [r12]                      @ IMP-10: table of the type (K: 0x08025CF8)
     .else
-    ldr r0, =v205_tab_08025CF8         @ 0x08013CA6 pool 0x08013EB8 = 0x08025CF8
+    ldr r0, =mtmp_tc_tab_k    @ 0x08013CA6; OF-56: NIST K table (v2.05 pool 0x08013EB8 = 0x08025CF8)
     .endif
     uxtb r5, r5                        @ 0x08013CA8
     add.w r0, r0, r5, lsl #2           @ 0x08013CAA
@@ -230,7 +230,7 @@ FUNC fn_08013C40
     .if LOOP_V205 == 0
     ldr r1, [r12]                      @ IMP-10: table of the type (K: 0x08025CF8)
     .else
-    ldr r1, =v205_tab_08025CF8         @ 0x08013CBA pool 0x08013EB8 = 0x08025CF8
+    ldr r1, =mtmp_tc_tab_k    @ 0x08013CBA; OF-56: NIST K table (v2.05 pool 0x08013EB8 = 0x08025CF8)
     .endif
     uxtb r5, r5                        @ 0x08013CBC
     add.w r1, r1, r5, lsl #2           @ 0x08013CBE
@@ -238,7 +238,7 @@ FUNC fn_08013C40
     .if LOOP_V205 == 0
     ldr r2, [r12]                      @ IMP-10: table of the type (K: 0x08025CF8)
     .else
-    ldr r2, =v205_tab_08025CF8         @ 0x08013CC6 pool 0x08013EB8 = 0x08025CF8
+    ldr r2, =mtmp_tc_tab_k    @ 0x08013CC6; OF-56: NIST K table (v2.05 pool 0x08013EB8 = 0x08025CF8)
     .endif
     uxtb r5, r5                        @ 0x08013CC8
     ldr.w r2, [r2, r5, lsl #2]         @ 0x08013CCA

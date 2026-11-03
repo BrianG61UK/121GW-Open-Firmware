@@ -104,7 +104,8 @@ FUNC fn_08007E84
     blt .L08007F20                     @ 0x08007F0A
 .if LOOP_V205
     mov.w r0, #500
-    bl pe7_on_with_timeout                  @ v2.05 0x08007F0C: tone from the smoothed mean (production: per sample, see the end)
+    bl fn_0800EEA8                          @ v2.05 0x08007F0C: tone from the smoothed mean (production: per sample, see the end);
+                                            @ OF-63: gated by the buzzer setting (v2.05 pe7_on_with_timeout)
 .endif
     ldr r0, =v_20007D64                @ 0x08007F14 pool 0x08007F94 = 0x20007D64
     ldr r0, [r0, #0]                   @ 0x08007F16
@@ -178,7 +179,8 @@ FUNC fn_08007E84
     cmp r0, #2
     blo .Ldi_done                           @ not yet confirmed
     mov.w r0, #500
-    bl pe7_on_with_timeout                  @ K = 2 confirmed: short-circuit tone, 500 TIM3 updates (v2.05 0x08007F0C)
+    bl fn_0800EEA8                          @ K = 2 confirmed: short-circuit tone, 500 TIM3 updates (v2.05 0x08007F0C);
+                                            @ OF-63: gated by the buzzer setting (v2.05 pe7_on_with_timeout)
     b .Ldi_done
 .Ldi_out:
     movs r0, #0

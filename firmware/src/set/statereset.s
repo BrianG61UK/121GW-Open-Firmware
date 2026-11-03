@@ -34,7 +34,7 @@
 @ RAM      : reads v_20008038; writes acdc_active, filter_1khz, hold_active, hold_stage2, meter_mode, meter_range,
 @            minmax_state, peak_hold, rel_active, set_bat_low, set_cal_mode, set_date_edit_en, set_diode_15v,
 @            set_key_remote_code, set_key_remote_req, v_20007FE0, v_20008065, v_20008066, v_20008072, v_20008073,
-@            v_20008087, v_200080B1, v_200080B2, v_200080C5, va_channel
+@            v_20008087, v_200080B1, v_200080B2, v_200080C5, va_channel; strict image: v_2000807B = 0 (OF-55)
 @ Spec     : EEPROM_MAP.md 6 (boot reads, order of the calls); analysis/keys_setup.md 3; DESIGN.md 3.2 step 5
 @ Note     : Order as v2.05: read the NJU6350 (fn_0800FF18); markers 0x26 and 0x1F (fn_08010F10, fn_080104BC); board
 @            temperature offset (load_cal_record_from_eeprom(0xC8, 0)); interval, contrast, APO, temperature unit,
@@ -87,6 +87,11 @@ FUNC fn_08024DE0
     .if LOOP_V205 == 0
     bl pwr_bl_reset                         @ IMP-07: backlight flag and countdown follow PE8 (low after power-on and STOP wake)
     bl pwr_bl_restore                       @ IMP-07: switch the backlight on again if it was on at the last MODE long press
+    .else
+    movs r0, #0
+    ldr r1, =v_2000807B
+    strb r0, [r1]                           @ OF-55: the backlight flag follows PE8, which is low after power-on and STOP wake
+                                            @ (v2.05 keeps the flag: the first MODE long press after a wake did nothing visible)
     .endif
     movs r0, #0x0                           @ 08024E2E
     ldr.w r1, =set_bat_low                  @ 08024E30

@@ -201,10 +201,9 @@ PLAN_OF.update({m: '_plan_va' for m in (13, 14, 15, 22, 23, 24)})
 TH_TABLE = (3758, 3672, 3570, 3451, 3315, 3163, 2997, 2819, 2631, 2437, 2242, 2048, 1859, 1678, 1508, 1349, 1203,
             1070, 950, 842, 746, 661, 585, 518)
 TH_TMIN, TH_TMAX = -2500, 8500
-TC_TABLE = 0x08025CF8                                   # 158 x i32 thermocouple EMF in uV at 10 k - 210 degC (misc 4.1)
 TC_MIN_C, TC_MAX_C = -210.0, 1360.0
-# thermocouple probe types: EMF table source and temperature span of the table (degC); K is the firmware table above,
-# J and T are the NIST ITS-90 tables of emu/tc_nist.py (the shape of the K table)
+# thermocouple probe types: temperature span of the NIST ITS-90 EMF tables of emu/tc_nist.py (degC; the shape of the v2.05
+# K table 0x08025CF8)
 TC_PROBES = {'K': (-210.0, 1360.0), 'J': (-210.0, 1200.0), 'T': (-210.0, 400.0)}
 # CORR tables X (address, words per row) by idx (acc 5.2)
 CORR_X = {0: (0x08028A18, 9), 1: (0x08028A60, 9), 4: (0x08028E08, 7), 5: (0x08028E40, 7), 6: (0x08028E78, 7),
@@ -722,7 +721,7 @@ class CalibratedFrontend(_Base):
     # ------------------------------------------------------------------ stimulus
     def set_stimulus(self, s):
         """As _Base.set_stimulus, plus the range checks that need the firmware tables: board temperature inside the
-        thermistor table range used by 0x08013AAC, thermocouple temperature inside the EMF table 0x08025CF8."""
+        thermistor table range used by 0x08013AAC, thermocouple temperature inside the span of the probe's EMF table."""
         b = s.get('board', self.stim.get('board'))
         if b is not None:
             lo, hi = self._board_range()
@@ -732,8 +731,8 @@ class CalibratedFrontend(_Base):
         probe = str(s.get('probe', self.stim.get('probe', 'K'))).upper()
         lo, hi = TC_PROBES.get(probe, (TC_MIN_C, TC_MAX_C))
         if s.get('kind', self.stim['kind']) == 'degC' and not lo <= float(s.get('value', 0.0)) <= hi:
-            raise ValueError(f'type {probe} thermocouple temperature must be within {lo} .. {hi} degC (EMF table: K '
-                             '0x08025CF8, misc 4.1; J, T NIST ITS-90, emu/tc_nist.py)')
+            raise ValueError(f'type {probe} thermocouple temperature must be within {lo} .. {hi} degC (NIST ITS-90 EMF '
+                             'table, emu/tc_nist.py)')
         super().set_stimulus(s)
 
     def set_pa4(self, volts, vref):
@@ -786,10 +785,10 @@ class CalibratedFrontend(_Base):
         return (tth + self._th_offset()) / 100.0
 
     def _tc_emf(self, t, probe='K'):
-        """Thermocouple EMF in uV at t degC: linear interpolation of the probe's table (t[k] at 10 k - 210 degC).  K: the
-        table 0x08025CF8, the curve the firmware inverts in 0x08013C40 (misc 4.1); J, T: the NIST ITS-90 tables of
-        emu/tc_nist.py."""
-        tab = self._tab(TC_TABLE, 158) if probe == 'K' else (tc_nist.TC_J if probe == 'J' else tc_nist.TC_T)
+        """Thermocouple EMF in uV at t degC: linear interpolation of the probe's NIST ITS-90 table (emu/tc_nist.py, t[k] at
+        10 k - 210 degC), the physical probe.  The v2.05 K table 0x08025CF8, which the firmware inverts in 0x08013C40 (misc
+        4.1), equals the NIST K table except at 270 degC (10970 uV against 10971, ORIGINAL_FIRMWARE_ISSUES.md OF-56)."""
+        tab = {'K': tc_nist.TC_K, 'J': tc_nist.TC_J}.get(probe, tc_nist.TC_T)
         u = (t + 210.0) / 10.0
         k = max(0, min(len(tab) - 2, int(math.floor(u))))
         return tab[k] + (tab[k + 1] - tab[k]) * (u - k)
@@ -1263,8 +1262,8 @@ class CalibratedFrontend(_Base):
                  why='CAP counter signal: pulse train, physical method UNPROVEN (misc 5.5)')
 
     def _plan_temp(self, p, mode, rng, st):
-        """TEMP (misc 4): D (uV) = E(T_hot) - E(T_board) with E the EMF table of the probe type (K: 0x08025CF8; J, T:
-        emu/tc_nist.py); the board temperature also sets PA4, from which the firmware computes its cold junction
+        """TEMP (misc 4): D (uV) = E(T_hot) - E(T_board) with E the NIST ITS-90 EMF table of the probe type
+        (emu/tc_nist.py); the board temperature also sets PA4, from which the firmware computes its cold junction
         (0x0801385A, 0x08013CF8)."""
         if not self._need(p, 'degC'):
             return
@@ -1517,7 +1516,7 @@ class NetlistFrontend(_Base):
     The AD1 reads the internal nodes ad1p / ad1n / ad1rh / ad1rl of the HY3131 model (after the input
     multiplexer, the pre-filter and the SAD1I selection; reference multiplexers), returned under the pin names
     of the selection (sel['fp'], ...).  Not offered (reason in support()): stimulus kinds F and degC (capacitance
-    mode needs the HY3131 MOS current source; the thermocouple EMF is the firmware table 0x08025CF8 and the cold
+    mode needs the HY3131 MOS current source; the thermocouple EMF is a table (emu/tc_nist.py) and the cold
     junction is the board temperature, neither of which is a netlist part; a thermocouple can be applied as kind V
     with its EMF), configurations that use the HY3131 OP3 / MOS current
     source path (SVSO2, SCP, SCN; DS p23, no device data) and the internal temperature sensor (SAD1I = 1x).

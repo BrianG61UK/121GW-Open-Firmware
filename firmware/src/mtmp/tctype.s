@@ -8,7 +8,8 @@
 @
 @ Input window (x = EMF + cold junction, in uV; outside it the reading is " OFL " / "-OFL" through 0x200080AD):
 @     type  table                 x >= (low)   x < (high)   temperature span
-@     K     v205_tab_08025CF8     -5891        54139        -200 .. 1350 degC   (v2.05: 0x08013C4C, 0x08013C60)
+@     K     mtmp_tc_tab_k         -5891        54139        -200 .. 1350 degC   (v2.05 table 0x08025CF8 with the
+@                                                                                  270 degC entry of OF-56 corrected)
 @     J     mtmp_tc_tab_j         -7890        54139        -200 .. 936 degC
 @     T     mtmp_tc_tab_t         -5603        20873        -200 .. 400 degC
 @ The low limit is entry 1 (-200 degC) for every type, as for K.  The high limit of J is the K limit 54139 uV: TEMP measures
@@ -46,7 +47,7 @@ mtmp_tc_type:   .space 1
     .balign 4
 @ mtmp_tc_descs: per type the table address, the low limit (x >= low) and the high limit (x < high), 12 bytes each
 mtmp_tc_descs:
-    .word v205_tab_08025CF8, -5891, 54139   @ 0: K (v2.05)
+    .word mtmp_tc_tab_k, -5891, 54139       @ 0: K (NIST table, OF-56; v2.05 0x08025CF8)
     .word mtmp_tc_tab_j,     -7890, 54139   @ 1: J
     .word mtmp_tc_tab_t,     -5603, 20873   @ 2: T
     .size mtmp_tc_descs, . - mtmp_tc_descs

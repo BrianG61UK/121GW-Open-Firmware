@@ -67,8 +67,16 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-52 | Battery | The ADC-to-battery conversion is a straight line that matches the hardware divider only near 6.4 V: the gauge reads up to 6 % low near empty and the low-battery warning starts at 4.31 V instead of the displayed 4.1 V | low | fixed |
 | OF-53 | Measurement | HY3131 interrupt flags are cleared by writing 0 after the status burst read: a flag raised in between is lost; a lost counter-done flag freezes the frequency reading until the next mode or range apply | medium | fixed |
 | OF-54 | Measurement | The status burst reads the counter registers before INTF: a count that completes in between is seen as done with stale counter values; in AC modes the frequency correction then uses frequency 0 | medium | fixed |
-| OF-55 | Backlight | The backlight state flag 0x2000807B stays 1 across an auto power-off (STOP): the pin PE8 is driven low by the power-down but nothing resets the flag, so after the wake the first MODE long press only clears the flag and a second one is needed to switch the backlight on | low | fixed (fast build) |
-| OF-56 | Temperature | One entry of the type K table 0x08025CF8 differs from the NIST ITS-90 table: 270 degC holds 10970 uV, NIST 10.971 mV (the NIST reference function gives 10970.95 uV); readings near 270 degC are 0.02 degC high | low | kept (documented) |
+| OF-55 | Backlight | The backlight state flag 0x2000807B stays 1 across an auto power-off (STOP): the pin PE8 is driven low by the power-down but nothing resets the flag, so after the wake the first MODE long press only clears the flag and a second one is needed to switch the backlight on | low | fixed |
+| OF-56 | Temperature | One entry of the type K table 0x08025CF8 differs from the NIST ITS-90 table: 270 degC holds 10970 uV, NIST 10.971 mV (the NIST reference function gives 10970.95 uV); readings near 270 degC are 0.02 degC high | low | fixed |
+| OF-57 | SD card | The SD byte address is built in 32 bits (`sector << 9`, upper word 0): every access at or past 4 GiB goes to sector N mod 2^23 of the card, so on a card larger than 4 GiB a write past that point overwrites the FAT, the directory or early files | high | fixed |
+| OF-58 | SD card | `get_fattime` returns FatFs's sample constant 0x3449B3C0: every file is created on 2006-02-09 22:30 and each close writes that date as the modification time until the log code corrects it | low | fixed |
+| OF-59 | SD card | SD errors are not passed on: the disk status is the raw `sd_init` code (even codes pass as ready), a read takes the buffer without waiting for the data end and ignores SDIO errors, a write ignores a negative CRC status token, so a block the card refused counts as written | medium | fixed |
+| OF-60 | Logging | The file that is forced after 20 failed write attempts gets no CSV header: the header is due only while the forced-file counter is 0 | low | fixed |
+| OF-61 | Logging | When all 40 write attempts fail, logging is switched off without `log_stop`: the range frozen by the logging start stays manual, the counters, the stop time and the MEM view window are not saved | medium | fixed |
+| OF-62 | Calibration | After the ACV range-0 calibration writes its marker (EEPROM 0x01F) the RAM flag that selects the CORR70 correction keeps its boot value until the next power-on; the (unreachable) Ohm range-6 branch stores the opposite of what the next boot reads | low | fixed |
+| OF-63 | Buzzer | The buzzer setting (SETUP "b-OFF") does not silence the diode short-circuit tone, the auto-hold capture beep, the auto power-off warning and the power-off beep | low | fixed |
+| OF-64 | SD card | FatFs R0.08a error paths fixed by ChaN in R0.10a..R0.10c: f_write stores the result of create_chain as the start cluster before checking it (a disk error writes 0xFFFFFFFF into the directory entry), create_chain links a new cluster behind an entry it could not read, move_window keeps the old sector number after a failed read, put_fat marks the window dirty after a failed load | medium | fixed |
 
 ## Details
 
@@ -834,14 +842,123 @@ Execution check (emulator booted through the bootloader image, original v2.05 im
 long press: PE8 high, flag 1. The APO counter 0x20000230 put to 3: the meter powers down (PE8 low, flag 1). A dial change
 wakes it: PE8 low, flag 1. First MODE long press: PE8 stays low, flag 0. Second: PE8 high, flag 1.
 Impact: after every wake that followed a power-off with the backlight on, the backlight needs two long presses of MODE.
-Port (fast build): `set_state_reset` calls `pwr_bl_reset`, which clears the flag (and the auto-off countdown of IMP-07) at
-power-on and after the wake, so the flag follows the pin; the first MODE long press switches the backlight on. The strict
-build keeps v2.05's behaviour.
+Port: `set_state_reset` clears the flag at power-on and after the wake, so the flag follows the pin and the first MODE long
+press switches the backlight on (fast build: `pwr_bl_reset`, which also clears the auto-off countdown of IMP-07; strict
+build: the flag alone, since 2026-11-03).
 
 ### OF-56 — type K table entry at 270 degC is 1 uV low
 The type K table at 0x08025CF8 (158 x s32 uV at 10 k - 210 degC) was compared with the NIST ITS-90 type K table
 (https://its90.nist.gov/downloadFiles/type_k.tab.txt) by `firmware/tools/gen_tc_tables.py`: 157 entries are equal, entry 48
 (270 degC) holds 10970 where NIST tabulates 10.971 mV.  The NIST reference function gives 10970.95 uV at 270 degC, so the
 v2.05 value is the function truncated instead of rounded.  Effect: between 260 and 280 degC the interpolated temperature is
-at most 1 uV / 41 uV per degC = 0.024 degC high.  The table is kept as v2.05 has it in both images (K readings stay those
-of v2.05); the J and T tables of IMP-10 are the NIST values.
+at most 1 uV / 41 uV per degC = 0.024 degC high.
+Port (both builds): `firmware/tools/gen_tc_tables.py` writes the NIST K table as `mtmp_tc_tab_k` (`src/mtmp/tc_tables.s`, stops
+unless the only difference from the v2.05 table is this entry); the conversion (`temp.s`) and the cold junction
+(`thermistor.s`) use it, the v2.05 table stays in the image unreferenced.  The emulator's thermocouple probe uses the NIST
+tables for K as for J and T (`emulator/emu/tc_nist.py`).
+
+### OF-57 — SD addresses wrap at 4 GiB
+`disk_read` (`0x08023F7E`) passes the byte address `sector << 9` (`0x08023F96 lsls r2,r5,#9`) with the upper word 0
+(`0x08023F98 movs r3,#0`); `disk_write` (`0x08023FB8`) computes `(first << 9) + 512 * i` in 32 bits (`0x08023FE4`..`0x08023FEA`)
+and passes 0 as the upper word (`0x08023FFC`).  The driver itself handles 64-bit addresses: for an SDHC card
+(`sd_card_type == 2`, the CCS bit of ACMD41) `FUN_08022FCE` / `FUN_08023100` shift the 64-bit address right by 9
+(`0x0802300E`..`0x08023014`, `0x08023144`..`0x0802314A`).  Sector bits 23..31 are lost, so sector N >= 2^23 is accessed as N mod 2^23.
+Execution check (emulator, `emulator/scripts/test_sd_large_card.py`, 8 GiB card image whose free clusters all lie above 4 GiB,
+logging for 70 s): v0.9.2 production image (v2.05's code here) wrote the file data into sectors 8384512.. (the 4 GiB alias), the
+file read back as zeros and the CSV had no rows.  Whether a card filled from the bottom ever reaches 4 GiB in normal use
+depends on how full the card is.
+Impact: on SDHC / SDXC cards larger than 4 GiB a write past 4 GiB corrupts the FAT, the directory or older files.
+Port (both builds): the 64-bit byte address `(sector + i) * 512` (`src/sd/diskio.s`).  Checked at 8, 32, 128 GiB and at the
+largest FAT32 volume, 2 TiB - 1 MiB (writes at sector 4 294 948 864): file complete, the alias sectors untouched.
+
+### OF-58 — every file is dated 2006-02-09 22:30
+`get_fattime` (`0x0802402E`) returns the literal at `0x08024034`, 0x3449B3C0: FAT date 0x3449 = 2006-02-09, time 0xB3C0 =
+22:30:00, the value of FatFs's sample code.  `f_open` writes it as the creation time (directory entry bytes 0x0E..0x11,
+`0x08021C56`), `f_sync` as the modification time (bytes 0x16..0x19, `0x08022218`, every close or sync).  `log_set_file_time`
+(`0x0801D37C`) sets only the modification time from the clock chip, after a session; the creation time stays 2006 for good,
+and a file whose last session did not reach the correction (power cut between the close and the correction) keeps a 2006
+modification time.  Execution check (emulator, v0.9.2 production image, which has v2.05's code here, one logging session,
+directory entry read from the card image): created 2006-02-09 22:30:00, modified at the clock chip's time.
+Impact: wrong file dates on the PC.
+Port (both builds): `get_fattime` builds the FAT date and time from the calendar copy of the clock chip (0x200080D7..DC), as
+`log_set_file_time` does; 1980-01-01 00:00:00 (the first FAT date) while the copy holds no valid date.
+
+### OF-59 — SD errors are not passed on
+- `disk_initialize` (`0x08023F5C`) returns the `sd_init` result as the disk status; FatFs's `chk_mounted` tests only bit 0
+  (STA_NOINIT, `0x080217CE`..`0x080217D4`), so an `sd_init` failure with an even code (2 CRC fail, 4 timeout, 6, 0xE, 0x10,
+  0x26) counts as a ready card.  (`sd_probe_mount` `0x0801F8BA` also discards the result of its own `sd_init`, `0x0801F8C4`;
+  the mount is lazy and repeats the initialisation in `chk_mounted`, which is where the result now counts.)
+- `disk_read` takes the buffer as soon as CMD13 reports the transfer state; it neither waits for the SDIO data end and the
+  DMA end nor looks at the SDIO error code `sd_transfer_error` (0x200080F7), so a block with a CRC error is used as read.
+- `disk_write` ignores the SDIO error code and the return value of `sd_wait_write` (`0x08024000`..`0x08024008`): a block the
+  card refused with a negative CRC status token counts as written.
+Execution check (emulator, `emulator/scripts/test_sd_errors.py`, the card model's test fault 'write_crc' = one block arriving
+with a CRC error at the start of logging): v0.9.2 production image: rows 1..8 missing from the file and zero bytes in their
+place, no error reported; with the card refusing every write from the first flush on, v0.9.2 kept
+logging and showed no error, and the file held 1541 bytes after 87 s of 1 s records.
+Impact: silent loss or corruption of logged data after a single disturbed transfer.
+Port (both builds, `src/sd/diskio.s`): `disk_initialize` returns STA_NOINIT for any `sd_init` failure; `disk_read` waits for
+the data end and the DMA end (at most 20000 polls) and returns RES_ERROR on an SDIO error or a timeout; `disk_write` keeps
+v2.05's sequence (the card is polled back to the transfer state) and returns RES_ERROR when the SDIO reported an error or
+`sd_wait_write` failed.  Both also look at the data error flags of SDIO_STA (0x23A: DCRCFAIL, DTIMEOUT, TXUNDERR, RXOVERR,
+STBITERR; `disk_read` clears them before each block, `sd_wait_write` tests them before it clears all flags): the interrupt
+handler serves DATAEND first and then masks every source (`0x08023476`..`0x0802351A`), so an error flagged together with or
+after DATAEND would otherwise not be seen.  Whether the SDIO block sets DATAEND together with DCRCFAIL is not stated in
+RM0038; the flag test covers both orders.  The log's retry path then repeats the session.  Together with OF-64 the same test gives one
+complete file, rows 1..N without a gap, for a disturbed write and a disturbed read.
+
+### OF-60 — the file forced after 20 failed attempts has no header
+`log_session_once` sets the header due (0x20008026) after creating a file only while the forced-file counter 0x20007FAE is 0
+(`0x0801D202`..`0x0801D214`).  `log_force_new_file` (`0x0801D51A`) increments that counter, so the file it starts after 20
+failed attempts begins directly with data rows.
+Impact: a CSV without its header lines.
+Port (both builds): every newly created file gets the header.  Execution check (`test_sd_errors.py`, the card refusing every
+write until the logger has started its second series): two files, both with the START header, rows 1..N without a gap.
+
+### OF-61 — the final write failure leaves the range frozen
+After both series of 20 attempts fail, the main loop clears the logging flag 0x20007FE1, powers the SD block off and leaves
+the MEM view (`0x08024D6A`..`0x08024D74`) without calling `log_stop` (`0x08010AF8`).  `log_stop` is the routine that undoes
+the range freeze of the logging start (range_manual = range_manual_saved, `0x08010B50`..`0x08010B5E`), saves the counters and
+the stop time (`0x08010B00`, `0x08010B04`) and rebuilds the MEM view window (`0x08010B42`).
+Impact: after a card failure the meter stays in manual range; the MEM view and the saved counters miss the session.
+Port (both builds): `log_stop(0)` before the flag is cleared (the rows cannot be written: the card failed 40 times).
+Execution check (`test_sd_errors.py`, card refusing every write): logging stops, range_manual back to 0 (autorange).
+
+### OF-62 — the RAM variant flags do not follow a calibration marker
+The boot sets 0x20008087 = (EEPROM 0x01F != 0xA5) and 0x20007FE0 = (EEPROM 0x026 != 0xA5) (`0x08024DE6`..`0x08024DF4`).
+`FUN_0800F7B8` writes marker 0x1F after the ACV range-0 calibration (`0x0800F896`) but leaves 0x20008087 alone, so the CORR70
+correction of ACV range 0 (`0x080074F8`, `0x0800767A`) stays as it was until the next power-on or wake.  The Ohm range-6 branch
+writes marker 0x26 (`0x0800F8AE`) and stores 1 into 0x20007FE0 (`0x0800F8B2`..`0x0800F8B8`), the opposite of what the next boot
+reads; that branch is not reached (FUN_0800F7B8 does not run in mode 9, analysis/hy3131_modes_misc.md DEF-13).
+Impact: readings in ACV range 0 right after its calibration differ from those after the next power-on.
+Port (both builds): after each marker write the flag is read back with the boot's own routine (`fn_080104BC`, `fn_08010F10`).
+
+### OF-63 — the buzzer setting does not silence every beep
+The setting (EEPROM 0x01E, RAM 0x20008078) is tested by `FUN_0800EEA8` (`0x0800EEB6`; key and mode beeps) and by the TIM3
+repeat pulses (`0x080247C8`..`0x080247D4`).  `pe7_on_with_timeout` (`0x0800EED0`) drives PE7 without that test; it serves
+continuity (`0x08007904`, `0x08007922`), the diode short-circuit tone (`0x08007F10`), the auto-hold capture beep (`0x0800E562`),
+the jack and high-voltage warnings (`0x0802469E`) and the auto power-off warning (`0x08024D0E`); the 1 s power-off beep sets PE7
+directly (`0x08024F12`).  The manual says only "disable/enable the buzzer"; which beeps should stay is not documented.
+Execution check (`emulator/scripts/test_buzzer_off.py`, buzzer off, diode short): v0.9.2 image: PE7 high in 3965 of 4000
+samples.
+Port (both builds; owner decision 2026-11-03): with the setting off the diode, auto-hold capture, auto power-off warning and
+power-off beeps are silent (`fn_0800EEA8`, and the power-off beep's PE7 gated); continuity and the jack and high-voltage
+warnings still sound (a continuity tester and the safety warnings).
+
+### OF-64 — FatFs R0.08a error paths (fixed by ChaN in R0.10a..R0.10c)
+The file system is FatFs R0.08a.  ChaN's later releases fixed error paths that the v2.05 code still has (sources compared:
+ff8a, ff10a, ff10b, ff10c from elm-chan.org):
+- `f_write` (`0x08021FE8`..`0x08021FEE`) stores the result of `create_chain(0)` as the file's first cluster before testing
+  it for 0, 1 and 0xFFFFFFFF; after a disk error `f_sync` / `f_close` write 0xFFFFFFFF into the directory entry (R0.10b:
+  "Fixed a hard error in the disk I/O layer can collapse the directory entry").
+- `create_chain` (`0x08021014`..`0x08021026`) takes a disk error of `get_fat` (0xFFFFFFFF) as the end of the chain and links a
+  new cluster behind the entry it could not read (fixed without a changelog line in R0.10a).
+- `move_window` (`0x08020C54`..`0x08020C5E`) keeps the old sector number after a failed read although the read may have
+  overwritten part of the window; `put_fat` (`0x08020F70`) marks the window dirty also after a failed load, so a stale or
+  invalid window could be written back (R0.10c: "Fixed a potential problem of FAT access that can appear on disk error").
+These paths are reached only on a disk error, which v2.05 never reports (OF-59); with OF-59 fixed they are reached.
+Execution check (`test_sd_errors.py` with the OF-59 fix but without these): a disturbed write left a directory entry with
+start cluster 0xFFFFFFFF and size 0, the retries could not reopen it and a second file was forced.
+Port (both builds, `src/sd/fat.s`, `src/sd/fat_file.s`): the four changes above as in R0.10a..R0.10c (window invalid =
+sector number 0xFFFFFFFF).  Kept as v2.05: the write results of the second FAT copy and of the FSInfo sector are not checked
+(the first FAT is the one read back).

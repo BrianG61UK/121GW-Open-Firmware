@@ -10,7 +10,10 @@
 Every scenario is run once per image, each run in its own process with a private copy of the EEPROM image, a freshly
 formatted SD card image (scenarios with flag sd), the same noise seed and the same clock-chip calendar; the recorded
 streams are compared (compare.py) and the first divergence of each scenario is reported.  Emulation is not paced:
-runs go as fast as the emulator executes.
+runs go as fast as the emulator executes.  Before the runs the emulated length of each scenario, its usual wall time (1 to 4 s per emulated s
+and image) and its wall-clock limit are printed; a run still going after its limit (300 s + 20 x the emulated length,
+--timeout-scale X >= 1 multiplies it, it cannot be switched off) is terminated by the parent process and reported as a
+run timeout naming the scenario and the image, so a hang ends the run with a failure instead of blocking it.
 
 --self-test     runs the reference image against itself: every scenario must give zero divergences (determinism) and
                 every assertion must pass on the reference image.
@@ -66,9 +69,21 @@ def sha256(path):
     return hashlib.sha256(open(path, 'rb').read()).hexdigest()
 
 
+WALL_BASE_S, WALL_PER_EMULATED_S = 300.0, 20.0   # wall-clock limit of one run: 300 s + 20 x the emulated length
+
+
+def wall_limit(sc, scale=1.0):
+    """Wall-clock limit (s) of one run of scenario sc.  Normal runs take 1 to 4 wall seconds per emulated second (the
+    reports' wall column); the limit leaves a factor of 5 or more and 300 s for the start-up, so only a run that has
+    stopped making progress (a firmware or emulator hang) reaches it.  scale: --timeout-scale."""
+    return scale * (WALL_BASE_S + WALL_PER_EMULATED_S * sc.emulated_s())
+
+
 def _worker(job):
-    """Run one scenario on one image in this process.  job: dict (picklable)."""
+    """Run one scenario on one image in this process.  job: dict (picklable).  The wall-clock limit job['wall_limit'] is
+    enforced from outside by run_jobs (an exception raised inside the emulator's callbacks would be swallowed by them)."""
     learner = None
+    name = os.path.splitext(os.path.basename(job['scenario_path']))[0]
     try:
         from emu import safety
         if job.get('learn'):
@@ -79,8 +94,7 @@ def _worker(job):
         r = scen.Runner(sc, job['image'], job['inputs'], job['eeprom'], seed=job['seed'], gpio_all=job['gpio_all'],
                         workdir=job['workdir'], keep=job['keep'], noise=job.get('noise', True)).run()
     except Exception:
-        return {'scenario': os.path.splitext(os.path.basename(job['scenario_path']))[0], 'image': job['image'],
-                'role': job['role'], 'error': traceback.format_exc()}
+        return {'scenario': name, 'image': job['image'], 'role': job['role'], 'error': traceback.format_exc()}
     r['role'] = job['role']
     if learner is not None:
         r['learned'] = learner
@@ -88,6 +102,52 @@ def _worker(job):
         write_trace(r, os.path.join(job['trace_dir'], f'{r["scenario"]}.{job["role"]}.trace.txt'))
         r['trace_file'] = os.path.join(job['trace_dir'], f'{r["scenario"]}.{job["role"]}.trace.txt')
     return r
+
+
+def _child(job, q):
+    q.put(_worker(job))
+
+
+def run_jobs(jobs, n):
+    """Run the jobs on at most n processes (one fresh process per job, as the pool with maxtasksperchild=1 did) and yield
+    each result when it arrives.  A run still going after its job['wall_limit'] wall-clock seconds is terminated and
+    yields an error result with 'timeout': True that names the scenario, the image and the limit; a process that ends
+    without a result yields an error with its exit code.  The limit cannot be missed: it is checked here, outside the
+    emulator, every 0.2 s."""
+    import queue
+    ctx = multiprocessing.get_context('spawn')
+    pending, running = list(jobs), {}
+    while pending or running:
+        while pending and len(running) < n:
+            job = pending.pop(0)
+            q = ctx.Queue()
+            p = ctx.Process(target=_child, args=(job, q), daemon=True)
+            p.start()
+            running[p] = (job, q, time.time())
+        time.sleep(0.2)
+        for p, (job, q, t0) in list(running.items()):
+            name = os.path.splitext(os.path.basename(job['scenario_path']))[0]
+            try:
+                r = q.get(timeout=1.0) if not p.is_alive() else q.get_nowait()
+            except queue.Empty:
+                r = None
+            if r is not None:
+                p.join()
+                del running[p]
+                yield r
+            elif not p.is_alive():
+                del running[p]
+                yield {'scenario': name, 'image': job['image'], 'role': job['role'],
+                       'error': f'the process of scenario {name} on {os.path.basename(job["image"])} ended without a '
+                                f'result (exit code {p.exitcode})'}
+            elif time.time() - t0 > job['wall_limit']:
+                p.terminate()
+                p.join()
+                del running[p]
+                yield {'scenario': name, 'image': job['image'], 'role': job['role'], 'timeout': True,
+                       'error': f'run timeout: scenario {name} on {os.path.basename(job["image"])} did not finish within '
+                                f'{job["wall_limit"]:.0f} s wall clock (limit {WALL_BASE_S:.0f} s + '
+                                f'{WALL_PER_EMULATED_S:.0f} x the emulated length): the run was stopped'}
 
 
 def write_trace(r, path):
@@ -126,18 +186,28 @@ def run_pairs(scenarios, ref, cand, args, workdir):
             jobs.append({'scenario_path': sc.path, 'image': img, 'inputs': args.inputs, 'eeprom': args.eeprom,
                          'seed': args.seed, 'gpio_all': args.gpio_all, 'workdir': workdir, 'keep': args.keep,
                          'role': role, 'trace_dir': args.trace_dir, 'deviations': args.deviations,
-                         'noise': not args.no_noise})
+                         'noise': not args.no_noise, 'wall_limit': wall_limit(sc, args.timeout_scale)})
     # longest scenarios first so that the pool is not left waiting on one long run at the end
     order = {sc.path: (('long' not in sc.flags), sc.name) for sc in scenarios}
     jobs.sort(key=lambda j: order[j['scenario_path']])
     results = {}
     ctx = multiprocessing.get_context('spawn')
     n = max(1, min(args.jobs, len(jobs)))
-    with ctx.Pool(n, maxtasksperchild=1) as pool:
-        for r in pool.imap_unordered(_worker, jobs):
-            results[(r['scenario'], r['role'])] = r
-            status = 'ERROR' if r.get('error') else f'{r["end_ns"] / 1e9:.1f} s emulated in {r["wall_s"]:.1f} s'
-            print(f'  {r["scenario"]:32s} {r["role"]:4s} {status}', flush=True)
+    # what to expect: the emulated length of each scenario, the usual wall time (1 to 4 s per emulated s, per image) and the
+    # hard limit after which a run is stopped as a timeout
+    total = 0.0
+    for sc in scenarios:
+        em = sc.emulated_s()
+        total += 2 * em
+        print(f'  {sc.name:32s} {em:8.1f} s emulated{" (long)" if "long" in sc.flags else ""}: usually '
+              f'{em / 60:.1f}..{4 * em / 60:.1f} min wall per image, limit {wall_limit(sc, args.timeout_scale) / 60:.0f} min',
+              flush=True)
+    print(f'  {len(jobs)} runs on {n} processes: usually {total / n / 60:.1f}..{4 * total / n / 60:.1f} min in all', flush=True)
+    for r in run_jobs(jobs, n):
+        results[(r['scenario'], r['role'])] = r
+        status = (('TIMEOUT ' + r['error']) if r.get('timeout') else 'ERROR') if r.get('error') else \
+            f'{r["end_ns"] / 1e9:.1f} s emulated in {r["wall_s"]:.1f} s'
+        print(f'  {r["scenario"]:32s} {r["role"]:4s} {status}', flush=True)
     return results
 
 
@@ -162,7 +232,7 @@ def make_report(scenarios, results, comparisons, args, ref, cand, devs, title):
         ra, rb = results.get((sc.name, 'ref')), results.get((sc.name, 'cand'))
         flags = ','.join(sorted(sc.flags)) or '-'
         if ra.get('error') or rb.get('error'):
-            L.append(f'| {sc.name} | {flags} | - | - | **run error** | - | - |')
+            L.append(f'| {sc.name} | {flags} | - | - | **run {"timeout" if ra.get("timeout") or rb.get("timeout") else "error"}** | - | - |')
             total_div += 1
             continue
         c = comparisons[sc.name]
@@ -318,7 +388,8 @@ def make_whitelist(args, ref, lib):
     scenarios = list(lib.values()) if args.scenario == 'all' else select(args.scenario, lib, True)
     workdir = tempfile.mkdtemp(prefix='eev-wl-', dir=args.workdir)
     jobs = [{'scenario_path': sc.path, 'image': ref, 'inputs': args.inputs, 'eeprom': args.eeprom, 'seed': args.seed,
-             'gpio_all': False, 'workdir': workdir, 'keep': False, 'role': 'ref', 'trace_dir': None, 'learn': True}
+             'gpio_all': False, 'workdir': workdir, 'keep': False, 'role': 'ref', 'trace_dir': None, 'learn': True,
+             'wall_limit': wall_limit(sc, args.timeout_scale)}
             for sc in sorted(scenarios, key=lambda sc: ('long' not in sc.flags, sc.name))]
     total = safety.Learner()
     merged_from = None
@@ -330,17 +401,16 @@ def make_whitelist(args, ref, lib):
     errors, stops = [], []
     t0 = time.time()
     try:
-        with multiprocessing.get_context('spawn').Pool(max(1, min(args.jobs, len(jobs))), maxtasksperchild=1) as pool:
-            for r in pool.imap_unordered(_worker, jobs):
-                if r.get('error'):
-                    errors.append((r['scenario'], r['error']))
-                    print(f'  {r["scenario"]:32s} ERROR', flush=True)
-                    continue
-                total.merge(r['learned'])
-                stops += [(r['scenario'], v) for v in r['final']['safety']]
-                fails = ', '.join(f'line {ev[2][0]}' for ev in assertion_failures(r))
-                print(f'  {r["scenario"]:32s} {r["end_ns"] / 1e9:.1f} s emulated in {r["wall_s"]:.1f} s'
-                      + (f'; assertions failed: {fails}' if fails else ''), flush=True)
+        for r in run_jobs(jobs, max(1, min(args.jobs, len(jobs)))):
+            if r.get('error'):
+                errors.append((r['scenario'], r['error']))
+                print(f'  {r["scenario"]:32s} ERROR', flush=True)
+                continue
+            total.merge(r['learned'])
+            stops += [(r['scenario'], v) for v in r['final']['safety']]
+            fails = ', '.join(f'line {ev[2][0]}' for ev in assertion_failures(r))
+            print(f'  {r["scenario"]:32s} {r["end_ns"] / 1e9:.1f} s emulated in {r["wall_s"]:.1f} s'
+                  + (f'; assertions failed: {fails}' if fails else ''), flush=True)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
     if errors or stops:
@@ -437,9 +507,10 @@ def safety_check(args, ref, lib):
             jobs.append({'scenario_path': lib['boot_v'].path, 'image': img, 'inputs': args.inputs, 'eeprom': args.eeprom,
                          'seed': args.seed, 'gpio_all': False, 'workdir': tmp, 'keep': False, 'role': name,
                          'trace_dir': None, 'meta': (name, addr, orig, new, kind, why),
+                         'wall_limit': wall_limit(lib['boot_v'], args.timeout_scale),
                          'deviations': allow if kind == 'ALLOWED' else args.deviations})
-        with multiprocessing.get_context('spawn').Pool(max(1, min(args.jobs, len(jobs))), maxtasksperchild=1) as pool:
-            results = pool.map(_worker, jobs)
+        by_role = {r['role']: r for r in run_jobs(jobs, max(1, min(args.jobs, len(jobs))))}
+        results = [by_role[j['role']] for j in jobs]            # in the order of the jobs, as Pool.map returned them
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     L = ['# Hardware-safety check proof', '',
@@ -498,6 +569,9 @@ def main(argv=None):
     ap.add_argument('--no-noise', action='store_true',
                     help='HY3131 noise off (for images whose timing differs: a shift below 1 us changes the noise drawn)')
     ap.add_argument('--jobs', type=int, default=2, help='parallel emulator processes (default 2: the machine is shared)')
+    ap.add_argument('--timeout-scale', type=float, default=1.0, metavar='X',
+                    help='multiply the wall-clock limit of each run (300 s + 20 x its emulated length) by X >= 1, for a slow '
+                         'or busy host; the limit cannot be switched off')
     ap.add_argument('--gpio-all', action='store_true', help='also record the bus pins decoded by spi / rtc')
     ap.add_argument('--trace-dir', help='write the full event trace of every run to this directory')
     ap.add_argument('--workdir', default=None, help='parent directory for temporary run files (default system temp)')
@@ -512,6 +586,8 @@ def main(argv=None):
                     help='show that each hardware-safety check fires on a mutated copy of the reference image')
     ap.add_argument('--list', action='store_true', help='list the scenarios and exit')
     args = ap.parse_args(argv)
+    if args.timeout_scale < 1:
+        ap.error('--timeout-scale must be at least 1 (the limit can be raised, not lowered or switched off)')
     lib = scen.library()
     if args.list:
         for sc in lib.values():

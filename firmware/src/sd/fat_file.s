@@ -699,10 +699,9 @@ FUNC fat_f_write
     bne     .Lfat_f_write_1FFC              @ 08021FE2 if (r7 != 0) goto 0x8021FFC
     movs    r1, #0                          @ 08021FE4 r1 = 0
     ldr     r0, [r4]                        @ 08021FE6 r0 = u32 [r4]
-    @ pointer 0 and no first cluster yet: create_chain(0) and remember it as the first cluster
+    @ pointer 0 and no first cluster yet: create_chain(0); it becomes the first cluster only after the checks below (OF-64)
     bl      fat_create_chain                @ 08021FE8 call fat_create_chain
     movs    r7, r0                          @ 08021FEC r7 = r0
-    str     r0, [r4, #0x10]                 @ 08021FEE u32 [r4+0x10] = r0
     b       .Lfat_f_write_1FFC              @ 08021FF0 goto 0x8021FFC
 .Lfat_f_write_1FF2:                     @ v2.05 0x08021FF2, reached from 0x08021FDA
     ldr     r1, [r4, #0x14]                 @ 08021FF2 r1 = u32 [r4+0x14]
@@ -730,7 +729,13 @@ FUNC fat_f_write
     movs    r0, #1                          @ 08022020 r0 = 1
     b       .Lfat_f_write_2184              @ 08022022 goto 0x8022184
 .Lfat_f_write_2024:                     @ v2.05 0x08022024, reached from 0x08022016
-    str     r7, [r4, #0x14]                 @ 08022024 u32 [r4+0x14] = r7
+    @ OF-64: the first cluster of the file (FIL +0x10) is set here, after the result of create_chain was checked (FatFs R0.10b
+    @ f_write).  v2.05 stores the result at once (0x08021FEE), so a failed first allocation left 1 or 0xFFFFFFFF in it and
+    @ f_sync / f_close wrote that value into the directory entry: a file whose start cluster points nowhere
+    ldr     r0, [r4, #0x10]
+    cbnz    r0, 1f
+    str     r7, [r4, #0x10]                 @ first write: the new chain is the file's first cluster
+1:  str     r7, [r4, #0x14]                 @ 08022024 u32 [r4+0x14] = r7
     @ the cluster is the current cluster; a dirty FIL buffer is written first (disk_write at 2038), flag 0x40 cleared
 .Lfat_f_write_2026:                     @ v2.05 0x08022026, reached from 0x08021FD4
     ldrb    r0, [r4, #6]                    @ 08022026 r0 = u8 [r4+0x6]

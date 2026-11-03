@@ -288,6 +288,10 @@ FUNC sys_main
     .endif
     cbz r0, .Lmain_s12_clear
     movs r0, #0
+    bl fn_08010AF8                          @ OF-61: log_stop(0): range freeze undone, counters, stop time and MEM view window
+                                            @ saved, setup page back to its default (v2.05 only clears the flag: autorange
+                                            @ stayed off after a failed card); the rows cannot be written, the card failed 40 times
+    movs r0, #0
     ldr r1, =v_20007FE1
     strb r0, [r1]                           @ logging off (0x08024D6E)
     bl fn_08022932                          @ SD power-off (0x08024D70)

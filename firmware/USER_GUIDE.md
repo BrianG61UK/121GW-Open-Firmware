@@ -2,7 +2,7 @@
 
 Everything on this page is in the **fast build** (`2_fast/EEVBlog.bin`). The `1_like_v2.05` build behaves like the
 original firmware apart from the defect fixes and has none of these features. At power-on the fast build shows its
-version, `F-0.92` (the release number, v0.9.2); the `1_like_v2.05` build shows `V-2.05` like the original.
+version, `F-0.93` (the release number, v0.9.3); the `1_like_v2.05` build shows `V-2.05` like the original.
 
 All settings are stored in bytes of the data EEPROM that the original firmware never uses. Calibration, serial number
 and the original settings are not touched, and a meter flashed back to v2.05 simply ignores the new bytes.
@@ -174,6 +174,12 @@ Tip: start MIN/MAX in the evening on a supply rail, read `tLo` in the morning to
 
 The first SETUP page shows the meter's own temperature, for example ` 25.0c`. Hold **SETUP**, press **REL** to switch
 between `c` and `F`, hold **SETUP** to save. The same setting switches the TEMP function between °C and °F.
+
+## Buzzer off (original setting, both builds)
+
+SETUP page 3 shows `b-On` or `b-OFF`. With `b-OFF` the key beeps, the diode short tone, the auto-hold capture beep, the
+auto power-off warning and the power-off beep are silent. Continuity still beeps (it is a continuity tester), and so do
+the wrong-jack and high-voltage warnings. (The original also beeped for the diode, auto-hold and power-off with `b-OFF`.)
 
 ## Faster responses without a setting
 

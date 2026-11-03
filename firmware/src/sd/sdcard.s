@@ -1270,7 +1270,8 @@ ENDFUNC sd_read_block
 @ -----------------------------------------------------------------------------
 @ sd_write_blocks - start a block write by DMA (ST SD_WriteBlock / SD_WriteMultiBlocks)
 @ Replaces  : 0x08023100 FUN_08023100 (v2.05), called by disk_write
-@ In        : r0 = source buffer, r1 = 0x200 (block size), r2 = byte address low, r3 = byte address high, [sp] = block size, [sp+4] = number of blocks (1)
+@ In        : r0 = source buffer, r1 = not used (v2.05 passes 0x200; disk_write now leaves the upper address word there), r2 = byte
+@             address low, r3 = byte address high, [sp] = block size, [sp+4] = number of blocks (1)
 @ Out       : -
 @ Clobbers  : r0-r3, flags (v2.05 regeffects.txt; r4-r11 preserved)
 @ Context   : main only
@@ -1567,6 +1568,15 @@ FUNC sd_wait_write
     movs    r4, r0                          @ 0802339C r4 = r0
     @ clear all static SDIO flags (ICR = 0x5FF)
 .Lsd_wait_write_339E:                   @ v2.05 0x0802339E, reached from 0x08023392, 0x08023398
+    @ OF-59: a data error flag still set in SDIO_STA (DCRCFAIL, DTIMEOUT, TXUNDERR, RXOVERR, STBITERR = 0x23A) makes the result
+    @ non-zero before the flags are cleared: the interrupt handler serves DATAEND first and then masks every source, so an
+    @ error flagged with or after DATAEND (a negative CRC status token) is seen only here
+    ldr     r0, =(SDIO_BASE + SDIO_STA)
+    ldr     r0, [r0]
+    movw    r1, #0x23a
+    tst     r0, r1
+    it      ne
+    movne   r4, #2                          @ SD error 2 (data error), as the handler's DCRCFAIL code
     movw    r0, #0x5ff                      @ 0802339E
     bl      sdio_clear_flag                 @ 080233A2 call sdio_clear_flag
     ldr.w   r0, =sd_transfer_error          @ 080233A6 r0 = &sd_transfer_error

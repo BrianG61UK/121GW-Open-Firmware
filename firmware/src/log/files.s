@@ -281,7 +281,7 @@ FUNC log_session_once
     bl      log_select_file                 @ 0801D1E2 call log_select_file
     ldr.w   r1, =log_fresult                @ 0801D1E6 r1 = &log_fresult
     strb    r0, [r1]                        @ 0801D1EA u8 [log_fresult] = r0
-    @ created: log_new_file = 0, r4 = 1 (set the time stamp at the end); the CSV header is due only for the first file of the run
+    @ created: log_new_file = 0, r4 = 1 (set the time stamp at the end); the CSV header is due for every new file (OF-60)
     ldr.w   r0, =log_fresult                @ 0801D1EC r0 = &log_fresult
     ldrb    r0, [r0]                        @ 0801D1F0 r0 = u8 [log_fresult]
     cmp     r0, #0                          @ 0801D1F2 compare r0 with 0
@@ -291,10 +291,8 @@ FUNC log_session_once
     strb    r0, [r1]                        @ 0801D1FC u8 [log_new_file] = r0
     movs    r0, #1                          @ 0801D1FE r0 = 1
     movs    r4, r0                          @ 0801D200 r4 = r0
-    ldr.w   r0, =log_file_seq               @ 0801D202 r0 = &log_file_seq
-    ldrh    r0, [r0]                        @ 0801D206 r0 = u16 [log_file_seq]
-    cmp     r0, #0                          @ 0801D208 compare r0 with 0
-    bne     .Llog_session_once_D224         @ 0801D20A if (r0 != 0) goto 0x801D224
+    @ OF-60: every new file gets the CSV header; v2.05 sets it due only while log_file_seq is 0 (0x0801D202..0x0801D20A), so the
+    @ file that log_force_new_file opens after 20 failed attempts (log_file_seq + 1) started with data rows and no header
     movs    r0, #1                          @ 0801D20C r0 = 1
     ldr.w   r1, =log_header_due             @ 0801D20E r1 = &log_header_due
     strb    r0, [r1]                        @ 0801D212 u8 [log_header_due] = r0
@@ -310,7 +308,7 @@ FUNC log_session_once
     bl      log_open_and_seek               @ 0801D21E call log_open_and_seek
     movs    r5, r0                          @ 0801D222 r5 = r0
     @ flush the pending rows (or the header); a failure is error 7
-.Llog_session_once_D224:                @ v2.05 0x0801D224, reached from 0x0801D20A, 0x0801D214, 0x0801D21A
+.Llog_session_once_D224:                @ v2.05 0x0801D224, reached from 0x0801D214, 0x0801D21A (0x0801D20A removed, OF-60)
     uxtb    r5, r5                          @ 0801D224 r5 = u8(r5)
     cmp     r5, #0                          @ 0801D226 compare r5 with 0
     bne     .Llog_session_once_D236         @ 0801D228 if (r5 != 0) goto 0x801D236

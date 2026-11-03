@@ -132,6 +132,9 @@ ENDFUNC fn_0800EEA8
 @ -----------------------------------------------------------------------------
 @ pe7_on_with_timeout - start a pulse of r0 TIM3 ticks with PE7 high regardless of the buzzer setting
 @ Replaces : 0x0800EED0 pe7_on_with_timeout (v2.05)
+@ Note     : OF-63: kept for the beeps that sound with the buzzer setting off: continuity (mres/beep.s) and the jack and
+@            high-voltage warnings (sys_tim2_isr); the diode, auto-hold capture and auto power-off warning beeps use the
+@            gated fn_0800EEA8 since OF-63
 @ In       : r0 = pulse length in TIM3 ticks
 @ Out      : -
 @ Clobbers : r1-r3
@@ -156,6 +159,7 @@ ENDFUNC pe7_on_with_timeout
 @ -----------------------------------------------------------------------------
 @ bzb_off_beep_start - "-oFF-" on the display and PE7 high (start of the 1 s power-off beep)
 @ Replaces : 0x08024F06..0x08024F14 of pe7_on_blocking_100_ticks (v2.05)
+@ Note     : OF-63: PE7 only while the buzzer setting (0x20008078) is on; v2.05 sets it regardless (0x08024F14)
 @ In/Out   : - / -
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main
@@ -164,7 +168,11 @@ ENDFUNC pe7_on_with_timeout
 FUNC bzb_off_beep_start
     push {r3, lr}
     bl fn_08017092                          @ "-oFF-" (UI) (0x08024F0C)
+    ldr r0, =v_20008078
+    ldrb r0, [r0]
+    cbz r0, 1f                              @ OF-63: buzzer setting off: the 1 s of "-oFF-" stays, silent
     GPIO_SET GPIOE_BASE, BZB_PE7            @ PE7 high (0x08024F14)
+1:
     movs r0, #0
     ldr r1, =bzb_off_beep_count
     strb r0, [r1]                           @ tick counter r5 of v2.05 (0x08024F08)

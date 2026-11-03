@@ -700,14 +700,17 @@ FUNC fn_0800F7B8
     cmp r5, #0
     bne 4f
     bl fn_080104D4                          @ ACV range 0: marker 0x1F (0x0800F896)
+    bl fn_080104BC                          @ OF-62: the RAM flag follows the marker as the boot sets it (0 if 0xA5,
+    ldr r1, =v_20008087                     @ 0x08024DEE); v2.05 leaves the boot value until the next boot or wake, so the
+    strb r0, [r1]                           @ CORR70 correction of ACV range 0 stayed on after the calibration
 4:  cmp r4, #9
     bne .Lf7b8_end
     cmp r5, #6
     bne .Lf7b8_end
     bl fn_08010F28                          @ OHM range 6: marker 0x26 (0x0800F8AE)
-    movs r0, #1                             @ 0x20007FE0 = 1 as v2.05 (0x0800F8B2..0x0800F8B8); this path is
-    ldr r1, =v_20007FE0                     @ never reached, FUN_0800F7B8 does not run in mode 9 (DESIGN 12.2)
-    strb r0, [r1]
+    bl fn_08010F10                          @ OF-62: the RAM flag as the boot sets it (0 if 0xA5, 0x08024DE6); v2.05 stores 1
+    ldr r1, =v_20007FE0                     @ (0x0800F8B2..0x0800F8B8), the opposite of what the next boot reads.  The path
+    strb r0, [r1]                           @ is not reached: FUN_0800F7B8 does not run in mode 9 (DESIGN 12.2)
 .Lf7b8_end:
     bl cal_set_805d                         @ every call (0x0800F8BA)
     pop {r4-r8, pc}

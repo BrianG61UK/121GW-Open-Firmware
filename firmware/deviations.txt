@@ -807,3 +807,19 @@ IMP-01  lcd_final  acmv_values  build == production and main == "400.00"
 # The same in peak_acv: the final frames (1.0000 V, 50.00 Hz) differ in one bargraph segment (w4 bit 2), the count of the
 # last per-sample value; equal otherwise (present before IMP-17 / IMP-18, checked with the image of a66d119).
 IMP-01  lcd_final  peak_acv  build == production and main == "1.0000"
+# Defects found from the forum report of 2026-11-03 (ORIGINAL_FIRMWARE_ISSUES.md OF-57..OF-64), both builds:
+# OF-58: files are created with the clock chip's date instead of 2006-02-09 22:30, so the root directory sector (block 2064 of
+# the scenario card) differs from its creation on (mem_logging_sd line 8, mem_hold_combo_logging line 6, sd_insert_remove
+# line 10).
+OF-58  sd_block  mem_logging_sd          lba == 2064
+OF-58  sd_block  mem_hold_combo_logging  lba == 2064
+OF-58  sd_block  sd_insert_remove        lba == 2064
+# OF-63: the scenario EEPROM has the buzzer off (0x01E = 0): the auto power-off warning (apo_stop_wake_short, countdown set at
+# line 14) and the auto-hold capture beep (hold_sequence_dcv, after the HOLD press of line 12) are silent; v2.05 sounds them.
+OF-63  gpio  apo_stop_wake_short  pin == buzzer and step == 14
+OF-63  gpio  hold_sequence_dcv    pin == buzzer and step == 12
+# OF-61: with no card all 40 write attempts fail; the port runs log_stop(0), so the range freeze of the logging start is undone
+# and the AUTO sign is lit again from that moment (4.87..4.91 s, after the long MEM of line 5) to the end; v2.05 stays in manual
+# range.
+OF-61  lcd        mem_logging_no_card  step in 5..7
+OF-61  lcd_final  mem_logging_no_card  any

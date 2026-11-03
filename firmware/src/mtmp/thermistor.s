@@ -401,7 +401,7 @@ ENDFUNC fn_08013AAC
 @ Out      : - (0x20007E7C = CJ in uV)
 @ Clobbers : r0-r3, r12, flags (r4-r7 preserved)
 @ Context  : main only
-@ RAM      : reads  v205_tab_08025CF8
+@ RAM      : reads  mtmp_tc_tab_k (the NIST K table, OF-56; v2.05 0x08025CF8)
 @            writes 0x20007E7C, 0x200080AC, 0x200080AF
 @ Spec     : analysis/hy3131_modes_misc.md 4.2; ORIGINAL_FIRMWARE_ISSUES.md OF-24
 @ Deviation: OF-24; IMP-10 (production: the table of the selected type, mtmp/tctype.s)
@@ -439,7 +439,7 @@ FUNC fn_08013CF8
     ldr ip, [ip]
     ldr ip, [ip]                       @ ... its table (K: 0x08025CF8)
     .else
-    ldr ip, =v205_tab_08025CF8         @ 0x08013D2C pool 0x08013EB8 = 0x08025CF8
+    ldr ip, =mtmp_tc_tab_k    @ 0x08013D2C; OF-56: NIST K table (v2.05 pool 0x08013EB8 = 0x08025CF8)
     .endif
     uxtb r7, r7                        @ 0x08013D30
     ldr.w ip, [ip, r7, lsl #2]         @ 0x08013D32
@@ -449,7 +449,7 @@ FUNC fn_08013CF8
     ldr ip, [ip]
     ldr ip, [ip]                       @ ... its table (K: 0x08025CF8)
     .else
-    ldr ip, =v205_tab_08025CF8         @ 0x08013D38 pool 0x08013EB8 = 0x08025CF8
+    ldr ip, =mtmp_tc_tab_k    @ 0x08013D38; OF-56: NIST K table (v2.05 pool 0x08013EB8 = 0x08025CF8)
     .endif
     uxtb r7, r7                        @ 0x08013D3C
     add.w ip, ip, r7, lsl #2           @ 0x08013D3E
@@ -478,7 +478,7 @@ FUNC fn_08013CF8
     ldr ip, [ip]
     ldr ip, [ip]                       @ ... its table (K: 0x08025CF8)
     .else
-    ldr ip, =v205_tab_08025CF8         @ 0x08013D82 pool 0x08013EB8 = 0x08025CF8
+    ldr ip, =mtmp_tc_tab_k    @ 0x08013D82; OF-56: NIST K table (v2.05 pool 0x08013EB8 = 0x08025CF8)
     .endif
     uxtb r7, r7                        @ 0x08013D86
     ldr.w ip, [ip, r7, lsl #2]         @ 0x08013D88
@@ -488,7 +488,7 @@ FUNC fn_08013CF8
     ldr ip, [ip]
     ldr ip, [ip]                       @ ... its table (K: 0x08025CF8)
     .else
-    ldr ip, =v205_tab_08025CF8         @ 0x08013D8E pool 0x08013EB8 = 0x08025CF8
+    ldr ip, =mtmp_tc_tab_k    @ 0x08013D8E; OF-56: NIST K table (v2.05 pool 0x08013EB8 = 0x08025CF8)
     .endif
     uxtb r7, r7                        @ 0x08013D92
     add.w ip, ip, r7, lsl #2           @ 0x08013D94

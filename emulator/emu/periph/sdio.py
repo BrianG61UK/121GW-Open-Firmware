@@ -633,7 +633,11 @@ class SDIO(Periph):
             payload = card.read_block()
             if payload is None:                             # past the end of the card: the card waits for CMD12
                 return
-        stream = payload + crc16(payload).to_bytes(2, 'big')
+        crc = crc16(payload)
+        if plan.kind != 'reg' and card.faults.get('read_crc', 0) > 0:    # test fault (emu/sdcard.py SDCard.faults)
+            card.faults['read_crc'] -= 1
+            crc ^= 0x0001
+        stream = payload + crc.to_bytes(2, 'big')
         cpc = self._cpc()
         t_end = t0 + (1 + 8 * len(payload) + 16 + 1) * cpc
         self._sched_at(t_end, lambda: self._rx_block_end(sess, blk, t_end), card=True)

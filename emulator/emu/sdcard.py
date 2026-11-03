@@ -220,6 +220,10 @@ class SDCard:
         self.busy = False               # programming / erase in progress (READY_FOR_DATA = 0)
         self.prog_id = getattr(self, "prog_id", 0) + 1   # identity of the running programming operation (see program_done)
         self.wr_failed = False          # a block of the running CMD25 had a CRC error: later blocks are ignored (PLS 2.00 4.3.4)
+        # test faults (scripts only, never set by the UI): the next n data blocks are disturbed on the bus as by line noise:
+        # 'write_crc' the card sees a CRC error in a block it receives (negative CRC status token, nothing written),
+        # 'read_crc' the CRC16 the host receives after a block the card sends does not match (DCRCFAIL at the host)
+        self.faults = {'write_crc': 0, 'read_crc': 0}
         self.b_bits = 0                 # status bits of type B (COM_CRC_ERROR, ILLEGAL_COMMAND): reported once
         self.c_bits = 0                 # status bits of type C (cleared by read)
         self.rd_addr = 0
@@ -590,6 +594,9 @@ class SDCard:
         is not 0 the host model calls program_done(card.prog_id) that long later (read prog_id right after this call)."""
         if self.wr_failed:                                           # PLS 2.00 4.3.4: after a CRC error the later blocks of a
             return TOKEN_CRC, 0.0                                    # multiple block write are ignored
+        if self.faults.get('write_crc', 0) > 0:                      # test fault: the block arrived disturbed
+            self.faults['write_crc'] -= 1
+            host_crc ^= 0x0001
         if len(data) != 512 or crc16(data) != host_crc:
             self.log.append(f"write block rejected: {'length' if len(data) != 512 else 'CRC'} error")
             self.state = TRAN if not self.multi else RCV

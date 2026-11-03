@@ -216,6 +216,10 @@ FUNC fat_move_window
     bl      disk_read                       @ 08020C54 call disk_read
     cmp     r0, #0                          @ 08020C58 compare r0 with 0
     beq     .Lfat_move_window_0C60          @ 08020C5A if (r0 == 0) goto 0x8020C60
+    movs    r0, #-1
+    str     r0, [r4, #0x2c]                 @ OF-64: window invalid (0xFFFFFFFF, no sector of a FAT32 volume has that number):
+                                            @ the read may have overwritten part of it, so the old sector number must not
+                                            @ match again (FatFs R0.10c move_window; v2.05 keeps the old number, 0x08020C5C)
     movs    r0, #1                          @ 08020C5C r0 = 1
     b       .Lfat_move_window_0C64          @ 08020C5E goto 0x8020C64
 .Lfat_move_window_0C60:                 @ v2.05 0x08020C60, reached from 0x08020C5A
@@ -488,7 +492,8 @@ ENDFUNC fat_get_fat
 @ Clobbers  : r0-r3, flags (v2.05 regeffects.txt; r4-r11 preserved)
 @ Context   : main only
 @ Spec      : v2.05 listing 0x08020E3A..0x08020F7B
-@ Note      : the window is marked dirty (FATFS +4) on every exit path.  FAT32 keeps the upper 4 bits of the old entry.
+@ Note      : the window is marked dirty (FATFS +4) when the entry was written (OF-64; v2.05: on every exit path).  FAT32 keeps the
+@             upper 4 bits of the old entry.
 @ -----------------------------------------------------------------------------
 FUNC fat_put_fat
     push.w  {r3, r4, r5, r6, r7, r8, r9, lr}@ 08020E3A push {r3, r4, r5, r6, r7, r8, r9, lr}
@@ -626,8 +631,11 @@ FUNC fat_put_fat
 .Lfat_put_fat_0F6C:                     @ v2.05 0x08020F6C, reached from 0x08020E5A, 0x08020E64
     movs    r0, #2                          @ 08020F6C r0 = 2
     mov     r9, r0                          @ 08020F6E r9 = r0
-    @ the window is dirty on every exit (FATFS +4 = 1)
+    @ OF-64: the window is marked dirty only when the entry was written (FatFs R0.10c put_fat); v2.05 marks it on every exit
+    @ (0x08020F70), also after fat_move_window failed, when the window holds a stale or (after a failed read) invalid sector
 .Lfat_put_fat_0F70:                     @ v2.05 0x08020F70, reached from 0x08020E82, 0x08020EC2, 0x08020EEA, 0x08020F02, 0x08020F1E, 0x08020F36, 0x08020F6A
+    cmp     r9, #0
+    bne     .Lfat_put_fat_0F74              @ failed: the window is left as fat_move_window left it
     movs    r0, #1                          @ 08020F70 r0 = 1
     strb    r0, [r4, #4]                    @ 08020F72 u8 [r4+0x4] = r0
 .Lfat_put_fat_0F74:                     @ v2.05 0x08020F74, reached from 0x08020E52
@@ -760,7 +768,11 @@ FUNC fat_create_chain
     movs    r0, #1                          @ 0802101E r0 = 1
     b       .Lfat_create_chain_10C6         @ 08021020 goto 0x80210C6
 .Lfat_create_chain_1022:                @ v2.05 0x08021022, reached from 0x0802101C
-    ldr     r0, [r4, #0x18]                 @ 08021022 r0 = u32 [r4+0x18]
+    cmp     r6, #-1                         @ OF-64: disk error while reading the entry of r1: return it (0xFFFFFFFF) instead of
+    bne     1f                              @ taking it as the end of the chain and linking a new cluster behind an entry that
+    movs    r0, r6                          @ could not be read (FatFs R0.10a create_chain; v2.05 0x08021022..0x08021026)
+    b       .Lfat_create_chain_10C6
+1:  ldr     r0, [r4, #0x18]                 @ 08021022 r0 = u32 [r4+0x18]
     cmp     r6, r0                          @ 08021024 compare r6 with r0
     bhs     .Lfat_create_chain_102C         @ 08021026 if (r6 >=u r0) goto 0x802102C
     movs    r0, r6                          @ 08021028 r0 = r6

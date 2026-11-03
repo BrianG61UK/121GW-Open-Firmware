@@ -87,6 +87,13 @@ The image has only run in the emulator. These checks confirm on hardware what th
 19. MIN/MAX times (production build): DCV, MIN/MAX on; raise the input, wait for the clock minute to change, lower it;
    SETUP past `n` and `Sd`: `tHI` shows the hour-minute of the raise, `tLo` that of the drop (12-hour form with `CL`);
    SETUP again returns to the normal pages; long MIN/MAX ends it.
+20. Large SD card (both builds, OF-57): an SD card of 8 GB or more, formatted FAT32. On a PC copy files onto it until more
+   than 4.5 GB are used, then log on the meter for two minutes. Afterwards the PC opens the card without a repair prompt,
+   the copied files are unchanged and the log file is complete (its rows run without a gap and end with MAX and MIN).
+21. File dates (both builds, OF-58): the log file and a saved `cal.bin` show the meter's date and time as created and
+   modified on the PC (v2.05: created 2006-02-09 22:30).
+22. Buzzer off (both builds, OF-63): SETUP page 3 `b-OFF`. Diode short, auto-hold capture, the auto power-off warning and the
+   power-off beep are silent; continuity still beeps, and so do the wrong-jack and high-voltage warnings.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

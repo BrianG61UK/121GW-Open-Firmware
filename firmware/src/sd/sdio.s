@@ -41,7 +41,8 @@
 @ RAM       : writes sd_transfer_error 0x200080F7 and sd_transfer_end 0x20007EF4
 @ Spec      : v2.05 listing 0x08023476..0x08023523
 @ Note      : tests the pending interrupt flags in this order and handles the first that is set: DATAEND (0x100): error code 0,
-@             sd_transfer_end = 1; DCRCFAIL (0x2): error 2; DTIMEOUT (0x8): error 4; TXUNDERR (0x10): error 5; RXOVERR (0x20): error 6;
+@             sd_transfer_end = 1; DCRCFAIL (0x2): error 2; DTIMEOUT (0x8): error 4; RXOVERR (0x20): error 6, tested before
+@             TXUNDERR (0x10): error 5;
 @             STBITERR (0x200): error 7.  The flag is cleared and finally the interrupt sources 0xC33A are disabled (SDIO_MASK).
 @             The polling loops of sdcard.s read the variables; this routine never starts a transfer.
 @ -----------------------------------------------------------------------------
@@ -87,7 +88,7 @@ FUNC sd_sdio_isr_body
     b       .Lsd_sdio_isr_body_3514         @ 080234C8 goto 0x8023514
 .Lsd_sdio_isr_body_34CA:                @ v2.05 0x080234CA, reached from 0x080234BA
     movs    r0, #0x20                       @ 080234CA r0 = 0x20
-    @ TXUNDERR
+    @ RXOVERR (STA bit 5, 0x20): error 6
     bl      sdio_get_it_status              @ 080234CC call sdio_get_it_status
     cmp     r0, #0                          @ 080234D0 compare r0 with 0
     beq     .Lsd_sdio_isr_body_34E2         @ 080234D2 if (r0 == 0) goto 0x80234E2
@@ -99,7 +100,7 @@ FUNC sd_sdio_isr_body
     b       .Lsd_sdio_isr_body_3514         @ 080234E0 goto 0x8023514
 .Lsd_sdio_isr_body_34E2:                @ v2.05 0x080234E2, reached from 0x080234D2
     movs    r0, #0x10                       @ 080234E2 r0 = 0x10
-    @ RXOVERR
+    @ TXUNDERR (STA bit 4, 0x10): error 5
     bl      sdio_get_it_status              @ 080234E4 call sdio_get_it_status
     cmp     r0, #0                          @ 080234E8 compare r0 with 0
     beq     .Lsd_sdio_isr_body_34FA         @ 080234EA if (r0 == 0) goto 0x80234FA

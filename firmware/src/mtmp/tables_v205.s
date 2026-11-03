@@ -13,7 +13,9 @@
 
     .section .rodata.mtmp, "a", %progbits
 
-@ v2.05 0x08025CF8, 632 bytes; loaded by 0x08013C40, 0x08013CF8 (MTMP)
+@ v2.05 0x08025CF8, 632 bytes; loaded by 0x08013C40, 0x08013CF8 (MTMP).  Kept as v2.05 has it (the table check compares
+@ it with the original image); since OF-56 both images convert with mtmp_tc_tab_k (tc_tables.s, the NIST K table, which
+@ differs from it only at 270 degC: 10971 against 10970 uV)
 @ accesses through the pointer in v2.05: 4-byte
     .balign 4
     TABLE_V205 0x08025CF8, 632

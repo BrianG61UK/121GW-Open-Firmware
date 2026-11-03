@@ -99,6 +99,20 @@ class Scenario:
         self.steps = []
         self.path = path
 
+    def emulated_s(self):
+        """Emulated length of the scenario in seconds: the waits, key holds and gaps and power-cycle off times of its steps
+        (run.py derives the wall-clock limit of a run from it)."""
+        t = 0.0
+        for st in self.steps:
+            a = st.args
+            if st.op == 'wait':
+                t += a['secs']
+            elif st.op == 'press':
+                t += a['hold'] + a['gap']
+            elif st.op == 'powercycle':
+                t += float(a['off'])
+        return t
+
     def _add(self, op, line=0, text='', **args):
         self.steps.append(Step(op, args, line, text))
         return self

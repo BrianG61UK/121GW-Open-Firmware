@@ -324,8 +324,8 @@ FUNC fn_0800E30C
     strb r0, [r1, #0]                      @ func_log_hold_req = r0
     @ Beep.
 .Lahold_0800E560:
-    movs r0, #0x32                         @ beep: the buzzer on for 50 ticks (pe7_on_with_timeout)
-    bl pe7_on_with_timeout
+    movs r0, #0x32                         @ beep: 50 ticks; OF-63: gated by the buzzer setting (fn_0800EEA8; v2.05
+    bl fn_0800EEA8                         @ pe7_on_with_timeout sounds with the setting off)
     b .Lahold_0800E582
     @ Not stable: forget the candidate.
 .Lahold_0800E568:

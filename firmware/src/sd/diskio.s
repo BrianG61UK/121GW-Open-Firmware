@@ -262,10 +262,13 @@ ENDFUNC sd_power_off
 @ disk_initialize - initialise the card (FatFs disk_initialize)
 @ Replaces  : 0x08023F5C FUN_08023F5C (v2.05), called by fat_chk_mounted
 @ In        : r0 = drive (not used)
-@ Out       : r0 = sd_init result (0 ok, otherwise an SD error code)
+@ Out       : r0 = 0 the card is ready, 1 (STA_NOINIT) sd_init failed with any SD error code
 @ Clobbers  : r0-r3, r12, flags (v2.05 regeffects.txt; r4-r11 preserved)
 @ Context   : main only
 @ Spec      : v2.05 listing 0x08023F5C..0x08023F6D (the constant 0x29 stored in r5 first is overwritten)
+@ Deviation : OF-59 (ORIGINAL_FIRMWARE_ISSUES.md): v2.05 returns the sd_init code as the disk status; fat_chk_mounted takes only bit 0
+@             (STA_NOINIT, 0x080217CE), so a failure with an even code (2 CRC fail, 4 timeout, 6, 0xE, 0x10, 0x26) counted as a
+@             ready card and the volume was mounted from whatever the reads then returned.
 @ -----------------------------------------------------------------------------
 FUNC disk_initialize
     push    {r3, r4, r5, lr}                @ 08023F5C push {r3, r4, r5, lr}
@@ -273,8 +276,11 @@ FUNC disk_initialize
     movs    r5, #0x29                       @ 08023F60 r5 = 0x29
     bl      sd_init                         @ 08023F62 call sd_init
     movs    r5, r0                          @ 08023F66 r5 = r0
-    movs    r0, r5                          @ 08023F68 r0 = r5
-    uxtb    r0, r0                          @ 08023F6A r0 = u8(r0)
+    cmp     r5, #0
+    ite     eq
+    moveq   r0, #0                          @ sd_init ok: status 0 (ready)
+    movne   r0, #1                          @ any SD error: STA_NOINIT (OF-59; v2.05 returns the error code itself, 0x08023F68,
+                                            @ and fat_chk_mounted tests only bit 0, so the even codes passed as ready)
     pop     {r1, r4, r5, pc}                @ 08023F6C pop {r1, r4, r5, pc}
 ENDFUNC disk_initialize
     .ltorg
@@ -306,7 +312,8 @@ ENDFUNC disk_status
 @ disk_read - read r3 sectors from the SD card (FatFs disk_read)
 @ Replaces : 0x08023F7E FUN_08023F7E (v2.05)
 @ In       : r0 = drive (0), r1 = buffer, r2 = first sector number, r3 = sector count (u8)
-@ Out      : r0 = 0 ok, 2 the card did not return to the transfer state within 20000 status polls (RES_ERROR)
+@ Out      : r0 = 0 ok, 2 the card did not return to the transfer state within 20000 status polls, 1 (RES_ERROR) the SDIO
+@            reported an error for the block or its data end / DMA end did not come within 20000 polls (OF-59)
 @ Clobbers : r1-r3, r12, flags (AAPCS)
 @ Context  : main only
 @ Spec     : v2.05 listing 0x08023F7E..0x08023FB7; the SD command sequence per sector (CMD16 512, CMD17 sector, then CMD13
@@ -317,7 +324,8 @@ ENDFUNC disk_status
 @            asks for more than one sector (the log verification and cal.bin read 512 bytes per call, the FAT, directory and
 @            window reads are single sectors), so no v2.05 behaviour is visible; with count = 1 this routine is the v2.05
 @            routine.  The port reads the sectors one by one (sector s + i into buffer + 512 * i), like disk_write, and stops
-@            at the first failure.
+@            at the first failure.  OF-57: the 64-bit byte address (v2.05: upper word 0, wrong past 4 GiB).  OF-59: each block
+@            is taken only after the SDIO data end and the DMA end, and an SDIO error (sd_transfer_error) fails the read.
 @ -----------------------------------------------------------------------------
 FUNC disk_read
     push    {r4, r5, r6, r7, r8, lr}
@@ -331,20 +339,51 @@ FUNC disk_read
     movw    r7, #0x4E20                     @ r7 = 20000 status polls (v2.05 0x08023F8C)
     movs    r0, #0x200
     str     r0, [sp]                        @ block length 0x200 (5th argument)
-    lsls    r2, r5, #9                      @ r2 = byte address = sector << 9 (sd_read_block turns it into a block number for SDHC cards)
-    movs    r3, #0                          @ upper 32 bits of the address
+    lsls    r2, r5, #9                      @ r2:r3 = 64-bit byte address = sector * 512 (sd_read_block turns it into the block
+    lsrs    r3, r5, #23                     @ number for SDHC cards); OF-57: v2.05 sets the upper word to 0 (0x08023F98)
+    movs    r0, #0
+    ldr     r1, =sd_dma_end
+    str     r0, [r1]                        @ OF-59: the DMA end flag of this block (sd_read_block clears only the SDIO flags)
+    movw    r0, #0x23a
+    ldr     r1, =(SDIO_BASE + SDIO_ICR)
+    str     r0, [r1]                        @ OF-59: data error flags of SDIO_STA cleared, so that the test after the block sees
+                                            @ only this block's errors
     mov     r0, r8
     mov     r1, r8                          @ v2.05 passes the buffer twice (0x08023F9A)
     bl      sd_read_block
 .Ldr_poll:
     bl      sd_get_status                   @ 0 = card in the transfer state
     cmp     r0, #0
-    beq     .Ldr_ok
+    beq     .Ldr_end
     subs    r7, r7, #1                      @ 0x08023FA8
     cmp     r7, #0                          @ 0x08023FAA: kept although subs set the flags, so that one poll takes the
                                             @ v2.05 instruction count and the number of CMD13 commands per sector is v2.05's
     bne     .Ldr_poll                       @ at most 20000 polls (0x08023FAC)
     movs    r0, #2                          @ timeout: RES_ERROR
+    b       .Ldr_ret
+    @ OF-59: the card has sent the block; wait for the SDIO data end and the DMA end, or an SDIO error (v2.05 takes the
+    @ buffer as soon as the card is back in the transfer state and never looks at sd_transfer_error)
+.Ldr_end:
+    movw    r7, #0x4E20                     @ at most 20000 polls
+1:  ldr     r0, =sd_transfer_error
+    ldrb    r0, [r0]
+    cbnz    r0, .Ldr_err                    @ CRC fail, timeout, overrun or start bit error: the data is not valid
+    ldr     r0, =(SDIO_BASE + SDIO_STA)
+    ldr     r0, [r0]
+    movw    r1, #0x23a
+    tst     r0, r1
+    bne     .Ldr_err                        @ the same errors flagged in SDIO_STA (the handler serves DATAEND first and then
+                                            @ masks all sources, so an error flagged with DATAEND appears only here)
+    ldr     r0, =sd_transfer_end
+    ldr     r0, [r0]
+    ldr     r1, =sd_dma_end
+    ldr     r1, [r1]
+    ands    r0, r0, r1
+    bne     .Ldr_ok                         @ both ends seen: the block is in the buffer
+    subs    r7, r7, #1
+    bne     1b
+.Ldr_err:
+    movs    r0, #1                          @ RES_ERROR
     b       .Ldr_ret
 .Ldr_ok:
     add     r8, r8, #0x200                  @ next 512 bytes of the buffer
@@ -363,15 +402,19 @@ ENDFUNC disk_read
 @ disk_write - write r3 sectors to the SD card (FatFs disk_write)
 @ Replaces  : 0x08023FB8 FUN_08023FB8 (v2.05), called by fat_move_window, fat_f_read, fat_f_write, fat_f_sync, fat_f_lseek, fat_sync_fs
 @ In        : r0 = drive, r1 = buffer, r2 = first sector number, r3 = sector count (u8)
-@ Out       : r0 = 0 ok, 2 the card did not return to the transfer state within 20000 CMD13 polls
+@ Out       : r0 = 0 ok, 2 the card did not return to the transfer state within 20000 CMD13 polls, 1 (RES_ERROR) the block was
+@             rejected (OF-59)
 @ Clobbers  : r0-r3, flags (v2.05 regeffects.txt; r4-r11 preserved)
 @ Context   : main only
 @ RAM       : uses the SD driver state (sd_stop_condition, sd_transfer_end, sd_dma_end, sd_transfer_error)
 @ Spec      : v2.05 listing 0x08023FB8..0x0802402D
 @ Note      : one sector at a time: sd_write_blocks (CMD16 512, CMD55, ACMD23 with one block, CMD25, data by DMA2 channel 4),
-@             sd_wait_write (waits for the end of the data and sends CMD12), then CMD13 polling (sd_get_status).  Neither the
-@             SDIO error code (sd_transfer_error) nor the return value of sd_wait_write is looked at, so a block the card rejected is
-@             only noticed by the read-back verification of the log (log_verify_file) or of cal.bin.
+@             sd_wait_write (waits for the end of the data and sends CMD12), then CMD13 polling (sd_get_status).
+@ Deviation : OF-57: the 64-bit byte address (v2.05 computes it in 32 bits, wrong past 4 GiB).  OF-59: v2.05 looks at neither the
+@             SDIO error code (sd_transfer_error) nor the return value of sd_wait_write, so a block the card rejected (negative CRC
+@             status token) counted as written and was only noticed, if at all, by the read-back verification of the log
+@             (log_verify_file) or of cal.bin; the port keeps v2.05's sequence (the card is polled back to the transfer state) and
+@             then returns RES_ERROR for such a block.
 @ -----------------------------------------------------------------------------
 FUNC disk_write
     push.w  {r4, r5, r6, r7, r8, r9, r10, r11, lr}@ 08023FB8 push {r4, r5, r6, r7, r8, r9, r10, r11, lr}
@@ -385,7 +428,7 @@ FUNC disk_write
     movs    r4, #0                          @ 08023FCC r4 = 0
     movs    r0, #0                          @ 08023FCE r0 = 0
     movs    r7, r0                          @ 08023FD0 r7 = r0
-    @ loop over the sectors: buffer offset 512 * i, address (first sector << 9) + 512 * i
+    @ loop over the sectors: buffer offset 512 * i, 64-bit byte address (first sector + i) * 512
 .Ldisk_write_3FD2:                      @ v2.05 0x08023FD2, reached from 0x08024026
     uxtb    r6, r6                          @ 08023FD2 r6 = u8(r6)
     cmp     r7, r6                          @ 08023FD4 compare r7 with r6
@@ -394,21 +437,26 @@ FUNC disk_write
     mul     r0, r0, r7                      @ 08023FDC r0 = r0 * r7
     add     r0, r10                         @ 08023FE0 r0 += r10
     mov     r8, r0                          @ 08023FE2 r8 = r0
-    lsls    r0, r5, #9                      @ 08023FE4 r0 = r5 << 9
-    mov.w   r1, #0x200                      @ 08023FE6 r1 = 0x200
-    mla     r0, r1, r7, r0                  @ 08023FEA
-    movs    r4, r0                          @ 08023FEE r4 = r0
+    adds    r1, r5, r7                      @ r1 = sector of this block (first sector + i)
+    lsls    r4, r1, #9                      @ r4 = low word of the byte address sector * 512
+    lsrs    r1, r1, #23                     @ r1 = upper word (OF-57: v2.05 computes (first << 9) + 512 * i in 32 bits,
+                                            @ 0x08023FE4..0x08023FEA, and passes 0 as the upper word, 0x08023FFC)
     movs    r0, #1                          @ 08023FF0 r0 = 1
     str     r0, [sp, #4]                    @ 08023FF2 u32 [sp+0x4] = r0
     mov.w   r0, #0x200                      @ 08023FF4 r0 = 0x200
     str     r0, [sp]                        @ 08023FF8 u32 [sp] = r0
     movs    r2, r4                          @ 08023FFA r2 = r4
-    movs    r3, #0                          @ 08023FFC r3 = 0
+    movs    r3, r1                          @ r3 = upper word of the byte address (OF-57)
     mov     r0, r8                          @ 08023FFE r0 = r8
     @ start the write (CMD16, CMD55, ACMD23, CMD25) and the DMA
     bl      sd_write_blocks                 @ 08024000 call sd_write_blocks
     @ wait for the end of the transfer, send CMD12
     bl      sd_wait_write                   @ 08024004 call sd_wait_write
+    ldr     r1, =sd_transfer_error
+    ldrb    r1, [r1]
+    orrs    r0, r0, r1
+    str     r0, [sp, #8]                    @ OF-59: [sp+8] = non-zero when sd_wait_write failed or the SDIO reported an error
+                                            @ (CRC status token negative, timeout, underrun); the card is still polled below
     movw    r0, #0x4e20                     @ 08024008
     mov     r9, r0                          @ 0802400C r9 = r0
     @ poll the card state with CMD13 up to 20000 times: transfer state = ready
@@ -422,7 +470,11 @@ FUNC disk_write
     movs    r0, #2                          @ 08024020 r0 = 2
     b       .Ldisk_write_402A               @ 08024022 goto 0x802402A
 .Ldisk_write_4024:                      @ v2.05 0x08024024, reached from 0x08024014
-    adds    r7, r7, #1                      @ 08024024 r7 = r7 + 1
+    ldr     r0, [sp, #8]
+    cbz     r0, 1f
+    movs    r0, #1                          @ OF-59: the block was not written: RES_ERROR
+    b       .Ldisk_write_402A
+1:  adds    r7, r7, #1                      @ 08024024 r7 = r7 + 1
     b       .Ldisk_write_3FD2               @ 08024026 goto 0x8023FD2
 .Ldisk_write_4028:                      @ v2.05 0x08024028, reached from 0x08023FD6
     movs    r0, #0                          @ 08024028 r0 = 0
@@ -432,18 +484,48 @@ ENDFUNC disk_write
     .ltorg
 
 @ -----------------------------------------------------------------------------
-@ get_fattime - time stamp for new files (FatFs get_fattime)
+@ get_fattime - time stamp of the file being created or written (FatFs get_fattime)
 @ Replaces  : 0x0802402E FUN_0802402E (v2.05), called by fat_f_open and fat_f_sync
 @ In        : -
-@ Out       : r0 = 0x3449B3C0: date 0x3449 = 2006-02-09, time 0xB3C0 = 22:30:00 (FAT date << 16 | FAT time)
-@ Clobbers  : r0, flags (v2.05 regeffects.txt; r4-r11 preserved)
+@ Out       : r0 = FAT date << 16 | FAT time from the calendar copy of the clock chip: date = (year + 20) << 9 | month << 5 | day
+@             (year counted from 1980, the copy from 2000), time = hour << 11 | minute << 5 | second / 2 (as log_set_file_time);
+@             0x00210000 (1980-01-01 00:00:00, the first FAT date) while the copy holds no valid date (month 0 or above 12,
+@             day 0 or above 31: the clock chip has not been read yet)
+@ Clobbers  : r0, flags (r1-r3 kept: v2.05 regeffects.txt, the callers keep values in them)
 @ Context   : main only
-@ Spec      : v2.05 listing 0x0802402E..0x08024031 and literal 0x08024034
-@ Note      : a constant; the file times that matter are written by log_set_file_time with the RTC after a log session.
+@ Spec      : v2.05 listing 0x0802402E..0x08024031 and literal 0x08024034; FatFs R0.08a get_fattime; FAT date / time format
+@ Deviation : OF-58 (ORIGINAL_FIRMWARE_ISSUES.md): v2.05 returns the constant 0x3449B3C0 of FatFs's sample code (2006-02-09
+@             22:30:00).  f_open writes it as the creation time of every file and f_sync as the modification time; log_set_file_time
+@             corrects only the modification time after a log session, so every file showed a 2006 creation date, and a file
+@             whose session ended without that correction (power cut) also a 2006 modification date.
 @ -----------------------------------------------------------------------------
 FUNC get_fattime
-    ldr     r0, =0x3449B3C0                 @ 0802402E r0 = 0x3449B3C0
-    bx      lr                              @ 08024030 return
+    push    {r1, r2, r3, lr}
+    ldr     r3, =v_200080D7                 @ calendar copy: year (from 2000), month, day, hour, minute, second at +0..+5
+    ldrb    r1, [r3, #1]                    @ month
+    subs    r2, r1, #1
+    cmp     r2, #11
+    bhi     .Lgft_none                      @ month not 1..12
+    ldrb    r2, [r3, #2]                    @ day
+    subs    r0, r2, #1
+    cmp     r0, #30
+    bhi     .Lgft_none                      @ day not 1..31
+    ldrb    r0, [r3, #0]                    @ year from 2000
+    adds    r0, r0, #20                     @ from 1980
+    lsls    r0, r0, #9
+    orr     r0, r0, r1, lsl #5
+    orrs    r0, r0, r2                      @ r0 = FAT date
+    ldrb    r1, [r3, #3]                    @ hour
+    ldrb    r2, [r3, #4]                    @ minute
+    lsls    r1, r1, #11
+    orr     r1, r1, r2, lsl #5
+    ldrb    r2, [r3, #5]                    @ second
+    orr     r1, r1, r2, lsr #1              @ r1 = FAT time
+    orr     r0, r1, r0, lsl #16
+    pop     {r1, r2, r3, pc}
+.Lgft_none:
+    mov     r0, #0x00210000                 @ 1980-01-01 00:00:00
+    pop     {r1, r2, r3, pc}
 ENDFUNC get_fattime
     .ltorg
 
