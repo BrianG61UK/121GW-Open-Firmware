@@ -1,10 +1,9 @@
-121GW-Open-Firmware: replacement firmware for the EEVblog 121GW and an emulator of the meter.
+121GW-Open-Firmware, like v2.05 build: the original v2.05 behaviour of the EEVblog 121GW with the defects of v2.05 fixed.
 
 Assets of this release
-- `firmware-<tag>.zip`: the two firmware builds as the meter's bootloader expects them (`1_like_v2.05/EEVBlog.bin`, the strict build that behaves like v2.05 apart from the defect fixes, and `2_fast/EEVBlog.bin`, the production build), `USER_GUIDE.md` (the new features of the fast build and how to use them), `FIXES.md` (the v2.05 defects fixed), `LICENSE` and `SHA256SUMS`. Copy one `EEVBlog.bin` to the root of a FAT32 SD card and follow `firmware/HARDWARE_TEST.md` in the repository.
-- `121GW-Open-Firmware-Emulator-<tag>-<platform>`: the emulator, ready to run with nothing else to install: macOS on Apple chips (`macos-arm64.dmg`; no Intel Mac version), Windows 10 / 11 (`windows-x64.exe` installer), Ubuntu / Debian (`linux-amd64.deb`) and any other 64-bit Linux (`linux-x86_64.AppImage`). **How to start it, step by step with pictures: [emulator/START.md](https://github.com/zombu4/121GW-Open-Firmware/blob/main/emulator/START.md)** (the packages are not paid-signed, so the computer asks once the first time). It contains both firmware builds, loads any other `EEVBlog.bin` with "Load firmware file…", and starts with a SYNTHETIC EEPROM image (made-up nominal calibration, not a meter's); no original EEVblog image and no calibration of any meter.
+- `firmware-<tag>.zip`: `1_like_v2.05/EEVBlog.bin` as the meter's bootloader expects it, `FIXES.md` (the v2.05 defects fixed), `LICENSE` and `SHA256SUMS`. Copy `EEVBlog.bin` to the root of a FAT32 SD card and follow `firmware/HARDWARE_TEST.md` in the repository.
 - `*.sha256`: checksum of the file with the same name.
 
-New in the fast build: backlight auto-off and memory, dBm reference (600 / 50 / 75 ohm, dBV), Bluetooth speed (2 to 20 readings per second), REL in percent, thermocouple type K / J / T, display level, 12-hour clock, statistics (count and standard deviation in MIN/MAX), continuity hold time, limit test, logging trigger, the time of the MIN/MAX maximum and minimum (on the meter and in the log file). See `USER_GUIDE.md`.
+This build lives on the branch `like-v2.05` and changes only when a v2.05 defect fix is made. The fast build with the new features and the emulator are the main releases (tags `vA.B.C`).
 
-Verified working on a meter (both builds). Flashing is at your own risk (see `LICENSE`).
+Verified working on a meter. Flashing is at your own risk (see `LICENSE`).

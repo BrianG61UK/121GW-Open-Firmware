@@ -1,30 +1,31 @@
-# Firmware: build both variants with GNU binutils 2.46.0 (arm-none-eabi, built from the release tarball and cached, see
-# .github/actions/arm-binutils), run the checks that need no original image, and on a tag v* publish firmware-<tag>.zip.
-name: Firmware
+# Firmware, branch like-v2.05: build the strict (like v2.05) variant with GNU binutils 2.46.0 (arm-none-eabi, built from
+# the release tarball and cached, see .github/actions/arm-binutils), check that it equals firmware/STRICT_IMAGE.sha256,
+# run the checks that need no original image, and on a tag like205-v* publish firmware-<tag>.zip.  The fast build and
+# the emulator live on main.
+name: Firmware (like v2.05)
 
 on:
   push:
-    branches: ['**']
-    tags: ['v*']
+    branches: ['like-v2.05']
+    tags: ['like205-v*']
   pull_request:
+    branches: ['like-v2.05']
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: firmware-${{ github.ref }}
+  group: firmware-like205-${{ github.ref }}
   cancel-in-progress: ${{ github.ref_type != 'tag' }}
 
 jobs:
   build:
-    name: Build and check both variants
+    name: Build and check the strict variant
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - name: No Intel macOS build or package (owner decision)
-        run: python3 -I .github/scripts/check_no_intel_mac.py
-      - name: Production (make) and strict (make LOOP_V205=1) builds, each with `make check-ci`
+      - name: Strict build (make LOOP_V205=1) with `make check-ci`, image equal to STRICT_IMAGE.sha256
         uses: ./.github/actions/build-firmware
         with:
           target: check-ci
@@ -34,13 +35,13 @@ jobs:
         run: python3 -I .github/scripts/check_no_originals.py dist
       - uses: actions/upload-artifact@v7
         with:
-          name: firmware-dist
+          name: firmware-like205-dist
           path: dist
           if-no-files-found: error
 
   release:
     name: Publish firmware-${{ github.ref_name }}.zip
-    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'like205-v')
     needs: build
     runs-on: ubuntu-24.04
     permissions:
@@ -51,29 +52,28 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@v7
-      - name: The tag matches the version the firmware shows
-        run: python3 -I .github/scripts/check_fw_version.py "$TAG"
+      - name: The tag is like205-vA.B.C
+        run: echo "$TAG" | grep -Eq '^like205-v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "tag $TAG is not like205-vA.B.C"; exit 1; }
       - uses: actions/download-artifact@v8
         with:
-          name: firmware-dist
+          name: firmware-like205-dist
           path: dist
       - name: Assemble firmware-<tag>.zip
         run: |
           set -euo pipefail
           mkdir stage
-          cp -R dist/1_like_v2.05 dist/2_fast stage/
-          cp dist/FIXES.md LICENSE firmware/USER_GUIDE.md stage/
-          (cd stage && sha256sum 1_like_v2.05/EEVBlog.bin 2_fast/EEVBlog.bin USER_GUIDE.md FIXES.md LICENSE > SHA256SUMS)
-          (cd stage && zip -r -X "../firmware-$TAG.zip" 1_like_v2.05 2_fast USER_GUIDE.md FIXES.md LICENSE SHA256SUMS)
+          cp -R dist/1_like_v2.05 stage/
+          cp dist/FIXES.md LICENSE stage/
+          (cd stage && sha256sum 1_like_v2.05/EEVBlog.bin FIXES.md LICENSE > SHA256SUMS)
+          (cd stage && zip -r -X "../firmware-$TAG.zip" 1_like_v2.05 FIXES.md LICENSE SHA256SUMS)
           unzip -l "firmware-$TAG.zip"
           python3 -I .github/scripts/check_no_originals.py "firmware-$TAG.zip"
           python3 -I .github/scripts/sha256sum.py "firmware-$TAG.zip" > "firmware-$TAG.zip.sha256"
-      - name: Create the release if it does not exist and attach the files
+      - name: Create the release (not marked latest, so the fast release stays the default download) and attach the files
         run: |
           set -euo pipefail
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            # the emulator workflow may create the release at the same moment: then the view below succeeds
-            gh release create "$TAG" --verify-tag --title "121GW-Open-Firmware $TAG" --notes-file .github/release-notes.md \
-              || gh release view "$TAG" >/dev/null
+            gh release create "$TAG" --verify-tag --latest=false --title "121GW-Open-Firmware like v2.05 $TAG" \
+              --notes-file .github/release-notes.md
           fi
           gh release upload "$TAG" "firmware-$TAG.zip" "firmware-$TAG.zip.sha256" --clobber

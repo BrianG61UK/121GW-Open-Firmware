@@ -7,6 +7,10 @@
 | `firmware/` | new firmware for the 121GW (STM32L152ZD) in hand-written Thumb-2 assembly, loaded by the meter's existing bootloader at 0x08006000 |
 | `emulator/` | emulator of the 121GW with a front-panel UI, used to run and test firmware without hardware |
 
+**This is the branch `like-v2.05`: the strict build that behaves like the original v2.05 with its defects fixed**
+(`make LOOP_V205=1`, image recorded in `firmware/STRICT_IMAGE.sha256`, releases tagged `like205-vA.B.C`). It changes
+only for v2.05 defect fixes. The fast build with the new features below, and the emulator, are developed on `main`.
+
 ## New features of the fast build
 
 | Feature | Where | What it does |

@@ -1,11 +1,11 @@
-name: Build both firmware variants
+name: Build the like-v2.05 firmware
 description: >
-  Installs Python with Capstone and Unicorn and binutils 2.46.0, then runs firmware/tools/build_dist.sh: production
-  build (make) and strict build (make LOOP_V205=1), each with the chosen make target, collected in `dist/`
-  (2_fast/EEVBlog.bin, 1_like_v2.05/EEVBlog.bin, v205_tables.json).
+  Installs Python with Capstone and Unicorn and binutils 2.46.0, then runs firmware/tools/build_dist.sh: the strict
+  build (make LOOP_V205=1) with the chosen make target, checked against firmware/STRICT_IMAGE.sha256 and collected in
+  `dist/` (1_like_v2.05/EEVBlog.bin).
 inputs:
   target:
-    description: make target run for each variant (check-ci = checks that need no original image; none = image only)
+    description: make target (check-ci = checks that need no original image; none = image only)
     default: check-ci
 runs:
   using: composite
