@@ -35,11 +35,7 @@
 
 @ names of the v2.05 variables used in this file (addresses unchanged, DESIGN.md 5.1)
     .equ log_interval,            v_2000022C            @ 0x2000022C logging interval in seconds (u16; setup item 9, EEPROM 0x18); 0 = no timed records
-    .if LOOP_V205 == 0
     .equ log_fil,                 ff16_fil_a            @ production image: FatFs R0.16 objects (FIL 552 bytes, DIR 44: larger than the v2.05 areas) in .bss_port (ff16_api.s, IMP-29)
-    .else
-    .equ log_fil,                 v_20006A60            @ 0x20006A60 FIL object of the log file (also used by calbin_save/calbin_load)
-    .endif
     .equ sys_id_number,           v_20007D14            @ 0x20007D14 setup ID number (u32) printed by the ID line of the CSV header
     .equ log_view_value1,         v_20007D1C            @ 0x20007D1C main value of the record loaded by log_slot_load (i32)
     .equ log_view_value2,         v_20007D20            @ 0x20007D20 second value of the loaded record
@@ -1498,12 +1494,10 @@ FUNC log_write_minmax_rows
     movs    r0, #1                          @ 0801E63C r0 = 1
     b       .Llog_write_minmax_rows_E73E    @ 0801E63E goto 0x801E73E
 .Llog_write_minmax_rows_E640:           @ v2.05 0x0801E640, reached from 0x0801E63A
-    .if LOOP_V205 == 0
     ldr     r0, =log_max_time                @ production: "YYYY/MM/DD,hh:mm:ss," of the maximum row (log/mmtime.s)
     bl      log_mm_write
     cmp     r0, #0
     bne     .Llog_write_minmax_rows_E73E    @ r0 = 1: a write failed
-    .endif
     movs    r2, #0                          @ 0801E640 r2 = 0
     movs    r1, #0                          @ 0801E642 r1 = 0
     movs    r0, #1                          @ 0801E644 r0 = 1
@@ -1620,12 +1614,10 @@ FUNC log_write_minmax_rows
     movs    r0, #1                          @ 0801E724 r0 = 1
     b       .Llog_write_minmax_rows_E73E    @ 0801E726 goto 0x801E73E
 .Llog_write_minmax_rows_E728:           @ v2.05 0x0801E728, reached from 0x0801E722
-    .if LOOP_V205 == 0
     ldr     r0, =log_min_time                @ production: "YYYY/MM/DD,hh:mm:ss," of the minimum row (log/mmtime.s)
     bl      log_mm_write
     cmp     r0, #0
     bne     .Llog_write_minmax_rows_E73E    @ r0 = 1: a write failed
-    .endif
     movs    r2, #0                          @ 0801E728 r2 = 0
     movs    r1, #0                          @ 0801E72A r1 = 0
     movs    r0, #1                          @ 0801E72C r0 = 1

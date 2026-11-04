@@ -15,7 +15,6 @@
 @ The runtime helpers used are those of OF-51 (production image: dsqrt answers a negative operand with NaN, 64-bit
 @ division by zero has a defined result); m2 >= 0 and n - 1 >= 1 keep both cases away from these calls.
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -26,7 +25,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ FUNC_STATS_NMAX,     1000000       @ count limit, as func_mm_count (fn_0800E604 0x0800E6C6)
 
@@ -159,4 +157,3 @@ ENDFUNC func_stats_sd_float
 
     .ltorg
 
-    .endif

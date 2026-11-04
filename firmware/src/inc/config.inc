@@ -18,30 +18,18 @@
 @ Loop mode and build kind
 @ -----------------------------------------------------------------------------
 
-    @ LOOP_V205 = 1: verification baseline, v2.05 loop structure (LCD commit busy-waits, blocking routines run to
-    @ completion, full HY3131 burst, no sleep).  0: production (IMP-06: no busy-wait, per-event reads, state
-    @ machines, WFI at the end of each pass).  DESIGN.md 3.5.
-    .ifndef LOOP_V205
-    .equ LOOP_V205, 0                   @ SWITCH LOOP_V205 default 0 (production image is the shipped image)
-    .endif
+    @ This is the production (fast) build: IMP-06 loop structure (no busy-wait, per-event reads, state machines, WFI at
+    @ the end of each pass), DESIGN.md 3.5.  The build with the v2.05 loop structure lives on the branch like-v2.05.
 
     @ Version shown at power-on (splash fn_0801A854 on the main display, ui_version_sub on the sub display during the
-    @ IMP-02 window), five characters with the decimal point after the third: the strict image "V-2.05" (v2.05 0x0801A856),
-    @ the production image "F-1.00" (F = fast build, release v1.0.0; a release tag vA.B.C must match "F-A.BC", checked by
-    @ .github/scripts/check_fw_version.py before anything is published).
-    .if LOOP_V205 == 0
+    @ IMP-02 window), five characters with the decimal point after the third: "F-1.00" (F = fast build, release v1.0.0;
+    @ a release tag vA.B.C must match "F-A.BC", checked by .github/scripts/check_fw_version.py before anything is
+    @ published).
     .equ FW_VER_C0, 'F'
     .equ FW_VER_C1, '-'
     .equ FW_VER_C2, '1'
     .equ FW_VER_C3, '0'
     .equ FW_VER_C4, '0'
-    .else
-    .equ FW_VER_C0, 'V'
-    .equ FW_VER_C1, '-'
-    .equ FW_VER_C2, '2'
-    .equ FW_VER_C3, '0'
-    .equ FW_VER_C4, '6'
-    .endif
 
     @ DEBUG = 1 sets DBGMCU_CR DBG_SLEEP | DBG_STOP | DBG_STANDBY at every start as v2.05 does (0x0801BEF8).
     @ Production (0) leaves DBGMCU_CR alone so STOP is the true low-current STOP (NF-18, RM0038 30.16.3).
@@ -92,7 +80,6 @@
 
     @ AR_PROFILE_TP_<family> = 1 enables the target settle profile TP for that family; 0 keeps the conservative
     @ profile CP.  Each one stays 0 until the hardware step test of ARS section 12 named on its line has passed.
-    @ Baseline builds (LOOP_V205 = 1) use the v2.05 algorithm regardless.
     .ifndef AR_PROFILE_TP_DCV
     .equ AR_PROFILE_TP_DCV, 0           @ SWITCH AR_PROFILE_TP_DCV default 0 (ARS 12 H1 not done)
     .endif

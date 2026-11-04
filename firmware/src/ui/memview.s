@@ -98,10 +98,8 @@ FUNC fn_080171FA
     bl decimal_position_for_mode_range       @ 08017208
     ldr r1, =v_2000803F                      @ 0801720C &main decimal-point position
     strb r0, [r1, #0]                        @ 08017210
-    .if LOOP_V205 == 0
     bl ui_bootwin_main_busy                  @ IMP-02: r0 = 1 while a window screen owns the main display
     cbnz r0, 1f                              @ position stored, not drawn (see Deviation)
-    .endif
     ldr r0, =v_2000803F                      @ 08017212 &main decimal-point position
     ldrb r0, [r0, #0]                        @ 08017216
     bl fn_0801717E                           @ 08017218

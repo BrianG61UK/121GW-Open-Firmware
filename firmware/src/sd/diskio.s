@@ -17,7 +17,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
     .section .bss_port.sddiag, "aw", %nobits
     .balign 2
 @ SD failure diagnosis (production image only, read by ble/bft.s over Bluetooth; owner SD): the last disk_read /
@@ -39,7 +38,6 @@ sd_dg_stahi:    .space 2                    @ SDIO_STA bits 31..16 (FIFO state)
 sd_dg_recov:    .space 2                    @ reads taken on the hardware counters after the end wait ran out
     .global sd_dg_flags, sd_dg_dmaisr, sd_dg_cndtr, sd_dg_dcount, sd_dg_stahi, sd_dg_recov
     .previous
-    .endif
 
     .section .text.sd, "ax", %progbits
 
@@ -352,7 +350,6 @@ ENDFUNC disk_status
 @            at the first failure.  OF-57: the 64-bit byte address (v2.05: upper word 0, wrong past 4 GiB).  OF-59: each block
 @            is taken only after the SDIO data end and the DMA end, and an SDIO error (sd_transfer_error) fails the read.
 @ -----------------------------------------------------------------------------
-    .if LOOP_V205 == 0
 @ -----------------------------------------------------------------------------
 @ sd_dg_note - record a failed disk_read / disk_write (production image only, diagnosis)
 @ In       : r0 = op << 8 | reason
@@ -429,7 +426,6 @@ LFUNC sd_dg_end_state
     bx lr
 ENDFUNC sd_dg_end_state
     .ltorg
-    .endif
 
 FUNC disk_read
     push    {r4, r5, r6, r7, r8, lr}
@@ -437,18 +433,10 @@ FUNC disk_read
     movs    r4, r0                          @ r4 = drive (unused, v2.05 keeps it in r4)
     mov     r8, r1                          @ r8 = buffer
     movs    r5, r2                          @ r5 = first sector
-    .if LOOP_V205 == 0
     mov     r6, r3                          @ r6 = sectors left (FatFs R0.16 passes the count as UINT, IMP-29)
-    .else
-    uxtb    r6, r3                          @ r6 = sectors left (u8, as disk_write)
-    .endif
 .Ldr_next:
-    .if LOOP_V205 == 0
     cmp     r6, #0
     beq     .Ldr_done                       @ nothing left: success (the diagnosis code makes cbz too short)
-    .else
-    cbz     r6, .Ldr_done                   @ nothing left: success
-    .endif
     movw    r7, #0x4E20                     @ r7 = 20000 status polls (v2.05 0x08023F8C)
     movs    r0, #0x200
     str     r0, [sp]                        @ block length 0x200 (5th argument)
@@ -472,10 +460,8 @@ FUNC disk_read
     cmp     r7, #0                          @ 0x08023FAA: kept although subs set the flags, so that one poll takes the
                                             @ v2.05 instruction count and the number of CMD13 commands per sector is v2.05's
     bne     .Ldr_poll                       @ at most 20000 polls (0x08023FAC)
-    .if LOOP_V205 == 0
     movw    r0, #0x101
     bl      sd_dg_note                      @ diagnosis: read, no transfer state
-    .endif
     movs    r0, #2                          @ timeout: RES_ERROR
     b       .Ldr_ret
     @ OF-59: the card has sent the block; wait for the SDIO data end and the DMA end, or an SDIO error (v2.05 takes the
@@ -484,12 +470,8 @@ FUNC disk_read
     movw    r7, #0x4E20                     @ at most 20000 polls
 1:  ldr     r0, =sd_transfer_error
     ldrb    r0, [r0]
-    .if LOOP_V205 == 0
     cmp     r0, #0
     bne     .Ldr_flag                       @ CRC fail, timeout, overrun or start bit error: the data is not valid
-    .else
-    cbnz    r0, .Ldr_flag
-    .endif
     ldr     r0, =(SDIO_BASE + SDIO_STA)
     ldr     r0, [r0]
     movw    r1, #0x23a
@@ -504,7 +486,6 @@ FUNC disk_read
     bne     .Ldr_ok                         @ both ends seen: the block is in the buffer
     subs    r7, r7, #1
     bne     1b
-    .if LOOP_V205 == 0
     @ the end wait ran out without an error: record the state, then take the block if the hardware counters show it
     @ complete: SDIO_DCOUNT = 0 (every byte received, RM0038 29.9.10) and DMA2 channel 4 CNDTR = 0 (every word moved to
     @ the buffer, RM0038 11.4.4), no data error flag in SDIO_STA.  On a meter this wait ran out with SDIO_STA = 0 and
@@ -523,9 +504,6 @@ FUNC disk_read
 .Ldr_flag:
     movw    r0, #0x102
     bl      sd_dg_note                      @ diagnosis: read, SDIO error
-    .else
-.Ldr_flag:
-    .endif
 .Ldr_err:
     movs    r0, #1                          @ RES_ERROR
     b       .Ldr_ret
@@ -575,9 +553,6 @@ FUNC disk_write
     movs    r7, r0                          @ 08023FD0 r7 = r0
     @ loop over the sectors: buffer offset 512 * i, 64-bit byte address (first sector + i) * 512
 .Ldisk_write_3FD2:                      @ v2.05 0x08023FD2, reached from 0x08024026
-    .if LOOP_V205 == 1
-    uxtb    r6, r6                          @ 08023FD2 r6 = u8(r6)
-    .endif                                  @ production: the full UINT count of FatFs R0.16 (IMP-29)
     cmp     r7, r6                          @ 08023FD4 compare r7 with r6
     bhs     .Ldisk_write_4028               @ 08023FD6 if (r7 >=u r6) goto 0x8024028
     mov.w   r0, #0x200                      @ 08023FD8 r0 = 0x200
@@ -599,10 +574,8 @@ FUNC disk_write
     bl      sd_write_blocks                 @ 08024000 call sd_write_blocks
     @ wait for the end of the transfer, send CMD12
     bl      sd_wait_write                   @ 08024004 call sd_wait_write
-    .if LOOP_V205 == 0
     ldr     r1, =sd_dg_wait
     strb    r0, [r1]                        @ diagnosis: result of the wait (4 = ran out of polls)
-    .endif
     ldr     r1, =sd_transfer_error
     ldrb    r1, [r1]
     orrs    r0, r0, r1
@@ -618,16 +591,13 @@ FUNC disk_write
     subs.w  r9, r9, #1                      @ 08024016 r9 = r9 - 1
     cmp.w   r9, #0                          @ 0802401A compare r9 with 0
     bne     .Ldisk_write_400E               @ 0802401E if (r9 != 0) goto 0x802400E
-    .if LOOP_V205 == 0
     movw    r0, #0x201
     bl      sd_dg_note                      @ diagnosis: write, no transfer state
-    .endif
     movs    r0, #2                          @ 08024020 r0 = 2
     b       .Ldisk_write_402A               @ 08024022 goto 0x802402A
 .Ldisk_write_4024:                      @ v2.05 0x08024024, reached from 0x08024014
     ldr     r0, [sp, #8]
     cbz     r0, 1f
-    .if LOOP_V205 == 0
     ldr     r0, =sd_dg_wait
     ldrb    r0, [r0]
     cmp     r0, #0
@@ -635,7 +605,6 @@ FUNC disk_write
     movwne  r0, #0x202                      @ diagnosis: write, sd_wait_write ran out of polls or CMD12 failed
     movweq  r0, #0x203                      @ diagnosis: write, SDIO error code
     bl      sd_dg_note
-    .endif
     movs    r0, #1                          @ OF-59: the block was not written: RES_ERROR
     b       .Ldisk_write_402A
 1:  adds    r7, r7, #1                      @ 08024024 r7 = r7 + 1

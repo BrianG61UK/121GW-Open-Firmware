@@ -10,11 +10,9 @@
 @          controller disabled (lcd_init_fault = 1) instead of hanging;
 @   OF-05  fn_0801B77A leaves LCD_FCR alone for a contrast setting outside 10..17;
 @   OF-50  fn_0801B77A passes the contrast mask to fn_08020472, not LCD_FCR AND mask;
-@   IMP-06 (LOOP_V205 = 0 only) the commit never waits for UDR: a commit that finds the previous update request still
+@   IMP-06 the commit never waits for UDR: a commit that finds the previous update request still
 @          pending is deferred (lcd_commit_pending) and repeated by lcd_commit_retry, which fn_08016D34 calls on every
 @          pass; the eight words are written only when they differ from the last committed copy (lcd_last).
-@ With LOOP_V205 = 1 the routines behave as v2.05 (LCD_RAM word sequence, UDR request, partial commit mask) apart from
-@ HW-07, OF-05 and OF-50.
 @ Context: drawing into the shadow and committing are main-only (DESIGN.md 3.4, NF-11).
 @ =============================================================================
 
@@ -64,7 +62,6 @@ lcd_init_fault:
 @ -----------------------------------------------------------------------------
 FUNC lcd_commit_shadow
     push {r4, lr}                            @ 0801B304 r4 = HW-07 poll budget in the baseline build (v2.05: push {r7, lr})
-    .if LOOP_V205 == 0
     bl ui_relpct_mask                        @ IMP-11: unit signs off and % on while REL is shown in percent (ui/relpct.s)
     @ production: a full commit that was deferred (lcd_commit_pending = 2) stays a full commit at the retry.  The partial
     @ rule below reads state that can change between the deferral and the retry (logging flag 0x20007FE1 cleared); a switch
@@ -73,7 +70,6 @@ FUNC lcd_commit_shadow
     ldrb r0, [r0]
     cmp r0, #2
     beq .L0801B32E                           @ full commit owed: skip the partial rule
-    .endif
     @ partial rule (analysis/lcd_map.md 1): r0 = hold_stage2 AND NOT 0x20007FE1; r1 = NOT 0x20008053; partial commit when both are non-zero
     ldr r0, =hold_stage2                     @ 0801B306 &hold_stage2
     ldrb r0, [r0, #0]                        @ 0801B30A
@@ -91,57 +87,7 @@ FUNC lcd_commit_shadow
     bl lcd_commit_shadow_partial             @ 0801B328
     b .L0801B394                             @ 0801B32C
 .L0801B32E:
-    .if LOOP_V205
-    @ baseline (LOOP_V205 = 1): v2.05 sequence with a bounded UDR wait (HW-07)
-    movs r0, #0                              @ 0801B32E
-    ldr r1, =v_20008053                      @ 0801B330 &force-full-commit flag
-    strb r0, [r1, #0]                        @ 0801B334
-    ldr r4, =LCD_WAIT_POLLS                 @ poll budget; r4 survives fn_08020492
-.Lcs_wait:
-    movs r0, #LCD_SR_UDR                    @ v2.05 0x0801B336: wait for the previous update request to finish
-    bl fn_08020492                          @ r0 = 1 while UDR is set (the LCD_RAM is write-protected)
-    cmp r0, #0
-    beq .Lcs_go                             @ UDR clear: write the words
-    subs r4, r4, #1
-    bne .Lcs_wait                           @ budget left: poll again
-    b .L0801B394                            @ budget exhausted: write nothing (v2.05 would wait for ever)
-.Lcs_go:
-    @ the eight word copies lcd_shadow[i] -> LCD_RAM[i] and the update request, as v2.05
-    ldr r0, =lcd_shadow                      @ 0801B340 &LCD shadow
-    ldr r0, [r0, #0]                         @ 0801B342
-    ldr r1, =LCD_RAM                         @ 0801B344
-    str r0, [r1, #0]                         @ 0801B348
-    ldr r0, =lcd_shadow                      @ 0801B34A &LCD shadow
-    ldr r0, [r0, #4]                         @ 0801B34C
-    ldr r1, =0x40002418                      @ 0801B34E
-    str r0, [r1, #0]                         @ 0801B352
-    ldr r0, =lcd_shadow                      @ 0801B354 &LCD shadow
-    ldr r0, [r0, #8]                         @ 0801B356
-    ldr r1, =0x4000241C                      @ 0801B358
-    str r0, [r1, #0]                         @ 0801B35C
-    ldr r0, =lcd_shadow                      @ 0801B35E &LCD shadow
-    ldr r0, [r0, #12]                        @ 0801B360
-    ldr r1, =0x40002420                      @ 0801B362
-    str r0, [r1, #0]                         @ 0801B366
-    ldr r0, =lcd_shadow                      @ 0801B368 &LCD shadow
-    ldr r0, [r0, #16]                        @ 0801B36A
-    ldr r1, =0x40002424                      @ 0801B36C
-    str r0, [r1, #0]                         @ 0801B370
-    ldr r0, =lcd_shadow                      @ 0801B372 &LCD shadow
-    ldr r0, [r0, #20]                        @ 0801B374
-    ldr r1, =0x40002428                      @ 0801B376
-    str r0, [r1, #0]                         @ 0801B37A
-    ldr r0, =lcd_shadow                      @ 0801B37C &LCD shadow
-    ldr r0, [r0, #24]                        @ 0801B37E
-    ldr r1, =0x4000242C                      @ 0801B380
-    str r0, [r1, #0]                         @ 0801B384
-    ldr r0, =lcd_shadow                      @ 0801B386 &LCD shadow
-    ldr r0, [r0, #28]                        @ 0801B388
-    ldr r1, =0x40002430                      @ 0801B38A
-    str r0, [r1, #0]                         @ 0801B38E
-    bl fn_0802048A                           @ 0801B390
-    .else
-    @ production (LOOP_V205 = 0, IMP-06): never wait
+    @ IMP-06: never wait
     movs r0, #LCD_SR_UDR
     bl fn_08020492                          @ r0 = 1 while the previous update request is still pending
     cmp r0, #0
@@ -155,7 +101,6 @@ FUNC lcd_commit_shadow
     movs r0, #2
     ldr r1, =lcd_commit_pending
     strb r0, [r1]                           @ a full commit is owed (2): the retry does not apply the partial rule again
-    .endif
 
 .L0801B394:                                @ reached from 0801B32C b; falls in
     pop {r4, pc}                             @ 0801B394 restores r4 (v2.05: pop {r0, pc})
@@ -177,7 +122,6 @@ ENDFUNC lcd_commit_shadow
 @ -----------------------------------------------------------------------------
 FUNC lcd_commit_shadow_partial
     push {r7, lr}                            @ 0801B396
-    .if LOOP_V205 == 0
     movs r0, #LCD_SR_UDR
     bl fn_08020492                          @ r0 = 1 while the previous update request is pending (LCD_RAM write-protected)
     cmp r0, #0
@@ -187,7 +131,6 @@ FUNC lcd_commit_shadow_partial
     strb r0, [r1]                           @ a commit is owed; lcd_commit_shadow decides partial or full again at the retry
     pop {r0, pc}                            @ return without writing (same exit form as the end of this routine)
 .Lcp_go:
-    .endif
     @ word 0: LCD_RAM0 = (LCD_RAM0 AND 0xFFFFEB01) OR (shadow0 AND 0x14FE): keeps bits 0, 8, 9, 11, 13..31, replaces bits 1..7, 10, 12
     ldr r0, =LCD_RAM                         @ 0801B398
     ldr r0, [r0, #0]                         @ 0801B39C
@@ -251,13 +194,11 @@ FUNC lcd_commit_shadow_partial
     str r0, [r1, #0]                         @ 0801B436
     @ LCD_UpdateDisplayRequest
     bl fn_0802048A                           @ 0801B438
-    .if LOOP_V205 == 0
     movs r0, #0
     ldr r1, =lcd_last_valid
     strb r0, [r1]                           @ LCD_RAM no longer equals the last full copy (IMP-06 bookkeeping)
     ldr r1, =lcd_commit_pending
     strb r0, [r1]                           @ the owed commit has now been made
-    .endif
 
     pop {r0, pc}                             @ 0801B43C
 ENDFUNC lcd_commit_shadow_partial
@@ -327,12 +268,10 @@ FUNC lcd_init
     movs r0, #0
     ldr r1, =lcd_init_fault
     strb r0, [r1]                           @ no fault so far
-    .if LOOP_V205 == 0
     ldr r1, =lcd_last_valid
     strb r0, [r1]                           @ LCD_RAM content unknown after (re-)initialisation: the next commit must write (IMP-06)
     ldr r1, =lcd_commit_pending
     strb r0, [r1]                           @ a commit owed from before the (re-)initialisation is void
-    .endif
     ldr r3, =LCD_WAIT_POLLS                 @ ENS wait budget
 .Lli_ens:
     movs r0, #LCD_SR_ENS                    @ v2.05 0x0801B4A6: wait for LCD_SR.ENS (controller enabled)
@@ -1061,7 +1000,6 @@ ENDFUNC fn_08020492
     .global lcd_std_get_flag
     .set lcd_std_get_flag, fn_08020492
 
-    .if LOOP_V205 == 0
 @ -----------------------------------------------------------------------------
 @ lcd_commit_words - write the eight shadow words to LCD_RAM0..7 if they differ from the last committed copy
 @ Replaces : the copy loop 0x0801B340..0x0801B390 of lcd_commit_shadow (production mode, IMP-06)
@@ -1167,4 +1105,3 @@ FUNC lcd_commit_flush
     pop {r4, pc}
     .ltorg
 ENDFUNC lcd_commit_flush
-    .endif

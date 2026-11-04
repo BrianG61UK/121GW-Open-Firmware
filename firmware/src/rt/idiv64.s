@@ -17,7 +17,7 @@
 @
 @ Context: ISR-safe (stack use only), no state.
 @
-@ OF-51 (production image only, LOOP_V205 = 0): a zero divisor gives a defined result instead of the unchanged registers:
+@ OF-51: a zero divisor gives a defined result instead of the unchanged registers:
 @ unsigned, quotient 0xFFFFFFFFFFFFFFFF and remainder = dividend; signed, quotient -1 and remainder = dividend (the
 @ convention of hardware dividers such as RISC-V's M extension; no trap, no errno).  Every other operand gives the
 @ v2.05 result bit for bit.  No v2.05 caller divides by zero (ORIGINAL_FIRMWARE_ISSUES.md OF-51); the strict image keeps
@@ -44,7 +44,6 @@
 @ Deviation: none in the strict image; OF-51 in the production image (zero divisor: quotient -1, remainder = dividend)
 @ -----------------------------------------------------------------------------
 FUNC fn_08013FE4
-    .if LOOP_V205 == 0
     orrs r12, r2, r3                       @ OF-51: divisor zero?
     bne .Lldivmod_v205
     mov r2, r0                             @ remainder = dividend
@@ -53,7 +52,6 @@ FUNC fn_08013FE4
     mov r1, #-1
     bx lr
 .Lldivmod_v205:
-    .endif
     ands r12, r3, #0x80000000              @ r12 = sign bit of the divisor; N = divisor negative
     bpl .Lldivmod_08013FF2                 @ divisor non-negative: skip the negation
     negs r3, r3                            @ divisor negative: r3 = -r3 ...
@@ -101,7 +99,6 @@ ENDFUNC fn_08013FE4
 @ Deviation: none in the strict image; OF-51 in the production image (zero divisor: quotient all ones, remainder = dividend)
 @ -----------------------------------------------------------------------------
 FUNC fn_08014028
-    .if LOOP_V205 == 0
     orrs r12, r2, r3                       @ OF-51: divisor zero?
     bne .Luldivmod_v205
     mov r2, r0                             @ remainder = dividend
@@ -110,7 +107,6 @@ FUNC fn_08014028
     mov r1, #-1
     bx lr
 .Luldivmod_v205:
-    .endif
     tst r3, r3                             @ divisor high word zero?
     bne .Luldivmod_d64                     @ no: 64-bit divisor
     tst r1, r1                             @ dividend high word zero?

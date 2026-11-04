@@ -22,7 +22,6 @@
 @ b11 degC; w6 b10 A, b11 degF; w6 b0 ms (PULSE), left alone while peak hold shows "1ms" with it (0x200080B7).
 @ Mode signs (LowZ, Beep, Diode), AC/DC and the status signs are not touched.
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -34,7 +33,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ ui_rp_reading,       v_20007D64    @ displayed reading D (counts, after REL)
     .equ ui_rp_base,          v_20007DA8    @ REL base (counts)
@@ -278,4 +276,3 @@ ENDFUNC ui_relpct_mask
 
     .ltorg
 
-    .endif

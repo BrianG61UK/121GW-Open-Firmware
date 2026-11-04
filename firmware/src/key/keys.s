@@ -532,7 +532,6 @@ FUNC process_pg8_15_press_release
 @ a key is down: only one single key or the MEM + HOLD combination counts, any other combination is ignored
 @ reached from 080168F2 bne (not equal / non-zero) after cmp r0, #0
 .Lpr_keydown:
-    .if LOOP_V205 == 0
     bl pwr_bl_wake                      @ IMP-07: switched off by the timer? then this press only switches it on again
     cbz r0, 1f
     movs r0, #0x33
@@ -543,7 +542,6 @@ FUNC process_pg8_15_press_release
     strb r0, [r1]                       @ ... and no short press at the release
     b .Lpr_done
 1:  bl pwr_bl_restart                   @ IMP-07: any key press restarts the backlight auto-off countdown (every tick while down)
-    .endif
     ldr r0, =key_sample                 @ 08016936
     ldrb r0, [r0]                       @ 0801693A
     bl fn_08016B7C                      @ 0801693C
@@ -838,9 +836,7 @@ FUNC fn_08014AE6
     movs r0, #0                         @ 08014AFA
     ldr r1, =v_2000801D                 @ 08014AFC
     strb r0, [r1]                       @ 08014AFE
-    .if LOOP_V205 == 0
     bl pwr_bl_restart                   @ IMP-07: a key injected over the serial link counts as a key press
-    .endif
 
 @ codes 1..8 map to RANGE, HOLD, REL, PEAK, MODE, MIN/MAX, MEM, SETUP: a short press of that key
     ldr r0, =key_remote_code            @ 08014B00

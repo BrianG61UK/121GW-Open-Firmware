@@ -555,7 +555,6 @@ ENDFUNC fn_080187D8
 @ -----------------------------------------------------------------------------
 FUNC fn_080188A0
     push {r4, r5, r6, r7, r8, lr}           @ 080188A0
-    .if LOOP_V205 == 0
     @ IMP-13: 12-hour clock (SETUP page CL): hour 0 -> 12, 13..23 -> 1..11; the clock chip and the edit keep 0..23
     ldr r3, =set_clk12
     ldrb r3, [r3]
@@ -567,7 +566,6 @@ FUNC fn_080188A0
     cbnz r1, 1f
     movs r1, #12                            @ 0 -> 12
 1:
-    .endif
     movs r4, r0                             @ 080188A4
     movs r5, r1                             @ 080188A6
     movs r6, r2                             @ 080188A8
@@ -587,7 +585,6 @@ FUNC fn_080188A0
     ldr r0, [r0, #0x0]                      @ 080188CE  r0 = rtc_lcd_digit1
     ldr.w r1, =rtc_text5                    @ 080188D0
     strb r0, [r1, #0x0]                     @ 080188D2  rtc_text5 = rtc_lcd_digit1
-    .if LOOP_V205 == 0
     ldr r3, =set_clk12
     ldrb r3, [r3]
     cbz r3, 2f                              @ 24-hour: the leading zero stays, as v2.05
@@ -596,7 +593,6 @@ FUNC fn_080188A0
     movs r0, #0x20
     strb r0, [r1, #0x0]                     @ IMP-13: 12-hour: tens of the hour blank when 0 (" 2-30")
 2:
-    .endif
     ldr.w r0, =rtc_lcd_digit0               @ 080188D4
     ldr r0, [r0, #0x0]                      @ 080188D8  r0 = rtc_lcd_digit0
     adds r0, #0x30                          @ 080188DA  r0 = rtc_lcd_digit0 + 48 (0x30)

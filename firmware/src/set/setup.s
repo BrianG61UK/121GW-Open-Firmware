@@ -76,7 +76,6 @@
     .equ set_hour_edit,         v_200080E0   @ hour edit buffer (item 7)
     .equ set_minute_edit,       v_200080E1   @ minute edit buffer (item 7)
 
-    .if LOOP_V205 == 0
     .equ SET_ITEM_BL, 20                    @ IMP-07: setup item of the backlight auto-off page bL (v2.05 uses 0..12 and 100)
     .equ SET_ITEM_BT, 21                    @ IMP-09: setup item of the Bluetooth frame rate page bt (after bL)
     .equ SET_ITEM_RELP, 22                  @ IMP-11: setup item of the REL view page rEL (after bt)
@@ -97,7 +96,6 @@
     .equ SET_ITEM_TR, 30                    @ IMP-21: logging trigger page tr
     .equ SET_ITEM_CH, 31                    @ IMP-21: change threshold page Ch (with tr-Ch only)
     .equ SET_ITEM_TC, 23                    @ IMP-10: setup item of the thermocouple type page tc (after bt, TEMP only)
-    .endif
 
     .section .text.set, "ax", %progbits
 
@@ -123,7 +121,6 @@
 @ -----------------------------------------------------------------------------
 FUNC fn_08015410
     push {r7, lr}                           @ 08015410
-    .if LOOP_V205 == 0
     @ IMP-07, IMP-09, IMP-11, IMP-10, IMP-12: SETUP short on the page bL (item 20, the page after the last v2.05 item) goes
     @ to the page bt (item 21), on bt to the page Ld (item 39, IMP-28), on Ld to the page rEL (item 22); on rEL to the page tc (item 23) in TEMP (mode 5), else to
     @ the page dSP (item 24); on tc to dSP; on dSP to the page bH (item 26, IMP-16) in BEEP (mode 10), to the page LP
@@ -256,7 +253,6 @@ FUNC fn_08015410
     strb r0, [r1, #0x0]                     @ set_edit = 0 (v2.05 clears it at 0x08015422 for every item but 8)
     pop {r7, pc}
 .Lsn_not_bl:
-    .endif
     ldr.w r0, =set_item                     @ 08015412
     ldrb r0, [r0, #0x0]                     @ 08015416  r0 = set_item
     cmp r0, #0x8                            @ 08015418  compare set_item with 8
@@ -518,7 +514,6 @@ FUNC fn_08015410
     ldr.w r1, =set_item                     @ 0801567A
     strb r0, [r1, #0x0]                     @ 0801567E  set_item = 0
 .L08015680:  @ reached from 08015462 b, 0801548E blt (set_item <s 12 (0xC)), 0801549A b, 08015544 bne (set_item != 12 (0xC)), 08015550 b, 08015594 b, 0801559E blt (set_item <s 12 (0xC)), 080155A8 b, 080155EC b, 08015600 blt (set_item <s 12 (0xC)), 0801560A b, 08015614 blt (set_item <s 11 (0xB)), 0801561E b, 08015654 blt (set_item <s 11 (0xB)), 0801565E b, 08015676 blt (set_item <s 10 (0xA))
-    .if LOOP_V205 == 0
     @ IMP-07: a wrap of the item to 0 (set_item + 1 reached the mode's limit) lands on the page bL instead; an item that is
     @ already 0 here can only come from a wrap, because the item-8 digit cursor path keeps 8 and every other path adds 1
     ldr.w r0, =set_item
@@ -527,7 +522,6 @@ FUNC fn_08015410
     movs r1, #SET_ITEM_BL
     strb r1, [r0, #0x0]                     @ set_item = 20
 .Lsn_no_wrap:
-    .endif
     ldr.w r0, =set_item                     @ 08015680
     ldrb r0, [r0, #0x0]                     @ 08015684  r0 = set_item
     cmp r0, #0x5                            @ 08015686  compare set_item with 5
@@ -1454,11 +1448,7 @@ FUNC fn_080165F4
     ldr.w r0, =set_item                     @ 080167E2
     ldrb r0, [r0, #0x0]                     @ 080167E6  r0 = set_item
     cmp r0, #0x8                            @ 080167E8  compare set_item with 8
-    .if LOOP_V205 == 0
     bne .Lse_port                           @ 080167EA  if set_item != 8: IMP-07 checks the page bL before leaving
-    .else
-    bne .L08016800                          @ 080167EA  if set_item != 8
-    .endif
     uxtb r4, r4                             @ 080167EC
     cmp r4, #0x0                            @ 080167EE  compare r4 with 0
     bne .L080167F8                          @ 080167F0  if r4 != 0
@@ -1469,7 +1459,6 @@ FUNC fn_080165F4
     movs r0, r4                             @ 080167F8
     uxtb r0, r0                             @ 080167FA
     bl fn_08015F7C                          @ 080167FC  ID edit action
-    .if LOOP_V205 == 0
     b .L08016800
 .Lse_port:  @ IMP-07, IMP-08: reached from 080167EA bne with r0 = set_item
     cmp r0, #0x1                            @ IMP-27: the battery page (item 1) edits the battery trim
@@ -1665,7 +1654,6 @@ FUNC fn_080165F4
     movs r0, r4
     uxtb r0, r0
     bl set_bl_edit                          @ up, down or save of the backlight setting
-    .endif
 .L08016800:  @ reached from 080166AC b, 080166B6 b, 080166D6 b, 080166E0 b, 080166F6 b, 08016700 b, 08016716 b, 08016720 b, 08016736 b, 08016740 b, 08016756 b, 08016760 b, 08016776 b, 08016780 b, 08016796 b, 080167A0 b, 080167B6 b, 080167C0 b, 080167D6 b, 080167E0 b, 080167EA bne (set_item != 8), 080167F6 b
     movs r0, r5                             @ 08016800
     uxtb r0, r0                             @ 08016802
@@ -1908,14 +1896,12 @@ FUNC fn_0801797C
     ldrb r0, [r0, #0x0]                     @ 08017B60  r0 = meter_mode
     cmp r0, #0x2                            @ 08017B62  compare meter_mode with 2
     bne .L08017B6C                          @ 08017B64  if meter_mode != 2
-    .if LOOP_V205 == 0
     ldr r0, =set_edit
     ldrb r0, [r0]
     cbz r0, 1f                              @ IMP-08: no edit: the dBm value as in v2.05
     bl set_dbm_draw                         @ IMP-08: edit active (blink phase on): the reference text
     b .L08017F26
 1:
-    .endif
     bl fn_08018590                          @ 08017B66  draw the ACV scaled value (item 11) [r0=meter_mode]
     b .L08017F26                            @ 08017B6A
 .L08017B6C:  @ reached from 08017B64 bne (meter_mode != 2)
@@ -2290,29 +2276,22 @@ FUNC fn_0801797C
     ldr.w r0, =set_item                     @ 08017EEC
     ldrb r0, [r0, #0x0]                     @ 08017EF0  r0 = set_item
     cmp r0, #0x1                            @ 08017EF2  compare set_item with 1
-    .if LOOP_V205 == 0
     bne .Lsd_port                           @ 08017EF4  if set_item != 1: IMP-07 checks the page bL before the item-0 fallback
-    .else
-    bne .L08017F12                          @ 08017EF4  if set_item != 1
-    .endif
     ldr.w r0, =lcd_shadow                   @ 08017EF6
     ldr r0, [r0, #0x8]                      @ 08017EFA  r0 = lcd_shadow+8
     orrs r0, r0, #0x20000                   @ 08017EFC  r0 = lcd_shadow+8 | 0x20000
     ldr.w r1, =lcd_shadow                   @ 08017F00
     str r0, [r1, #0x8]                      @ 08017F04  lcd_shadow+8 = (lcd_shadow+8 | 0x20000)
-    .if LOOP_V205 == 0
     ldr r0, =set_edit
     ldrb r0, [r0]
     cbz r0, 1f
     bl set_btrim_draw                       @ IMP-27: while the trim is edited, "bA" and the voltage in 0.01 V
     b .L08017F26
 1:
-    .endif
     ldr.w r0, =set_bat_value                @ 08017F06
     ldrh r0, [r0, #0x0]                     @ 08017F0A  r0 = set_bat_value
     bl fn_0801839A                          @ 08017F0C  draw "BAT" and the battery value [r0=set_bat_value, r1=&lcd_shadow]
     b .L08017F26                            @ 08017F10
-    .if LOOP_V205 == 0
 .Lsd_port:  @ IMP-07, IMP-09, IMP-10: reached from 08017EF4 bne with r0 = set_item
     cmp r0, #SET_ITEM_VERDICT               @ IMP-20: the limit pages Lt, Lo, HI (27..29) and the verdict (36)
     beq .Lsd_lt
@@ -2402,7 +2381,6 @@ FUNC fn_0801797C
     ldrb r0, [r0, #0x0]                     @ r0 = setting code
     bl set_bl_draw                          @ draw "bL" and the value
     b .L08017F26
-    .endif
 .L08017F12:  @ reached from 08017EF4 bne (set_item != 1)
     movs r0, #0x0                           @ 08017F12
     ldr.w r1, =set_item                     @ 08017F14

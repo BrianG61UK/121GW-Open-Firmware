@@ -17,7 +17,6 @@
 @ the edit without a save, the edit times out after about 2 minutes (fn_0800D190 then re-reads the EEPROM).
 @ Storage: EEPROM 0x021 (EEPROM_MAP.md 4.1); a value above 3, 0xFF included, reads as 0 (100 ms).
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -29,7 +28,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ SET_BH_EEPROM,       0x021         @ EEPROM offset of the hold code (EEPROM_MAP.md 4.1)
     .equ SET_BH_CODE_MAX,     3             @ highest valid code = off
@@ -160,4 +158,3 @@ ENDFUNC set_bh_draw
 
     .ltorg
 
-    .endif

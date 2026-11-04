@@ -101,7 +101,6 @@ FUNC fn_0800E30C
     bne .Lahold_0800E592                   @ OHM range 1..5, auto range, OHM skip counter still running: wait
     @ Signal test.  r4 = 1000 counts, the signal threshold.
 .Lahold_0800E366:
-    .if LOOP_V205 == 0
     @ IMP-22 (owner decision 2026-11-03): in OHM (mode 9) and DIODE (mode 11) open probes read OL, so there "no signal" is the
     @ overload, and readings below 1000 counts, 0 included (a short, a good fuse, a shorted junction), are signals once the
     @ auto-ranging has nowhere lower to go.  v2.05 requires 1000 counts there too (0x0800E366..0x0800E3BE), so 0 ohm and 0 V
@@ -154,7 +153,6 @@ FUNC fn_0800E30C
 .Lahold_0800E3BE_far:
     b .Lahold_0800E3BE
 2:
-    .endif
     mov r0, #0x3e8
     movs r4, r0                            @ r4 = 1000
     ldr r0, =meter_mode

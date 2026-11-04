@@ -25,8 +25,6 @@
 @ peripherals 0x0801C596, board_gpio_init), and v2.05 leaves the flag at 1 after a wake (nothing but the MODE long press
 @ writes it), which made the next MODE long press look like "off" and need a second press.
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there, which keeps that image
-@ byte-identical to the build without the timer.
 @ Context: main only (no interrupt handler touches the variables).
 @ =============================================================================
 
@@ -38,7 +36,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ PWR_BL_CODE_30S,     1             @ setting code of 30 s (codes 2..100 are 1..99 minutes)
     .equ PWR_BL_PE8,          0x0100        @ PE8 = BL_OUT, the backlight (DESIGN.md 4.5)
@@ -240,4 +237,3 @@ ENDFUNC pwr_bl_restore
 
     .ltorg
 
-    .endif

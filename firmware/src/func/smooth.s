@@ -238,7 +238,6 @@ LFUNC func_avg_core
     cmp r4, r0
     it hi
     movhi r4, r0                       @ depth above the capacity: use the capacity (never acts for the v2.05 depths 2, 5, 10)
-    .if LOOP_V205 == 0
     @ IMP-12: display level 2 (SETUP page dSP) keeps a quarter of the depth, at least 1; a depth of 0 keeps its meaning
     ldr r0, =func_dsp_level
     ldrb r0, [r0]
@@ -248,7 +247,6 @@ LFUNC func_avg_core
     it eq
     moveq r4, #1                       @ at least 1 (depth 1 = the newest value)
 1:
-    .endif
     movs r6, #0                            @ r7:r6 = sum = 0 (low word)
     movs r7, #0                            @ sum, high word
     ldr r0, [r11, #FUNC_DESC_LAST]         @ r0 = address of the last output
@@ -402,7 +400,6 @@ LFUNC func_hist_core
     cmp r4, r0
     it hi
     movhi r4, r0                       @ depth above the capacity: use the capacity (never acts for the v2.05 depths 2, 5, 10)
-    .if LOOP_V205 == 0
     @ IMP-12: display level 2 (SETUP page dSP) keeps a quarter of the depth, at least 1; a depth of 0 keeps its meaning
     ldr r0, =func_dsp_level
     ldrb r0, [r0]
@@ -412,7 +409,6 @@ LFUNC func_hist_core
     it eq
     moveq r4, #1                       @ at least 1 (depth 1 = the newest value)
 1:
-    .endif
     movs r6, #0                            @ r7:r6 = sum = 0 (low word)
     movs r7, #0                            @ sum, high word
     ldr r0, [r11, #FUNC_DESC_LAST]         @ r0 = address of the last output

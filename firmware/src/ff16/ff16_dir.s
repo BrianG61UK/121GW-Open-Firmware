@@ -13,7 +13,6 @@
     .include "macros.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
     .include "ff16.inc"
 
     .section .text.ff16.dir, "ax", %progbits
@@ -648,4 +647,3 @@ ff16_badchr:
     .ascii "*+,:;<=>[]|\"?\x7F"
     .byte 0
 
-    .endif

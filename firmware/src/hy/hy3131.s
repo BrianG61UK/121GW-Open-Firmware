@@ -89,12 +89,10 @@ FUNC fn_0800B974
     bl hy3131_set_irq_enable                @ v2.05 0x0800B98A: INTF = 0, INTE per mode
     cbnz r0, .Lap_refused
     bl hy3131_counter_restart               @ v2.05 0x0800B98E: counter off, preset, counter on
-.if LOOP_V205 == 0
     movs r0, #1
     ldr r1, =mdc_first_mean
     strb r0, [r1]                           @ IMP-01 P5: the first value after this configuration is a short mean (MDC ad1_accumulate_average)
     bl mdc_dcv_reset                        @ IMP-23: the DCV window holds nothing of the previous configuration
-.endif
     movs r0, #0
     pop {r3, r4, r5, pc}
 .Lap_refused:
@@ -902,112 +900,6 @@ ENDFUNC hy3131_set_irq_enable
 @ A restart before any row was written (hy_row_valid = 0) does nothing.
 @ -----------------------------------------------------------------------------
 
-.if LOOP_V205
-@ -----------------------------------------------------------------------------
-@ hy3131_counter_restart - restart the HY3131 frequency counter (baseline: blocking)
-@ Replaces : 0x0800BF8C hy3131_counter_restart (v2.05)
-@ In       : -
-@ Out      : -
-@ Clobbers : r0-r3, r12, flags
-@ Context  : main only
-@ RAM      : reads  hy_row_r20, hy_row_valid, 0x2000803C meter_mode
-@ Spec     : analysis/hy3131_model.md 3 (counter preset); hy3131_modes_misc.md 0
-@ Deviation: HW-05
-@ LOOP_V205 = 1: the whole sequence runs inside this call as in v2.05, including delay(10000) (0x0800BFCA..0x0800BFCE).
-@ -----------------------------------------------------------------------------
-FUNC hy3131_counter_restart
-    ldr r0, =hy_row_valid
-    ldrb r0, [r0]
-    cbnz r0, .Lcr_go
-    bx lr                                   @ no row written yet: nothing to restart
-.Lcr_go:
-    push {r7, lr}                      @ 0x0800BF8C
-    ldr r0, =meter_mode                @ 0x0800BF8E pool 0x0800C274 = 0x2000803C
-    ldrb r0, [r0, #0]                  @ 0x0800BF90
-    cmp r0, #6                         @ 0x0800BF92
-    beq .L0800BFA6                     @ 0x0800BF94
-    ldr r0, =meter_mode                @ 0x0800BF96 pool 0x0800C274 = 0x2000803C
-    ldrb r0, [r0, #0]                  @ 0x0800BF98
-    cmp r0, #7                         @ 0x0800BF9A
-    beq .L0800BFA6                     @ 0x0800BF9C
-    ldr r0, =meter_mode                @ 0x0800BF9E pool 0x0800C274 = 0x2000803C
-    ldrb r0, [r0, #0]                  @ 0x0800BFA0
-    cmp r0, #8                         @ 0x0800BFA2
-    bne .L0800BFB4                     @ 0x0800BFA4
-.L0800BFA6:                              @ reached from 0x0800BF94 beq, 0x0800BF9C beq
-    @ ---- modes 6, 7, 8: clear ENCTR only (R20 & 0xFD, v2.05 0x0800BFAA) ----
-    ldr r0, =hy_row_r20                @ 0x0800BFA6 pool 0x0800C270 = 0x2000807D
-    ldrb r0, [r0, #0]                  @ 0x0800BFA8
-    ands.w r0, r0, #253                @ 0x0800BFAA
-    strb.w r0, [sp]                    @ 0x0800BFAE
-    b .L0800BFC0                       @ 0x0800BFB2
-.L0800BFB4:                              @ reached from 0x0800BFA4 bne
-    @ ---- other modes: clear ENCTR and ENPCMPO (R20 & 0xF9, v2.05 0x0800BFB8) ----
-    ldr r0, =hy_row_r20                @ 0x0800BFB4 pool 0x0800C270 = 0x2000807D
-    ldrb r0, [r0, #0]                  @ 0x0800BFB6
-    ands.w r0, r0, #249                @ 0x0800BFB8
-    strb.w r0, [sp]                    @ 0x0800BFBC
-.L0800BFC0:                              @ reached from 0x0800BFB2 b
-    @ ---- phase 1: write R20 (1 byte at register 0x20), wait, then phase 2 ----
-    movs r2, #1                        @ 0x0800BFC0
-    movs r1, #32                       @ 0x0800BFC2
-    mov r0, sp                         @ 0x0800BFC4
-    bl hy3131_write_regs               @ 0x0800BFC6
-    @ delay(10000): the counter must be off before CTA is written (v2.05; the datasheet gives no figure, ARS 5.2 P6)
-    movw r0, #10000                    @ 0x0800BFCA
-    bl fn_0800ECF6                     @ 0x0800BFCE
-    @ phase 2: CTA<7:0> = 0, CTA<15:8> = word 0x2000001C byte 0, CTA<23:16> = byte 1 (DS p36 (4)); write registers 0x1B..0x1D
-    movs r0, #0                        @ 0x0800BFD2
-    strb.w r0, [sp]                    @ 0x0800BFD4
-    ldr r0, =v_2000001C                @ 0x0800BFD8 pool 0x0800C278 = 0x2000001C
-    ldr r0, [r0, #0]                   @ 0x0800BFDA
-    strb.w r0, [sp, #1]                @ 0x0800BFDC
-    ldr r0, =v_2000001C                @ 0x0800BFE0 pool 0x0800C278 = 0x2000001C
-    ldr r0, [r0, #0]                   @ 0x0800BFE2
-    lsrs r0, r0, #8                    @ 0x0800BFE4
-    strb.w r0, [sp, #2]                @ 0x0800BFE6
-    movs r2, #3                        @ 0x0800BFEA
-    movs r1, #27                       @ 0x0800BFEC
-    mov r0, sp                         @ 0x0800BFEE
-    bl hy3131_write_regs               @ 0x0800BFF0
-    @ read CTA back (v2.05 0x0800BFFA; the result is never examined; lands at the mirror position 0x1B in the port)
-    movs r2, #3                        @ 0x0800BFF4
-    movs r1, #27                       @ 0x0800BFF6
-    ldr r0, =adc_regs                  @ 0x0800BFF8 pool 0x0800C27C = 0x200077D0
-    bl hy3131_read_regs_to_rxbuf       @ 0x0800BFFA
-    ldr r0, =meter_mode                @ 0x0800BFFE pool 0x0800C274 = 0x2000803C
-    ldrb r0, [r0, #0]                  @ 0x0800C000
-    cmp r0, #6                         @ 0x0800C002
-    beq .L0800C016                     @ 0x0800C004
-    ldr r0, =meter_mode                @ 0x0800C006 pool 0x0800C274 = 0x2000803C
-    ldrb r0, [r0, #0]                  @ 0x0800C008
-    cmp r0, #7                         @ 0x0800C00A
-    beq .L0800C016                     @ 0x0800C00C
-    ldr r0, =meter_mode                @ 0x0800C00E pool 0x0800C274 = 0x2000803C
-    ldrb r0, [r0, #0]                  @ 0x0800C010
-    cmp r0, #8                         @ 0x0800C012
-    bne .L0800C024                     @ 0x0800C014
-.L0800C016:                              @ reached from 0x0800C004 beq, 0x0800C00C beq
-    @ ---- phase 3: R20 | 0x02 (ENCTR on), modes 6, 7, 8 (identical value in both branches, v2.05 0x0800C01A / 0x0800C028) ----
-    ldr r0, =hy_row_r20                @ 0x0800C016 pool 0x0800C270 = 0x2000807D
-    ldrb r0, [r0, #0]                  @ 0x0800C018
-    orrs.w r0, r0, #2                  @ 0x0800C01A
-    strb.w r0, [sp]                    @ 0x0800C01E
-    b .L0800C030                       @ 0x0800C022
-.L0800C024:                              @ reached from 0x0800C014 bne
-    ldr r0, =hy_row_r20                @ 0x0800C024 pool 0x0800C270 = 0x2000807D
-    ldrb r0, [r0, #0]                  @ 0x0800C026
-    orrs.w r0, r0, #2                  @ 0x0800C028
-    strb.w r0, [sp]                    @ 0x0800C02C
-.L0800C030:                              @ reached from 0x0800C022 b
-    movs r2, #1                        @ 0x0800C030
-    movs r1, #32                       @ 0x0800C032
-    mov r0, sp                         @ 0x0800C034
-    bl hy3131_write_regs               @ 0x0800C036
-    pop {r0, pc}                       @ 0x0800C03A
-    .ltorg
-ENDFUNC hy3131_counter_restart
-.else
 @ -----------------------------------------------------------------------------
 @ hy3131_counter_restart (production) - start a counter restart; hy_counter_restart_step finishes it
 @ Replaces : 0x0800BF8C hy3131_counter_restart (v2.05), with the wait of delay(10000) taken apart (DESIGN.md 3.5)
@@ -1061,25 +953,7 @@ FUNC hy3131_counter_restart
     pop {r4, pc}
     .ltorg
 ENDFUNC hy3131_counter_restart
-.endif
 
-.if LOOP_V205
-@ -----------------------------------------------------------------------------
-@ hy_counter_restart_step (baseline) - nothing is ever pending: the restart ran to completion inside the call
-@ Replaces : new (the production variant below finishes a split restart; v2.05 has no such step)
-@ In       : -
-@ Out      : r0 = 1 (idle)
-@ Clobbers : r0
-@ Context  : main only (hy3131_poll does not call it in the baseline)
-@ RAM      : none
-@ Spec     : DESIGN.md 3.5, 6.13
-@ Deviation: none (baseline keeps the v2.05 blocking restart)
-@ -----------------------------------------------------------------------------
-FUNC hy_counter_restart_step
-    movs r0, #1                             @ 1 = done / idle
-    bx lr
-ENDFUNC hy_counter_restart_step
-.else
 @ -----------------------------------------------------------------------------
 @ hy_counter_restart_step - finish a pending counter restart once its TIM3 wait has run out
 @ Replaces : the second half of 0x0800BF8C hy3131_counter_restart (v2.05), see hy3131_counter_restart (production)
@@ -1139,7 +1013,6 @@ FUNC hy_counter_restart_step
     pop {r4, pc}
     .ltorg
 ENDFUNC hy_counter_restart_step
-.endif
 
 @ -----------------------------------------------------------------------------
 @ hy_peak_restart - reset the HY3131 peak registers (R29 ENPKH 0, then back)

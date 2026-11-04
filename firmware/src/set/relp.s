@@ -20,7 +20,6 @@
 @     "rEL-d"   difference          "rEL-P"   percent
 @     "CL 24"   24-hour             "CL 12"   12-hour
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -32,7 +31,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ SET_RELP_EEPROM,     0x020         @ EEPROM offset of the byte holding the REL view in bit 0 (EEPROM_MAP.md 4.1)
     .equ set_relp_redraw,     v_20008062    @ sub display redraw request
@@ -240,4 +238,3 @@ ENDFUNC set_clk_draw
 
     .ltorg
 
-    .endif

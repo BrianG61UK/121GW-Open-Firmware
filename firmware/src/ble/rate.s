@@ -18,7 +18,6 @@
 @ complete frame sends nothing (as for an invalid value, OF-34), so a rate is a maximum and a frame is never torn.
 @ Echoes of received commands are queued and sent between frames (usart.s).
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: ble_rate_tick in the TIM2 interrupt; ble_rate is written by main (set/bt.s) and read by the interrupt (one
 @ byte, single-copy atomic).
 @ =============================================================================
@@ -31,7 +30,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ ble_build_req,       v_2000802C    @ status frame build request, cleared and served by sys_main step 7
 
@@ -97,4 +95,3 @@ ENDFUNC ble_rate_tick
 
     .ltorg
 
-    .endif

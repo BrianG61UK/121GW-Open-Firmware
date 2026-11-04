@@ -9,9 +9,10 @@
 @   B = 1  "SdCAL";  B = 2  "SdSAv" / "SdSEt";  B = 3  cal.bin save or load, then "SAvEd" or "-Err-" and B = 4
 @ It leaves when the counter is 0 and B != 4 (B = 4 is terminal) or on A = 2 / A = 3.
 @ Port (DESIGN.md 7.1):
-@   fn_0800EA3A   the v2.05 loop, blocking (baseline LOOP_V205 = 1, and any caller that needs the v2.05 form)
+@   fn_0800EA3A   the v2.05 loop, blocking: no caller in this build (the v2.05-structured build is on the branch
+@                 like-v2.05); left in place so that this image stays byte-identical to the one verified on a meter
 @   bootwin_start the prologue (same pins, splash, counter, HY3131 row)
-@   bootwin_step  one non-blocking pass for the production loop (LOOP_V205 = 0, IMP-02): the main loop runs
+@   bootwin_step  one non-blocking pass for the production loop (IMP-02): the main loop runs
 @                 the key processing in its step 4 and calls bootwin_step once per pass until it returns 1;
 @                 cal.bin runs as the calbin state machine, one step per pass
 @ OF-08: the MODE-then-REL path sets calibration mode (0x2000808A = 1, 0x20008062 = 1) and writes nothing to
@@ -61,11 +62,9 @@ FUNC fn_0800EA3A
     bl bootwin_start
 1:  bl bootwin_exit_due                     @ counter 0 and B != 4 (0x0800EA8E..0x0800EAA0)
     cbnz r0, 3f
-    .if LOOP_V205 == 0
     bl lcd_commit_retry                     @ IMP-06: this loop stays blocking and never reaches fn_08016D34, so it repeats a
                                             @ commit deferred while UDR was set (the splash right after lcd_init); production
                                             @ calls this routine from no caller (sys_bootwin_begin uses bootwin_start), W3_to_W7.md 4
-    .endif
     ldr r1, =v_200080D0
     ldrb r0, [r1]
     cmp r0, #0
@@ -121,10 +120,8 @@ FUNC bootwin_start
                                             @ (set_state_reset, lcd_init) reads the EEPROM itself (cal_cache_valid = 0).
     bl fn_0801A854                          @ splash "V-205" (0x0800EA74)
     bl lcd_commit_shadow
-    .if LOOP_V205 == 0
     bl lcd_commit_flush                     @ production: wait as v2.05's commit does until the splash is written, so the
                                             @ first HY3131 write below is not earlier than in v2.05 (DESIGN.md 7.1)
-    .endif
     ldr r1, =v_2000022E
     movw r0, #BOOTWIN_TICKS
     strh r0, [r1]                           @ window counter (0x0800EA84; halfword store is atomic for IRQ29)

@@ -12,10 +12,10 @@ each is added to `EEPROM_MAP.md` 4.1 and `nvm_allow` only with the code that use
 
 ### 1.1 Production image only
 
-Every feature is assembled only when `LOOP_V205 == 0` (`.if LOOP_V205 == 0` around the code, the hooks into v2.05 routines
-and the EEPROM table bits). The strict image (`make LOOP_V205=1`) contains none of them: it is byte-identical to the build
-made before the first feature (checked for IMP-07 by `cmp`), it never reads or writes the port-only EEPROM bytes, and its
-`nvm_allow` table does not allow them (`gen_nvm_allow.py` emits their bits as `mask * (1 - LOOP_V205)`, EMAP 4.1).
+The features are part of the fast build only (branch `main`). The like-v2.05 build (branch `like-v2.05`, `make
+LOOP_V205=1` there) contains none of them: it never reads or writes the port-only EEPROM bytes and its `nvm_allow` table
+does not allow them (EMAP 4.1). Until 2026-11-04 both builds came from the same sources, with every feature inside
+`.if LOOP_V205 == 0`; since then each build has its own branch.
 
 ### 1.2 Keys
 

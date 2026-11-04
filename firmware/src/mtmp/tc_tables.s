@@ -44,7 +44,6 @@ mtmp_tc_tab_k:
     .word 52759, 53106, 53451, 53795, 54138, 54479   @ 1310..1360 degC
     .size mtmp_tc_tab_k, . - mtmp_tc_tab_k
 
-    .if LOOP_V205 == 0
 
     .global mtmp_tc_tab_j
 mtmp_tc_tab_j:
@@ -161,4 +160,3 @@ mtmp_tc_tab_s:
     .word 18061, 18174, 18285, 18395, 18503, 18609   @ 1710..1760 degC
     .size mtmp_tc_tab_s, . - mtmp_tc_tab_s
 
-    .endif

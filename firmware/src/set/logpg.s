@@ -8,7 +8,6 @@
 @ (fn_0800D190 re-reads the EEPROM).  Storage: tr in bits 2..1 of EEPROM 0x020 (set_b20_store, the other bits kept), Ch in
 @ EEPROM 0x022 (0 reads as 1).
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -20,7 +19,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ SET_CH_EEPROM,       0x022
     .equ set_lg_text5,        v_20007C30
@@ -185,4 +183,3 @@ ENDFUNC set_lg_draw
 
     .ltorg
 
-    .endif

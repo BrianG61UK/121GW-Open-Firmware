@@ -55,7 +55,6 @@ FUNC fn_08018B14
     b .L08018B4C                             @ 08018B46
 .L08018B48:                                @ reached from 08018B44 bne (not equal / non-zero)
     @ every other mode: lcd_update_bargraph
-    .if LOOP_V205 == 0
     ldr r0, =meter_mode
     ldrb r0, [r0]
     cbnz r0, 1f
@@ -63,7 +62,6 @@ FUNC fn_08018B14
     ldrb r0, [r0]
     cbnz r0, .L08018B4C                     @ LowZ settling mean after an AC/DC re-apply: the bar keeps its segments
 1:
-    .endif
     bl lcd_update_bargraph                   @ 08018B48
 .L08018B4C:                                @ reached from 08018B46 b; falls in
     pop {r0, pc}                             @ 08018B4C
@@ -85,7 +83,6 @@ FUNC lcd_update_bargraph
     push {r7, lr}                            @ 08018B80
     @ fn_08018F14 computes the bar count in 0x20008041 and the scale / polarity
     bl fn_08018F14                           @ 08018B82
-    .if LOOP_V205 == 0
     @ IMP-17: the same end state in one pass over the segment table: segments 1..count set, count+1..25 cleared, no other
     @ bit touched.  v2.05 calls fn_08019408(25, k) for every k above the count (up to 25 calls of up to 25 clear blocks);
     @ the production image updates the bargraph on every conversion, where that cascade took 28 % of the CPU in BEEP.
@@ -106,7 +103,6 @@ FUNC lcd_update_bargraph
     cmp r3, #25
     bls 1b
     b .L08018F0A                             @ the commit request, as v2.05
-    .endif
     @ segment 1 (w2 bit 1): count >= 1 sets it, otherwise clear segments 1..25
     ldr r0, =v_20008041                      @ 08018B86 &bargraph segment count
     ldrb r0, [r0, #0]                        @ 08018B8A
@@ -515,7 +511,6 @@ FUNC lcd_update_bargraph
     pop {r0, pc}                             @ 08018F12
 ENDFUNC lcd_update_bargraph
 
-    .if LOOP_V205 == 0
     .ltorg                                   @ production: the literals of the IMP-17 block
     .section .rodata.lcd.bar, "a", %progbits
 @ lcd_bar_seg_table: bargraph segments 1..25 (analysis/lcd_map.md 3, the blocks of lcd_update_bargraph above): byte offset
@@ -528,7 +523,6 @@ lcd_bar_seg_table:
     .byte 16, 0x40,  8, 0x40,   0, 0x40,   0, 0x80,   8, 0x80    @ 21 w4b6, 22 w2b6, 23 w0b6, 24 w0b7, 25 w2b7
     .size lcd_bar_seg_table, . - lcd_bar_seg_table
     .previous
-    .endif
     .ltorg
 
 @ -----------------------------------------------------------------------------
@@ -774,9 +768,7 @@ FUNC bargraph_count_from_value
     ldr r1, =v_20008041                      @ 080190FC &bargraph segment count
     strb r0, [r1, #0]                        @ 08019100
 .L08019102:                                @ reached from 080190C2 beq (equal / zero); 080190EE blt (signed <); 080190F8 b; falls in
-    .if LOOP_V205 == 0
     bl lcd_bar_zero_sign                     @ IMP-15: with no bar lit the sign follows the digits (no flicker at zero)
-    .endif
     @ mode 11 (DIODE): a count of 16 or more is limited to 15
 
     ldr r0, =meter_mode                      @ 08019102 &meter_mode
@@ -794,7 +786,6 @@ FUNC bargraph_count_from_value
     pop {r4, r5, r6, pc}                     @ 0801911E
 ENDFUNC bargraph_count_from_value
 
-    .if LOOP_V205 == 0
 @ -----------------------------------------------------------------------------
 @ lcd_bar_negative - is the bargraph polarity negative?  (one rule for the LCD and the BLE frame byte 13)
 @ Replaces : nothing in v2.05 (new, IMP-15)
@@ -856,7 +847,6 @@ FUNC lcd_bar_zero_sign
 2:  pop {r4, pc}
 ENDFUNC lcd_bar_zero_sign
     .ltorg
-    .endif
     .ltorg
 
 @ -----------------------------------------------------------------------------

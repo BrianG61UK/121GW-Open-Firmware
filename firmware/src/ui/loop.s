@@ -16,7 +16,6 @@
 @ prefix signs are off and the % sign is on (ui_relpct_mask applies the same mask for either view).  Nothing is drawn while
 @ HOLD is active (the held display stays, as the D draw of v2.05).
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -28,7 +27,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ UI_LP_MODE_DCMA,     19
     .equ ui_lp_reading,       v_20007D64    @ displayed reading D (counts)
@@ -123,4 +121,3 @@ ENDFUNC ui_loop_draw
 
     .ltorg
 
-    .endif

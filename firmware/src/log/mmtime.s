@@ -9,7 +9,6 @@
 @     MAX,row,func,value,unit,YYYY/MM/DD,hh:mm:ss,
 @ The first five columns keep the v2.05 text, so a reader of v2.05 files still finds them in place.
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -20,7 +19,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ log_view_year,       v_20008007    @ date and time of the loaded record, six bytes year (since 2000), month, day,
                                             @ hour, minute, second at 0x20008007..0x2000800C (log_slot_load)
@@ -77,4 +75,3 @@ ENDFUNC log_mm_write
 
     .ltorg
 
-    .endif

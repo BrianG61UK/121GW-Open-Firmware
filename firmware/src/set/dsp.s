@@ -13,7 +13,6 @@
 @ Page text (five characters, font of analysis/lcd_map.md 2: 'd' 0xB5, 'S' 0x9E (the shape of 5), 'P'):
 @     "dSP 1"   "dSP 2"
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -25,7 +24,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ SET_DSP_EEPROM,      0x013         @ EEPROM offset of the level (EEPROM_MAP.md 4.1)
     .equ set_dsp_redraw,      v_20008062    @ sub display redraw request
@@ -130,4 +128,3 @@ ENDFUNC set_dsp_draw
 
     .ltorg
 
-    .endif

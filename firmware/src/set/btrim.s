@@ -15,7 +15,6 @@
 @ Storage: EEPROM 0x02A (EEPROM_MAP.md 4.1), byte = t + 100 (50..150); any other value (0x00 and 0xFF included) reads as
 @ t = 0, so an untouched byte means no trim.
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -27,7 +26,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ SET_BTRIM_EEPROM,    0x02A         @ EEPROM offset of the trim byte (EEPROM_MAP.md 4.1)
     .equ SET_BTRIM_BIAS,      100           @ byte = t + 100
@@ -157,4 +155,3 @@ ENDFUNC set_btrim_draw
 
     .ltorg
 
-    .endif

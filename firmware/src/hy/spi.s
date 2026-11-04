@@ -72,7 +72,6 @@ ENDFUNC hy3131_spi_clock_pulse
 @ Deviation: IMP-19 (production: bit timing of the v2.05 read loop instead of delay(1) calls; same waveform order)
 @ -----------------------------------------------------------------------------
 FUNC hy3131_spi_write_byte
-    .if LOOP_V205 == 0
     @ IMP-19 (production): the same bits, levels and order with the bit timing of v2.05's own read loop instead of two
     @ delay(1) calls per bit.  v2.05 reads with no delay (hy3131_spi_read_byte below: CK high for 6..9 instructions,
     @ 0x0800C14E..0x0800C162), a timing every meter runs; here CK is high for at least 6 instructions and DI is set at least
@@ -118,50 +117,6 @@ FUNC hy3131_spi_write_byte
     movs r0, #HY_PIN_DI
     strh r0, [r2]                           @ DI left high (idle level), as v2.05
     pop {r4, r5, pc}
-    .else
-    push {r4, r5, r6, lr}              @ 0x0800C16C
-    movs r4, r0                        @ 0x0800C16E
-    movs r5, r1                        @ 0x0800C170
-    movs r0, #0                        @ 0x0800C172  bit counter r6 = 0
-    movs r6, r0                        @ 0x0800C174
-.L0800C176:                              @ reached from 0x0800C19C b
-    @ ---- eight data bits, MSB first (r6 = 0..7) ----
-    uxtb r6, r6                        @ 0x0800C176
-    cmp r6, #8                         @ 0x0800C178
-    bge .L0800C19E                     @ 0x0800C17A
-    movs r0, #128                      @ 0x0800C17C  r0 = 0x80 >> bit: mask of the bit to send
-    asrs r0, r6                        @ 0x0800C17E
-    movs r1, r4                        @ 0x0800C180
-    uxtb r1, r1                        @ 0x0800C182
-    tst r1, r0                         @ 0x0800C184  tst: is the bit set?
-    beq .L0800C190                     @ 0x0800C186
-    movs r0, #4                        @ 0x0800C188  bit set: PF2 high (BSRRL mask 4)
-    ldr r1, =(GPIOF_BASE + GPIO_BSRRL) @ 0x0800C18A pool 0x0800C280 = 0x40021818
-    strh r0, [r1, #0]                  @ 0x0800C18C
-    b .L0800C196                       @ 0x0800C18E
-.L0800C190:                              @ reached from 0x0800C186 beq
-    movs r0, #4                        @ 0x0800C190  bit clear: PF2 low (BSRRH mask 4)
-    ldr r1, =(GPIOF_BASE + GPIO_BSRRH) @ 0x0800C192 pool 0x0800C284 = 0x4002181A
-    strh r0, [r1, #0]                  @ 0x0800C194
-.L0800C196:                              @ reached from 0x0800C18E b
-    bl hy3131_spi_clock_pulse          @ 0x0800C196  clock the bit into the chip
-    adds r6, r6, #1                    @ 0x0800C19A
-    b .L0800C176                       @ 0x0800C19C
-.L0800C19E:                              @ reached from 0x0800C17A bge
-    @ ---- optional ninth clock ----
-    uxtb r5, r5                        @ 0x0800C19E  r5 = extra-clock flag
-    cmp r5, #1                         @ 0x0800C1A0
-    bne .L0800C1AE                     @ 0x0800C1A2
-    movs r0, #4                        @ 0x0800C1A4  extra clock requested: DI low
-    ldr r1, =(GPIOF_BASE + GPIO_BSRRH) @ 0x0800C1A6 pool 0x0800C284 = 0x4002181A
-    strh r0, [r1, #0]                  @ 0x0800C1A8
-    bl hy3131_spi_clock_pulse          @ 0x0800C1AA
-.L0800C1AE:                              @ reached from 0x0800C1A2 bne
-    movs r0, #4                        @ 0x0800C1AE  frame bytes leave DI high (idle level)
-    ldr r1, =(GPIOF_BASE + GPIO_BSRRL) @ 0x0800C1B0 pool 0x0800C280 = 0x40021818
-    strh r0, [r1, #0]                  @ 0x0800C1B2
-    pop {r4, r5, r6, pc}               @ 0x0800C1B4
-    .endif
     .ltorg
 ENDFUNC hy3131_spi_write_byte
 

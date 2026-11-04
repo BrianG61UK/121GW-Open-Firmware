@@ -295,14 +295,12 @@ FUNC fn_0800B33C
     ldr r1, =v_20007E68                @ 0x0800B46E pool 0x0800BEA4 = 0x20007E68
     str r0, [r1, #0]                   @ 0x0800B472
 .L0800B474:                              @ reached from 0x0800B3BC b, 0x0800B3D8 b, 0x0800B414 beq, 0x0800B41E beq, 0x0800B43E b, 0x0800B454 b
-.if LOOP_V205 == 0
     ldr r0, =v_20007E68
     ldr r0, [r0]                            @ X: unsmoothed count of this counter result
     movs r1, #0                             @ no AD1 code in the counter modes
     bl ar_sample                            @ IMP-01; r0 = 1: discard this result (settling after an apply / apply pending)
     cmp r0, #0
     bne .Lcap_discard
-.endif
     ldr r0, =meter_range               @ 0x0800B474 pool 0x0800B960 = 0x2000803D
     ldrb r0, [r0, #0]                  @ 0x0800B478
     cmp r0, #5                         @ 0x0800B47A
@@ -383,9 +381,7 @@ FUNC fn_0800B33C
     ldr r1, =v_2000805D                @ 0x0800B526 pool 0x0800B968 = 0x2000805D
     strb r0, [r1, #0]                  @ 0x0800B52A
 .L0800B52C:                              @ reached from 0x0800B522 b
-.if LOOP_V205 == 0
 .Lcap_discard:                              @ discarded result: no smoothing, no new value; only the no-signal timeout is reloaded
-.endif
     bl fn_0800EC28                     @ 0x0800B52C
     pop {r4, pc}                       @ 0x0800B530
     .ltorg

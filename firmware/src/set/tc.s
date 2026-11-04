@@ -14,7 +14,6 @@
 @ in the lower-case forms 'n' and 'r', as 't'; 'S' looks like '5' on seven segments):
 @     "tc-K "   "tc-J "   "tc-t "   "tc-n "   "tc-r "   "tc-S "
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -26,7 +25,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ SET_TC_EEPROM,       0x00F         @ EEPROM offset of the type code (EEPROM_MAP.md 4.1)
     .equ SET_TC_CODE_MAX,     5             @ highest valid code = S
@@ -142,4 +140,3 @@ ENDFUNC set_tc_draw
 
     .ltorg
 
-    .endif

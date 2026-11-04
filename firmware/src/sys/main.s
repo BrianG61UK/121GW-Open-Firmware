@@ -5,7 +5,7 @@
 @ (system init), FUN_0801BFDE (NVIC), FUN_0801C486 / FUN_0801C4D4 (TIM2 / TIM3), the NVIC, TIM and DBGMCU
 @ library routines 0x0801BE60, 0x08020848, 0x0802086C, 0x08020876, 0x08020908, 0x0802096C, 0x08020988,
 @ 0x0802099E, SysTick_Handler 0x080248B0 with FUN_0800ED0C.
-@ Loop structure and run modes: DESIGN.md 3.5 (switch LOOP_V205, config.inc).
+@ Loop structure: DESIGN.md 3.5.
 @ Appendix A SYS functions that are not in the SYS objects: the FLASH driver 0x0801F9FC, 0x0801FAFA, 0x0801FB00,
 @ 0x0801FB60 is ported by NVM (DESIGN.md 6.1, 6.21); the option-byte routines 0x0801FA68, 0x0801FA8E, 0x0801FAA0,
 @ 0x0801FAEE (BOR rewrite with OBL_LAUNCH, called only from 0x0801BEAC..0x0801BED4) are not carried over (NF-03).
@@ -61,7 +61,7 @@ sys_nvic_cfg:
 @ Clobbers : all
 @ Context  : main
 @ Spec     : DESIGN.md 3.2 step 5, 3.5 (loop table), 7.1 (window)
-@ Deviation: IMP-02 and IMP-06 in production builds (LOOP_V205 = 0); NF-11 (blink drawing moved here)
+@ Deviation: IMP-02 and IMP-06; NF-11 (blink drawing moved here)
 @ -----------------------------------------------------------------------------
 FUNC sys_main
     bl sys_system_init                      @ FUN_0801BE76 (0x08024B4E)
@@ -117,7 +117,6 @@ FUNC sys_main
     movs r0, #1
     bl fn_0801896C                          @ setup page 7 blink drawing, argument 1 as in v2.05
 .Lmain_step5:
-    .if LOOP_V205 == 0
     @ IMP-02: one power-on window step per pass after step 4 (interface of the CAL module: bootwin_step neither
     @ waits nor consumes the 10 ms flag nor calls the key processing; step 4 does that), until it returns 1
     ldr r0, =sys_bootwin_open
@@ -129,7 +128,6 @@ FUNC sys_main
     ldr r1, =sys_bootwin_open
     strb r0, [r1]                           @ window over
 .Lmain_s5_flag:
-    .endif
     @ step 5: 100 ms flag
     ldr r1, =v_200080D1
     ldrb r0, [r1]
@@ -193,11 +191,7 @@ FUNC sys_main
     movs r0, #0
     ldr r2, =v_20007FA8
     strh r0, [r2]                           @ interval 0: counter = 0 (0x08024C70)
-    .if LOOP_V205 == 0
     b .Lmain_log_trig                       @ IMP-21: the trigger test of the second
-    .else
-    b .Lmain_apo
-    .endif
 .Lmain_log_count:                           @ interval > 0: count seconds (0x08024C8C..0x08024CAC)
     ldr r2, =v_20007FA8
     CRIT_ENTER r3                           @ 0x20007FA8 is also incremented by sys_tim2_isr (DESIGN.md 3.4)
@@ -207,26 +201,15 @@ FUNC sys_main
     CRIT_EXIT r3
     uxth r0, r0
     cmp r0, r1
-    .if LOOP_V205 == 0
     blo .Lmain_log_trig                     @ counter < interval (0x08024CA0 bcc)
     movs r0, #0
     strh r0, [r2]                           @ counter = 0
     bl log_trig_interval                    @ IMP-21: log-write request (0x08024CAC) as the trigger allows
 .Lmain_log_trig:
     bl log_trig_second                      @ IMP-21: tr-Ch change test (logging on, not in auto-hold stage 2)
-    .else
-    blo .Lmain_apo                          @ counter < interval (0x08024CA0 bcc)
-    movs r0, #0
-    strh r0, [r2]                           @ counter = 0
-    movs r0, #1
-    ldr r1, =v_20007FE2
-    strb r0, [r1]                           @ log-write request (0x08024CAC)
-    .endif
 .Lmain_apo:
     bl pwr_apo_second                       @ APO block 0x08024CAE..0x08024D1A (PWR)
-    .if LOOP_V205 == 0
     bl pwr_bl_second                        @ IMP-07: backlight auto-off countdown, same 1 s flag (PWR, src/pwr/backlight.s)
-    .endif
     @ 0x200080E6 = (APO counter < 60) (0x08024D1C..0x08024D30)
     ldr r0, =apo_countdown                  @ 0x20000230 (u16)
     ldrh r0, [r0]
@@ -246,19 +229,15 @@ FUNC sys_main
     ldrb r1, [r1]
     tst r0, r1
     beq .Lmain_step11
-    .if LOOP_V205 == 0
     @ IMP-06 (W8_to_W1.md item 3): while the step-12 write machine is between two attempts (log_write_state != 0)
     @ no record is taken.  In v2.05 the loop is frozen during a write, so no record is taken then either; taking
     @ records between attempts could wrap the 60-slot ring over rows that are still pending.
     ldr r0, =log_write_state
     ldrb r0, [r0]
     cbnz r0, .Lmain_step11                  @ a write is in progress: skip the record
-    .endif
     bl fn_08010B64
 .Lmain_step11:
-    .if LOOP_V205 == 0
     bl bft_poll                             @ IMP-28: Bluetooth file transfer while the SETUP page Ld is shown
-    .endif
     @ step 11: BLE command received
     ldr r0, =v_20008030
     ldrb r0, [r0]
@@ -266,7 +245,6 @@ FUNC sys_main
     bl fn_0800C332                          @ 0x08024D56
 .Lmain_step12:
     @ step 12: SD log write
-    .if LOOP_V205 == 0
     @ IMP-06 (LOG, W8_to_W1.md item 3): the write is a state machine, one v2.05 session attempt (log_session_once) per
     @ pass, so a failing card no longer blocks the loop for up to 40 attempts in a row.  The attempt order, the retry
     @ counts and the error handling below are v2.05's (0x08024D5A..0x08024D7C).  The request flag 0x2000801C stays
@@ -283,12 +261,6 @@ FUNC sys_main
     cbz r0, .Lmain_step13
     ldr r0, =log_write_result
     ldrb r0, [r0]                           @ 0 written, 1 failed (v2.05 r0 of 0x08024D62)
-    .else
-    ldr r0, =v_2000801C
-    ldrb r0, [r0]
-    cbz r0, .Lmain_step13
-    bl fn_0801D126                          @ 0x08024D62, r0 = error
-    .endif
     cbz r0, .Lmain_s12_clear
     movs r0, #0
     bl fn_08010AF8                          @ OF-61: log_stop(0): range freeze undone, counters, stop time and MEM view window
@@ -344,10 +316,8 @@ FUNC sys_main
     cbz r0, .Lmain_end
     bl enter_stop_and_reinit                @ 0x08024DDA
 .Lmain_end:
-    .if LOOP_V205 == 0
     wfi                                     @ IMP-06: sleep until the next interrupt (TIM3 at least every
                                             @ 0.996 ms); v2.05 never sleeps
-    .endif
     b .Lmain_loop
 ENDFUNC sys_main
 
@@ -358,21 +328,15 @@ ENDFUNC sys_main
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main
-@ Spec     : DESIGN.md 7.1: baseline (LOOP_V205 = 1) runs the v2.05 window fn_0800EA3A to completion here;
-@            production calls bootwin_start and lets the main loop call bootwin_step once per pass after step 4
+@ Spec     : DESIGN.md 7.1: calls bootwin_start and lets the main loop call bootwin_step once per pass after step 4
 @            (IMP-02); interface of the CAL module (firmware/requests/W7_to_W1.md item 4)
 @ -----------------------------------------------------------------------------
 FUNC sys_bootwin_begin
     push {r3, lr}
-    .if LOOP_V205
-    bl fn_0800EA3A                          @ the v2.05 window, blocking (CAL; it consumes the 10 ms flag and
-                                            @ calls the key processing itself, as v2.05)
-    .else
     bl bootwin_start                        @ window opened (CAL)
     movs r0, #1
     ldr r1, =sys_bootwin_open
     strb r0, [r1]                           @ the loop steps the window from now on
-    .endif
     pop {r3, pc}
 ENDFUNC sys_bootwin_begin
 

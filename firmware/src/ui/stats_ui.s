@@ -14,7 +14,6 @@
 @ while MIN/MAX is on.  Switching MIN/MAX on shows page n (fn_08015974).  The time pages tHI (34) and tLo (35) of
 @ ui/mmtime.s follow Sd and share this gating, the redraw request and the sub display drawer (labels "tHI", "tLo").
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -26,7 +25,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ UI_ST_ITEM_N,        32            @ setup item of the page n
     .equ UI_ST_ITEM_SD,       33            @ setup item of the page Sd
@@ -256,4 +254,3 @@ ENDFUNC ui_stats_page
 
     .ltorg
 
-    .endif

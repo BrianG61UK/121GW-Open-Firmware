@@ -14,7 +14,6 @@
     .include "macros.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
     .include "ff16.inc"
 
     .section .text.ff16.file2, "ax", %progbits
@@ -705,4 +704,3 @@ FUNC ff16_f_utime
     pop {r4, r5, r6, pc}
 ENDFUNC ff16_f_utime
 
-    .endif

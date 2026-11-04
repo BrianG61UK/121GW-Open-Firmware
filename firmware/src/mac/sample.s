@@ -19,7 +19,7 @@
 @ value that v2.05 would not have produced: ACV in AC+DC (its phases combine their own value) and the
 @ burden-voltage phase of the current modes (va_channel = 1 with the burden display on).
 @
-@ Not in the baseline build (LOOP_V205 = 1): v2.05 has no per-sample ranging.
+@ v2.05 has no per-sample ranging (IMP-01).
 @ =============================================================================
 
     .syntax unified
@@ -29,7 +29,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .section .text.mac, "ax", %progbits
 
@@ -132,4 +131,3 @@ ENDFUNC mac_sample_precheck
     .global mac_ps_done
 mac_ps_done: .space 1                       @ 1 = sample_value of this conversion is in 0x20007D68 (consumed by the AC handlers)
 
-    .endif

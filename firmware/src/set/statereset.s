@@ -69,7 +69,6 @@ FUNC fn_08024DE0
     bl fn_08011394                          @ 08024E12  load the continuity threshold code
     bl fn_080113DC                          @ 08024E16  load the VA "bd" option
     bl fn_08011410                          @ 08024E1A  load the buzzer setting
-    .if LOOP_V205 == 0
     bl set_bl_load                          @ IMP-07: load the backlight auto-off setting (EEPROM 0x017)
     bl set_dbm_load                         @ IMP-08: load the dBm reference (EEPROM 0x011)
     bl set_bt_load                          @ IMP-09: load the Bluetooth frame rate (EEPROM 0x015)
@@ -82,20 +81,12 @@ FUNC fn_08024DE0
     bl set_lp_load                          @ IMP-24: current-loop percent view of DCmA (EEPROM 0x028)
     bl set_rtd_load                         @ IMP-25: RTD temperature view of OHM (EEPROM 0x029)
     bl set_btrim_load                       @ IMP-27: battery voltage trim (EEPROM 0x02A)
-    .endif
     bl fn_08010F4C                          @ 08024E1E  load the date code from EEPROM 0x001
     bl fn_08010F8C                          @ 08024E22  load the ID number from EEPROM 0x003
     bl fn_08010BE8                          @ 08024E26  logging state reset at boot
     bl fn_0800ED26                          @ 08024E2A  reload the auto-power-off counter
-    .if LOOP_V205 == 0
     bl pwr_bl_reset                         @ IMP-07: backlight flag and countdown follow PE8 (low after power-on and STOP wake)
     bl pwr_bl_restore                       @ IMP-07: switch the backlight on again if it was on at the last MODE long press
-    .else
-    movs r0, #0
-    ldr r1, =v_2000807B
-    strb r0, [r1]                           @ OF-55: the backlight flag follows PE8, which is low after power-on and STOP wake
-                                            @ (v2.05 keeps the flag: the first MODE long press after a wake did nothing visible)
-    .endif
     movs r0, #0x0                           @ 08024E2E
     ldr.w r1, =set_bat_low                  @ 08024E30
     strb r0, [r1, #0x0]                     @ 08024E32  set_bat_low = 0

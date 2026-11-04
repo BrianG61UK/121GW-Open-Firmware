@@ -10,7 +10,6 @@
 @
 @ IMP-04 (production): the decision is made on every conversion because the loop services every conversion (HY).  IMP-05
 @ (production): continuity codes 4..15 (ARS 9) in addition to the v2.05 codes 0..3; the thresholds are table driven (mres_beep_thr).
-@ Baseline (LOOP_V205 = 1) keeps the v2.05 ladders for codes 0..3.
 @ =============================================================================
 
     .syntax unified
@@ -68,7 +67,6 @@ FUNC fn_080078D8
     movs r4, r0                        @ 0x080078DA
     bl fn_08007940                     @ 0x080078DC
     movs r5, r0                        @ 0x080078E0
-.if LOOP_V205 == 0
     @ IMP-05: direction from the code table: bit n of MRES_BEEP_UP_MASK = 1 -> UP code (beep while v >= threshold)
     ldr r0, =v_200080B6
     ldrb r0, [r0]
@@ -81,16 +79,6 @@ FUNC fn_080078D8
     lsls r1, r1, #31                        @ bit 0 (the code's UP bit) to the sign flag
     bpl .L080078F6                          @ DN code
     b .L08007914                            @ UP code
-.else
-    ldr r0, =v_200080B6                     @ v2.05 0x080078E2: codes 0 and 2 are DN, 1 and 3 UP
-    ldrb r0, [r0]
-    cmp r0, #0
-    beq .L080078F6
-    ldr r0, =v_200080B6
-    ldrb r0, [r0]
-    cmp r0, #2
-    bne .L08007914
-.endif
 .L080078F6:                              @ reached from 0x080078EA beq
     @ ---- DN code: v > t (unsigned): off; else on (v2.05 0x080078F6) ----
     cmp r5, r4                         @ 0x080078F6
@@ -98,11 +86,7 @@ FUNC fn_080078D8
     movs r0, #1                        @ 0x080078FA
     ldr r1, =v_200080B5                @ 0x080078FC pool 0x080082D0 = 0x200080B5
     strb r0, [r1, #0]                  @ 0x08007900
-    .if LOOP_V205 == 0
     bl set_bh_ticks                    @ IMP-16: hold time of the page bH (100 ticks by default, as v2.05)
-    .else
-    movs r0, #100                      @ 0x08007902
-    .endif
     bl pe7_on_with_timeout             @ 0x08007904
     b .L08007930                       @ 0x08007908
 .L0800790A:                              @ reached from 0x080078F8 bcc
@@ -117,11 +101,7 @@ FUNC fn_080078D8
     movs r0, #1                        @ 0x08007918
     ldr r1, =v_200080B5                @ 0x0800791A pool 0x080082D0 = 0x200080B5
     strb r0, [r1, #0]                  @ 0x0800791E
-    .if LOOP_V205 == 0
     bl set_bh_ticks                    @ IMP-16: hold time of the page bH (100 ticks by default, as v2.05)
-    .else
-    movs r0, #100                      @ 0x08007920
-    .endif
     bl pe7_on_with_timeout             @ 0x08007922
     b .L08007930                       @ 0x08007926
 .L08007928:                              @ reached from 0x08007916 bcc
@@ -133,74 +113,6 @@ FUNC fn_080078D8
     .ltorg
 ENDFUNC fn_080078D8
 
-.if LOOP_V205
-@ -----------------------------------------------------------------------------
-@ fn_08007940 - continuity threshold for the current setting and state
-@ Replaces : 0x08007940 FUN_08007940 (v2.05)
-@ In       : - (reads 0x200080B5 state, 0x200080B6 code)
-@ Out      : r0 = threshold in 0.01 ohm
-@ Clobbers : r0, r1, flags
-@ Context  : main only
-@ RAM      : reads  0x200080B5, 0x200080B6
-@ Spec     : analysis/hy3131_modes_misc.md 6.3 table
-@ Deviation: none (baseline)
-@ v2.05 codes: 0 DN 30 (start 3000, continue 3500), 1 UP 30 (3000 / 2500), 2 DN300 (30000 / 30500), 3 UP300 (30000 / 29500); other codes
-@ fall through to 3000.
-@ -----------------------------------------------------------------------------
-FUNC fn_08007940
-    movw r0, #3000                     @ 0x08007940
-    ldr r1, =v_200080B5                @ 0x08007944 pool 0x080082D0 = 0x200080B5
-    ldrb r1, [r1, #0]                  @ 0x08007948
-    cmp r1, #0                         @ 0x0800794A
-    beq .L08007984                     @ 0x0800794C
-    ldr r1, =v_200080B6                @ 0x0800794E pool 0x08008460 = 0x200080B6
-    ldrb r1, [r1, #0]                  @ 0x08007952
-    cmp r1, #0                         @ 0x08007954
-    beq .L08007964                     @ 0x08007956
-    cmp r1, #2                         @ 0x08007958
-    beq .L08007974                     @ 0x0800795A
-    bcc .L0800796C                     @ 0x0800795C
-    cmp r1, #3                         @ 0x0800795E
-    beq .L0800797C                     @ 0x08007960
-    b .L080079A6                       @ 0x08007962
-.L08007964:                              @ reached from 0x08007956 beq
-    movw r1, #3500                     @ 0x08007964
-    movs r0, r1                        @ 0x08007968
-    b .L080079A6                       @ 0x0800796A
-.L0800796C:                              @ reached from 0x0800795C bcc
-    movw r1, #2500                     @ 0x0800796C
-    movs r0, r1                        @ 0x08007970
-    b .L080079A6                       @ 0x08007972
-.L08007974:                              @ reached from 0x0800795A beq
-    movw r1, #30500                    @ 0x08007974
-    movs r0, r1                        @ 0x08007978
-    b .L080079A6                       @ 0x0800797A
-.L0800797C:                              @ reached from 0x08007960 beq
-    movw r1, #29500                    @ 0x0800797C
-    movs r0, r1                        @ 0x08007980
-    b .L080079A6                       @ 0x08007982
-.L08007984:                              @ reached from 0x0800794C beq
-    ldr r1, =v_200080B6                @ 0x08007984 pool 0x08008460 = 0x200080B6
-    ldrb r1, [r1, #0]                  @ 0x08007988
-    cmp r1, #0                         @ 0x0800798A
-    cmp r1, #1                         @ 0x0800798C
-    bls .L08007998                     @ 0x0800798E
-    subs r1, r1, #2                    @ 0x08007990
-    cmp r1, #1                         @ 0x08007992
-    bls .L080079A0                     @ 0x08007994
-    b .L080079A6                       @ 0x08007996
-.L08007998:                              @ reached from 0x0800798E bls
-    movw r1, #3000                     @ 0x08007998
-    movs r0, r1                        @ 0x0800799C
-    b .L080079A6                       @ 0x0800799E
-.L080079A0:                              @ reached from 0x08007994 bls
-    movw r1, #30000                    @ 0x080079A0
-    movs r0, r1                        @ 0x080079A4
-.L080079A6:                              @ reached from 0x08007962 b, 0x0800796A b, 0x08007972 b, 0x0800797A b, 0x08007982 b, 0x08007996 b, 0x0800799E b
-    bx lr                              @ 0x080079A6
-    .ltorg
-ENDFUNC fn_08007940
-.else
 @ -----------------------------------------------------------------------------
 @ fn_08007940 (production) - continuity threshold from the code table
 @ Replaces : 0x08007940 FUN_08007940 (v2.05)
@@ -233,9 +145,7 @@ FUNC fn_08007940
     bx lr
     .ltorg
 ENDFUNC fn_08007940
-.endif
 
-.if LOOP_V205 == 0
     .section .rodata.mres.beep, "a", %progbits
     .balign 4
 @ Continuity thresholds in 0.01 ohm per code: {start, continue}.  Codes 0..3: v2.05 0x08007940 (3000/0xDAC, 3000/0x9C4,
@@ -258,4 +168,3 @@ mres_beep_thr:
     .hword 5000, 4500                       @ 13 UP 50
     .hword 10000, 9500                      @ 14 UP100
     .hword 20000, 19500                     @ 15 UP200
-.endif

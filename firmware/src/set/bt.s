@@ -12,7 +12,6 @@
 @ Page text (five characters, font of analysis/lcd_map.md 2: 'b' = 0xBC, 't' = 0xAC):
 @     "bt  2"   "bt  4"   "bt 10"   "bt 20"
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -24,7 +23,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ SET_BT_EEPROM,       0x015         @ EEPROM offset of the rate code (EEPROM_MAP.md 4.1)
     .equ SET_BT_CODE_MAX,     3             @ highest valid code = 20 frames per second
@@ -137,4 +135,3 @@ ENDFUNC set_bt_draw
 
     .ltorg
 
-    .endif

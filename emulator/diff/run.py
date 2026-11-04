@@ -24,7 +24,7 @@ run timeout naming the scenario and the image, so a hang ends the run with a fai
                 (emu/safety.py) in learning mode and writes emulator/diff/hy3131_whitelist.
 --safety-check  runs boot_v on the reference image (no violation allowed) and on one-change copies of it
                 (SAFETY_MUTATIONS), each of which must trip its hardware-safety check.
---build         the build mode of the candidate (baseline = LOOP_V205=1, production = LOOP_V205=0, firmware/DESIGN.md 3.5):
+--build         the build mode of the candidate (baseline = the like-v2.05 build of the branch like-v2.05, LOOP_V205=1; production = the fast build of main; firmware/DESIGN.md 3.5):
                 allowlist entries tagged "build == ..." (emu/allowlist.py) are used only for the same build; without
                 the option they are not used, so a candidate is compared as strictly as possible.
 Hardware safety: every run is watched by emu/safety.py (attached by app.Emulator.build); a violation stops that run
@@ -562,7 +562,7 @@ def main(argv=None):
                     help='directory with bootloader.bin and option.bytes (and images given by name)')
     ap.add_argument('--deviations', help='deviation allowlist (default firmware/deviations.txt when it exists)')
     ap.add_argument('--build', choices=allowlist.BUILDS,
-                    help='build mode of the candidate (baseline = LOOP_V205=1, production = LOOP_V205=0): selects the '
+                    help='build mode of the candidate (baseline = the like-v2.05 build of its branch, production = the fast build): selects the '
                          'allowlist entries tagged "build == ..." (none are used when not given)')
     ap.add_argument('--tol', action='append', metavar='STREAM=SECONDS', help='time tolerance of a stream')
     ap.add_argument('--seed', type=int, default=1, help='HY3131 noise seed used for every run (default 1)')

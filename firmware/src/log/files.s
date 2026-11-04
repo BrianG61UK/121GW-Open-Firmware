@@ -30,19 +30,10 @@
 @ names of the v2.05 variables used in this file (addresses unchanged, DESIGN.md 5.1)
     .equ log_buf,                 v_20001240            @ 0x20001240 byte buffer in which one flush of rows is assembled before f_write (also the cal.bin buffer)
     .equ fat_fs_obj,              v_20006830            @ 0x20006830 FATFS work area of drive 0 (registered by f_mount)
-    .if LOOP_V205 == 0
     .equ log_fil,                 ff16_fil_a            @ production image: FatFs R0.16 objects (FIL 552 bytes, DIR 44: larger than the v2.05 areas) in .bss_port (ff16_api.s, IMP-29)
     .equ log_fil_new,             ff16_fil_b
-    .else
-    .equ log_fil,                 v_20006A60            @ 0x20006A60 FIL object of the log file (also used by calbin_save/calbin_load)
-    .equ log_fil_new,             v_20006C84            @ 0x20006C84 FIL object used by log_create_file when it creates a file from a previous one (dead branch in v2.05)
-    .endif
     .equ log_verify_buf,          v_20006EA8            @ 0x20006EA8 0x200-byte read-back buffer of log_verify_file (also cal.bin read-back)
-    .if LOOP_V205 == 0
     .equ log_dir,                 ff16_dir_a            @ DIR object of the root scan (production: R0.16 DIR, 44 bytes, in .bss_port, IMP-29)
-    .else
-    .equ log_dir,                 v_20007B1C            @ 0x20007B1C DIR object used to scan the root directory for existing log files
-    .endif
     .equ log_finfo,               v_20007B38            @ 0x20007B38 FILINFO (fsize u32, fdate u16, ftime u16, fattrib u8, fname[13]) of the scan and of f_utime/f_stat
     .equ log_name_buf,            v_20007BD0            @ 0x20007BD0 file name buffer "YYMMDDnn.csv" (12 characters + NUL)
     .equ sd_csd,                  v_20007BF0            @ 0x20007BF0 CSD register of the card (4 words, word 0 = bits 127..96)
@@ -219,8 +210,8 @@ ENDFUNC log_write_step
 
 @ -----------------------------------------------------------------------------
 @ log_write_session - the v2.05 blocking form: start and step until done
-@ Replaces : 0x0801D126 FUN_0801D126 (v2.05), canonical symbol fn_0801D126; called by log_stop (0x08010B3E) and, in baseline
-@            builds (LOOP_V205 = 1), by the main loop step 12 (0x08024D62)
+@ Replaces : 0x0801D126 FUN_0801D126 (v2.05), canonical symbol fn_0801D126; called by log_stop (0x08010B3E); v2.05 also calls
+@            it from the main loop step 12 (0x08024D62), which here runs log_write_start / log_write_step
 @ In       : -
 @ Out      : r0 = 0 written, 1 failed (log_error_code and ui_refresh_request set on failure, as v2.05)
 @ Clobbers : r1-r3, r12, flags (AAPCS); r4 preserved
@@ -1551,12 +1542,8 @@ FUNC log_take_max_main
     ldr     r0, [r0]                        @ 0801DB5A r0 = u32 [log_view_value1]
     ldr.w   r1, =log_max_value              @ 0801DB5C r1 = &log_max_value
     str     r0, [r1]                        @ 0801DB60 u32 [log_max_value] = r0
-    .if LOOP_V205 == 0
     ldr     r0, =log_max_time                @ production: keep the date and time of the row (log/mmtime.s)
     b       log_mm_save                     @ tail call, returns to the caller
-    .else
-    bx      lr                              @ 0801DB62 return
-    .endif
 ENDFUNC log_take_max_main
     .ltorg
 
@@ -1588,12 +1575,8 @@ FUNC log_take_min_main
     ldr     r0, [r0]                        @ 0801DB8A r0 = u32 [log_view_value1]
     ldr.w   r1, =log_min_value              @ 0801DB8C r1 = &log_min_value
     str     r0, [r1]                        @ 0801DB90 u32 [log_min_value] = r0
-    .if LOOP_V205 == 0
     ldr     r0, =log_min_time                @ production: keep the date and time of the row (log/mmtime.s)
     b       log_mm_save                     @ tail call, returns to the caller
-    .else
-    bx      lr                              @ 0801DB92 return
-    .endif
 ENDFUNC log_take_min_main
     .ltorg
 

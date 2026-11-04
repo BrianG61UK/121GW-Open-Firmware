@@ -4,7 +4,7 @@
 @ Replaces fn_08016D34 (0x08016D34, called once per main-loop pass), fn_08016E08 (main value), fn_0800D664 / fn_0800D6E0
 @ (VA sub-display alternation), fn_0800E848 / fn_0800EA24 (high-voltage warning flags), fn_080153AC (end of MEM view) and
 @ fn_08015934 (held value).  The instruction streams are v2.05's; both builds add the blank / dash request ui_blank_req
-@ in fn_08016E08 (OF-30; request 1 of OF-32 / IMP-01 rule P5 is written in production only); production mode (LOOP_V205 = 0) adds
+@ in fn_08016E08 (OF-30; request 1 of OF-32 / IMP-01 rule P5 is written in production only); the port also adds
 @   - the call of ui_bootwin_gate (IMP-02) at the start of fn_08016D34 and of lcd_commit_retry (IMP-06) at its end;
 @   - the power-on window rules of IMP-02 (ui_bootwin_gate, ui_version_sub, ui_request_redraw): while CAL's window is open the
 @     version "V-2.05" is shown on the sub display and the reading on the main digits, and nothing is drawn while a key
@@ -485,12 +485,10 @@ ENDFUNC fn_08015934
 @ -----------------------------------------------------------------------------
 FUNC fn_08016D34
     push {r7, lr}                            @ 08016D34
-    .if LOOP_V205 == 0
     bl ui_bootwin_gate                      @ IMP-02: power-on window rules (r0 = 1: a key combination screen or the lamp test owns the
                                             @ display); first, so that the lamp test is lit again before any commit of this pass
     cmp r0, #0
     bne .L08016E06                          @ draw nothing in this pass (the deferred commit is still repeated at the end)
-    .endif
     @ MEM view active (0x20007FE4 != 0): nothing is refreshed
     ldr r0, =v_20007FE4                      @ 08016D36 &MEM view active (recalled-record view)
     ldrb r0, [r0, #0]                        @ 08016D3A
@@ -546,12 +544,10 @@ FUNC fn_08016D34
     ldr r1, =v_2000805B                      @ 08016DAA &LCD commit request
     strb r0, [r1, #0]                        @ 08016DAE
 .L08016DB0:                                @ reached from 08016D8A beq (equal / zero); falls in
-    .if LOOP_V205 == 0
     ldr r0, =ui_skip_sub
     ldrb r0, [r0]
     cmp r0, #0
     bne .L08016DF0                          @ IMP-02: the window shows the version on the sub display; keep it, skip the sub-display blocks
-    .endif
     @ sub-display: redraw the units when the page code (0x20008037) differs from the last drawn one (0x20000236) or 0x20008063 is set (fn_0801A440)
     ldr r0, =v_20000236                      @ 08016DB0 &last drawn sub-display page code
     ldrb r0, [r0, #0]                        @ 08016DB4
@@ -591,13 +587,11 @@ FUNC fn_08016D34
     strb r0, [r1, #0]                        @ 08016E00
     bl lcd_commit_shadow                     @ 08016E02
 .L08016E06:                                @ reached from 08016D3E bne (not equal / non-zero); 08016DF8 beq (equal / zero); falls in
-    .if LOOP_V205 == 0
     @ IMP-06: repeat a commit that an earlier routine had to defer (UDR still set), after this pass has drawn: the shadow
     @ then holds the finished screen.  Repeated at the start of the pass, it committed the shadow half way through an apply
     @ (the old digits with the new decimal point and the sub decimal point cleared by fn_0800A560: "2300.0" / " 5000" for
     @ one frame at a range change).  Also while the MEM view is shown or a window screen owns the display.
     bl lcd_commit_retry
-    .endif
     pop {r0, pc}                             @ 08016E06
 ENDFUNC fn_08016D34
     .ltorg
@@ -627,10 +621,8 @@ FUNC fn_08016E08
     movs r0, #0                              @ 08016E12
     ldr r1, =v_2000805F                      @ 08016E14 &display request (second)
     strb r0, [r1, #0]                        @ 08016E18
-    .if LOOP_V205 == 0
     bl ui_stats_tick                         @ IMP-14: keep the statistics page current (new count, MIN/MAX ended)
     bl lt_tick                               @ IMP-20: limit test verdict, end on a mode change, pages Lo / HI / verdict
-    .endif
     @ OHM (mode 9) in auto range, outside calibration, MIN/MAX off: the first updates after a range change are skipped (counter 0x2000805A set by the apply)
     ldr r0, =meter_mode                      @ 08016E1A &meter_mode
     ldrb r0, [r0, #0]                        @ 08016E1E
@@ -862,14 +854,12 @@ FUNC fn_08016E08
     uxtb r0, r0                              @ 08017018
     cmp r0, #0                               @ 0801701A
     bne .L0801702E                           @ 0801701C
-    .if LOOP_V205 == 0
     bl ui_mmt_view
     cbz r0, .Lrf_ol_v205                    @ IMP-21: not the page tHI / tLo while MIN/MAX is on
     movs r0, #0
     bl ui_mmt_draw                          @ IMP-21: the time of the extreme in place of "OFL"
     b .Lrf_ol_clear
 .Lrf_ol_v205:
-    .endif
     movs r0, #0                              @ 0801701E
     bl fn_080199B4                           @ 08017020
 .Lrf_ol_clear:
@@ -878,7 +868,6 @@ FUNC fn_08016E08
     strb r0, [r1, #0]                        @ 0801702A
     b .L08017090                             @ 0801702C
 .L0801702E:                                @ reached from 0801701C bne (not equal / non-zero)
-    .if LOOP_V205 == 0
     bl ui_stats_view
     cbz r0, .Lrf_no_sd                      @ IMP-14: not the page Sd while MIN/MAX is on
     bl ui_stats_draw                        @ IMP-14: the standard deviation on the main digits
@@ -905,7 +894,6 @@ FUNC fn_08016E08
     bl ui_rtd_draw                          @ IMP-25: the resistance as the temperature of a Pt100 / Pt1000
     b .L08017090
 .Lrf_no_rtd:
-    .endif
     @ r4 = displayed reading D (0x20007D64); inside -99999..99999 it is drawn directly
     ldr r0, =v_20007D64                      @ 0801702E &displayed reading D (signed counts)
     ldr r0, [r0, #0]                         @ 08017032
@@ -989,7 +977,6 @@ FUNC ui_value_valid
     .ltorg
 ENDFUNC ui_value_valid
 
-    .if LOOP_V205 == 0
 @ -----------------------------------------------------------------------------
 @ ui_bootwin_gate - production power-on window: decide what the display refresh may draw
 @ Replaces : nothing (new, IMP-02, DESIGN.md 7.1; request W7_to_W3.md item 1)
@@ -1229,4 +1216,3 @@ LFUNC ui_request_redraw
     bx lr
     .ltorg
 ENDFUNC ui_request_redraw
-    .endif

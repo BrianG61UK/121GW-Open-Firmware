@@ -235,10 +235,8 @@ FUNC debounce_pg0_7_onehot
     movs r0, #1                         @ 08014A0A
     ldr r1, =dial_changed               @ 08014A0C
     strb r0, [r1]                       @ 08014A10
-    .if LOOP_V205 == 0
     bl pwr_bl_wake                      @ IMP-07: a backlight switched off by the timer comes on again (the dial acts normally)
     bl pwr_bl_restart                   @ IMP-07: a new dial position restarts the backlight auto-off countdown
-    .endif
 @ reached from 080149B0 b (jump)
 @              and from 080149C8 blt (signed <) after cmp r0, #5
 @              and from 080149DE beq (equal / zero) after cmp r0, #0

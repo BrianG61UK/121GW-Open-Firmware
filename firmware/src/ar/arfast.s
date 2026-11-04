@@ -10,8 +10,8 @@
 @                           families enabled in config.inc: ARS 5.2 P4)
 @   ar_sample(value, raw)   called by MDC / MAC / MRES after each conversion: per-sample over- and under-range
 @                           detection with K = 2 confirmation and saturation test (ARS 5.2 P2), direct target range
-@                           (ARS 5.2 P3), and the conversion discard of P4.  Production image only; the baseline
-@                           image (LOOP_V205 = 1) keeps the v2.05 algorithm alone and ar_sample accepts everything.
+@                           (ARS 5.2 P3), and the conversion discard of P4 (v2.05 has none of it: the like-v2.05 build keeps
+@                           the v2.05 algorithm alone)
 @
 @ Why the final range equals the one v2.05 reaches (ARS 5.1 invariant 1): v2.05 moves one range per decision and
 @ re-measures; every range is ten times the previous one in counts (the table 0x08025A3C: 50 000 counts per range
@@ -155,46 +155,6 @@ LFUNC ar_thr_low
     bx lr
 ENDFUNC ar_thr_low
 
-    .if LOOP_V205
-
-@ -----------------------------------------------------------------------------
-@ ar_apply - end of an apply, baseline image
-@ Replaces : nothing (new; the v2.05 algorithm has no apply hook, OF-20 and OF-30 are the fixes)
-@ In       : r0 = mode, r1 = range (not used here)
-@ Out      : -
-@ Clobbers : r2, r3
-@ Context  : main (tail call of fn_0800DB48)
-@ RAM      : writes 0x200080F8 (mode_ol_latch) = 0; ui_blank_req = 0 in every mode but LowZ
-@ Spec     : ORIGINAL_FIRMWARE_ISSUES.md OF-20, OF-30
-@ Deviation: OF-20, OF-30
-@ The dashes request of the LowZ detector (OF-30) belongs to mode 0 only: an apply of any other mode withdraws it, as the
-@ production ar_apply does; in mode 0 (also the AC/DC re-apply every 5 means) the byte is owned by the detector.
-@ -----------------------------------------------------------------------------
-FUNC ar_apply
-    movs r3, #0
-    ldr r2, =ar_ol_latch
-    strb r3, [r2]                           @ the overload hysteresis starts clear at every apply (OF-20)
-    uxtb r0, r0
-    cbz r0, 1f                              @ LowZ: the detector owns ui_blank_req
-    ldr r2, =ui_blank_req
-    strb r3, [r2]                           @ OF-30: another mode: no dashes pending
-1:  bx lr
-ENDFUNC ar_apply
-
-@ -----------------------------------------------------------------------------
-@ ar_sample - per-sample ranging, baseline image: v2.05 has none
-@ Replaces : nothing
-@ In       : r0 = calibrated value, r1 = raw AD1 code (ignored)
-@ Out      : r0 = 0 (accept the sample)
-@ Clobbers : r0
-@ Context  : main
-@ -----------------------------------------------------------------------------
-FUNC ar_sample
-    movs r0, #0
-    bx lr
-ENDFUNC ar_sample
-
-    .else
 
 @ -----------------------------------------------------------------------------
 @ ar_result_seen - a post-processed result exists: end the blank request of FREQ, PULSE, DUTY and BEEP
@@ -650,4 +610,3 @@ FUNC ar_sample
 ENDFUNC ar_sample
     .ltorg
 
-    .endif

@@ -442,20 +442,16 @@ FUNC fn_0800ED64
     ldr r1, =v_2000001C                @ 0x0800EE32 pool 0x0800F8D4 = 0x2000001C
     str r0, [r1, #0]                   @ 0x0800EE36
 .L0800EE38:                              @ reached from 0x0800EE2C b
-.if LOOP_V205 == 0
     ldr r2, =mdc_first_mean
     ldrb r4, [r2]                           @ the same row is written again: not a configuration change, keep the P5 request as it is (r4 is free here)
-.endif
     ldr r0, =meter_range               @ 0x0800EE38 pool 0x0800F6B8 = 0x2000803D
     ldrb r1, [r0, #0]                  @ 0x0800EE3C
     ldr r0, =meter_mode                @ 0x0800EE3E pool 0x0800F2F8 = 0x2000803C
     ldrb r0, [r0, #0]                  @ 0x0800EE42
     @ apply the mode again so that HY writes the new preset
     bl fn_0800B974                     @ 0x0800EE44
-.if LOOP_V205 == 0
     ldr r2, =mdc_first_mean
     strb r4, [r2]                           @ undo the arming by fn_0800B974 (IMP-01 P5)
-.endif
 .L0800EE48:                              @ reached from 0x0800ED6E bne, 0x0800EDB4 bne, 0x0800EDBE beq, 0x0800EDF0 bcs
     pop {r4, pc}                       @ 0x0800EE48
     .ltorg

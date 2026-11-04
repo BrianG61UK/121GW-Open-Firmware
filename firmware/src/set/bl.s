@@ -16,7 +16,6 @@
 @     10..99   "bL 10" .. "bL 99"   minutes
 @ (the value is in minutes; the five characters are b, L, a blank and the two-character field)
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -28,7 +27,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ SET_BL_EEPROM,       0x017         @ EEPROM offset of the setting (EEPROM_MAP.md 4.1)
     .equ SET_BL_CODE_MAX,     100           @ highest valid code = 99 minutes
@@ -206,4 +204,3 @@ ENDFUNC set_bl_draw
 
     .ltorg
 
-    .endif

@@ -400,15 +400,8 @@ FUNC build_status_packet_19b
 .L0800C796:  @ reached from 0800C780 blt (meter_mode <s 9), 0800C78A beq (meter_mode == 12 (0xC))
     adds r5, #0x10                          @ 0800C796  r5 = r5 + 16 (0x10)
 .L0800C798:  @ reached from 0800C794 bne (meter_mode != 5)
-    .if LOOP_V205 == 0
     bl lcd_bar_negative                     @ IMP-15: the bar sign of the LCD (no bar lit: the sign of the digits)
     cbz r0, .L0800C7A4
-    .else
-    ldr.w r0, =ble_bar_value                @ 0800C798
-    ldr r0, [r0, #0x0]                      @ 0800C79C  r0 = ble_bar_value
-    cmp r0, #0x0                            @ 0800C79E  compare ble_bar_value with 0
-    bpl .L0800C7A4                          @ 0800C7A0  if ble_bar_value >=0 0
-    .endif
     adds r5, r5, #0x4                       @ 0800C7A2  r5 = r5 + 4
 .L0800C7A4:  @ reached from 0800C7A0 bpl (ble_bar_value >=0 0)
     ldr.w r0, =ble_bar_scale                @ 0800C7A4

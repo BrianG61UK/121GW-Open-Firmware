@@ -2,8 +2,8 @@
 
     python3 -I .github/scripts/check_fw_version.py TAG [firmware/src/inc/config.inc]
 
-The production image shows "F-A.BC" (FW_VER_C0..C4 of the LOOP_V205 == 0 branch of config.inc: 'F', '-', A, B, C, the
-decimal point after the third character).  Exit status 1 with the reason when the tag and the characters differ, or when
+The firmware shows "F-A.BC" (FW_VER_C0..C4 of config.inc: 'F', '-', A, B, C, the decimal point after the third
+character).  Exit status 1 with the reason when the tag and the characters differ, or when
 the tag cannot be shown in that form (A, B and C must be single digits).  Standard library only.
 """
 import re
@@ -18,8 +18,7 @@ def main(argv):
         print(f'check_fw_version: tag {tag!r} is not vA.B.C with single digits, the form the meter can show (F-A.BC)')
         return 1
     text = open(path).read()
-    branch = text.split('.if LOOP_V205 == 0', 1)[1].split('.else', 1)[0]
-    chars = dict(re.findall(r"\.equ FW_VER_C(\d), '(.)'", branch))
+    chars = dict(re.findall(r"\.equ FW_VER_C(\d), '(.)'", text))
     shown = ''.join(chars.get(str(i), '?') for i in range(5))
     want = 'F-' + ''.join(m.groups())
     if shown != want:

@@ -27,7 +27,6 @@
 @ 647 / 646 uV), so there one count is about 0.2 degC and the microvolt accuracy of the input dominates the reading.
 @ The cold-junction routine reads entries 18..32 (-30..110 degC), present in every table.
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -38,7 +37,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ MTMP_TC_TYPE_MAX,    5             @ highest type code (S)
 
@@ -93,4 +91,3 @@ ENDFUNC mtmp_tc_select
 
     .ltorg
 
-    .endif

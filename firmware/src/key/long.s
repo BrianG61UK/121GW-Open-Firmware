@@ -138,11 +138,9 @@ FUNC handle_pg8_15_long_press
 @ Long beep
 @ reached from 08016236 beq (equal / zero) after cmp r0, #1
 .Llp_key_mode:
-    .if LOOP_V205 == 0
     movs r0, #0
     ldr r1, =pwr_bl_auto
     strb r0, [r1]                       @ IMP-07: a manual switch (on or off) ends any pending wake of the auto-off timer
-    .endif
     ldr r0, =key_backlight_on           @ 080162E4
     ldrb r0, [r0]                       @ 080162E8
     cmp r0, #0                          @ 080162EA
@@ -156,9 +154,7 @@ FUNC handle_pg8_15_long_press
     mov.w r0, #0x100                    @ 080162FE
     ldr r1, =GPIOE_BASE + GPIO_BSRRL    @ 08016302
     strh r0, [r1]                       @ 08016306
-    .if LOOP_V205 == 0
     bl pwr_bl_restart                   @ IMP-07: the backlight is on: start the auto-off countdown
-    .endif
     b .Llp_mode_beep                    @ 08016308
 @ reached from 080162EC bne (not equal / non-zero) after cmp r0, #0
 .Llp_0801630A:
@@ -170,9 +166,7 @@ FUNC handle_pg8_15_long_press
     strh r0, [r1]                       @ 0801631A
 @ reached from 08016308 b (jump)
 .Llp_mode_beep:
-    .if LOOP_V205 == 0
     bl pwr_bl_remember                  @ owner PWR: remember the new state in EEPROM 0x017 bit 7 for the next power-on
-    .endif
     bl fn_0800EE5E                      @ 0801631C
     b .Llp_end                          @ 08016320
 
@@ -185,11 +179,9 @@ FUNC handle_pg8_15_long_press
     ldr r1, =key_mem_view               @ 08016328
     ldrb r1, [r1]                       @ 0801632C
     orrs r0, r1                         @ 0801632E
-    .if LOOP_V205 == 0
     ldr r1, =lt_on
     ldrb r1, [r1]
     orrs r0, r1                         @ IMP-20: no return to auto range while the limit test is on
-    .endif
     uxtb r0, r0                         @ 08016330
     cmp r0, #0                          @ 08016332
     beq .Llp_0801633C                   @ 08016334

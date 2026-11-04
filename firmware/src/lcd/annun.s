@@ -1870,12 +1870,10 @@ FUNC fn_0801A440
     orrs.w r0, r0, #524288                   @ 0801A54C
     ldr r1, =lcd_shadow                      @ 0801A550 &LCD shadow
     str r0, [r1, #0]                         @ 0801A554 w0 |= 0x80000: sub dB (SubdB; the digit-4 x slot)
-    .if LOOP_V205 == 0
     ldr r0, =set_dbm_ref                     @ IMP-08: reference code
     ldrb r0, [r0, #0]
     cmp r0, #3
     beq .L0801A6CA                           @ IMP-08: dBV: dB alone, no m
-    .endif
     ldr r0, =lcd_shadow                      @ 0801A556 &LCD shadow
     ldr r0, [r0, #0]                         @ 0801A55A
     orrs.w r0, r0, #262144                   @ 0801A55C
@@ -2191,17 +2189,6 @@ ENDFUNC fn_0801A760
 @ -----------------------------------------------------------------------------
 FUNC fn_0801A81C
     push {r4, lr}                            @ 0801A81C
-    .if LOOP_V205
-    ldr r4, =LCD_WAIT_POLLS                 @ HW-07: poll budget (r4 is free until the clear loop starts; fn_08020492 keeps it)
-.Lcl_wait:
-    movs r0, #LCD_SR_UDR                    @ v2.05 0x0801A820: wait for the previous update request to finish
-    bl fn_08020492                          @ r0 = 1 while UDR is set
-    cmp r0, #0
-    beq .Lcl_done                           @ UDR clear
-    subs r4, r4, #1
-    bne .Lcl_wait                           @ budget left: poll again
-.Lcl_done:                                  @ cleared or budget exhausted: clear the shadow anyway (it is plain RAM)
-    .endif
     @ clear the 16 words, index r4 = 0..15
 
     movs r0, #0                              @ 0801A82A
@@ -2278,11 +2265,9 @@ FUNC fn_0801A89C
     movs r0, #1                              @ 0801A90C
     ldr r1, =v_2000805B                      @ 0801A90E &LCD commit request
     strb r0, [r1, #0]                        @ 0801A912
-    .if LOOP_V205 == 0
     ldr r1, =ui_lamp_test
     strb r0, [r1]                            @ production (IMP-02): the refresh must not draw over the lamp test until the power-on
                                              @ window closes (ui_bootwin_gate); the baseline loop does not refresh during the window
-    .endif
     bx lr                                    @ 0801A914
 ENDFUNC fn_0801A89C
     .ltorg

@@ -352,7 +352,6 @@ FUNC fn_080067D6
     bl fn_08006C7A                       @ 0800691C  MAC: forced frequency expiry for small readings
 .Lmac_ac_current_sample:   @ per-sample part
     @ per-sample value (bargraph, log): not in VA modes
-.if LOOP_V205 == 0
     ldr r1, =mac_ps_done                    @ IMP-01: the per-sample value was made by mac_sample_precheck
     ldrb r0, [r1]
     cbz r0, 1f
@@ -360,7 +359,6 @@ FUNC fn_080067D6
     strb r0, [r1]                           @ consumed
     b .Lmac_ac_current_page                 @ skip the second computation
 1:
-.endif
     ldr r0, =meter_mode                  @ 08006920
     ldrb r0, [r0]                        @ 08006922  r0 = meter_mode (u8)
     cmp r0, #0xd                         @ 08006924
@@ -564,7 +562,6 @@ FUNC fn_080069B4
     strb r0, [r1]                        @ 08006A82  new_reading (u8) = 1
 .Lmac_acmv_sample:   @ per-sample part
     @ per-sample value from the latest sample: gain and frequency correction, then (OF-44) the 1 kHz filter correction
-.if LOOP_V205 == 0
     ldr r1, =mac_ps_done                    @ IMP-01: the per-sample value was made by mac_sample_precheck
     ldrb r0, [r1]
     cbz r0, 1f
@@ -572,7 +569,6 @@ FUNC fn_080069B4
     strb r0, [r1]                           @ consumed
     b 9f                                    @ skip the second computation
 1:
-.endif
     ldr r0, =v_20007D74                  @ 08006A84
     ldr r0, [r0]                         @ 08006A86  r0 = sample_in (u32)
     bl fn_08008468                       @ 08006A88  MAC: per-sample value from the latest sample (r0)
@@ -845,7 +841,6 @@ FUNC fn_08006AEC
     bne .Lmac_acv_exit                   @ 08006C34  if lowz_countdown != 5
 .Lmac_acv_sample_value:   @ compute the per-sample value
     @ per-sample value from the latest sample
-.if LOOP_V205 == 0
     ldr r1, =mac_ps_done                    @ IMP-01: the per-sample value was made by mac_sample_precheck
     ldrb r0, [r1]
     cbz r0, 1f
@@ -853,7 +848,6 @@ FUNC fn_08006AEC
     strb r0, [r1]                           @ consumed
     b .Lmac_acv_exit                        @ skip the second computation
 1:
-.endif
     ldr r0, =v_20007D74                  @ 08006C36
     ldr r0, [r0]                         @ 08006C38  r0 = sample_in (u32)
     bl fn_08008468                       @ 08006C3A  MAC: per-sample value from the latest sample (r0)

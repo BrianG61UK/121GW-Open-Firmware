@@ -3,9 +3,8 @@
 @
 @ Replaces v2.05 hy3131_poll 0x08006124, hy3131_service_irq 0x0800614E and ad1_ready_dispatch 0x080061E4.
 @
-@ Baseline (LOOP_V205 = 1): hy3131_service_irq reads the whole 0x34-byte register block per event, exactly as v2.05 (0x08006158).
-@ Production (LOOP_V205 = 0, IMP-06, DESIGN.md 6.13): the same event, but only the registers a consumer of that event reads are
-@ read, so that the 640 sps rows (BEEP, ACV r3, DCmV r1, LowZ AC; period 1.5625 ms) can be serviced every conversion.
+@ IMP-06 (DESIGN.md 6.13): v2.05 hy3131_service_irq reads the whole 0x34-byte register block per event (0x08006158); the port
+@ services the same event but reads only the registers a consumer of that event reads, so that the 640 sps rows (BEEP, ACV r3, DCmV r1, LowZ AC; period 1.5625 ms) can be serviced every conversion.
 @
 @ OF-16: the RMS event (INTF bit 4) is serviced by the INTF clear alone; v2.05 FUN_08008208 (square root, 4-sample average and
 @ four hooks that are bx lr) is not called, its results have no reader.  INTE values are unchanged (the peak rows use RMSIE as
@@ -45,7 +44,6 @@
 @ -----------------------------------------------------------------------------
 FUNC hy3131_poll
     push {r7, lr}                      @ 0x08006124
-.if LOOP_V205 == 0
     @ production: while a counter restart is pending (counter off, R20 = row & 0xFD / 0xF9) no event is serviced, so neither the
     @ INTF clear nor the peak restart (R29 writes, FUN_0800A7FC) nor a new restart can be sent between restart phase 1 and 3.
     @ v2.05 services nothing during its blocking delay(10000) (0x0800BFCE), so registers 0x20..0x33 only ever hold v2.05
@@ -54,16 +52,13 @@ FUNC hy3131_poll
     ldrb r0, [r0]
     cmp r0, #0
     bne .L08006134                          @ restart pending: skip the event service this pass
-.endif
     ldr r0, =(GPIOF_BASE + GPIO_IDR)   @ 0x08006126 pool 0x08006ACC = 0x40021810  GPIOF IDR
     ldrh r0, [r0, #0]                  @ 0x0800612A  IDR (halfword)
     lsls r0, r0, #28                   @ 0x0800612C  move bit 3 (PF3) to the sign flag
     bpl .L08006134                     @ 0x0800612E  PF3 low: no event
     bl hy3131_service_irq              @ 0x08006130  event pending: service it
 .L08006134:                              @ reached from 0x0800612E bpl
-.if LOOP_V205 == 0
     bl hy_counter_restart_step              @ production: finish a pending counter restart once its TIM3 wait ran out
-.endif
     @ ---- CAP: no counter result within the timeout in mode 12, ranges 0..4 -> FUN_0800B540 (v2.05 0x08006134..0x08006148) ----
     ldr r0, =meter_mode                @ 0x08006134 pool 0x08006AD0 = 0x2000803C
     ldrb r0, [r0, #0]                  @ 0x08006138
@@ -96,86 +91,6 @@ ENDFUNC hy3131_poll
 @ Port: the INTF write clears only the flags read (OF-53) and CTF reads the counter block 0x14..0x1D again before
 @ FUN_0800AA00 (OF-54).
 @ -----------------------------------------------------------------------------
-.if LOOP_V205
-FUNC hy3131_service_irq
-    push {r7, lr}                      @ 0x0800614E
-    movs r2, #52                       @ 0x08006150  52 bytes: registers 0x00..0x33
-    movs r1, #0                        @ 0x08006152
-    ldr r0, =adc_regs                  @ 0x08006154 pool 0x08006AD4 = 0x200077D0  register mirror 0x200077D0
-    bl hy3131_read_regs_to_rxbuf       @ 0x08006158  burst read from register 0 (hy3131_read_regs_to_rxbuf)
-    @ OF-53: v2.05 writes 0 here (0x0800615C), which also clears a flag raised after the burst read; the port writes 0 only
-    @ for the flags it has read as set and 1 for every other flag (a written 1 leaves an INTF bit unchanged, DS p19 10.2 (7)),
-    @ so a later event stays pending and is serviced in the next pass.  Bits 6:5 have no flag ("-", DS p19) and are written 0
-    @ as v2.05 writes them.
-    ldr r0, =adc_regs
-    ldrb r0, [r0, #30]                      @ rx[0x1E] = INTF as read by the burst
-    mvns r0, r0                             @ 1 for every flag not seen set
-    and r0, r0, #HY_INTF_ACK_MASK           @ BORF, RMSF, LPFF, AD1F, AD2F, CTF only
-    ldr r1, =v_20007DC4                @ 0x0800615E pool 0x08006AD8 = 0x20007DC4  0x20007DC4 serves as the one-byte write buffer
-    strb r0, [r1, #0]                  @ 0x08006162
-    movs r2, #1                        @ 0x08006164
-    movs r1, #30                       @ 0x08006166  register 0x1E = INTF
-    ldr r0, =v_20007DC4                @ 0x08006168 pool 0x08006AD8 = 0x20007DC4
-    bl hy3131_write_regs               @ 0x0800616C  INTF <- acknowledge value (a written 0 clears a flag, DS p19; OF-53)
-    ldr r0, =adc_regs                  @ 0x08006170 pool 0x08006AD4 = 0x200077D0
-    ldrb r0, [r0, #30]                 @ 0x08006174  rx[0x1E] = INTF
-    ldr r1, =adc_regs                  @ 0x08006176 pool 0x08006AD4 = 0x200077D0
-    ldrb r1, [r1, #31]                 @ 0x0800617A  rx[0x1F] = INTE
-    ands r0, r1                        @ 0x0800617C  INTF & INTE: events that are enabled
-    ldr r1, =v_2000807F                @ 0x0800617E pool 0x08006CFC = 0x2000807F
-    strb r0, [r1, #0]                  @ 0x08006182  0x2000807F = event mask
-    ldr r0, =adc_regs                  @ 0x08006184 pool 0x08006AD4 = 0x200077D0
-    ldrb.w r0, [r0, #32]               @ 0x08006188  rx[0x20] = R20
-    ldr r1, =v_2000807D                @ 0x0800618C pool 0x08006ADC = 0x2000807D
-    strb r0, [r1, #0]                  @ 0x08006190  copy R20 to 0x2000807D (mirror)
-    ldr r0, =adc_regs                  @ 0x08006192 pool 0x08006AD4 = 0x200077D0
-    ldrb.w r0, [r0, #41]               @ 0x08006196  rx[0x29] = R29
-    ldr r1, =v_2000807E                @ 0x0800619A pool 0x08006AE0 = 0x2000807E
-    strb r0, [r1, #0]                  @ 0x0800619E  copy R29 to 0x2000807E (ENPKH test below)
-    ldr r0, =v_2000807F                @ 0x080061A0 pool 0x08006CFC = 0x2000807F
-    ldrb r0, [r0, #0]                  @ 0x080061A4
-    lsls r0, r0, #29                   @ 0x080061A6  mask bit 2 = AD1F
-    bpl .L080061AE                     @ 0x080061A8
-    bl ad1_ready_dispatch              @ 0x080061AA  AD1 conversion ready
-.L080061AE:                              @ reached from 0x080061A8 bpl
-    ldr r0, =v_2000807F                @ 0x080061AE pool 0x08006CFC = 0x2000807F
-    ldrb r0, [r0, #0]                  @ 0x080061B2
-    lsls r0, r0, #27                   @ 0x080061B4  mask bit 4 = RMSF
-.if MAC_RMS_SERVICE
-    bpl .L080061BC                     @ 0x080061B6  MAC_RMS_SERVICE = 1 (differential builds): the v2.05 call of the RMS event routine
-    bl fn_08008208                     @ 0x080061B8  (the register mirror holds registers 0x09..0x0D from the burst above)
-.else
-    @ RMSF (mask bit 4): serviced by the INTF clear above, OF-16 (v2.05 called FUN_08008208 here, 0x080061B8)
-.endif
-.L080061BC:                              @ reached from 0x080061B6 bpl
-    ldr r0, =v_2000807E                @ 0x080061BC pool 0x08006AE0 = 0x2000807E
-    ldrb r0, [r0, #0]                  @ 0x080061C0
-    lsls r0, r0, #29                   @ 0x080061C2  0x2000807E bit 2 = ENPKH
-    bpl .L080061D4                     @ 0x080061C4
-    ldr r0, =acdc_active               @ 0x080061C6 pool 0x08006D00 = 0x200080BA  0x200080BA AC+DC active
-    ldrb r0, [r0, #0]                  @ 0x080061CA
-    cmp r0, #0                         @ 0x080061CC
-    bne .L080061D4                     @ 0x080061CE
-    bl fn_0800A7FC                     @ 0x080061D0  peak registers (MAC FUN_0800A7FC)
-.L080061D4:                              @ reached from 0x080061C4 bpl, 0x080061CE bne
-    ldr r0, =v_2000807F                @ 0x080061D4 pool 0x08006CFC = 0x2000807F
-    ldrb r0, [r0, #0]                  @ 0x080061D8
-    lsls r0, r0, #31                   @ 0x080061DA  mask bit 0 = CTF
-    bpl .L080061E2                     @ 0x080061DC
-    @ OF-54: the burst clocks out the counter registers 0x15..0x1D before INTF (0x1E), so a count that completed between the
-    @ two was seen with the values of the count before; the counter block is read again now that CTF has been seen (the
-    @ counter has stopped, "ceased counting", DS p37 (5), until fn_0800AA00 restarts it), so data and flag belong to the
-    @ same completed count.  Registers 0x14..0x1D as in the production read set (CTSTA first: its read clears CTBOV, DS p36).
-    movs r2, #10
-    movs r1, #0x14
-    ldr r0, =adc_regs
-    bl hy3131_read_regs_to_rxbuf            @ mirror[0x14..0x1D] = CTSTA, CTC, CTB, CTA of the completed count
-    bl fn_0800AA00                     @ 0x080061DE  counter result (MFRQ FUN_0800AA00)
-.L080061E2:                              @ reached from 0x080061DC bpl
-    pop {r0, pc}                       @ 0x080061E2
-    .ltorg
-ENDFUNC hy3131_service_irq
-.else
 
 @ -----------------------------------------------------------------------------
 @ hy3131_service_irq (production) - service one HY3131 event with per-event register reads
@@ -281,7 +196,6 @@ FUNC hy3131_service_irq
     pop {r4, pc}
     .ltorg
 ENDFUNC hy3131_service_irq
-.endif
 
 @ -----------------------------------------------------------------------------
 @ ad1_ready_dispatch - AD1 conversion ready: decode, accumulate and call the mode handler
@@ -307,7 +221,6 @@ FUNC ad1_ready_dispatch
     ldr r0, [r0, #0]                   @ 0x080061F4
     ldr r1, =v_20007D74                @ 0x080061F6 pool 0x08006D08 = 0x20007D74
     str r0, [r1, #0]                   @ 0x080061FA  0x20007D74 = latest sample (all modes)
-.if LOOP_V205 == 0
     @ IMP-01 (production): before the conversion is accumulated, the auto-ranged DC modes judge the calibrated per-sample value (ar_sample, AR); r0 = 1: this
     @ conversion belongs to the settling after an apply (or an apply is pending) and is discarded - neither accumulated nor handled (MDC mdc_sample_precheck
     @ for the DC modes, MAC mac_sample_precheck for the AC modes; each returns 0 at once for a mode it does not judge)
@@ -320,7 +233,6 @@ FUNC ad1_ready_dispatch
     strb r0, [r1]                           @ no mean completed by a discarded conversion
     pop {r0, pc}
 1:
-.endif
     ldr r0, =v_20007DCC                @ 0x080061FC pool 0x08006AE8 = 0x20007DCC
     ldr r0, [r0, #0]                   @ 0x08006200
     bl ad1_accumulate_average          @ 0x08006202  ad1_accumulate_average: sum, count; r0 = 1 when a mean is complete

@@ -14,7 +14,6 @@
     .include "macros.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
     .include "ff16.inc"
 
     .section .bss_port.ff16, "aw", %nobits
@@ -472,4 +471,3 @@ FUNC ff16_validate
     pop {r4, r5, r6, pc}
 ENDFUNC ff16_validate
 
-    .endif

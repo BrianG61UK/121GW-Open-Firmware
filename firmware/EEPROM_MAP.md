@@ -196,9 +196,8 @@ rewrites the whole word, section 1): 0x000..0x003 (date, ID MSB), 0x004..0x007 (
 Each byte below is in the never-accessed list above, so v2.05 neither reads nor writes it; the production port stores one
 user setting in it. Every byte needs an owner decision before it is used (rule of 9.1 item 2), and every one is chosen so
 that its 4-byte word holds no calibration, serial, date or marker byte: a byte write rewrites its whole word (section 1),
-so an interrupted write can only damage the settings that share the word. The strict image (LOOP_V205 = 1) neither reads
-nor writes these bytes and its `nvm_allow` table does not allow them (`gen_nvm_allow.py` emits their bits as
-`mask * (1 - LOOP_V205)`). The table is read by `gen_nvm_allow.py` (first cell = offset, last cell = class).
+so an interrupted write can only damage the settings that share the word. The like-v2.05 build (branch `like-v2.05`) neither
+reads nor writes these bytes and its `nvm_allow` table does not allow them. The table is read by `gen_nvm_allow.py` (first cell = offset, last cell = class).
 
 | Offset | Meaning | Values | Invalid or blank (0x00) reads as | Class |
 |---|---|---|---|---|

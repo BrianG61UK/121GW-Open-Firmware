@@ -434,23 +434,15 @@ FUNC fn_08013CF8
     beq .L08013D80                     @ 0x08013D28
     @ negative: k = 21 - a / 100, CJ = t[k] - (a % 100) * ((t[k] - t[k-1]) * 10 / 100) / 10
     subs r7, r7, r2                    @ 0x08013D2A
-    .if LOOP_V205 == 0
     ldr ip, =mtmp_tc_descp             @ IMP-10: descriptor of the selected type ...
     ldr ip, [ip]
     ldr ip, [ip]                       @ ... its table (K: 0x08025CF8)
-    .else
-    ldr ip, =mtmp_tc_tab_k    @ 0x08013D2C; OF-56: NIST K table (v2.05 pool 0x08013EB8 = 0x08025CF8)
-    .endif
     uxtb r7, r7                        @ 0x08013D30
     ldr.w ip, [ip, r7, lsl #2]         @ 0x08013D32
     mov r4, ip                         @ 0x08013D36
-    .if LOOP_V205 == 0
     ldr ip, =mtmp_tc_descp             @ IMP-10: descriptor of the selected type ...
     ldr ip, [ip]
     ldr ip, [ip]                       @ ... its table (K: 0x08025CF8)
-    .else
-    ldr ip, =mtmp_tc_tab_k    @ 0x08013D38; OF-56: NIST K table (v2.05 pool 0x08013EB8 = 0x08025CF8)
-    .endif
     uxtb r7, r7                        @ 0x08013D3C
     add.w ip, ip, r7, lsl #2           @ 0x08013D3E
     ldr.w ip, [ip, #-4]                @ 0x08013D42
@@ -473,23 +465,15 @@ FUNC fn_08013CF8
 .L08013D80:                              @ reached from 0x08013D28 beq
     @ positive: k = a / 100 + 21, CJ = t[k] + (a % 100) * ((t[k+1] - t[k]) * 10 / 100) / 10
     adds r7, r2, r7                    @ 0x08013D80
-    .if LOOP_V205 == 0
     ldr ip, =mtmp_tc_descp             @ IMP-10: descriptor of the selected type ...
     ldr ip, [ip]
     ldr ip, [ip]                       @ ... its table (K: 0x08025CF8)
-    .else
-    ldr ip, =mtmp_tc_tab_k    @ 0x08013D82; OF-56: NIST K table (v2.05 pool 0x08013EB8 = 0x08025CF8)
-    .endif
     uxtb r7, r7                        @ 0x08013D86
     ldr.w ip, [ip, r7, lsl #2]         @ 0x08013D88
     mov r4, ip                         @ 0x08013D8C
-    .if LOOP_V205 == 0
     ldr ip, =mtmp_tc_descp             @ IMP-10: descriptor of the selected type ...
     ldr ip, [ip]
     ldr ip, [ip]                       @ ... its table (K: 0x08025CF8)
-    .else
-    ldr ip, =mtmp_tc_tab_k    @ 0x08013D8E; OF-56: NIST K table (v2.05 pool 0x08013EB8 = 0x08025CF8)
-    .endif
     uxtb r7, r7                        @ 0x08013D92
     add.w ip, ip, r7, lsl #2           @ 0x08013D94
     ldr.w ip, [ip, #4]                 @ 0x08013D98

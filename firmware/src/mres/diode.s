@@ -102,11 +102,6 @@ FUNC fn_08007E84
     ldr r1, =0xFFFFFC19                @ 0x08007F04 pool 0x080087D4 = 0xFFFFFC19
     cmp r0, r1                         @ 0x08007F08
     blt .L08007F20                     @ 0x08007F0A
-.if LOOP_V205
-    mov.w r0, #500
-    bl fn_0800EEA8                          @ v2.05 0x08007F0C: tone from the smoothed mean (production: per sample, see the end);
-                                            @ OF-63: gated by the buzzer setting (v2.05 pe7_on_with_timeout)
-.endif
     ldr r0, =v_20007D64                @ 0x08007F14 pool 0x08007F94 = 0x20007D64
     ldr r0, [r0, #0]                   @ 0x08007F16
     ldr r1, =v_20007CD4                @ 0x08007F18 pool 0x080087D8 = 0x20007CD4
@@ -160,7 +155,6 @@ FUNC fn_08007E84
     ldr r1, =v_20007D68                @ 0x08007F84 pool 0x08008340 = 0x20007D68
     str r0, [r1, #0]                   @ 0x08007F88
 .L08007F8A:                              @ reached from 0x08007F76 beq
-.if LOOP_V205 == 0
     @ ---- IMP-04: tone decision on confirmed per-sample values.  v = 0x20007D68 (15 V: already divided by 10 above) ----
     ldr r0, =v_20007D68
     ldr r0, [r0]
@@ -187,7 +181,6 @@ FUNC fn_08007E84
     ldr r1, =mres_diode_k
     strb r0, [r1]                           @ outside the window: restart the confirmation
 .Ldi_done:
-.endif
     pop {r0, pc}                       @ 0x08007F8A
     .ltorg
 ENDFUNC fn_08007E84

@@ -41,7 +41,7 @@ One entry per line, '#' starts a comment:
              the byte in its burst (bytes less than 2 ms apart: a BLE status frame is one burst, pos 0 = its start
              byte, pos 18 = its checksum).
              The clause 'build == <baseline|production>' is not a field of an event: it restricts the entry to
-             one build mode of the port (DESIGN 3.5: baseline = LOOP_V205=1, production = LOOP_V205=0) and is
+             one build mode of the port (DESIGN 3.5: baseline = the like-v2.05 build of its branch, LOOP_V205=1; production = the fast build of main) and is
              given to the loader (diff/run.py --build).  An entry with the clause is used only when the loader's
              build is the same; without a build given, such entries are not used (nothing is hidden).  Entries
              without the clause apply to both builds.  A tolerance entry takes it after the number

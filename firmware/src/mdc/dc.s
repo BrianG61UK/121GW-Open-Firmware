@@ -8,7 +8,7 @@
 @ mean chain (fn_08006418), the display smoothing fn_0800B754 (FUNC) and sets the new-value flag 0x2000805D; it then always runs the
 @ per-sample chain fn_080064D6.
 @
-@ Production (LOOP_V205 = 0, IMP-01): the auto-ranged DC modes (DCV 1, DCmV 3, DC currents 17, 19, 21) are judged by ar_sample before their
+@ IMP-01: the auto-ranged DC modes (DCV 1, DCmV 3, DC currents 17, 19, 21) are judged by ar_sample before their
 @ conversion is accumulated (mdc_sample_precheck in ad1.s, called from ad1_ready_dispatch); the handlers here are unchanged by it.
 @
 @ OF-28: the AC+DC DC phase (mode 2 with AC+DC on, 0x200080BA) smooths through its own state block mdc_acdc_dc_state, so that it no

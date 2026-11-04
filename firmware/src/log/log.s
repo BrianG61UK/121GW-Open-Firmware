@@ -783,9 +783,7 @@ FUNC log_start
     movs    r0, #0                          @ 08010AD0 r0 = 0
     ldr.w   r1, =log_file_seq               @ 08010AD2 r1 = &log_file_seq
     strh    r0, [r1]                        @ 08010AD6 u16 [log_file_seq] = r0
-    .if LOOP_V205 == 0
     bl      log_trig_reset                  @ IMP-21: a new session has no last record (r0, r1 only)
-    .endif
     @ log_tick_count = interval - 1 (u16, wraps when the interval is 0; the main loop treats interval 0 separately)
     ldr.w   r0, =log_interval               @ 08010AD8 r0 = &log_interval
     ldrh    r0, [r0]                        @ 08010ADC r0 = u16 [log_interval]
@@ -887,9 +885,7 @@ ENDFUNC log_stop
 @ -----------------------------------------------------------------------------
 FUNC log_take_record
     push    {r7, lr}                        @ 08010B64 push {r7, lr}
-    .if LOOP_V205 == 0
     bl      log_trig_taken                  @ IMP-21: the level of this record for the tr-Ch change test
-    .endif
     movs    r0, #0                          @ 08010B66 r0 = 0
     ldr.w   r1, =log_take_request           @ 08010B68 r1 = &log_take_request
     @ request flag cleared; the ring index restarts at 0 when it has reached 60

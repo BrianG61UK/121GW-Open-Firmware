@@ -13,7 +13,6 @@
     .include "macros.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
     .include "ff16.inc"
 
     .section .text.ff16.file, "ax", %progbits
@@ -682,4 +681,3 @@ FUNC ff16_f_close
     pop {r4, pc}
 ENDFUNC ff16_f_close
 
-    .endif

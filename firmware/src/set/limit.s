@@ -21,7 +21,6 @@
 @ PASS the accept beep (fn_0800EE50), both through the buzzer setting.  The test ends when the mode or range differs from
 @ the limits' (a mode change), and at power-on and STOP wake (set_state_reset); the limits are RAM only (owner, 2026-11-02).
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -33,7 +32,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ LT_ITEM_ON,          27
     .equ LT_ITEM_LO,          28
@@ -415,4 +413,3 @@ ENDFUNC set_lt_draw
 
     .ltorg
 
-    .endif

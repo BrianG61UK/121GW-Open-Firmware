@@ -16,7 +16,6 @@
 @ The units of the page (FUN_0801A440, 0x0801A546..0x0801A564): dB and m for codes 0..2, dB alone for code 3.
 @ Characters (font of analysis/lcd_map.md 2): 'r' = 0x24 (e g), 'd' = 0xB5, 'b' = 0xBC, 'V' = 0xB9 (as U).
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -28,7 +27,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ SET_DBM_EEPROM,      0x011         @ EEPROM offset of the reference code (EEPROM_MAP.md 4.1)
     .equ SET_DBM_CODE_MAX,    3             @ highest valid code = dBV
@@ -162,4 +160,3 @@ ENDFUNC set_dbm_draw
 
     .ltorg
 
-    .endif

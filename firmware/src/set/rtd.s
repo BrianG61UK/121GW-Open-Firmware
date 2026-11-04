@@ -11,7 +11,6 @@
 @ again saves, SETUP short ends the edit without a save, the edit times out after about 2 minutes (fn_0800D190 then
 @ re-reads the EEPROM).  Storage: EEPROM 0x029 (EEPROM_MAP.md 4.1); a value above 2, 0xFF included, reads as 0.
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -23,7 +22,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ SET_RTD_EEPROM,      0x029         @ EEPROM offset of the RTD code (EEPROM_MAP.md 4.1)
     .equ SET_RTD_CODE_MAX,    2
@@ -134,4 +132,3 @@ ENDFUNC set_rtd_draw
 
     .ltorg
 
-    .endif

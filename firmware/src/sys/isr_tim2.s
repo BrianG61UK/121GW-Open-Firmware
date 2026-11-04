@@ -69,11 +69,9 @@ FUNC sys_tim2_isr
     ldr r0, =v_2000022C
     ldrh r0, [r0]
     cbnz r0, .Lt2_memview                   @ interval > 0: counted by the main loop
-    .if LOOP_V205 == 0
     ldr r0, =log_trig
     ldrb r0, [r0]
     cbnz r0, .Lt2_memview                   @ IMP-21: tr-Ch / tr-Lt: interval 0 means the trigger only
-    .endif
     ldr r0, =v_20008050
     ldrb r0, [r0]
     cbnz r0, .Lt2_memview                   @ auto-hold stage 2
@@ -220,12 +218,10 @@ FUNC sys_tim2_isr
     movs r0, #1
     ldr r1, =v_2000805D
     strb r0, [r1]                           @ new (zero) mean (0x080244B2)
-.if LOOP_V205 == 0
     ldr r1, =ar_freq_tmo_count
     ldrb r0, [r1]
     adds r0, r0, #1
     strb r0, [r1]                           @ production: count the published timeout zero (AR shows it, OF-32 decision)
-.endif
     ldr r0, =range_manual
     ldrb r0, [r0]
     cbnz r0, .Lt2_ac
@@ -314,7 +310,6 @@ FUNC sys_tim2_isr
     strb r0, [r1]
 
 .Lt2_ble_req:
-    .if LOOP_V205 == 0
     bl bft_tick                             @ IMP-28: idle time of the Bluetooth file transfer parser (every tick)
     @ IMP-09: a selected frame rate above 2 per second runs on its own counter (ble/rate.s); the 500 ms counter below
     @ then only serves its other users (500 ms flag, blink phases, jack-warning beep)
@@ -325,7 +320,6 @@ FUNC sys_tim2_isr
     ldr r1, =v_20007F04
     b .Lt2_500ms
 .Lt2_ble_v205:
-    .endif
     @ BLE frame build request at count 40 of the 500 ms counter (0x080245F6..0x08024606)
     ldr r1, =v_20007F04
     ldr r0, [r1]
@@ -347,15 +341,11 @@ FUNC sys_tim2_isr
     movs r0, #1
     ldr r1, =v_200080D3
     strb r0, [r1]                           @ 500 ms flag (0x0802462E)
-    .if LOOP_V205 == 0
     ldr r0, =ble_rate
     ldrb r0, [r0]
     cbnz r0, .Lt2_no_start                  @ IMP-09: a faster rate starts its frames in ble_rate_tick
-    .endif
     bl ble_tx_start_frame                   @ BLE frame start, replaces 0x08024630..0x0802465A (OF-10)
-    .if LOOP_V205 == 0
 .Lt2_no_start:
-    .endif
     @ jack-warning blink phase 0x20008077 (0x0802465E..0x0802467A)
     ldr r1, =v_20008077
     ldrb r0, [r1]

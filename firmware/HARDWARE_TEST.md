@@ -8,8 +8,8 @@ The image has only run in the emulator. These checks confirm on hardware what th
 3. Note the battery voltage measured at the battery terminals.
 
 ## Flashing
-- Build: `make` in `firmware/` (production) or `make LOOP_V205=1` (strict build that behaves like v2.05 apart from
-  the defect fixes). The output `firmware/build/EEVBlog.bin` already has the file name the bootloader looks for
+- Build: `make` in `firmware/` (the fast build; the build that behaves like v2.05 apart from the defect fixes is
+  `make LOOP_V205=1` on the branch `like-v2.05`). The output `firmware/build/EEVBlog.bin` already has the file name the bootloader looks for
   (the only file name in the bootloader image; FAT short names ignore case, so the manual's "EEVblog.bin" is the same
   file).
 - Normal route: copy `EEVBlog.bin` to the SD card and use the manual's Firmware Update procedure (page 72: battery

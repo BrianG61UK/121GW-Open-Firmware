@@ -15,7 +15,6 @@
     .include "macros.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
     .include "ff16.inc"
 
     .section .bss_port.ff16obj, "aw", %nobits
@@ -117,4 +116,3 @@ ENDFUNC fat_f_getfree
     .thumb_set fn_08022526, fat_f_stat
     .thumb_set fn_0802256E, fat_f_utime
 
-    .endif

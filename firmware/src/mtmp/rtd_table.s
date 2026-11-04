@@ -12,7 +12,6 @@
     .syntax unified
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .section .rodata.mtmp.rtd, "a", %progbits
     .balign 4
@@ -49,4 +48,3 @@ mtmp_rtd_tab:
     .global mtmp_rtd_end
 mtmp_rtd_end:                           @ end of the table (the last entry is at mtmp_rtd_end - 4)
 
-    .endif

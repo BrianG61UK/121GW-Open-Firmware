@@ -15,7 +15,6 @@
 @ the overload flag; the flag is still cleared) and the held display (nothing is drawn while HOLD is active, as the page Sd).
 @ The pages follow Sd (item 33) and exist only while MIN/MAX is on (set/setup.s, ui_stats_tick, ui_stats_page).
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -27,7 +26,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ UI_MMT_ITEM_HI,      34            @ setup item of the page tHI
     .equ UI_MMT_ITEM_LO,      35            @ setup item of the page tLo
@@ -168,4 +166,3 @@ ENDFUNC ui_mmt_draw
 
     .ltorg
 
-    .endif

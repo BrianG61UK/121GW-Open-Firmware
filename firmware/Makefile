@@ -8,7 +8,7 @@
 #                         check it cannot run is named in the output as SKIPPED with the reason, never passed silently
 #   make listing          objdump -d -S of the ELF (build/121gw.lst)
 #   make clean            remove build/
-#   make LOOP_V205=1      verification baseline (any switch of src/inc/config.inc can be given this way)
+#   make DEBUG=1          a build switch of src/inc/config.inc set on the command line (any switch can be given this way)
 #
 # Every switch set builds its objects and its ELF in its own directory build/obj/<switches> (make compares
 # file times with a resolution of one second, so a shared object directory could keep objects of another switch
@@ -87,13 +87,14 @@ toolcheck:
 switches:
 	@echo "build switches: $(if $(NONDEFAULT),$(NONDEFAULT),all at their defaults)"
 
-# every object depends on every include file.  A source that tests a build switch of config.inc (LOOP_V205) must include
+# every object depends on every include file.  A source that tests a build switch of config.inc in an .if must include
 # config.inc: without it the assembler takes the undefined symbol silently and assembles the wrong branch of the .if
 # (func/hold.s lacked the include until 2026-11-03), so such a file stops the build here.
+SWITCH_RE := ^[[:space:]]*\.if.*\b($(subst $(space),|,$(strip $(SWITCH_NAMES))))\b
 $(OBJDIR)/%.o: src/%.s $(wildcard src/inc/*.inc) Makefile
 	@mkdir -p $(dir $@)
-	@if grep -q 'LOOP_V205' $< && ! grep -q '\.include "config.inc"' $<; then \
-	  echo "$<: tests LOOP_V205 but does not .include \"config.inc\""; exit 1; fi
+	@if grep -qE '$(SWITCH_RE)' $< && ! grep -q '\.include "config.inc"' $<; then \
+	  echo "$<: tests a build switch of config.inc but does not .include \"config.inc\""; exit 1; fi
 	$(AS) $(ASFLAGS) -o $@ $<
 
 $(OELF): $(OBJS) $(LDS)

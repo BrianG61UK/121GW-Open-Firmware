@@ -41,14 +41,12 @@ FUNC bzb_tim3_isr
     subs r0, r0, #1
     strh r0, [r1]
 .Lt3_buzz:
-.if LOOP_V205 == 0
     ldr r1, =hy_restart_ticks               @ production: HY counter restart wait (IMP-06)
     ldrb r0, [r1]
     cbz r0, .Lt3_hy
     subs r0, r0, #1
     strb r0, [r1]
 .Lt3_hy:
-.endif
     ldr r1, =v_20007FB4                     @ r1 = pulse countdown address
     ldrh r0, [r1]
     cbz r0, .Lt3_done                       @ no pulse (0x08024756)

@@ -27,7 +27,6 @@
 @ is shown, the unit and prefix signs are off and degC or degF is on (ui_relpct_mask).  Nothing is drawn while HOLD is
 @ active (the held display stays, as the D draw of v2.05).
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
 @ =============================================================================
 
@@ -39,7 +38,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ UI_RTD_MODE_OHM,     9
     .equ UI_RTD_RANGE_MAX,    3             @ 50.000 kohm: the highest range converted
@@ -206,4 +204,3 @@ ENDFUNC ui_rtd_draw
 
     .ltorg
 
-    .endif

@@ -3,7 +3,7 @@
 
 Usage (from firmware/, as the Makefile does):
     python3 -I tools/check_image.py build/121gw.elf build/EEVBlog.bin [--map build/121gw.map] [--design DESIGN.md]
-                                    [--switch LOOP_V205=1]   (the verification baseline: production-only routines may be absent)
+                                    [--switch NAME=value ...]   (build switches as the Makefile passes them)
     python3 -I tools/check_image.py --v205 ../inputs/binaries/EEVBlog2_05.bin     (analysis mode, see below)
 Exit status 0 = every check passed, 1 = at least one violation, 2 = the tool could not do its job.  The report goes to
 standard output: the facts the checks rest on (counts, coverage), one line per violation, a final PASS or FAIL line.
@@ -53,8 +53,7 @@ What is checked
     literal wherever it is used; DMA transfers and the MPU are outside this check.  The number of loads and stores
     with a known effective address is printed so the coverage is visible.
   Item 5, symbols (DESIGN 9.3 item 5, Appendix C): no undefined symbol in the ELF; every symbol that Appendix C.1 / C.2
-    lists is defined exactly once (routines the C.1 text declares internal, and the production-only routines of C.2 in a
-    LOOP_V205=1 build, need not exist).
+    lists is defined exactly once (routines the C.1 text declares internal need not exist).
   Item 7, lint (DESIGN 8.2 "`it` blocks at most two instructions"): longer IT blocks are violations except in the objects
     under rt/, which keep the v2.05 sequences whose later conditional instructions test flags set inside the block.
   Item 6, test infrastructure (not in DESIGN 9.3): IT blocks in which a load is followed by an instruction of the opposite
@@ -1050,8 +1049,8 @@ def vector_instruction_starts(img, insns, vio):
 # ---------------------------------------------------------------------------------------------------- item 5: symbols
 def appendix_c_names(design):
     """Symbols that DESIGN.md Appendix C.1 / C.2 lists: the second column of C.1 rows, the first column of C.2 rows.
-    Returns (names, production_only): the C.2 rows whose text says "production" name routines that exist only in the
-    production image (LOOP_V205 = 0, DESIGN 3.5), for example lcd_commit_retry."""
+    Returns (names, production_only): the C.2 rows whose text says "production" name routines that v2.05 does not have
+    (DESIGN 3.5), for example lcd_commit_retry; this build must define them like every other listed name."""
     text = open(design, errors='replace').read()
     i1 = text.index('### C.1')
     i2 = text.index('### C.2')
@@ -1104,7 +1103,7 @@ def appendix_c_exceptions(design):
     return out
 
 
-def check_symbols(img, design, vio, baseline):
+def check_symbols(img, design, vio):
     facts = []
     undefined = [y['name'] for y in img.symbols if y['shndx'] == 0 and y['name']]
     for nme in undefined:
@@ -1115,8 +1114,6 @@ def check_symbols(img, design, vio, baseline):
         return facts
     names, prod = appendix_c_names(design)
     exempt = appendix_c_exceptions(design)
-    if baseline:
-        exempt = dict(exempt, **{n: 'production image only' for n in prod})
     count = {}
     for y in img.symbols:
         if y['shndx'] != 0 and y['name']:
@@ -1218,8 +1215,7 @@ def main(argv):
             obj = img.obj_at(addr)
             vio.append('%s %s (0x%08X%s): %s' % (vid, img.where(addr), addr, ' in ' + obj if obj else '', msg))
         if not a.v205:
-            baseline = 'LOOP_V205=1' in a.switch
-            for f in check_symbols(img, a.design, vio, baseline):
+            for f in check_symbols(img, a.design, vio):
                 print('item 5: ' + f)
     except ToolError as e:
         print('check_image: ERROR %s' % e)

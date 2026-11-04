@@ -10,7 +10,7 @@
 @
 @ OF-30 (ORIGINAL_FIRMWARE_ISSUES.md, owner decision): v2.05 stored 0 into the displayed value 0x20007D64 for every mean above the
 @ threshold until the fifth, so "0.0" was shown for 1.1 to 2.4 s while 100..600 V were present, and the HV symbol (which looks at
-@ the displayed value) came up to 1.58 s late.  Both builds (production and the LOOP_V205 = 1 baseline): the port keeps the real
+@ the displayed value) came up to 1.58 s late.  The port keeps the real
 @ value in 0x20007D64 (the HV logic sees it at the first mean) and sets the UI request byte ui_blank_req (W3, port RAM) to 2 while
 @ the voltage is not yet confirmed; the main digits show five dashes then (firmware/requests/W3_to_W5.md 1).
 @ OF-30 port correction (both builds, 2026-11-03): for the first unconfirmed mean the request is 3 (the digits on the glass stay): on a meter with nothing
@@ -32,14 +32,12 @@
     .include "config.inc"
 
 
-    .if LOOP_V205 == 0
     .section .bss_port.mres, "aw", %nobits
 @ lowz_bar_hold: 1 from the AC/DC re-apply of the dead band until the next mean has been handled by fn_08006558 (owner
 @ MRES; read by fn_08018B14): the bargraph keeps its segments for the samples of that mean, the settling mean of OF-30
 @ (production image only)
     .global lowz_bar_hold
 lowz_bar_hold:  .space 1
-    .endif
 
     .section .text.mres.lowz, "ax", %progbits
 
@@ -118,11 +116,9 @@ ENDFUNC fn_0800662C
 @ -----------------------------------------------------------------------------
 FUNC fn_08006558
     push {r4, lr}                      @ 0x08006558
-    .if LOOP_V205 == 0
     movs r0, #0
     ldr r1, =lowz_bar_hold
     strb r0, [r1]                           @ a mean has arrived: the bargraph follows the samples again
-    .endif
     ldr r0, =v_20008099                @ 0x0800655A pool 0x08006D34 = 0x20008099
     ldrb r0, [r0, #0]                  @ 0x0800655E
     cmp r0, #0                         @ 0x08006560
@@ -188,11 +184,9 @@ FUNC fn_08006558
     strb r0, [r1, #0]                  @ 0x080065DE
 .L080065E0:                              @ reached from 0x080065D6 b
     bl fn_0800662C                     @ 0x080065E0
-    .if LOOP_V205 == 0
     movs r0, #1
     ldr r1, =lowz_bar_hold
     strb r0, [r1]                           @ the first mean after this re-apply settles: the bargraph waits for it
-    .endif
     movs r0, #0                        @ 0x080065E4
     bl meter_apply_mode_range          @ 0x080065E6
     b .L0800662A                       @ 0x080065EA

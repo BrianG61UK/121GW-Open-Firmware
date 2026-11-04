@@ -23,7 +23,6 @@
     .include "macros.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
     .include "ff16.inc"
 
     .section .text.ff16.low, "ax", %progbits
@@ -726,4 +725,3 @@ ENDFUNC ff16_dir_clear
 
     .ltorg
 
-    .endif

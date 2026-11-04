@@ -13,8 +13,8 @@ Sources read and cross-checked (any mismatch stops the tool with exit status 1 a
                       may be in SETTINGS, IDENT, USERZERO or CAL, except the port-only settings of EMAP 4.1
   EMAP 4.1            the port-only settings (bytes from that list that the production port reads and writes as
                       settings, owner-approved one by one): each must be in the never-accessed list, in the SETTINGS
-                      row of 9.2 and in no other class but RESTORE; the strict image (LOOP_V205 = 1) does not allow
-                      them (see Table format)
+                      row of 9.2 and in no other class but RESTORE (the like-v2.05 build on its branch does not
+                      allow them)
 Rules computed for CAL (EMAP 9.2 row CAL, 5.3, 3 ac_words_base 0x080115CC):
   R+0..R+7 of every (mode, range) record of 5.3 (R = T[mode] + 16*range; mode 6 contributes only 0x104..0x107;
   mode 0 contributes 0x060 and 0x0A0; mode 10 contributes 0x120), R+8..R+0xF of the AC-word records
@@ -25,9 +25,8 @@ Global invariants asserted: nothing at 0x4FD and above, nothing in 0x4B0..0x4CF,
 
 Table format (nvm_allow.s): one bitmap of 0x500 bits (160 bytes) per class, class order SETTINGS, IDENT, USERZERO, CAL,
 RESTORE; bit (off & 7) of byte (class * 160 + (off >> 3)) is 1 when the class may write offset off.
-The port-only settings are the one place where the table depends on the build: their SETTINGS bits are emitted as
-"| (0x.. * (1 - LOOP_V205))", so the strict image (LOOP_V205 = 1) contains exactly the table it had before the
-port-only settings existed (byte-identical) and refuses them, and the production image allows them.
+The port-only settings' SETTINGS bits are emitted as "v2.05 bits | port-only bits", so the part of the table that v2.05
+itself allows stays visible next to the bytes the port adds.
 """
 import os
 import re
@@ -268,18 +267,14 @@ def render(allow, port):
     s.append('@ Layout: one bitmap of NVM_ALLOW_LIMIT bits per class (NVM_ALLOW_STRIDE bytes), class order as in')
     s.append('@ nvm_allow.inc; bit (off & 7) of byte [class * NVM_ALLOW_STRIDE + (off >> 3)] = 1: class may write off.')
     if port:
-        s.append('@ Port-only settings (EMAP 4.1): %s.  Their SETTINGS bits are written as "| (mask * (1 - LOOP_V205))":' % fmt(port))
-        s.append('@ the strict image (LOOP_V205 = 1) keeps the table it always had and refuses them, the production image')
-        s.append('@ allows them.  The class lists below are those of the strict image; the port-only bytes are added to SETTINGS')
-        s.append('@ in the production image only.')
+        s.append('@ Port-only settings (EMAP 4.1): %s.  v2.05 never writes them; SETTINGS allows them' % fmt(port))
+        s.append('@ (written as "v2.05 bits | port-only bits", so the v2.05 part of the table stays visible).')
     s.append('@ Users: nvm_write_bytes and the store-time re-check of the byte program (src/nvm/nvm.s).')
     s.append('@ -----------------------------------------------------------------------------')
     s.append('    .syntax unified')
     s.append('    .cpu cortex-m3')
     s.append('    .thumb')
     s.append('    .include "macros.inc"')
-    if port:
-        s.append('    .include "config.inc"                  @ LOOP_V205 for the port-only settings')
     s.append('    .include "nvm_allow.inc"')
     s.append('')
     s.append('    .section .rodata.nvm, "a", %progbits')
@@ -292,19 +287,19 @@ def render(allow, port):
         bits = bytearray(STRIDE)
         for off in strict:
             bits[off >> 3] |= 1 << (off & 7)
-        extra = bytearray(STRIDE)                          # bits that only the production image sets
+        extra = bytearray(STRIDE)                          # port-only bits (EMAP 4.1)
         if c == 'SETTINGS':
             for off in port:
                 extra[off >> 3] |= 1 << (off & 7)
-        s.append('@ class %d %s: %d bytes allowed%s' % (i, c, len(strict), (' (strict image; production adds %d port-only byte(s))' % len(port)) if (c == 'SETTINGS' and port) else ''))
+        s.append('@ class %d %s: %d bytes allowed%s' % (i, c, len(allow[c]), (' (%d of them port-only)' % len(port)) if (c == 'SETTINGS' and port) else ''))
         s += wrap(fmt(strict), 118, '@   ')
         if c == 'SETTINGS' and port:
-            s.append('@   production only (EMAP 4.1): ' + fmt(port))
+            s.append('@   port-only (EMAP 4.1): ' + fmt(port))
         for row in range(0, STRIDE, 16):
             items = []
             for k in range(row, row + 16):
                 if extra[k]:
-                    items.append('0x%02X | (0x%02X * (1 - LOOP_V205))' % (bits[k], extra[k]))
+                    items.append('0x%02X | 0x%02X' % (bits[k], extra[k]))
                 else:
                     items.append('0x%02X' % bits[k])
             s.append('    .byte ' + ', '.join(items) +
@@ -325,7 +320,7 @@ def main(argv):
         for c in CLASSES:
             print('%-9s %4d  %s' % (c, len(allow[c]), fmt(allow[c])))
         if port:
-            print('port-only %4d  %s  (SETTINGS in the production image only)' % (len(port), fmt(port)))
+            print('port-only %4d  %s  (in SETTINGS; v2.05 never writes them)' % (len(port), fmt(port)))
         return 0
     if '--check' in argv:
         bad = 0

@@ -37,9 +37,6 @@
 FUNC enter_stop_and_reinit
     push {r4, lr}
     @ "-oFF-" and the 1 s beep (v2.05 pe7_on_blocking_100_ticks 0x08024ECC)
-    .if LOOP_V205
-    bl pe7_on_blocking_100_ticks
-    .else
     bl bzb_off_beep_start
 .Lesr_beep:
     bl lcd_commit_retry                     @ IMP-06: fn_08017092 commits twice in a row, so the "-oFF-" commit finds UDR still set and
@@ -49,7 +46,6 @@ FUNC enter_stop_and_reinit
     bl bzb_off_beep_step                    @ r0 = 1 after 100 ticks, PE7 low again
     cmp r0, #0
     beq .Lesr_beep
-    .endif
     movs r0, #0
     ldr r1, =v_2000803A
     strb r0, [r1]                           @ power-off request consumed (0x08024ED4)
@@ -85,7 +81,6 @@ FUNC enter_stop_and_reinit
     ldr r1, =EXTI_PR
     ldr r0, =PWR_EXTI_PG_LINES
     str r0, [r1]                            @ any edge that came after the handler ran is cleared
-    .if LOOP_V205 == 0
     @ IMP-06: the production loop sleeps with WFI.  fn_080207CC left PWR_CR LPSDSR = 1 (regulator in low-power mode
     @ during sleep, as v2.05 0x08024EE0..0x08024EE4); Low-power sleep needs VCORE range 2 and at most f_MSI range 1
     @ (RM0038 5.3.6), while the port runs range 1 at 4.194 MHz after the wake, so LPSDSR is cleared here and the
@@ -94,7 +89,6 @@ FUNC enter_stop_and_reinit
     ldr r0, [r1]
     bic r0, r0, #PWR_CR_LPSDSR
     str r0, [r1]
-    .endif
     movs r0, #1
     ldr r1, =v_20008038
     strb r0, [r1]                           @ woken from STOP (0x08024EEC)

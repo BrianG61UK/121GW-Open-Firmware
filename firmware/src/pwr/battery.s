@@ -24,13 +24,11 @@
     .equ PWR_BAT_NUM,       1330            @ OF-52: B+ (0.01 V) = code x 1330 / 4095 = code x 3.3 / 4095 x (1M + 330k) / 330k x 100
     .equ PWR_BAT_DEN,       4095            @ 12-bit ADC full-scale code (VDDA = VREF+ = 3.300 V)
 
-    .if LOOP_V205 == 0
     .section .bss_port.pwr, "aw", %nobits
     .balign 2
 @ pwr_bat_cv: the trimmed, filtered battery voltage in 0.01 V (owner PWR; read by set_btrim_draw)
     .global pwr_bat_cv
 pwr_bat_cv:     .space 2
-    .endif
 
     .section .text.pwr.battery, "ax", %progbits
 
@@ -62,9 +60,7 @@ FUNC adc_ch5_process
     mov r0, r4
     bl fn_08013728                          @ code -> B+ in 0.01 V (0x0801351A; OF-52 hardware relation)
     bl fn_080135B0                          @ history and trimmed mean (0x08013522)
-    .if LOOP_V205 == 0
     bl pwr_bat_trim                         @ IMP-27: x (1000 + 2 t) / 1000, the owner's trim (set/btrim.s)
-    .endif
     movs r1, #10
     udiv r0, r0, r1                         @ 0x0801352A
     ldr r1, =v_20007FBA
@@ -276,7 +272,6 @@ LFUNC fn_08013728
     bx lr
 ENDFUNC fn_08013728
 
-    .if LOOP_V205 == 0
 @ -----------------------------------------------------------------------------
 @ pwr_bat_trim - apply the battery trim (production image only, DESIGN.md 10 IMP-27)
 @ In       : r0 = filtered battery voltage in 0.01 V (fn_080135B0; 331..1013)
@@ -314,6 +309,5 @@ FUNC pwr_bat_trim
     strh r0, [r1]
     bx lr
 ENDFUNC pwr_bat_trim
-    .endif
 
     .ltorg

@@ -43,7 +43,6 @@
 @ FATFS area fat_fs_obj.  All of them belong to logging and to cal.bin, which cannot run meanwhile (logging is refused,
 @ cal.bin needs calibration mode).
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only, except bft_rx_byte (USART2 interrupt).
 @ =============================================================================
 
@@ -55,7 +54,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ BFT_ITEM,          39              @ setup item of the page Ld
     .equ BFT_RING_LEN,      512             @ receive ring, power of two (two full packets)
@@ -1099,4 +1097,3 @@ ENDFUNC set_bft_draw
 
     .ltorg
 
-    .endif

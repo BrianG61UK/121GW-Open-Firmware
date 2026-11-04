@@ -17,7 +17,7 @@
 @
 @ Context: ISR-safe; the only memory write is the errno word 0x20000228 (DESIGN.md 6.5).
 @
-@ OF-51 (production image only, LOOP_V205 = 0): the operands with the sign bit set are answered before the v2.05 sequence
+@ OF-51: the operands with the sign bit set are answered before the v2.05 sequence
 @ as IEEE 754 requires: sqrt(-0) = -0; a negative NaN is returned quiet (quiet bit 0x00080000 of the high word set); every
 @ other negative operand (negative finite, -infinity) gives the default quiet NaN 0x7FF8000000000000; errno is not written.
 @ Operands without the sign bit take the v2.05 sequence, which is IEEE-correct for them (+0, +infinity, a positive NaN
@@ -44,7 +44,6 @@
 @ Deviation: none in the strict image (copy of the v2.05 sequence); OF-51 in the production image (negative operands)
 @ -----------------------------------------------------------------------------
 FUNC fn_08013EF4
-    .if LOOP_V205 == 0
     tst r1, #0x80000000                    @ OF-51: sign bit set?
     beq .Ldsqrt_v205                       @ no: the v2.05 sequence
     bic r2, r1, #0x80000000                @ r2 = high word without the sign
@@ -67,7 +66,6 @@ FUNC fn_08013EF4
 .Ldsqrt_ret:
     bx lr
 .Ldsqrt_v205:
-    .endif
     movw r12, #0x7ff                       @ r12 = 0x7FF, exponent mask
     lsrs r3, r1, #0x14                     @ r3 = sign and exponent of the operand (12 bits)
     beq .Ldsqrt_08013F98                   @ zero (+0) or a positive subnormal: separate path

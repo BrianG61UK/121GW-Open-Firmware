@@ -13,7 +13,6 @@
 @ value 0x20007D64 that the record stores (OF-35); an overload counts as +1 000 000 or -1 000 000 by its sign, so entering
 @ and leaving an overload are changes.  The value of the last record is taken in log_take_record.
 @
-@ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only, except log_trig_fast_ok (TIM2 interrupt; reads one byte).
 @ =============================================================================
 
@@ -24,7 +23,6 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .if LOOP_V205 == 0
 
     .equ LOG_OL_LEVEL,        1000000       @ value given to an overload for the change test
     .equ log_req,             v_20007FE2    @ record request (v2.05)
@@ -166,4 +164,3 @@ ENDFUNC log_trig_verdict
 
     .ltorg
 
-    .endif

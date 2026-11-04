@@ -126,10 +126,10 @@ def render(k, j, t, nrs, errs):
             out.append('    .word %s   @ %d..%d degC' % (', '.join('%d' % v for v in row), lo + 10 * i, lo + 10 * (i + len(row) - 1)))
         return out + ['    .size %s, . - %s' % (name, name), '']
     s += table('mtmp_tc_tab_k', k, -210)
-    s += ['    .if LOOP_V205 == 0', '']
+    s += ['']
     s += table('mtmp_tc_tab_j', j, -210) + table('mtmp_tc_tab_t', t, -210)
     s += table('mtmp_tc_tab_n', nrs[0], -210) + table('mtmp_tc_tab_r', nrs[1], -210) + table('mtmp_tc_tab_s', nrs[2], -210)
-    s += ['    .endif', '']
+    s += ['']
     return '\n'.join(s)
 
 
