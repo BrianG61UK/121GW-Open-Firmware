@@ -438,6 +438,9 @@ about every 2.9 s), so the dashes flashed briefly every few seconds (GitHub issu
 forced 0. The port now keeps the digits on the glass for the first unconfirmed mean and shows the dashes from the second
 on (`ui_blank_req` = 3, `mres/lowz.s`); a real voltage still shows dashes one mean later and its value after the five
 means of v2.05. Verified working on a meter (v0.9.8, LowZ, nothing connected: no more dashes).
+Production image, v0.9.9: the bargraph had the same cause (it follows the per-sample value, so the settling spike flicked
+it to full scale and flipped its sign); it now keeps its segments during that first mean (`lowz_bar_hold`, `mres/lowz.s`,
+read by `fn_08018B14`). Verified working on a meter (v0.9.9, LowZ, nothing connected: the bargraph stays put).
 
 ### OF-31 — main loop paced by the LCD update busy-wait
 `lcd_commit_shadow` (`0x0801B304`) waits before every RAM write until LCD_SR.UDR clears: `0x0801B336 movs r0,#4`,

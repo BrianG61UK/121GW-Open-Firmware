@@ -17,7 +17,8 @@
 @ connected, the first mean after each AC/DC re-apply of the dead band rises above the threshold for one mean (Bluetooth log
 @ of a meter: one frame with a full bar about every 2.9 s), and the request 2 of OF-30 flashed "-----" for it.
 @ Production image only: the bargraph ignores the samples of that first mean as well (lowz_bar_hold, read by fn_08018B14):
-@ on the meter the bar jumped to full scale with the polarity sign flipping for it (verified on a meter, v0.9.8).  A real
+@ on the meter the bar jumped to full scale with the polarity sign flipping for it (seen on a meter, v0.9.8; the hold is
+@ verified working on a meter, v0.9.9).  A real
 @ voltage that arrives within that mean moves the bar one mean later.  The byte is 0
 @ whenever no voltage is pending.  The AC/DC selection logic is unchanged.
 @ =============================================================================
