@@ -364,6 +364,25 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Storage: one byte 0x02A = t + 100 (t = -50..+50); any value outside 50..150 (0x00, 0xFF included) means no trim
   (EEPROM_MAP.md 4.1).
 
+### 2.17 Capacitor leakage test (future feature, not started)
+- Request (owner, 2026-11-03): a selectable leakage mode that uses the DIODE test source; `LEAK` on the sub display, the
+  leakage current on the main digits, RANGE switching between the two source voltages.
+- Facts: the DIODE source is not a constant current: 3 V setting 1.4 mA, 15 V setting 7 mA, limited by a nominal 2.2 kOhm
+  of PTC and resistors (user manual, 3 March 2025, p. 51 and the specification table). The 15 V setting switches the
+  RT9271 boost U10 on (PF6 = ENB high, PE15 low; `brd/frontend.s` from the v2.05 drivers); its output is set by the fixed
+  divider R40 47 k / R83 680 and also supplies U9 (HEF4053) through R81, so the firmware can only switch it on or off, not
+  set other voltages (`analysis/frontend_netlist.md`, U10 rows). The HY3131 row is the same in both settings.
+- Principle: once the capacitor has charged (up to the source current), only the leakage flows; it drops
+  I_leak x R_series below the open-circuit voltage, so I_leak = (V_open - V_cap) / R_series. With about 2.2 kOhm and the
+  1 mV resolution of the DIODE reading: about 0.45 uA per mV, up to the source current (a leak near 1 mA is plainly bad).
+- To measure on a meter before any design: open-circuit voltage at 3 V and 15 V, short-circuit current at both (gives
+  R_series), the drift of the boost output over a few minutes (drift reads as leakage), and a 1 MOhm resistor as a known
+  leak (about 15 uA at 15 V). The PTC resistance changes with temperature, which bounds the accuracy of the uA scale.
+- Limits to document: 15 V overstresses capacitors rated below it; the capacitor stays charged after the test; polarity
+  (+ on the VOhm jack); a test at 15 V does not prove a capacitor good at its rated voltage.
+- ESR is not measurable on this hardware (the CAP mode gives the firmware only counter times, AD1 is not read there and
+  is far too slow for a step), so it is not part of this feature.
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
