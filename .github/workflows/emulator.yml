@@ -54,7 +54,6 @@ jobs:
       matrix:
         include:
           - {runner: macos-15, arch: arm64}
-          - {runner: macos-15-intel, arch: x86_64}
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: write

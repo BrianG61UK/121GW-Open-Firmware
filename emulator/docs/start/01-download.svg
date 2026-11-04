@@ -5,17 +5,14 @@
 <text x='50' y='98' font-size='15' font-weight='normal' fill='#1d1d1f' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Mac with Apple chip (M1, M2, M3, M4 …)</text>
 <text x='470' y='98' font-size='14' font-weight='bold' fill='#0969da' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>121GW-Open-Firmware-Emulator-v…-macos-arm64.dmg</text>
 <rect x='30' y='124' width='800' height='44' rx='10' fill='#fff' stroke='#c8cdd2' stroke-width='1'/>
-<text x='50' y='152' font-size='15' font-weight='normal' fill='#1d1d1f' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Mac with Intel chip</text>
-<text x='470' y='152' font-size='14' font-weight='bold' fill='#0969da' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>121GW-Open-Firmware-Emulator-v…-macos-x86_64.dmg</text>
+<text x='50' y='152' font-size='15' font-weight='normal' fill='#1d1d1f' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Windows 10 / 11</text>
+<text x='470' y='152' font-size='14' font-weight='bold' fill='#0969da' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>121GW-Open-Firmware-Emulator-v…-windows-x64.exe</text>
 <rect x='30' y='178' width='800' height='44' rx='10' fill='#fff' stroke='#c8cdd2' stroke-width='1'/>
-<text x='50' y='206' font-size='15' font-weight='normal' fill='#1d1d1f' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Windows 10 / 11</text>
-<text x='470' y='206' font-size='14' font-weight='bold' fill='#0969da' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>121GW-Open-Firmware-Emulator-v…-windows-x64.exe</text>
+<text x='50' y='206' font-size='15' font-weight='normal' fill='#1d1d1f' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Ubuntu, Debian, Mint, Pop!_OS</text>
+<text x='470' y='206' font-size='14' font-weight='bold' fill='#0969da' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>121GW-Open-Firmware-Emulator-v…-linux-amd64.deb</text>
 <rect x='30' y='232' width='800' height='44' rx='10' fill='#fff' stroke='#c8cdd2' stroke-width='1'/>
-<text x='50' y='260' font-size='15' font-weight='normal' fill='#1d1d1f' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Ubuntu, Debian, Mint, Pop!_OS</text>
-<text x='470' y='260' font-size='14' font-weight='bold' fill='#0969da' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>121GW-Open-Firmware-Emulator-v…-linux-amd64.deb</text>
-<rect x='30' y='286' width='800' height='44' rx='10' fill='#fff' stroke='#c8cdd2' stroke-width='1'/>
-<text x='50' y='314' font-size='15' font-weight='normal' fill='#1d1d1f' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>any other Linux (x86-64)</text>
-<text x='470' y='314' font-size='14' font-weight='bold' fill='#0969da' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>121GW-Open-Firmware-Emulator-v…-linux-x86_64.AppImage</text>
+<text x='50' y='260' font-size='15' font-weight='normal' fill='#1d1d1f' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>any other Linux (x86-64)</text>
+<text x='470' y='260' font-size='14' font-weight='bold' fill='#0969da' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>121GW-Open-Firmware-Emulator-v…-linux-x86_64.AppImage</text>
 <text x='30' y='355' font-size='14' font-weight='normal' fill='#3a3a3c' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Click the one line for your computer. The files ending in .sha256 are not needed.</text>
 <text x='430.0' y='376' font-size='13' font-weight='normal' fill='#6e6e73' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Drawing, not a screenshot</text>
 </svg>

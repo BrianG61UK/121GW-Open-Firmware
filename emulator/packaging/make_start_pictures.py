@@ -51,7 +51,7 @@ def window(p, x, y, w, h, title='', mac=True):
 # 1 downloads
 p = Pic(860, 390)
 p.text(30, 40, 'github.com/zombu4/121GW-Open-Firmware/releases  →  latest release  →  Assets', 15, 'bold')
-rows = [('Mac with Apple chip (M1, M2, M3, M4 …)', '…-macos-arm64.dmg'), ('Mac with Intel chip', '…-macos-x86_64.dmg'),
+rows = [('Mac with Apple chip (M1, M2, M3, M4 …)', '…-macos-arm64.dmg'),
         ('Windows 10 / 11', '…-windows-x64.exe'), ('Ubuntu, Debian, Mint, Pop!_OS', '…-linux-amd64.deb'),
         ('any other Linux (x86-64)', '…-linux-x86_64.AppImage')]
 for i, (who, f) in enumerate(rows):
@@ -62,17 +62,6 @@ for i, (who, f) in enumerate(rows):
 p.text(30, 355, 'Click the one line for your computer. The files ending in .sha256 are not needed.', 14, color='#3a3a3c')
 p.caption('Drawing, not a screenshot')
 p.save('01-download.svg')
-
-# mac: which chip
-p = Pic(760, 330)
-window(p, 140, 30, 480, 250, 'About This Mac')
-p.text(380, 120, 'MacBook Air', 22, 'bold', anchor='middle')
-p.text(260, 165, 'Chip', 14, 'bold', '#6e6e73'); p.text(330, 165, 'Apple M2', 14)
-p.ring(322, 148, 90, 24, 1, 'Apple … = arm64 file')
-p.text(260, 200, 'Memory', 14, 'bold', '#6e6e73'); p.text(330, 200, '16 GB', 14)
-p.lines(380, 245, ['(an Intel Mac shows "Processor  … Intel Core …" here: x86_64 file)'], 13, anchor='middle')
-p.caption('Apple menu (top left)  →  About This Mac.  Drawing, not a screenshot')
-p.save('02-mac-chip.svg')
 
 # mac dmg drag
 p = Pic(760, 330)
