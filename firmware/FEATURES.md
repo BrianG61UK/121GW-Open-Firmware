@@ -335,10 +335,10 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
      SETUP is refused while logging, starts an offset calibration in calibration mode, and the page shown cannot be told
      from the status frame for every item; on Ld remote keys no longer arrive).  Later = remind at the next connection.
   5. Time sync (owner request 2026-11-04): a button that takes the time from an NTP server (default pool.ntp.org,
-     configurable, e.g. the owner's 10.0.10.123) and sends the set-clock frame `F8` (analysis/ble_packet.md 6).  To be
-     established on a meter first: the meaning of the six values (UNPROVEN in ble_packet.md 6).  v2.05 applies the
-     clock only once per Bluetooth session (0x20008033, cleared only by the Bluetooth toggle); the fast build may lift
-     that (firmware change, owner decision when it comes up).
+     configurable, e.g. the owner's 10.0.10.123) and sends the set-clock frame `F8` with year 0..99, month, day, hour,
+     minute, second as plain numbers (the firmware converts them to BCD: rtc_write_reg calls the binary-to-BCD routine,
+     rtc/nju6350.s) and their XOR.  IMP-31 (F-1.01): the fast firmware applies every valid frame; v2.05 only the first one
+     after the Bluetooth toggle.  Emulator test test_ble_clock.py.
   6. SD card file manager and synced folder (owner request 2026-11-04; owner chose the synced folder over a drive mount,
      which would need macFUSE / WinFsp / FUSE and is slow for file browsers at about 1 KB/s): list, download, delete and
      rename files, and a "sync" that copies new or changed files of the card into a normal folder on the computer.

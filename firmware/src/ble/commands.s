@@ -21,7 +21,7 @@
     .equ ble_enable,            v_2000802B   @ BLE / serial transfer enabled (long PEAK)
     .equ ble_rx_len,            v_2000802F   @ length of the last complete frame
     .equ ble_rx_ready,          v_20008030   @ a complete command frame is waiting
-    .equ ble_clock_set,         v_20008033   @ set-clock frame already applied (cleared by the BT toggle)
+    .equ ble_clock_set,         v_20008033   @ set-clock frame applied since the BT toggle (written only; IMP-31)
     .equ ble_clock_bad,         v_20008034   @ last set-clock frame failed its checksum (write only)
     .equ ble_key_remote_req,    v_20008069   @ remote key request pending
     .equ ble_key_remote_code,   v_2000806D   @ remote key code (1..8, 0x81..0x88)
@@ -79,7 +79,8 @@ ENDFUNC fn_0800C308
 @ Spec     : analysis/ble_packet.md 6
 @ Note     : Clears ble_rx_ready, copies the ble_rx_len received bytes to ble_cmd_buf, then: 0xF8 frame: decodes 7 hex
 @            pairs (offsets 1, 3, ..., 13), checks v6 == v0 ^ ... ^ v5, echoes the frame, and applies v0..v5 to
-@            rtc_year .. rtc_second and the NJU6350 (fn_0801016C) only if ble_clock_set is 0, then sets it; a failed
+@            rtc_year .. rtc_second and the NJU6350 (fn_0801016C) every time (IMP-31; v2.05 only while ble_clock_set
+@            is 0) and sets ble_clock_set; a failed
 @            checksum clears ble_clock_bad (never read).  0xF4 frame: pairs at offsets 1 and 3 must be equal; then
 @            echo, key_remote_req = 1 and key_remote_code = the code (decoded by fn_08014AE6 in KEY); code 0x90 is
 @            answered with ble_version_frame instead (FEATURES.md 2.11 stage 3).  Any other first byte is ignored.
@@ -146,10 +147,8 @@ FUNC fn_0800C332
     cmp r0, r1                              @ 0800C3D4  compare (r8 ^ (r7 ^ (r6 ^ (r5 ^ (r4 ^ r11))))) with r1
     bne .L0800C41E                          @ 0800C3D6  if (r8 ^ (r7 ^ (r6 ^ (r5 ^ (r4 ^ r11))))) != r1
     bl fn_0800C308                          @ 0800C3D8  echo the received command frame [r0=(r8 ^ (r7 ^ (r6 ^ (r5 ^ (r4 ^ r11)))))]
-    ldr.w r0, =ble_clock_set                @ 0800C3DC
-    ldrb r0, [r0, #0x0]                     @ 0800C3E0  r0 = ble_clock_set
-    cmp r0, #0x0                            @ 0800C3E2  compare ble_clock_set with 0
-    bne .L0800C46C                          @ 0800C3E4  if ble_clock_set != 0
+    @ IMP-31: every set-clock frame with a valid checksum is applied.  v2.05 applies only the first one after the Bluetooth
+    @ toggle (test of ble_clock_set at 0x0800C3DC..0x0800C3E4, removed); the flag is still written below.
     ldrb r0, [sp, #0x0]                     @ 0800C3E6  r0 = local [sp+0]
     ldr.w r1, =ble_year                     @ 0800C3EA
     strb r0, [r1, #0x0]                     @ 0800C3EE  ble_year = r0
@@ -209,7 +208,7 @@ FUNC fn_0800C332
     ldrb r0, [sp, #0x1]                     @ 0800C462  r0 = local [sp+1]
     ldr.w r1, =ble_key_remote_code          @ 0800C466
     strb r0, [r1, #0x0]                     @ 0800C46A  ble_key_remote_code = r0
-.L0800C46C:  @ reached from 0800C3E4 bne (ble_clock_set != 0), 0800C41C b, 0800C426 b, 0800C430 bne (ble_cmd_buf != 244 (0xF4)), 0800C454 bne (r0 != r1)
+.L0800C46C:  @ reached from 0800C41C b, 0800C426 b, 0800C430 bne (ble_cmd_buf != 244 (0xF4)), 0800C454 bne (r0 != r1)
     pop {r0, r4, r5, r6, r7, r8, r9, r10, r11, pc} @ 0800C46C
 ENDFUNC fn_0800C332
     .ltorg
