@@ -13,7 +13,7 @@ collection buffer; --full sends the whole image).
   T3 transfer: START, every DATA accepted ("Ld nn" shown meanwhile), one packet sent twice (accepted, not stored again),
      one packet skipped (status 2 with the packet expected), one packet cut short (dropped after 200 ms without a byte,
      the full packet after it is accepted), 3 card write faults injected before packet 30 (the write is repeated),
-     END: status 0 and "Ld oK"; the card then holds EEVBlog.bin
+     2 card read faults injected during the check (repeated in new sessions), END: status 0 and "Ld oK"; the card then holds EEVBlog.bin
      equal to the file sent, and BTLOAD.TMP.
   T4 a file that is not an application image (initial SP 0): END status 0x13 ("LdE 3") and EEVBlog.bin unchanged.
   T5 leaving the page: status frames again.
@@ -139,11 +139,13 @@ def run_tests(image, full):
             'left %d' % e.sdcard.faults['write_crc'])
     T.check('percent shown during the transfer', any(s.startswith('LD') and s[2:].strip().isdigit() for s in shown),
             'shown %r' % sorted(shown)[:6])
+    link.e.sdcard.faults['read_crc'] = 2             # two card reads fail during the check (repeated in new sessions)
     a = link.send(btft.packet(btft.T_END, len(pkts)), timeout=120.0)
     e.advance(0.3)                                   # the page is redrawn in the next refresh pass
     T.check('END: status 0, "Ld oK"', a is not None and a[1] == 0 and T.sub_text(e) == 'LD oK', '%r sub %r' % (a, T.sub_text(e)))
     T.check('END answer reports the repeated card sessions (> 0 after the injected faults)', a is not None and a[2] > 0,
             repr(a))
+    T.check('the 2 injected read faults were met', e.sdcard.faults['read_crc'] == 0, 'left %d' % e.sdcard.faults['read_crc'])
     print('    %.1f s emulated for %d bytes (%.0f B/s)' % (T.now(e) - t0, len(payload), len(payload) / (T.now(e) - t0)))
     s = e.snapshot()
     T.check('no unmodelled access, no safety violation', s['unmodelled'] == 0 and not s['safety'])

@@ -31,7 +31,7 @@
 @     4 START refused (size); 5 bytes beyond the announced size; 0x10 + n: END failed with error n (below)
 @ Errors (shown "LdE n"): 1 the card could not be written; 2 length or CRC-32 of the received file wrong; 3 not an
 @     application image (initial SP outside the RAM, reset vector outside 0x08006000..0x0805FFFF or not Thumb);
-@     4 the copy to EEVBlog.bin failed; 5 the copy read back differs.
+@     4 the copy to EEVBlog.bin failed; 5 the copy read back differs; 6 the received file could not be read back.
 @ Buffers: the received bytes are collected in log_buf (8 KiB of its 10000 bytes, 0x20001240..0x2000394F; 0x20003950 is
 @ the BLE value ring, written all the time) and written to the card
 @ when the next packet might not fit; the card work uses the FIL objects of the log (log_fil, log_fil_new) and the
@@ -62,6 +62,7 @@
     .equ BFT_GAP_TICKS,     20              @ 200 ms without a byte ends a packet being assembled
     .equ BFT_COPY_TRIES,    3               @ attempts of the copy to EEVBlog.bin
     .equ BFT_FLUSH_TRIES,   10              @ card sessions for one collected write
+    .equ BFT_READ_TRIES,    10              @ card sessions for reading the received file back
     .equ BFT_ST_WAIT,       0               @ waiting for START
     .equ BFT_ST_RECV,       1               @ receiving
     .equ BFT_ST_DONE,       2               @ EEVBlog.bin written and verified
@@ -405,7 +406,8 @@ ENDFUNC bft_flush_once
 @ -----------------------------------------------------------------------------
 @ bft_file_crc - CRC-32 and length of a file
 @ In       : r0 = path
-@ Out      : r0 = 0 read, else failed; r1 = CRC-32 (final), r2 = length; the first 8 bytes in bft_hdr
+@ Out      : r0 = 0 read, else the FatFs result of the failed open or read; r1 = CRC-32 (final), r2 = length; the first
+@            8 bytes in bft_hdr
 @ Clobbers : r0-r3, r12, flags (r4-r7 saved)
 @ Context  : inside a card session
 @ -----------------------------------------------------------------------------
@@ -454,12 +456,13 @@ LFUNC bft_file_crc
     add sp, sp, #12
     pop {r4-r7, pc}
 .Lfc_close_fail:
+    mov r4, r0                              @ keep the result of the failed read
     ldr r0, =bft_fil_a
     bl fat_f_close
+    mov r0, r4
 .Lfc_fail:
-    movs r0, #1
     add sp, sp, #12
-    pop {r4-r7, pc}
+    pop {r4-r7, pc}                         @ r0 = FatFs result of the failed open or read (non-zero)
 ENDFUNC bft_file_crc
 
 @ -----------------------------------------------------------------------------
@@ -471,12 +474,30 @@ LFUNC bft_finish
     push {r4-r7, lr}
     sub sp, sp, #12
     bl bft_card_begin
-    @ 1. the received file: length and CRC-32 as announced
+    @ 1. the received file: length and CRC-32 as announced.  A failed read is repeated in a new card session (on a meter
+    @    a read of the complete, correct file failed once, 2026-11-03: the check said "length or CRC-32 wrong" while the
+    @    card held every byte right); error 6 if every attempt fails, error 2 only for a file read completely but wrong
+    movs r4, #BFT_READ_TRIES
+.Lfi_rd:
     ldr r0, =bft_name_tmp
     bl bft_file_crc
-    movs r7, #2
     cmp r0, #0
-    bne .Lfi_end
+    beq .Lfi_rd_ok
+    orr r0, r0, #0x600                      @ diagnosis: step 6 (read back) << 8 | FatFs result
+    ldr r3, =bft_diag
+    strh r0, [r3]
+    ldr r3, =bft_fails
+    ldrh r0, [r3]
+    adds r0, r0, #1
+    strh r0, [r3]
+    bl bft_card_end
+    bl bft_card_begin
+    subs r4, r4, #1
+    bne .Lfi_rd
+    movs r7, #6
+    b .Lfi_end
+.Lfi_rd_ok:
+    movs r7, #2
     ldr r0, =bft_size
     ldr r0, [r0]
     cmp r2, r0
@@ -791,6 +812,9 @@ LFUNC bft_packet
     movs r0, #BFT_ST_ERR
     mov r1, r5
     bl bft_set_state
+    ldr r0, =bft_diag
+    ldrh r0, [r0]
+    bl bft_alt                              @ the answer carries the last failed card step and its FatFs result
     add r0, r5, #0x10
     b .Lpk_answer
 4:  movs r0, #BFT_ST_DONE

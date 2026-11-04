@@ -87,8 +87,8 @@ async def main(path):
         if status in (0x14, 0x15):
             raise SystemExit('END: %s.  EEVBlog.bin on the card may be incomplete: do NOT start the update; send the file'
                              ' again or copy it with a computer.' % btft.STATUS_TEXT[status])
-        if status == 0x11:
-            raise SystemExit('END: %s (%s)' % (btft.STATUS_TEXT[status], btft.card_diag(info)))
+        if status in (0x11, 0x16) or (status and info):
+            raise SystemExit('END: %s (last card failure: %s)' % (btft.STATUS_TEXT.get(status, status), btft.card_diag(info)))
         if status:
             raise SystemExit('END: %s' % btft.STATUS_TEXT.get(status, status))
         if info:

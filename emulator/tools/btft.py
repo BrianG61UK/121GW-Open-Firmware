@@ -12,9 +12,10 @@ T_START, T_DATA, T_END, T_ABORT, T_ANSWER = 1, 2, 3, 4, 0x81
 MAX_PAYLOAD = 232
 STATUS_TEXT = {0: 'accepted', 1: 'CRC wrong', 2: 'not the expected packet', 3: 'not allowed now', 4: 'START refused (size)',
                5: 'beyond the announced size', 0x11: 'card could not be written', 0x12: 'length or CRC-32 wrong',
-               0x13: 'not an application image', 0x14: 'copy to EEVBlog.bin failed', 0x15: 'EEVBlog.bin read back differs'}
+               0x13: 'not an application image', 0x14: 'copy to EEVBlog.bin failed', 0x15: 'EEVBlog.bin read back differs',
+               0x16: 'the received file could not be read back'}
 MIN_SIZE, MAX_SIZE = 0x124, 0x5A000
-CARD_STEP = {1: 'open', 2: 'seek', 3: 'write', 4: 'short write (card full?)', 5: 'close'}
+CARD_STEP = {1: 'open', 2: 'seek', 3: 'write', 4: 'short write (card full?)', 5: 'close', 6: 'read back'}
 
 
 def card_diag(nxt):
