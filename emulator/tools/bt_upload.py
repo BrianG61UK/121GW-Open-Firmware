@@ -84,6 +84,11 @@ async def main(path):
         print()
         print('checking and writing EEVBlog.bin on the card ...')
         status, info = await send(btft.packet(btft.T_END, len(pkts)), len(pkts), TIMEOUT_END)
+        vals = []
+        for i in range(7):
+            st, v = await send(btft.status_packet(i), 0, TIMEOUT_DATA)
+            vals.append(v if st == 0 else 0)
+        print('diagnosis: ' + btft.explain_diag(vals))
         if status in (0x14, 0x15):
             raise SystemExit('END: %s.  EEVBlog.bin on the card may be incomplete: do NOT start the update; send the file'
                              ' again or copy it with a computer.' % btft.STATUS_TEXT[status])

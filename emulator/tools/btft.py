@@ -8,7 +8,10 @@ Answer from the meter: B5 5B 81 seq(2) 03 status next(2) crc16(2).
 import struct
 import zlib
 
-T_START, T_DATA, T_END, T_ABORT, T_ANSWER = 1, 2, 3, 4, 0x81
+T_START, T_DATA, T_END, T_ABORT, T_STATUS, T_ANSWER = 1, 2, 3, 4, 5, 0x81
+DIAG_NAMES = ['failed card sessions of the transfer', 'last card failure (step << 8 | FatFs result)',
+              'failed disk_read / disk_write since power-on', 'their op | reason << 8', 'SDIO_STA', 'sd_transfer_error',
+              'sd_wait_write result']
 MAX_PAYLOAD = 232
 STATUS_TEXT = {0: 'accepted', 1: 'CRC wrong', 2: 'not the expected packet', 3: 'not allowed now', 4: 'START refused (size)',
                5: 'beyond the announced size', 0x11: 'card could not be written', 0x12: 'length or CRC-32 wrong',
@@ -37,6 +40,24 @@ def packet(ptype, seq, payload=b''):
         raise ValueError('payload above %d bytes' % MAX_PAYLOAD)
     body = struct.pack('<BHB', ptype, seq & 0xFFFF, len(payload)) + bytes(payload)
     return b'\xB5\x5B' + body + struct.pack('<H', crc16(body))
+
+
+def status_packet(index):
+    return packet(T_STATUS, 0, bytes([index]))
+
+
+def explain_diag(values):
+    """Readable text for the STATUS values 0..6."""
+    op, reason = values[3] & 0xFF, values[3] >> 8
+    why = {(1, 1): 'read: card did not return to the transfer state', (1, 2): 'read: SDIO error flag',
+           (1, 3): 'read: data end / DMA end not seen in time', (2, 1): 'write: card did not return to the transfer state',
+           (2, 2): 'write: the end-of-write wait ran out of polls (or CMD12 failed)', (2, 3): 'write: SDIO error code'}
+    sta = values[4]
+    flags = [n for b, n in ((1, 'DCRCFAIL'), (3, 'DTIMEOUT'), (4, 'TXUNDERR'), (5, 'RXOVERR'), (9, 'STBITERR')) if sta >> b & 1]
+    return ('%d failed card sessions in this transfer, last card failure %s; driver: %d failed calls since power-on, last %s,'
+            ' SDIO_STA 0x%04X %s, transfer error %d, wait result %d'
+            % (values[0], card_diag(values[1]), values[2], why.get((op, reason), 'op %d reason %d' % (op, reason)), sta,
+               flags, values[5], values[6]))
 
 
 def start_packet(data):

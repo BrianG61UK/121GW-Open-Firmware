@@ -145,6 +145,14 @@ def run_tests(image, full):
     T.check('END: status 0, "Ld oK"', a is not None and a[1] == 0 and T.sub_text(e) == 'LD oK', '%r sub %r' % (a, T.sub_text(e)))
     T.check('END answer reports the repeated card sessions (> 0 after the injected faults)', a is not None and a[2] > 0,
             repr(a))
+    vals = []
+    for i in range(7):
+        a2 = link.send(btft.status_packet(i))
+        vals.append(a2[2] if a2 and a2[1] == 0 else None)
+    print('    ' + btft.explain_diag([v or 0 for v in vals]))
+    T.check('STATUS 0 = repeated card sessions reported by END (%r)' % (a[2] if a else None), a is not None and vals[0] == a[2],
+            repr(vals))
+    T.check('STATUS 2: the driver counted failed calls (> 0 after the injected faults)', (vals[2] or 0) > 0, repr(vals))
     T.check('the 2 injected read faults were met', e.sdcard.faults['read_crc'] == 0, 'left %d' % e.sdcard.faults['read_crc'])
     print('    %.1f s emulated for %d bytes (%.0f B/s)' % (T.now(e) - t0, len(payload), len(payload) / (T.now(e) - t0)))
     s = e.snapshot()

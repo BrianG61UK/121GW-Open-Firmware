@@ -24,6 +24,7 @@
 @     type 0x02 DATA   seq = packet number from 0, payload = the next bytes of the file
 @     type 0x03 END    all bytes sent: flush, check, copy, check the copy
 @     type 0x04 ABORT  back to waiting
+@     type 0x05 STATUS payload index(1): a diagnosis value in the answer's "next" field (bft_diag_tab)
 @ Answer: B5 5B 81 seq(2) 03 status next(2) crc16(2), seq = the packet answered, next = the packet number expected
 @     (with status 0x11 instead: the failed step << 8 | its FatFs result, step 1 open, 2 seek, 3 write, 4 short write,
 @     5 close; with status 0 to END: the number of failed card sessions that were repeated successfully).
@@ -111,6 +112,13 @@ bft_created:    .space 1                    @ the temporary file exists for this
 bft_idle:       .space 1                    @ 10 ms ticks since the last received byte (TIM2, saturates at 255)
 
     .section .rodata.bft, "a", %progbits
+    .balign 4
+@ STATUS (type 5) values: 0 failed card sessions of the transfer, 1 last card failure (step << 8 | FatFs result),
+@ 2 failed disk_read / disk_write calls since power-on, 3 their op and reason, 4 SDIO_STA, 5 sd_transfer_error,
+@ 6 sd_wait_write result (sd/diskio.s, sd_dg_*)
+bft_diag_tab:   .word bft_fails, bft_diag, sd_dg_count, sd_dg_op, sd_dg_sta, sd_dg_terr, sd_dg_wait
+bft_diag_wid:   .byte 2, 2, 2, 2, 2, 1, 1
+    .equ BFT_DIAG_N, 7
 bft_name_tmp:   .asciz "0:BTLOAD.TMP"
 bft_name_img:   .asciz "0:EEVBlog.bin"
 
@@ -649,6 +657,8 @@ LFUNC bft_packet
     beq .Lpk_end
     cmp r0, #4
     beq .Lpk_abort
+    cmp r0, #5
+    beq .Lpk_status
     movs r0, #3                             @ unknown type: not allowed
     b .Lpk_answer
 .Lpk_start:
@@ -692,6 +702,25 @@ LFUNC bft_packet
     b .Lpk_answer
 .Lpk_refuse:
     movs r0, #4
+    b .Lpk_answer
+.Lpk_status:
+    @ STATUS: payload 1 byte = index of a diagnosis value, answered in the "next" field (any state, nothing changes)
+    ldrb r0, [r4, #5]
+    cmp r0, #1
+    bne .Lpk_notallowed
+    ldrb r0, [r4, #6]
+    cmp r0, #BFT_DIAG_N
+    bhs .Lpk_notallowed
+    ldr r1, =bft_diag_tab
+    ldr r1, [r1, r0, lsl #2]                @ address of the value
+    ldr r2, =bft_diag_wid
+    ldrb r2, [r2, r0]
+    cmp r2, #1
+    ite eq
+    ldrbeq r0, [r1]
+    ldrhne r0, [r1]
+    bl bft_alt
+    movs r0, #0
     b .Lpk_answer
 .Lpk_abort:
     movs r0, #BFT_ST_WAIT
