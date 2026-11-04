@@ -103,11 +103,13 @@ footer { display: flex; align-items: center; gap: 16px; padding: 9px 22px; borde
   <div class="link"><i class="dot" id="dot"></i><span class="cap" id="linktext">not connected</span></div>
   <div class="spacer"></div>
   <div class="cap">firmware <span class="fwv num" id="fw">—</span></div>
+  <div class="cap">bootloader <span class="fwv num" id="bl">—</span></div>
   <button id="connect" class="primary">Connect</button>
 </header>
 
-<div class="notice" id="notice"><span class="cap">firmware</span><span class="text" id="ntext"></span>
+<div class="notice" id="notice"><span class="cap">update</span><span class="text" id="ntext"></span>
   <div class="prog" id="nprog" hidden><i id="nbar"></i></div>
+  <button id="nfw" hidden>Firmware only</button><button id="nbl" hidden>Bootloader only</button>
   <button id="nprimary" class="primary"></button><button id="nsecondary"></button></div>
 <main>
   <div>
@@ -248,38 +250,50 @@ $('sync').onclick = async () => {
 let upStart = null;
 function drawUpdate(u, M) {
   const n = $('notice'), t = $('ntext'), p = $('nprimary'), q = $('nsecondary'), pr = $('nprog');
-  const show = (text, prim, sec, bad) => {
+  const fwb = $('nfw'), blb = $('nbl');
+  const show = (text, prim, sec, bad, both) => {
     n.classList.add('show'); t.innerHTML = text; t.className = 'text' + (bad ? ' bad' : '');
     p.hidden = !prim; p.textContent = prim || ''; q.hidden = !sec; q.textContent = sec || ''; pr.hidden = true;
+    fwb.hidden = blb.hidden = !both;
   };
+  const num = x => `<span class="num">${x}</span>`;
   const st = u.state;
-  if (st === 'available' && !u.later)
-    show(`<span class="num">${u.latest}</span> is available — this meter runs <span class="num">${M.version}</span>`, 'Update now', 'Later');
-  else if (st === 'downloading') show(`getting <span class="num">${u.latest}</span> …`);
-  else if (st === 'waiting_ld') show('On the meter: press <b>SETUP</b> until the page shows <span class="num">Ld-bt</span>. The transfer starts by itself.', null, 'Cancel');
+  if (st === 'available' && !u.later) {
+    const parts = [];
+    if (u.fw) parts.push('firmware ' + num(u.fw[0]) + (M.version ? ' (meter: ' + num(M.version) + ')' : ''));
+    if (u.bl) parts.push('bootloader ' + num(u.bl[0]) + (M.bootloader === 'EEV' ? ' (meter: EEVblog original)'
+                                                       : M.bootloader ? ' (meter: ' + num(M.bootloader) + ')' : ''));
+    const both = !!(u.fw && u.bl);
+    show(parts.join(' · ') + ' available', both ? 'Update both' : 'Update now', 'Later', false, both);
+  }
+  else if (st === 'downloading') show(`getting ${num(u.step)} …`);
+  else if (st === 'waiting_ld') show('On the meter: press <b>SETUP</b> until the page shows ' + num('Ld-bt') + '. The transfer starts by itself.', null, 'Cancel');
+  else if (st === 'restarting') show('the meter restarts' + (u.message ? ': ' + u.message : '') + ' …', null, 'Cancel');
   else if (st === 'sending') {
     if (upStart === null) upStart = state.now;
     const f = u.total ? u.done / u.total : 0, el = state.now - upStart, left = f > .02 ? el / f - el : null;
-    show(`sending <span class="num">${u.latest}</span> · <span class="num">${Math.round(u.done / 1024)} / ${Math.round(u.total / 1024)} KB</span>` +
-         (left !== null ? ` · about <span class="num">${Math.ceil(left / 60)} min</span> left` : ''), null, 'Cancel');
+    show(`sending ${num(u.step)} · ${num(Math.round(u.done / 1024) + ' / ' + Math.round(u.total / 1024) + ' KB')}` +
+         (left !== null ? ` · about ${num(Math.ceil(left / 60) + ' min')} left` : ''), null, 'Cancel');
     pr.hidden = false; $('nbar').style.width = (f * 100).toFixed(1) + '%';
   }
-  else if (st === 'done' && !u.later)
-    show(`<span class="num">${u.latest}</span> is on the meter's SD card${u.message ? ' (' + u.message + ')' : ''}. To install: switch the meter off, hold <b>HOLD</b> and <b>MEM</b> while switching it on, then press <b>SETUP</b>.`, 'OK');
+  else if (st === 'done' && !u.later) show(u.message ? u.message : 'update finished', 'OK');
   else if (st === 'error' && !u.later) show('update stopped: ' + u.message, 'Try again', 'Close', true);
   else n.classList.remove('show');
   if (st !== 'sending') upStart = null;
 }
+async function startUpdate(what) {
+  try { await api({update_now: what}); } catch (e) { say(e.message, true); }
+}
 $('nprimary').onclick = async () => {
   const st = state && state.update.state;
-  try {
-    if (st === 'available' || st === 'error') await api({update_now: true});
-    else if (st === 'done') await api({update_later: true});
-  } catch (e) { say(e.message, true); }
+  if (st === 'available' || st === 'error') return startUpdate('both');
+  try { if (st === 'done') await api({update_later: true}); } catch (e) { say(e.message, true); }
 };
+$('nfw').onclick = () => startUpdate('firmware');
+$('nbl').onclick = () => startUpdate('bootloader');
 $('nsecondary').onclick = async () => {
   const st = state && state.update.state;
-  try { await api(st === 'waiting_ld' || st === 'sending' ? {update_cancel: true} : {update_later: true}); }
+  try { await api(['waiting_ld', 'sending', 'restarting'].includes(st) ? {update_cancel: true} : {update_later: true}); }
   catch (e) { say(e.message, true); }
 };
 
@@ -295,8 +309,10 @@ async function poll() {
   dot.className = 'dot ' + ({connected: 'on', scanning: 'busy', connecting: 'busy', lost: 'off'}[L.state] || '');
   $('linktext').textContent = L.state === 'connected' ? 'connected · ' + L.detail : L.state === 'idle' ? 'not connected' : L.state;
   const M = state.meter;
-  $('fw').textContent = L.state !== 'connected' ? '—' : M.firmware === 'fast' ? M.version
-                      : M.firmware === 'other' ? 'v2.05 / like-v2.05' : 'asking…';
+  $('fw').textContent = L.state !== 'connected' ? '—' : M.mode === 'bootloader' ? 'update mode'
+                      : M.firmware === 'fast' ? M.version : M.firmware === 'other' ? 'v2.05 / like-v2.05' : 'asking…';
+  $('bl').textContent = L.state !== 'connected' || !M.bootloader ? '—'
+                      : M.bootloader === 'EEV' ? 'EEVblog original' : M.bootloader;
   $('connect').textContent = L.state === 'idle' ? 'Connect' : 'Disconnect';
   $('connect').className = L.state === 'idle' ? 'primary' : '';
   if (L.detail && L.state !== 'connected') say(L.detail, L.state === 'lost');

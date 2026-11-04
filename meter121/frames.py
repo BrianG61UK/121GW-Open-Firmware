@@ -9,6 +9,7 @@ FEATURES.md 2.10 and 2.11):
     F4     5       echo of a key frame                    the two hex pairs equal
     F8     15      echo of a set-clock frame              7th hex pair = XOR of the first six
     F6     7       version answer of the fast build       XOR of all 7 bytes = 0
+    F7     7       bootloader version answer (F-1.03 on)  XOR of all 7 bytes = 0
     B5 5B  8+n     answer of the file transfer (2.10)     CRC-16/CCITT-FALSE
 
 Bytes inside a binary frame can equal a start byte, so a frame is taken only when its whole length is present and its
@@ -16,7 +17,7 @@ check passes; otherwise the first byte is dropped and the search goes on from th
 after a frame the meter abandoned part way).  Standard library only.
 """
 
-STATUS, KEY_ECHO, CLOCK_ECHO, VERSION, BFT = 'status', 'key_echo', 'clock_echo', 'version', 'bft'
+STATUS, KEY_ECHO, CLOCK_ECHO, VERSION, BL_VERSION, BFT = 'status', 'key_echo', 'clock_echo', 'version', 'bl_version', 'bft'
 
 
 def _xor(data):
@@ -81,10 +82,11 @@ class Reassembler:
             if len(b) < 19:
                 return 'wait'
             return (STATUS, 19) if _xor(b[:19]) == 0 else None
-        if s == 0xF6:
+        if s in (0xF6, 0xF7):
             if len(b) < 7:
                 return 'wait'
-            return (VERSION, 7) if _xor(b[:7]) == 0 and all(0x20 <= c < 0x7F for c in b[1:6]) else None
+            ok = _xor(b[:7]) == 0 and all(0x20 <= c < 0x7F for c in b[1:6])
+            return ((VERSION if s == 0xF6 else BL_VERSION), 7) if ok else None
         if s == 0xF4:
             if len(b) < 5:
                 return 'wait'
@@ -116,10 +118,19 @@ def version_text(frame):
 
 
 def key_frame(code):
-    """The key frame of `code` (0x01..0x08 short, 0x81..0x88 long, 0x90 version request): F4 and the code as an
+    """The key frame of `code` (0x01..0x08 short, 0x81..0x88 long, 0x90 version, 0x91 update mode, 0x92 bootloader
+    version): F4 and the code as an
     ASCII hex pair twice (analysis/ble_packet.md 6)."""
     h = b'%02X' % code
     return b'\xF4' + h + h
 
 
 VERSION_REQUEST = key_frame(0x90)
+UPDATE_MODE_REQUEST = key_frame(0x91)          # restart into the two-part bootloader's update mode (firmware ble/blcmd.s)
+BL_VERSION_REQUEST = key_frame(0x92)           # bootloader version, answered with F7
+
+
+def bl_version_text(frame):
+    """'B-1.00' from F7 'B' '-' d d d x, or 'EEV' for EEVblog's bootloader ('B-EEV')."""
+    c = frame[1:6].decode('ascii')
+    return 'EEV' if c == 'B-EEV' else c[:3] + '.' + c[3:]

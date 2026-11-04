@@ -1,9 +1,15 @@
-"""The fast firmware's releases on GitHub: the latest version, and its image downloaded and checked.
+"""Releases on GitHub of the fast firmware and of the two-part bootloader: the latest version, the files downloaded
+and checked.
 
 Releases of the fast firmware are tagged vA.B.C and carry firmware-<tag>.zip with 2_fast/EEVBlog.bin and the zip's
 SHA-256 in firmware-<tag>.zip.sha256.  The meter shows the version as F-A.BC (the firmware's config.inc and
 .github/scripts/check_fw_version.py on main), so "F-1.01" is release v1.0.1.  Downloaded images are kept in the user's
 cache folder so a second update of another meter needs no download.  Standard library only.
+
+Releases of the bootloader (branch bootloader) are tagged bl-vA.B.C and carry bootloader-<tag>.zip with install.bin
+(starter and bootloader, for the first install through the firmware) and bootloader.bin (the bootloader image, for an
+update through the bootloader), and the zip's SHA-256 in bootloader-<tag>.zip.sha256.  The meter reports the version as
+B-A.BC (firmware ble/blcmd.s, key code 0x92); its bootloader header carries A << 16 | B << 8 | C.
 """
 import hashlib
 import io
@@ -20,6 +26,7 @@ REPO = 'zombu4/121GW-Open-Firmware'
 API = 'https://api.github.com/repos/%s/releases?per_page=100' % REPO
 ASSET = 'https://github.com/%s/releases/download/%s/%s'
 TAG = re.compile(r'v(\d)\.(\d)\.(\d)')
+BL_TAG = re.compile(r'bl-v(\d)\.(\d)\.(\d)')
 TIMEOUT = 20
 
 
@@ -47,14 +54,33 @@ def _get(url):
         return r.read()
 
 
+def _latest(pattern, what):
+    rel = json.loads(_get(API))
+    found = [(tuple(int(x) for x in pattern.fullmatch(r['tag_name']).groups()), r['tag_name']) for r in rel
+             if not r.get('draft') and not r.get('prerelease') and pattern.fullmatch(r['tag_name'])]
+    if not found:
+        raise ReleaseError('no %s release found on github.com/%s' % (what, REPO))
+    return max(found)
+
+
 def latest():
     """(version tuple, tag) of the newest published fast release."""
-    rel = json.loads(_get(API))
-    found = [(tuple(int(x) for x in TAG.fullmatch(r['tag_name']).groups()), r['tag_name']) for r in rel
-             if not r.get('draft') and not r.get('prerelease') and TAG.fullmatch(r['tag_name'])]
-    if not found:
-        raise ReleaseError('no fast firmware release found on github.com/%s' % REPO)
-    return max(found)
+    return _latest(TAG, 'fast firmware')
+
+
+def latest_bootloader():
+    """(version tuple, tag) of the newest published bootloader release."""
+    return _latest(BL_TAG, 'bootloader')
+
+
+def version_of_bootloader(text):
+    """(A, B, C) from the meter's 'B-A.BC', or None ('EEV' = EEVblog's bootloader)."""
+    m = re.fullmatch(r'B-(\d)\.(\d)(\d)', text or '')
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def bootloader_text(v):
+    return 'B-%d.%d%d' % v
 
 
 def check_image(data):
@@ -94,3 +120,51 @@ def image(tag):
         f.write(data)
     os.replace(path + '.part', path)
     return data
+
+
+def _zip_checked(tag, zname):
+    blob = _get(ASSET % (REPO, tag, zname))
+    want = _get(ASSET % (REPO, tag, zname + '.sha256')).decode('ascii', 'replace').split()[0].lower()
+    got = hashlib.sha256(blob).hexdigest()
+    if got != want:
+        raise ReleaseError('%s: SHA-256 %s does not match the published %s' % (zname, got, want))
+    return zipfile.ZipFile(io.BytesIO(blob))
+
+
+def check_install(data):
+    """The checks the firmware makes before a first install (ble/bft.s bft_install): None or the reason."""
+    if not 0x580 <= len(data) <= 0x6000 or len(data) % 128:
+        return 'install file of %d bytes: 0x580 .. 0x6000 in whole half-pages expected' % len(data)
+    sp, reset = struct.unpack_from('<II', data, 0)
+    if not 0x20000001 <= sp <= 0x2000C000 or not reset & 1 or not 0x08000000 <= reset < 0x08000400:
+        return 'the starter part has no valid vector table'
+    if struct.unpack_from('<I', data, 0x400)[0] != 0x32484C42:
+        return 'no bootloader header after the starter'
+    return None
+
+
+def bootloader_files(tag):
+    """(install.bin, bootloader.bin) of bootloader release `tag`, from the cache or downloaded and checked."""
+    folder = os.path.join(cache_dir(), tag)
+    paths_ = [os.path.join(folder, n) for n in ('install.bin', 'bootloader.bin')]
+    if all(os.path.isfile(p) for p in paths_):
+        inst, boot = (open(p, 'rb').read() for p in paths_)
+        if check_install(inst) is None and boot:
+            return inst, boot
+    zname = 'bootloader-%s.zip' % tag
+    with _zip_checked(tag, zname) as z:
+        names = z.namelist()
+        if 'install.bin' not in names or 'bootloader.bin' not in names:
+            raise ReleaseError('%s lacks install.bin or bootloader.bin' % zname)
+        inst, boot = z.read('install.bin'), z.read('bootloader.bin')
+    bad = check_install(inst)
+    if bad:
+        raise ReleaseError('%s: %s' % (zname, bad))
+    if inst[0x500:0x500 + len(boot)] != boot:
+        raise ReleaseError('%s: install.bin and bootloader.bin hold different bootloaders' % zname)
+    os.makedirs(folder, exist_ok=True)
+    for p, d in zip(paths_, (inst, boot)):
+        with open(p + '.part', 'wb') as f:
+            f.write(d)
+        os.replace(p + '.part', p)
+    return inst, boot

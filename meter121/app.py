@@ -58,11 +58,16 @@ class Companion:
         # firmware of the connected meter (FEATURES.md 2.11 stage 3): 'unknown' until asked; 'fast' with version;
         # 'other' = the meter echoed the request without a version frame (v2.05 or the like-v2.05 build)
         self.fw_kind, self.version = 'unknown', None
-        self._echo = self._ver = None
+        # bootloader (bootloader/DESIGN.md): 'EEV' = EEVblog's, 'B-A.BC' = the two-part bootloader, None = not known
+        # (firmware older than F-1.03 does not answer the question); mode 'bootloader' = the meter is in its update mode
+        self.bl, self.mode = None, 'unknown'
+        self._echo = self._ver = self._blver = None
         self._asked = threading.Event()
         # firmware update (FEATURES.md 2.11 stage 4): state none / available / downloading / waiting_ld / sending / done /
         # error; 'later' hides the notice until the next connection
-        self.update = {'state': 'none', 'latest': None, 'tag': None, 'later': False, 'done': 0, 'total': 0, 'message': ''}
+        # 'fw' / 'bl': (meter text, release tag) of a newer firmware / bootloader, or None; 'what' of a running update
+        self.update = {'state': 'none', 'fw': None, 'bl': None, 'what': None, 'step': '', 'later': False, 'done': 0,
+                       'total': 0, 'message': ''}
         self._sender = None
         self._cancel = False
         self.link = MeterLink(self._frame, self._state)
@@ -74,6 +79,8 @@ class Companion:
             self.session.add(display.decode(frame, t))
         elif kind == frames.VERSION:
             self._ver = frames.version_text(frame)
+        elif kind == frames.BL_VERSION:
+            self._blver = frames.bl_version_text(frame)
         elif kind == frames.KEY_ECHO and frame == frames.VERSION_REQUEST:
             self._echo = t
         elif kind == frames.CLOCK_ECHO:
@@ -85,18 +92,20 @@ class Companion:
 
     def _state(self, state, detail):
         if state == 'connected':
-            self.fw_kind, self.version = 'unknown', None
+            self.fw_kind, self.version, self.mode = 'unknown', None, 'unknown'
             if self.update['state'] in ('none', 'available', 'done', 'error'):
                 self.update.update(state='none', later=False, message='')
             self._asked.set()
 
     def _ask_version(self):
-        """After each connection: ask until the meter answers (echo and version = fast build; echo only = other build;
-        neither = the link was not ready, e.g. page Ld shown or an SD access running: ask again later)."""
+        """After each connection: what runs on the meter.  The firmware answers the version request with its echo and,
+        the fast build, a version frame (then the bootloader question, F-1.03 on); the bootloader's update mode answers
+        only its own status request.  Nothing at all: the link was not ready (page Ld shown or an SD access running):
+        ask again later."""
         while True:
             self._asked.wait()
-            while self.link.state == 'connected' and self.fw_kind == 'unknown':
-                self._echo = self._ver = None
+            while self.link.state == 'connected' and self.mode == 'unknown':
+                self._echo = self._ver = self._blver = None
                 try:
                     self.link.send(frames.VERSION_REQUEST)
                 except (RuntimeError, OSError, TimeoutError):
@@ -106,62 +115,190 @@ class Companion:
                     time.sleep(0.05)
                 if self._ver is not None:
                     self.fw_kind, self.version = 'fast', self._ver
+                    self.bl = self._ask_bootloader()
+                    self.mode = 'firmware'
                     self._check_release()
                 elif self._echo is not None:
-                    self.fw_kind = 'other'
+                    self.fw_kind, self.mode = 'other', 'firmware'
                 else:
-                    time.sleep(VERSION_RETRY)
+                    v = self._boot_probe()
+                    if v is not None:
+                        self.bl, self.mode = releases.bootloader_text(v), 'bootloader'
+                        self._check_release()
+                    else:
+                        time.sleep(VERSION_RETRY)
             self._asked.clear()
 
+    def _ask_bootloader(self):
+        """'EEV', 'B-A.BC', or None when the firmware does not answer key code 0x92 (older than F-1.03)."""
+        self._blver = None
+        try:
+            self.link.send(frames.BL_VERSION_REQUEST)
+        except (RuntimeError, OSError, TimeoutError):
+            return None
+        end = time.time() + VERSION_WAIT
+        while time.time() < end and self._blver is None:
+            time.sleep(0.05)
+        return self._blver
+
+    def _boot_probe(self):
+        """(A, B, C) when the bootloader's update mode answers its status request, else None."""
+        own = self._sender is None
+        if own:
+            self._sender = transfer.Sender(self.link.send)
+        try:
+            return transfer.boot_version(self._sender)
+        except (RuntimeError, OSError, TimeoutError):
+            return None
+        finally:
+            if own:
+                self._sender = None
+
     def _recheck_releases(self):
-        """Look for a newer release again every RELEASE_RECHECK seconds while a fast-build meter is connected."""
+        """Look for newer releases again every RELEASE_RECHECK seconds while a meter is connected."""
         while True:
             time.sleep(RELEASE_RECHECK)
-            if self.link.state == 'connected' and self.fw_kind == 'fast':
+            if self.link.state == 'connected' and self.mode != 'unknown':
                 self._check_release()
 
     def _check_release(self):
-        """Offer an update when a newer fast release exists than the version the meter reported."""
-        cur = releases.version_of_meter(self.version)
-        if cur is None or self.update['state'] not in ('none', 'available'):
+        """Offer what is newer than the meter has: the fast firmware (a meter in the bootloader's update mode is offered
+        the latest firmware), the two-part bootloader (first install on a meter with EEVblog's bootloader needs
+        firmware F-1.03 or newer: the firmware writes it)."""
+        if self.update['state'] not in ('none', 'available'):
             return
+        fw = bl = None
         try:
             ver, tag = releases.latest()
+            cur = releases.version_of_meter(self.version)
+            if self.mode == 'bootloader' or (cur is not None and ver > cur):
+                fw = (releases.meter_text(ver), tag)
         except (OSError, ValueError, releases.ReleaseError):
-            return                                          # offline: no notice, the meter keeps its firmware
-        if ver > cur:
-            self.update.update(state='available', latest=releases.meter_text(ver), tag=tag)
+            pass                                            # offline or none published: nothing offered
+        try:
+            bver, btag = releases.latest_bootloader()
+            have = releases.version_of_bootloader(self.bl)
+            if have is not None and bver > have:
+                bl = (releases.bootloader_text(bver), btag)
+            elif self.bl == 'EEV':
+                bl = (releases.bootloader_text(bver), btag)
+        except (OSError, ValueError, releases.ReleaseError):
+            pass
+        state = 'available' if fw or bl else 'none'
+        self.update.update(state=state, fw=fw, bl=bl)
 
-    def _run_update(self):
+    # ------------------------------------------------------------------ updates
+    def _run_update(self, what):
+        """what: 'firmware', 'bootloader' or 'both'.  With EEVblog's bootloader the firmware goes first (the first
+        install needs F-1.03 on the meter); with the two-part bootloader the bootloader goes first (DESIGN.md 5)."""
         u = self.update
         try:
-            u.update(state='downloading', message='getting %s from the releases' % u['latest'])
-            data = releases.image(u['tag'])
-            self._sender = transfer.Sender(self.link.send)
-            u.update(state='waiting_ld', message='')
-            while not self._sender.probe():
-                if self._cancel:
-                    raise transfer.TransferError('cancelled')
-                time.sleep(1.0)
-            u.update(state='sending', done=0, total=len(data))
-            th = threading.Thread(target=lambda: setattr(self, '_result', self._send(data)), daemon=True)
-            self._result = None
-            th.start()
-            while th.is_alive():
-                u.update(done=self._sender.done)
-                time.sleep(0.2)
-            if isinstance(self._result, Exception):
-                raise self._result
-            u.update(state='done', done=len(data), message=('%d card session(s) were repeated' % self._result)
-                     if self._result else '')
+            steps = ['firmware', 'bootloader'] if what == 'both' else [what]
+            if what == 'both' and self.bl != 'EEV':
+                steps.reverse()
+            for step in steps:
+                if step == 'firmware':
+                    self._update_firmware()
+                else:
+                    self._update_bootloader()
+            u.update(state='done', step='', message=u.get('message', ''))
         except (OSError, ValueError, RuntimeError, releases.ReleaseError, transfer.TransferError) as e:
             u.update(state='error', message=str(e))
         finally:
             self._sender, self._cancel = None, False
 
-    def _send(self, data):
+    def _update_firmware(self):
+        u = self.update
+        if not u['fw']:
+            return
+        text, tag = u['fw']
+        u.update(state='downloading', what='firmware', step=text, message='getting %s from the releases' % text)
+        data = releases.image(tag)
+        if self.mode == 'bootloader' or releases.version_of_bootloader(self.bl):
+            self._enter_update_mode()
+            self._boot_send(data, transfer.KIND_FIRMWARE, None, text)
+            self._wait_restart(lambda: self.mode == 'firmware' and self.version == text,
+                               'the meter did not come back with %s' % text)
+            u.update(message='')
+        else:
+            self._sender = transfer.Sender(self.link.send)
+            self._wait_ld()
+            self._send_tracked(lambda: self._sender.run(data), len(data), text)
+            u.update(message='%s is on the SD card. To install: switch the meter off, hold HOLD and MEM while '
+                             'switching it on, then press SETUP.' % text)
+
+    def _update_bootloader(self):
+        u = self.update
+        if not u['bl']:
+            return
+        text, tag = u['bl']
+        u.update(state='downloading', what='bootloader', step=text, message='getting %s from the releases' % text)
+        install, boot = releases.bootloader_files(tag)
+        if self.bl == 'EEV':
+            if releases.version_of_meter(self.version) is None or releases.version_of_meter(self.version) < (1, 0, 3):
+                raise transfer.TransferError('the first bootloader install needs firmware F-1.03 or newer on the meter: '
+                                             'update the firmware first')
+            self._sender = transfer.Sender(self.link.send)
+            self._wait_ld()
+            self._send_tracked(lambda: self._sender.run(install, kind=transfer.KIND_INSTALL), len(install), text)
+        else:
+            self._enter_update_mode()
+            ver = releases.version_of_bootloader(text)
+            self._boot_send(boot, transfer.KIND_BOOTLOADER, ver[0] << 16 | ver[1] << 8 | ver[2], text)
+        self._wait_restart(lambda: self.bl == text, 'the meter did not report bootloader %s' % text)
+        u.update(message='')
+
+    def _wait_ld(self):
+        self.update.update(state='waiting_ld', message='')
+        while not self._sender.probe():
+            if self._cancel:
+                raise transfer.TransferError('cancelled')
+            time.sleep(1.0)
+
+    def _enter_update_mode(self):
+        """Restart the meter into the bootloader's update mode (key code 0x91) unless it is there already."""
+        if self.mode == 'bootloader':
+            return
+        self.update.update(state='restarting', message='the meter restarts into its update mode')
+        self.link.send(frames.UPDATE_MODE_REQUEST)
+        self._wait_restart(lambda: self.mode == 'bootloader', 'the meter did not come back in its update mode')
+
+    def _wait_restart(self, ready, failure, timeout=90.0):
+        """The meter restarts (its Bluetooth module is switched off with it): wait for the link to drop, the link
+        reconnects by itself, then for `ready()` after the version questions."""
+        self.update.update(state='restarting')
+        end = time.time() + timeout
+        while time.time() < end and self.link.state == 'connected' and not ready():
+            time.sleep(0.2)
+        while time.time() < end and not ready():
+            if self._cancel:
+                raise transfer.TransferError('cancelled')
+            time.sleep(0.2)
+        if not ready():
+            raise transfer.TransferError(failure)
+
+    def _boot_send(self, data, kind, version, text):
+        self._sender = transfer.BootSender(self.link.send)
+        self._send_tracked(lambda: self._sender.run(data, kind, version), len(data), text)
+
+    def _send_tracked(self, job, total, text):
+        u = self.update
+        u.update(state='sending', done=0, total=total, step=text)
+        box = {}
+        th = threading.Thread(target=lambda: box.setdefault('r', self._guard(job)), daemon=True)
+        th.start()
+        while th.is_alive():
+            u.update(done=self._sender.done)
+            time.sleep(0.2)
+        if isinstance(box.get('r'), Exception):
+            raise box['r']
+        u.update(done=total)
+        self._sender = None
+
+    @staticmethod
+    def _guard(job):
         try:
-            return self._sender.run(data)
+            return job()
         except (OSError, RuntimeError, transfer.TransferError) as e:
             return e
 
@@ -197,7 +334,7 @@ class Companion:
         return {'now': time.time(),
                 'link': {'state': L.state, 'detail': L.detail, 'device': L.device, 'found': L.found,
                          'rx_bytes': L.rx_bytes, 'rx_dropped': L.rx_dropped},
-                'meter': {'firmware': self.fw_kind, 'version': self.version},
+                'meter': {'firmware': self.fw_kind, 'version': self.version, 'bootloader': self.bl, 'mode': self.mode},
                 'update': dict(self.update),
                 'clock': self.clock,
                 'session': self.session.snapshot(since),
@@ -226,13 +363,15 @@ class Companion:
             self.update['later'] = True
             return {'ok': True}
         if 'update_now' in c:
-            if self.update['state'] not in ('available', 'error') or not self.update['tag']:
+            what = c['update_now'] if c['update_now'] in ('firmware', 'bootloader', 'both') else 'both'
+            u = self.update
+            if u['state'] not in ('available', 'error') or not (u['fw'] or u['bl']):
                 raise ValueError('no update to install')
             if self.link.state != 'connected':
                 raise RuntimeError('not connected to a meter')
             self._cancel = False
-            self.update['later'] = False
-            threading.Thread(target=self._run_update, name='update', daemon=True).start()
+            u['later'] = False
+            threading.Thread(target=self._run_update, args=(what,), name='update', daemon=True).start()
             return {'ok': True}
         if 'update_cancel' in c:
             self._cancel = True

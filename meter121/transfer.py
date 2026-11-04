@@ -1,4 +1,5 @@
-"""File transfer to the meter's SD card (the firmware's protocol of FEATURES.md 2.10, ble/bft.s).
+"""Transfers to the meter: the file transfer of the firmware's page Ld (FEATURES.md 2.10, ble/bft.s) and the update
+protocol of the two-part bootloader (bootloader/DESIGN.md 6.3, bootloader/src/bl_ble.s).
 
 Packet to the meter: B5 5B type seq(2) len(1) payload crc16(2), little-endian, CRC-16/CCITT-FALSE over type..payload.
 Answer: B5 5B 81 seq(2) 03 status next(2) crc16(2).  Stop and wait: every packet is answered before the next one goes.
@@ -21,7 +22,16 @@ RETRIES = 8
 STATUS_TEXT = {0: 'accepted', 1: 'CRC wrong', 2: 'not the expected packet', 3: 'not allowed now', 4: 'size refused',
                5: 'beyond the announced size', 0x11: 'the card could not be written', 0x12: 'length or CRC-32 wrong',
                0x13: 'not an application image', 0x14: 'the copy to EEVBlog.bin failed',
-               0x15: 'EEVBlog.bin read back differs', 0x16: 'the received file could not be read back'}
+               0x15: 'EEVBlog.bin read back differs', 0x16: 'the received file could not be read back',
+               0x17: "the meter does not have one of EEVblog's bootloaders (already replaced?)",
+               0x18: 'battery too low for the bootloader install: put in fresh batteries',
+               0x19: 'the bootloader install failed (the file or a flash step)'}
+BOOT_STATUS_TEXT = {0: 'accepted', 1: 'CRC wrong', 2: 'not the expected packet', 3: 'not allowed now', 4: 'refused',
+                    5: 'beyond the announced size', 0x12: 'length or CRC-32 of the written image wrong',
+                    0x13: 'not a firmware image', 0x16: 'flash write or check failed'}
+KIND_FIRMWARE, KIND_INSTALL, KIND_BOOTLOADER = 0, 1, 2
+BOOT_VERSION_INDEX = 0x80                     # STATUS index answered only by the bootloader (bl_ble.s)
+TIMEOUT_START = 30.0                          # the bootloader erases the target before it answers START
 
 
 class TransferError(Exception):
@@ -81,12 +91,16 @@ class Sender:
         except queue.Empty:
             return False
 
-    def run(self, data):
-        """Send `data` as EEVBlog.bin; returns the number of card sessions the meter had to repeat."""
+    def run(self, data, kind=None):
+        """Send `data` as EEVBlog.bin, or with kind 1 as the first-install file of the two-part bootloader (firmware
+        F-1.03 on: the meter writes it to flash and restarts); returns the number of card sessions the meter had to
+        repeat."""
         pkts = [packet(T_DATA, n, data[i:i + MAX_PAYLOAD]) for n, i in enumerate(range(0, len(data), MAX_PAYLOAD))]
         self.total, self.done = len(data), 0
-        status, _ = self._ask(packet(T_START, 0, struct.pack('<II', len(data), zlib.crc32(data) & 0xFFFFFFFF)), 0,
-                              TIMEOUT_DATA)
+        start = struct.pack('<II', len(data), zlib.crc32(data) & 0xFFFFFFFF)
+        if kind is not None:
+            start += bytes([kind])
+        status, _ = self._ask(packet(T_START, 0, start), 0, TIMEOUT_DATA)
         if status:
             raise TransferError('START: %s' % STATUS_TEXT.get(status, status))
         n = 0
@@ -106,3 +120,75 @@ class Sender:
         if status:
             raise TransferError('END: %s' % STATUS_TEXT.get(status, status))
         return info
+
+
+def boot_version(sender, timeout=1.5):
+    """(major, minor, patch) when the meter is in the bootloader's update mode, else None (any other answer or none;
+    the firmware's page Ld refuses the index)."""
+    while not sender.answers.empty():
+        sender.answers.get_nowait()
+    sender.send(packet(T_STATUS, 0, bytes([BOOT_VERSION_INDEX])))
+    try:
+        seq, status, nxt = sender.answers.get(timeout=timeout)
+    except queue.Empty:
+        return None
+    return (nxt >> 8, (nxt >> 4) & 0xF, nxt & 0xF) if status == 0 else None
+
+
+class BootSender(Sender):
+    """The bootloader's update protocol: START (the meter erases, then answers), DATA with two packets in flight, END
+    (the meter checks the flash and restarts half a second after its answer)."""
+
+    def run(self, data, kind=KIND_FIRMWARE, version=None):
+        pkts = [packet(T_DATA, n, data[i:i + MAX_PAYLOAD]) for n, i in enumerate(range(0, len(data), MAX_PAYLOAD))]
+        self.total, self.done = len(data), 0
+        start = struct.pack('<IIB', len(data), zlib.crc32(data) & 0xFFFFFFFF, kind)
+        if version is not None:
+            start += struct.pack('<I', version)
+        status, _ = self._ask(packet(T_START, 0, start), 0, TIMEOUT_START)
+        if status:
+            raise TransferError('START: %s' % BOOT_STATUS_TEXT.get(status, status))
+        acked = 0                                     # packets the meter confirmed, in order
+        while acked < len(pkts):
+            while not self.answers.empty():
+                self.answers.get_nowait()
+            nxt_send = acked
+            inflight = 0
+            stalled = False
+            while acked < len(pkts) and not stalled:
+                while inflight < 2 and nxt_send < len(pkts):
+                    self.send(pkts[nxt_send])
+                    nxt_send += 1
+                    inflight += 1
+                end = time.monotonic() + TIMEOUT_DATA
+                got = None
+                while time.monotonic() < end:
+                    if self.cancelled:
+                        raise TransferError('cancelled')
+                    try:
+                        got = self.answers.get(timeout=0.5)
+                        break
+                    except queue.Empty:
+                        continue
+                if got is None:
+                    stalled = True                    # no answer: start again from the first unconfirmed packet
+                    break
+                seq, status, nxt = got
+                if status == 0 and seq == acked:
+                    acked += 1
+                    inflight -= 1
+                    self.done = min(len(data), acked * MAX_PAYLOAD)
+                elif status == 0 and seq < acked:
+                    inflight = max(0, inflight - 1)   # the answer to a repeated packet: its slot is free again
+                elif status in (1, 2):
+                    stalled = True                    # CRC wrong or out of order: resend from the expected one
+                    if status == 2:
+                        acked = nxt
+                else:
+                    raise TransferError('packet %d: %s' % (seq, BOOT_STATUS_TEXT.get(status, status)))
+            if stalled:
+                time.sleep(0.3)                       # let packets still in flight be answered and dropped
+        status, _ = self._ask(packet(T_END, len(pkts)), len(pkts), TIMEOUT_START)
+        if status:
+            raise TransferError('END: %s' % BOOT_STATUS_TEXT.get(status, status))
+        return 0
