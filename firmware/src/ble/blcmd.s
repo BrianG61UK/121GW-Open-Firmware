@@ -37,7 +37,7 @@ blcmd_frame:    .space 8                    @ the F7 frame being queued
 @ Out      : r0 = version word, or -1 when the mark is not valid
 @ Clobbers : r1-r3, r12, flags (r4 saved)
 @ -----------------------------------------------------------------------------
-LFUNC blcmd_mark_version
+FUNC blcmd_mark_version
     push {r4, lr}
     ldr r4, =BLCMD_MARK
     ldr r0, [r4, #0]

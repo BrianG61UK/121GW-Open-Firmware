@@ -16,7 +16,7 @@
     .thumb
     .include "macros.inc"
     .include "hw.inc"
-    .include "ff16.inc"
+    .include "ff16x.inc"
     .include "bl.inc"
 
     .equ FA_READ,           0x01
@@ -24,7 +24,10 @@
 
     .section .bss.bl_card, "aw", %nobits
     .balign 4
+    .global ff16_fatfs
+ff16_fatfs:                                 @ the drive's FATFS (also the name the firmware's SD driver refers to)
 bl_fatfs:       .space FATFS_SIZE
+bl_fil:         .space FIL_SIZE
 bl_buf:         .space CHUNK
 bl_card_size:   .space 4
 bl_card_crc:    .space 4
@@ -54,15 +57,15 @@ FUNC bl_card_update
     ldr r1, =bl_fatfs
     bl fat_f_mount
     movs r7, #1
-    ldr r0, =ff16_fil_a
+    ldr r0, =bl_fil
     ldr r1, =bl_name
     movs r2, #FA_READ
-    bl fat_f_open
+    bl ff16_f_open
     cmp r0, #0
     bne .Lc_end
     @ pass 1: read the whole file, CRC-32, size, image check
     movs r7, #2
-    ldr r0, =ff16_fil_a
+    ldr r0, =bl_fil
     ldr r0, [r0, #OBJ_OBJSIZE]              @ file size (FIL.obj.objsize, ff16.inc)
     ldr r1, =bl_card_size
     str r0, [r1]
@@ -74,17 +77,18 @@ FUNC bl_card_update
     bl bl_card_pass                         @ r0 = 0 and the CRC in bl_card_crc, or non-zero
     cmp r0, #0
     bne .Lc_close
-    ldr r0, =ff16_fil_a                     @ back to the start: the first two words for the image check
-    movs r1, #0
-    bl fat_f_lseek
+    ldr r0, =bl_fil                     @ back to the start: the first two words for the image check
+    movs r2, #0                             @ offset 0 (FSIZE_t, 64-bit: r2:r3)
+    movs r3, #0
+    bl ff16_f_lseek
     cmp r0, #0
     bne .Lc_close
-    ldr r0, =ff16_fil_a
+    ldr r0, =bl_fil
     ldr r1, =bl_buf
     movs r2, #8
     sub sp, sp, #8
     mov r3, sp
-    bl fat_f_read
+    bl ff16_f_read
     ldr r1, [sp]
     add sp, sp, #8
     cmp r0, #0
@@ -126,9 +130,10 @@ FUNC bl_card_update
     cmp r0, #0
     bne .Lc_close
     @ pass 2: read again and program, 4 half-pages per chunk
-    ldr r0, =ff16_fil_a
-    movs r1, #0
-    bl fat_f_lseek
+    ldr r0, =bl_fil
+    movs r2, #0                             @ offset 0 (FSIZE_t, 64-bit: r2:r3)
+    movs r3, #0
+    bl ff16_f_lseek
     cmp r0, #0
     bne .Lc_close
     ldr r4, =APP_BASE                       @ r4 = destination
@@ -139,12 +144,12 @@ FUNC bl_card_update
     ite hs
     movhs r6, #CHUNK
     movlo r6, r5                            @ r6 = bytes of this chunk
-    ldr r0, =ff16_fil_a
+    ldr r0, =bl_fil
     ldr r1, =bl_buf
     mov r2, r6
     sub sp, sp, #8
     mov r3, sp
-    bl fat_f_read
+    bl ff16_f_read
     ldr r1, [sp]
     add sp, sp, #8
     cmp r0, #0
@@ -203,8 +208,8 @@ FUNC bl_card_update
     bne .Lc_close
     movs r7, #0
 .Lc_close:
-    ldr r0, =ff16_fil_a
-    bl fat_f_close
+    ldr r0, =bl_fil
+    bl ff16_f_close
 .Lc_end:
     bl sd_power_off
     movs r0, #0
@@ -230,11 +235,11 @@ LFUNC bl_card_pass
     sub sp, sp, #8
     mov r4, #0xFFFFFFFF                     @ running CRC
     movs r5, #0                             @ bytes read
-1:  ldr r0, =ff16_fil_a
+1:  ldr r0, =bl_fil
     ldr r1, =bl_buf
     mov r2, #CHUNK
     mov r3, sp
-    bl fat_f_read
+    bl ff16_f_read
     cbnz r0, 9f
     ldr r6, [sp]
     cbz r6, 2f
@@ -256,10 +261,26 @@ LFUNC bl_card_pass
     pop {r4-r6, pc}
 ENDFUNC bl_card_pass
 
+@ -----------------------------------------------------------------------------
+@ fat_f_mount - R0.08a form of f_mount (vol, fs), as the firmware's ff16_api.s: f_mount(fs, "", 0); here because the
+@ firmware's SD driver (sd_probe_mount, not used by the bootloader) refers to it
+@ In       : r0 = volume (0), r1 = fs    Out: r0 = FRESULT
+@ -----------------------------------------------------------------------------
+FUNC fat_f_mount
+    cbnz r0, 1f
+    mov r0, r1
+    ldr r1, =bl_empty_path
+    movs r2, #0
+    b ff16_f_mount
+1:  movs r0, #FR_INVALID_DRIVE
+    bx lr
+ENDFUNC fat_f_mount
+
     .ltorg
 
     .section .rodata.bl_card, "a", %progbits
 bl_name:        .asciz "0:EEVBlog.bin"
+bl_empty_path:  .byte 0
     .global bl_txt_down, bl_txt_good, bl_txt_fail, bl_txt_iap
 bl_txt_down:    .ascii "douun"
 bl_txt_good:    .ascii " Good"

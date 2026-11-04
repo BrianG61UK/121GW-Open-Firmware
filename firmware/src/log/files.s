@@ -24,17 +24,18 @@
     .include "hw.inc"
     .include "ram_v205.inc"
     .include "config.inc"
+    .include "ff16x.inc"
 
     .section .text.log, "ax", %progbits
 
 @ names of the v2.05 variables used in this file (addresses unchanged, DESIGN.md 5.1)
     .equ log_buf,                 v_20001240            @ 0x20001240 byte buffer in which one flush of rows is assembled before f_write (also the cal.bin buffer)
-    .equ fat_fs_obj,              v_20006830            @ 0x20006830 FATFS work area of drive 0 (registered by f_mount)
+    .equ fat_fs_obj,              ff16_fatfs            @ FATFS work area of drive 0 (production: R0.16 exFAT FATFS, 572 bytes, in .bss_port, IMP-32; v2.05: 0x20006830)
     .equ log_fil,                 ff16_fil_a            @ production image: FatFs R0.16 objects (FIL 552 bytes, DIR 44: larger than the v2.05 areas) in .bss_port (ff16_api.s, IMP-29)
     .equ log_fil_new,             ff16_fil_b
     .equ log_verify_buf,          v_20006EA8            @ 0x20006EA8 0x200-byte read-back buffer of log_verify_file (also cal.bin read-back)
     .equ log_dir,                 ff16_dir_a            @ DIR object of the root scan (production: R0.16 DIR, 44 bytes, in .bss_port, IMP-29)
-    .equ log_finfo,               v_20007B38            @ 0x20007B38 FILINFO (fsize u32, fdate u16, ftime u16, fattrib u8, fname[13]) of the scan and of f_utime/f_stat
+    .equ log_finfo,               ff16_finfo            @ FILINFO of the scan and of f_utime/f_stat (production: R0.16 exFAT/LFN FILINFO, 288 bytes, in .bss_port, ff16_api.s, IMP-32; v2.05: 0x20007B38, 22 bytes)
     .equ log_name_buf,            v_20007BD0            @ 0x20007BD0 file name buffer "YYMMDDnn.csv" (12 characters + NUL)
     .equ sd_csd,                  v_20007BF0            @ 0x20007BF0 CSD register of the card (4 words, word 0 = bits 127..96)
     .equ log_fixbuf_end,          v_20007C57            @ 0x20007C57 end of the buffer log_format_fixed writes backwards
@@ -507,9 +508,9 @@ FUNC log_set_file_time
     ldrb    r1, [r1]                        @ 0801D3B0 r1 = u8 [rtc_day]
     orrs    r0, r1                          @ 0801D3B2 r0 |= r1
     ldr.w   r1, =log_finfo                  @ 0801D3B4 r1 = &log_finfo
-    strh    r0, [r1, #4]                    @ 0801D3B8 u16 [log_finfo+0x4] = r0
+    strh    r0, [r1, #(FNO_FDATE)]                    @ 0801D3B8 u16 [log_finfo+0x4] = r0
     ldr.w   r0, =log_finfo                  @ 0801D3BA r0 = &log_finfo
-    ldrh    r0, [r0, #4]                    @ 0801D3BE r0 = u16 [log_finfo+0x4]
+    ldrh    r0, [r0, #(FNO_FDATE)]                    @ 0801D3BE r0 = u16 [log_finfo+0x4]
     movs    r6, r0                          @ 0801D3C0 r6 = r0
     ldr.w   r0, =rtc_hour                   @ 0801D3C2 r0 = &rtc_hour
     ldrb    r0, [r0]                        @ 0801D3C6 r0 = u8 [rtc_hour]
@@ -524,9 +525,9 @@ FUNC log_set_file_time
     uxth    r1, r1                          @ 0801D3E0 r1 = u16(r1)
     orrs.w  r0, r0, r1, lsr #1              @ 0801D3E2 r0 = r0 | r1, lsr #1
     ldr.w   r1, =log_finfo                  @ 0801D3E6 r1 = &log_finfo
-    strh    r0, [r1, #6]                    @ 0801D3EA u16 [log_finfo+0x6] = r0
+    strh    r0, [r1, #(FNO_FTIME)]                    @ 0801D3EA u16 [log_finfo+0x6] = r0
     ldr.w   r0, =log_finfo                  @ 0801D3EC r0 = &log_finfo
-    ldrh    r0, [r0, #6]                    @ 0801D3F0 r0 = u16 [log_finfo+0x6]
+    ldrh    r0, [r0, #(FNO_FTIME)]                    @ 0801D3F0 r0 = u16 [log_finfo+0x6]
     movs    r7, r0                          @ 0801D3F2 r7 = r0
     @ f_utime with the name of the log file or "cal.bin"
     uxtb    r4, r4                          @ 0801D3F4 r4 = u8(r4)
@@ -575,13 +576,13 @@ FUNC log_set_file_time
     @ equal: done (return)
     movs    r0, r6                          @ 0801D464 r0 = r6
     ldr.w   r1, =log_finfo                  @ 0801D466 r1 = &log_finfo
-    ldrh    r1, [r1, #4]                    @ 0801D46A r1 = u16 [log_finfo+0x4]
+    ldrh    r1, [r1, #(FNO_FDATE)]                    @ 0801D46A r1 = u16 [log_finfo+0x4]
     uxth    r0, r0                          @ 0801D46C r0 = u16(r0)
     cmp     r0, r1                          @ 0801D46E compare r0 with r1
     bne     .Llog_set_file_time_D484        @ 0801D470 if (r0 != r1) goto 0x801D484
     movs    r0, r7                          @ 0801D472 r0 = r7
     ldr.w   r1, =log_finfo                  @ 0801D474 r1 = &log_finfo
-    ldrh    r1, [r1, #6]                    @ 0801D478 r1 = u16 [log_finfo+0x6]
+    ldrh    r1, [r1, #(FNO_FTIME)]                    @ 0801D478 r1 = u16 [log_finfo+0x6]
     uxth    r0, r0                          @ 0801D47A r0 = u16(r0)
     cmp     r0, r1                          @ 0801D47C compare r0 with r1
     bne     .Llog_set_file_time_D484        @ 0801D47E if (r0 != r1) goto 0x801D484
@@ -909,7 +910,7 @@ FUNC log_scan_directory
     cmp     r0, #0                          @ 0801D684 compare r0 with 0
     bne     .Llog_scan_directory_D692       @ 0801D686 if (r0 != 0) goto 0x801D692
     ldr.w   r0, =log_finfo                  @ 0801D688 r0 = &log_finfo
-    ldrb    r0, [r0, #9]                    @ 0801D68C r0 = u8 [log_finfo+0x9]
+    ldrb    r0, [r0, #(FNO_FNAME + 0)]                    @ 0801D68C r0 = u8 [log_finfo+0x9]
     cmp     r0, #0                          @ 0801D68E compare r0 with 0
     bne     .Llog_scan_directory_D6A4       @ 0801D690 if (r0 != 0) goto 0x801D6A4
 .Llog_scan_directory_D692:              @ v2.05 0x0801D692, reached from 0x0801D686
@@ -923,59 +924,65 @@ FUNC log_scan_directory
     @ skip "." entries; accept extensions csv and CSV
 .Llog_scan_directory_D6A4:              @ v2.05 0x0801D6A4, reached from 0x0801D690
     ldr.w   r0, =log_finfo                  @ 0801D6A4 r0 = &log_finfo
-    ldrb    r0, [r0, #9]                    @ 0801D6A8 r0 = u8 [log_finfo+0x9]
+    ldrb    r0, [r0, #(FNO_FNAME + 0)]                    @ 0801D6A8 r0 = u8 [log_finfo+0x9]
     cmp     r0, #0x2e                       @ 0801D6AA compare r0 with 0x2e
     beq     .Llog_scan_directory_D670       @ 0801D6AC if (r0 == 0x2e) goto 0x801D670
     ldr.w   r0, =log_finfo                  @ 0801D6AE r0 = &log_finfo
-    ldrb    r0, [r0, #0x12]                 @ 0801D6B2 r0 = u8 [log_finfo+0x12]
+    ldrb    r0, [r0, #(FNO_FNAME + 9)]                 @ 0801D6B2 r0 = u8 [log_finfo+0x12]
     cmp     r0, #0x63                       @ 0801D6B4 compare r0 with 0x63
     bne     .Llog_scan_directory_D6CC       @ 0801D6B6 if (r0 != 0x63) goto 0x801D6CC
     ldr.w   r0, =log_finfo                  @ 0801D6B8 r0 = &log_finfo
-    ldrb    r0, [r0, #0x13]                 @ 0801D6BC r0 = u8 [log_finfo+0x13]
+    ldrb    r0, [r0, #(FNO_FNAME + 10)]                 @ 0801D6BC r0 = u8 [log_finfo+0x13]
     cmp     r0, #0x73                       @ 0801D6BE compare r0 with 0x73
     bne     .Llog_scan_directory_D6CC       @ 0801D6C0 if (r0 != 0x73) goto 0x801D6CC
     ldr.w   r0, =log_finfo                  @ 0801D6C2 r0 = &log_finfo
-    ldrb    r0, [r0, #0x14]                 @ 0801D6C6 r0 = u8 [log_finfo+0x14]
+    ldrb    r0, [r0, #(FNO_FNAME + 11)]                 @ 0801D6C6 r0 = u8 [log_finfo+0x14]
     cmp     r0, #0x76                       @ 0801D6C8 compare r0 with 0x76
     beq     .Llog_scan_directory_D6EA       @ 0801D6CA if (r0 == 0x76) goto 0x801D6EA
 .Llog_scan_directory_D6CC:              @ v2.05 0x0801D6CC, reached from 0x0801D6B6, 0x0801D6C0
     ldr.w   r0, =log_finfo                  @ 0801D6CC r0 = &log_finfo
-    ldrb    r0, [r0, #0x12]                 @ 0801D6D0 r0 = u8 [log_finfo+0x12]
+    ldrb    r0, [r0, #(FNO_FNAME + 9)]                 @ 0801D6D0 r0 = u8 [log_finfo+0x12]
     cmp     r0, #0x43                       @ 0801D6D2 compare r0 with 0x43
     bne     .Llog_scan_directory_D670       @ 0801D6D4 if (r0 != 0x43) goto 0x801D670
     ldr.w   r0, =log_finfo                  @ 0801D6D6 r0 = &log_finfo
-    ldrb    r0, [r0, #0x13]                 @ 0801D6DA r0 = u8 [log_finfo+0x13]
+    ldrb    r0, [r0, #(FNO_FNAME + 10)]                 @ 0801D6DA r0 = u8 [log_finfo+0x13]
     cmp     r0, #0x53                       @ 0801D6DC compare r0 with 0x53
     bne     .Llog_scan_directory_D670       @ 0801D6DE if (r0 != 0x53) goto 0x801D670
     ldr.w   r0, =log_finfo                  @ 0801D6E0 r0 = &log_finfo
-    ldrb    r0, [r0, #0x14]                 @ 0801D6E4 r0 = u8 [log_finfo+0x14]
+    ldrb    r0, [r0, #(FNO_FNAME + 11)]                 @ 0801D6E4 r0 = u8 [log_finfo+0x14]
     cmp     r0, #0x56                       @ 0801D6E6 compare r0 with 0x56
     bne     .Llog_scan_directory_D670       @ 0801D6E8 if (r0 != 0x56) goto 0x801D670
     @ digits 1-2 year, 3-4 month, 5-6 day: character * 10 + next character - 0x10 (= two ASCII digits)
 .Llog_scan_directory_D6EA:              @ v2.05 0x0801D6EA, reached from 0x0801D6CA
+    @ IMP-32: with long names (exFAT, or LFN entries on FAT) fname can be longer than 8.3: only a 12-character name
+    @ "YYMMDDnn.csv" is one of the meter's files (v2.05's 8.3 names had no character after position 11)
+    ldr.w   r0, =log_finfo
+    ldrb    r0, [r0, #(FNO_FNAME + 12)]
+    cmp     r0, #0
+    bne     .Llog_scan_directory_D670
     ldr.w   r0, =log_finfo                  @ 0801D6EA r0 = &log_finfo
-    ldrb    r0, [r0, #9]                    @ 0801D6EE r0 = u8 [log_finfo+0x9]
+    ldrb    r0, [r0, #(FNO_FNAME + 0)]                    @ 0801D6EE r0 = u8 [log_finfo+0x9]
     movs    r1, #0xa                        @ 0801D6F0 r1 = 0xa
     ldr.w   r2, =log_finfo                  @ 0801D6F2 r2 = &log_finfo
-    ldrb    r2, [r2, #0xa]                  @ 0801D6F6 r2 = u8 [log_finfo+0xA]
+    ldrb    r2, [r2, #(FNO_FNAME + 1)]                  @ 0801D6F6 r2 = u8 [log_finfo+0xA]
     mla     r0, r1, r0, r2                  @ 0801D6F8
     subs    r0, #0x10                       @ 0801D6FC r0 -= 0x10
     ldr.w   r1, =log_scan_year              @ 0801D6FE r1 = &log_scan_year
     strb    r0, [r1]                        @ 0801D702 u8 [log_scan_year] = r0
     ldr.w   r0, =log_finfo                  @ 0801D704 r0 = &log_finfo
-    ldrb    r0, [r0, #0xb]                  @ 0801D708 r0 = u8 [log_finfo+0xB]
+    ldrb    r0, [r0, #(FNO_FNAME + 2)]                  @ 0801D708 r0 = u8 [log_finfo+0xB]
     movs    r1, #0xa                        @ 0801D70A r1 = 0xa
     ldr.w   r2, =log_finfo                  @ 0801D70C r2 = &log_finfo
-    ldrb    r2, [r2, #0xc]                  @ 0801D710 r2 = u8 [log_finfo+0xC]
+    ldrb    r2, [r2, #(FNO_FNAME + 3)]                  @ 0801D710 r2 = u8 [log_finfo+0xC]
     mla     r0, r1, r0, r2                  @ 0801D712
     subs    r0, #0x10                       @ 0801D716 r0 -= 0x10
     ldr.w   r1, =log_scan_month             @ 0801D718 r1 = &log_scan_month
     strb    r0, [r1]                        @ 0801D71C u8 [log_scan_month] = r0
     ldr.w   r0, =log_finfo                  @ 0801D71E r0 = &log_finfo
-    ldrb    r0, [r0, #0xd]                  @ 0801D722 r0 = u8 [log_finfo+0xD]
+    ldrb    r0, [r0, #(FNO_FNAME + 4)]                  @ 0801D722 r0 = u8 [log_finfo+0xD]
     movs    r1, #0xa                        @ 0801D724 r1 = 0xa
     ldr.w   r2, =log_finfo                  @ 0801D726 r2 = &log_finfo
-    ldrb    r2, [r2, #0xe]                  @ 0801D72A r2 = u8 [log_finfo+0xE]
+    ldrb    r2, [r2, #(FNO_FNAME + 5)]                  @ 0801D72A r2 = u8 [log_finfo+0xE]
     mla     r0, r1, r0, r2                  @ 0801D72C
     subs    r0, #0x10                       @ 0801D730 r0 -= 0x10
     ldr.w   r1, =log_scan_day               @ 0801D732 r1 = &log_scan_day
@@ -1001,10 +1008,10 @@ FUNC log_scan_directory
     bne     .Llog_scan_directory_D670       @ 0801D766 if (r0 != r1) goto 0x801D670
     @ digits 7-8 give nn; keep the largest, +1
     ldr.w   r0, =log_finfo                  @ 0801D768 r0 = &log_finfo
-    ldrb    r0, [r0, #0xf]                  @ 0801D76C r0 = u8 [log_finfo+0xF]
+    ldrb    r0, [r0, #(FNO_FNAME + 6)]                  @ 0801D76C r0 = u8 [log_finfo+0xF]
     movs    r1, #0xa                        @ 0801D76E r1 = 0xa
     ldr.w   r2, =log_finfo                  @ 0801D770 r2 = &log_finfo
-    ldrb    r2, [r2, #0x10]                 @ 0801D774 r2 = u8 [log_finfo+0x10]
+    ldrb    r2, [r2, #(FNO_FNAME + 7)]                 @ 0801D774 r2 = u8 [log_finfo+0x10]
     mla     r0, r1, r0, r2                  @ 0801D776
     subw    r0, r0, #0x20f                  @ 0801D77A
     movs    r5, r0                          @ 0801D77E r5 = r0

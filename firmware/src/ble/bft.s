@@ -94,7 +94,7 @@
     .equ FA_CREATE_ALWAYS,  0x08
 
     .equ bft_stage,         v_20001240      @ log_buf (log/files.s)
-    .equ bft_fatfs,         v_20006830      @ fat_fs_obj
+    .equ bft_fatfs,         ff16_fatfs      @ fat_fs_obj (production: R0.16 exFAT FATFS in .bss_port, ff16_api.s, IMP-32)
     .equ bft_fil_a,         ff16_fil_a      @ log_fil (FatFs R0.16 FIL in .bss_port, ff16_api.s, IMP-29)
     .equ bft_fil_b,         ff16_fil_b      @ log_fil_new
     .equ bft_vbuf,          v_20006EA8      @ log_verify_buf, 0x200 bytes

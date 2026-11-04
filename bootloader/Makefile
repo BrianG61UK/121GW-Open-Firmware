@@ -21,11 +21,13 @@ BUILD   := build
 
 FW      := ../firmware
 FW_OBJ  := $(FW)/build/obj/default
-FW_OBJS := $(addprefix $(FW_OBJ)/,sd/diskio.o sd/sdcard.o sd/sdio.o sd/tables_v205.o ff16/ff16_api.o ff16/ff16_dir.o \
-           ff16/ff16_file.o ff16/ff16_file2.o ff16/ff16_low.o ff16/ff16_vol.o brd/gpio.o sys/clock.o lcd/font.o)
+FW_OBJS := $(addprefix $(FW_OBJ)/,sd/diskio.o sd/sdcard.o sd/sdio.o sd/tables_v205.o brd/gpio.o sys/clock.o lcd/font.o)
+# FatFs R0.16 (exFAT, long names) of the firmware, assembled here read-only (DESIGN.md G4): FF_FS_READONLY 1, no mkfs
+FF_SRCS := $(addprefix $(FW)/src/ff16/,ff16_low.s ff16_dir1.s ff16_dir2.s ff16_file.s ff16_dirapi.s)
+FF_OBJS := $(patsubst $(FW)/src/ff16/%.s,$(BUILD)/ro_%.o,$(FF_SRCS))
 BL_SRCS := $(wildcard src/bl_*.s)
 BL_OBJS := $(patsubst src/%.s,$(BUILD)/%.o,$(BL_SRCS))
-BL_VERSION ?= 0x00010001
+BL_VERSION ?= 0x00010100
 PY      := $(PYTHON) -I
 
 all: $(BUILD)/starter.bin $(BUILD)/bootloader.bin $(BUILD)/install.bin
@@ -33,8 +35,12 @@ all: $(BUILD)/starter.bin $(BUILD)/bootloader.bin $(BUILD)/install.bin
 $(BUILD)/bl_%.o: src/bl_%.s src/bl.inc | $(BUILD)
 	$(AS) -mcpu=cortex-m3 -mthumb -mimplicit-it=never --fatal-warnings -I src -I $(FW)/src/inc -o $@ $<
 
-$(BUILD)/bootloader.elf: $(BL_OBJS) $(FW_OBJS) link/bootloader.ld
-	$(LD) -T link/bootloader.ld -Map $(BUILD)/bootloader.map --no-warn-rwx-segments -o $@ $(BL_OBJS) $(FW_OBJS)
+$(BUILD)/ro_%.o: $(FW)/src/ff16/%.s $(FW)/src/inc/ff16x.inc | $(BUILD)
+	$(AS) -mcpu=cortex-m3 -mthumb -mimplicit-it=never --fatal-warnings --defsym FF_FS_READONLY=1 --defsym FF_USE_MKFS=0 \
+	    -I $(FW)/src/inc -o $@ $<
+
+$(BUILD)/bootloader.elf: $(BL_OBJS) $(FF_OBJS) $(FW_OBJS) link/bootloader.ld
+	$(LD) -T link/bootloader.ld -Map $(BUILD)/bootloader.map --no-warn-rwx-segments -o $@ $(BL_OBJS) $(FF_OBJS) $(FW_OBJS)
 
 $(BUILD)/bootloader.bin: $(BUILD)/bootloader.elf
 	$(OBJCOPY) -O binary -j .text -j .ramcode $< $@

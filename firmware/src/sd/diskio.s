@@ -42,7 +42,8 @@ sd_dg_recov:    .space 2                    @ reads taken on the hardware counte
     .section .text.sd, "ax", %progbits
 
 @ names of the v2.05 variables used in this file (addresses unchanged, DESIGN.md 5.1)
-    .equ fat_fs_obj,              v_20006830            @ 0x20006830 FATFS work area of drive 0 (registered by f_mount)
+    .equ fat_fs_obj,              ff16_fatfs            @ FATFS work area of drive 0 (production: R0.16 exFAT FATFS, 572 bytes, in .bss_port, IMP-32; v2.05: 0x20006830)
+    .equ sd_card_info,            v_20007698            @ 0x20007698 card information record (sdcard.s): capacity u64 at +0x48
     .equ sd_stop_condition,       v_20007EF0            @ 0x20007EF0 1 = the running transfer is a multi-block write that needs CMD12; 0 = single block read
     .equ sd_transfer_end,         v_20007EF4            @ 0x20007EF4 set to 1 by the SDIO interrupt at the end of the data transfer
     .equ sd_dma_end,              v_20007EF8            @ 0x20007EF8 set to 1 by the DMA interrupt when the DMA transfer is complete
@@ -670,8 +671,8 @@ ENDFUNC get_fattime
 @ Clobbers  : r0-r1, r3, flags (v2.05 regeffects.txt; r4-r11 preserved)
 @ Context   : main only
 @ Spec      : v2.05 listing 0x08024038..0x08024073
-@ Note      : command 0 does nothing; command 1 stores the constant 0x20000 (131072 sectors) as a word, command 2 the halfword 0x200,
-@             command 3 the word 0x20.  The sector count does not describe the card; FatFs does not use it for the operations ported here.
+@ Note      : command 0 does nothing; command 1 stores the card's sector count (IMP-32; v2.05: the constant 0x20000), command 2
+@             the halfword 0x200, command 3 the word 0x20.
 @ -----------------------------------------------------------------------------
 FUNC disk_ioctl
     push    {r4}                            @ 08024038 push {r4}
@@ -686,8 +687,14 @@ FUNC disk_ioctl
     blo     .Ldisk_ioctl_405A               @ 0802404A if (r1 <u 3) goto 0x802405A
     b       .Ldisk_ioctl_406E               @ 0802404C goto 0x802406E
 .Ldisk_ioctl_404E:                      @ v2.05 0x0802404E, reached from 0x08024042
-    movs.w  r4, #0x20000                    @ 0802404E r4 = 0x20000
-    str     r4, [r2]                        @ 08024052 u32 [r2] = r4
+    @ IMP-32: the card's sector count (capacity / 512 from sd_card_info, filled by sd_get_card_info at every bring-up):
+    @ f_mkfs sizes the volume by it.  v2.05 stored the constant 0x20000 here (no caller of R0.08a used it).
+    ldr     r4, =sd_card_info
+    ldrd    r0, r4, [r4, #0x48]             @ capacity in bytes (u64)
+    lsrs    r0, r0, #9
+    orr     r4, r0, r4, lsl #23             @ sectors = capacity >> 9 (32 bits: up to 2 TiB, FF_LBA64 0)
+    movs    r0, #0
+    str     r4, [r2]                        @ u32 [r2] = sector count
     movs    r4, #0                          @ 08024054 r4 = 0
     movs    r0, r4                          @ 08024056 r0 = r4
     b       .Ldisk_ioctl_406E               @ 08024058 goto 0x802406E

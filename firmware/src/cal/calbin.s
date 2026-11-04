@@ -29,7 +29,7 @@
     .include "config.inc"
 
     .equ CALBIN_BUF,        v_20001240      @ log / cal.bin buffer (v2.05 0x0801CD2C)
-    .equ CALBIN_FS,         v_20006830      @ FatFs file system object (f_mount argument 0x0801CD50)
+    .equ CALBIN_FS,         ff16_fatfs      @ FatFs file system object (f_mount argument 0x0801CD50; production: R0.16 exFAT FATFS in .bss_port, IMP-32)
     .equ CALBIN_FIL,        ff16_fil_a      @ FatFs file object production image: FatFs R0.16 objects (FIL 552 bytes, DIR 44: larger than the v2.05 areas) in .bss_port (ff16_api.s, IMP-29)
     .equ CALBIN_RDBUF,      v_20006EA8      @ read-back buffer, 0x200 bytes (0x0801CDC6)
     .equ CALBIN_FIL_FSIZE,  0x0C            @ file size field of the file object (see header)

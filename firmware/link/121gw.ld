@@ -15,7 +15,7 @@ MEMORY
 {
     FLASH    (rx)  : ORIGIN = 0x08006000, LENGTH = 0x4C000   /* 0x08006000..0x08051FFF; above: bootloader slots (bootloader/DESIGN.md 6.1) */
     RAM_V205 (rwx) : ORIGIN = 0x20000000, LENGTH = 0x80FC    /* 0x20000000..0x200080FB, v2.05 layout */
-    RAM_PORT (rw)  : ORIGIN = 0x20008100, LENGTH = 0x1700    /* 0x20008100..0x200097FF, port-only state */
+    RAM_PORT (rw)  : ORIGIN = 0x20008100, LENGTH = 0x3F00    /* 0x20008100..0x2000BFFF, port-only state */
 }
 
 SECTIONS
@@ -102,5 +102,5 @@ ASSERT(__data_v205_start == 0x20000000, ".data_v205 must start at 0x20000000")
 ASSERT(__stack_top == 0x20001240, "initial SP must be 0x20001240")
 ASSERT(__bss_v205_start == 0x20001240, ".bss_v205 must start at 0x20001240")
 ASSERT(__bss_v205_end == 0x200080FC, ".bss_v205 must end at 0x200080FC")
-ASSERT(__bss_port_start >= 0x20008100 && __bss_port_end <= 0x20009800, ".bss_port outside RAM_PORT")
+ASSERT(__bss_port_start >= 0x20008100 && __bss_port_end <= 0x2000C000, ".bss_port outside RAM_PORT")
 ASSERT(SIZEOF(.forbidden) == 0, "a module defines .data/.bss outside .data_v205 / .bss_port")
