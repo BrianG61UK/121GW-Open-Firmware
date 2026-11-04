@@ -45,9 +45,11 @@
     .equ UI_RP_W4_MASK,       0x00000F00    @ w4: Hz (b8), F (b9), V (b10), degC (b11)
     .equ UI_RP_W6_MASK,       0x00000C00    @ w6: A (b10), degF (b11)
     .equ UI_RP_W6_MS,         0x00000001    @ w6: ms (b0)
+    .equ UI_RP_W4_DEGC,       0x00000800    @ w4: degC (b11)
+    .equ UI_RP_W6_DEGF,       0x00000800    @ w6: degF (b11)
 
     .section .bss_port.ui, "aw", %nobits
-@ ui_relpct_last: 1 = the percent view was applied at the last full commit (owner UI)
+@ ui_relpct_last: non-zero = a view was applied at the last full commit (1 percent, 2 RTD temperature) (owner UI)
 ui_relpct_last: .space 1
 
     .section .rodata.ui.relpct, "a", %progbits
@@ -197,20 +199,35 @@ LFUNC ui_rp_text_prep
 ENDFUNC ui_rp_text_prep
 
 @ -----------------------------------------------------------------------------
-@ ui_relpct_mask - apply the percent view (REL percent, IMP-11, or the DCmA loop view, IMP-24) to the shadow before a full commit
+@ ui_relpct_mask - apply the percent view (REL percent, IMP-11, or the DCmA loop view, IMP-24) or the OHM RTD temperature
+@ view (IMP-25) to the shadow before a full commit
 @ Replaces : nothing in v2.05 (new; called first by lcd_commit_shadow)
 @ In/Out   : - / -
 @ Clobbers : r0-r3, flags
 @ Context  : main only
-@ RAM      : reads and writes lcd_shadow words 0, 2, 4, 6, ui_relpct_last; reads peak_hold; writes 0x20008060, 0x20008061
-@            when the view ends
+@ RAM      : reads and writes lcd_shadow words 0, 2, 4, 6, ui_relpct_last; reads peak_hold, 0x200080AB; writes 0x20008060,
+@            0x20008061 when the view ends
+@ Note     : the percent views clear the unit and prefix signs and light %; the RTD view clears them (% included) and
+@            lights degC (0x200080AB non-zero) or degF (0), the signs of TEMP (fn_0801A3A4).  The views are tried in the
+@            order of fn_08016E08, so the mask belongs to the view that is drawn; the pages Sd, tHI and tLo, drawn there
+@            before every view, take no mask (before IMP-25 the percent mask also covered the standard deviation of Sd).
 @ -----------------------------------------------------------------------------
 FUNC ui_relpct_mask
     push {r4, lr}
+    bl ui_stats_view
+    cbnz r0, 0f                             @ page Sd on the main digits (IMP-14): the reading's own unit, no view
+    bl ui_mmt_view
+    cbnz r0, 0f                             @ page tHI / tLo on the main digits (IMP-21): no view
     bl ui_relpct_view
     cbnz r0, 1f
     bl ui_loop_view                         @ IMP-24: the DCmA loop percent view uses the same mask
-1:  ldr r1, =ui_relpct_last
+    cbnz r0, 1f
+    bl ui_rtd_view                          @ IMP-25: the RTD view, kind 2
+    lsls r0, r0, #1                         @ r0 = 0 none, 1 percent, 2 temperature
+    b 1f
+0:  movs r0, #0
+1:  mov r4, r0
+    ldr r1, =ui_relpct_last
     ldrb r2, [r1]
     strb r0, [r1]                           @ remember for the next commit
     cbnz r0, .Lrm_apply
@@ -225,7 +242,10 @@ FUNC ui_relpct_mask
     ldr r3, =lcd_shadow
     ldr r0, [r3, #0]
     bic r0, r0, #UI_RP_W0_MASK
-    orr r0, r0, #UI_RP_W0_PCT               @ % on, k / u / M off
+    bic r0, r0, #UI_RP_W0_PCT
+    cmp r4, #1
+    it eq
+    orreq r0, r0, #UI_RP_W0_PCT             @ % on for a percent view; k / u / M off
     str r0, [r3, #0]
     ldr r0, [r3, #8]
     bic r0, r0, #UI_RP_W2_MASK              @ Ohm / n / m off
@@ -240,6 +260,18 @@ FUNC ui_relpct_mask
     cbnz r1, 1f                             @ peak hold: w6 b0 belongs to "1ms"
     bic r0, r0, #UI_RP_W6_MS                @ ms off
 1:  str r0, [r3, #24]
+    cmp r4, #2
+    bne .Lrm_ret
+    ldr r1, =v_200080AB                     @ IMP-25: the temperature sign of TEMP
+    ldrb r1, [r1]
+    cbz r1, 2f
+    ldr r0, [r3, #16]
+    orr r0, r0, #UI_RP_W4_DEGC              @ degC
+    str r0, [r3, #16]
+    b .Lrm_ret
+2:  ldr r0, [r3, #24]
+    orr r0, r0, #UI_RP_W6_DEGF              @ degF
+    str r0, [r3, #24]
 .Lrm_ret:
     pop {r4, pc}
 ENDFUNC ui_relpct_mask

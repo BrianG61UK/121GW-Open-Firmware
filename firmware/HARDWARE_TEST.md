@@ -97,6 +97,9 @@ The image has only run in the emulator. These checks confirm on hardware what th
 23. 4-20 mA view (production build, IMP-24): DCmA, SETUP page `LP` = `L4-20`; a known current (for example a 4-20 mA
    source or a 9 V battery through a resistor): the display shows (I - 4 mA) / 16 mA x 100 % with the % sign; `LPOFF` shows
    the current again.
+24. PT100 / PT1000 view (production build, IMP-25): OHM, SETUP page `Pt` = `Pt100`; a resistor near 100 ohm (or a PT100
+   sensor): the display shows the IEC 60751 temperature of the reading with the degC sign (100.00 ohm = 0.0 degC,
+   138.51 ohm = 100.0 degC); `PtOFF` shows the resistance again.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

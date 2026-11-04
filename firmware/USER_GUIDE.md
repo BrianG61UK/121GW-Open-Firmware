@@ -23,7 +23,7 @@ setting is kept over a power-off.
 The new pages come after the original SETUP pages, in this order:
 
 `bL` (backlight) → `bt` (Bluetooth speed) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) → `dSP` (display
-level) → `bH` (continuity hold, BEEP only) → `LP` (4–20 mA view, DC mA only) → `CL` (12 / 24-hour clock) → `Lt`, `Lo`, `HI` (limit test; the verdict page
+level) → `bH` (continuity hold, BEEP only) → `LP` (4–20 mA view, DC mA only) → `Pt` (PT100 / PT1000 view, Ω only) → `CL` (12 / 24-hour clock) → `Lt`, `Lo`, `HI` (limit test; the verdict page
 while the test is on) → `tr`, `Ch` (logging trigger) → back to the first page (while MIN/MAX is on, the statistics pages
 `n` and `Sd` and the time pages `tHI` and `tLo` come before it)
 
@@ -141,6 +141,17 @@ stays short and readable.
   -25.00 %. Logging, Bluetooth and MIN/MAX keep the current in mA.
 
 Tip: with `L4-20` a sensor's output reads directly in percent of its range, for example a pressure transmitter at 63.50 %.
+
+## PT100 / PT1000 temperature sensors (Ω)
+
+- **Where:** in Ω (dial Ω, resistance function), page `Pt`: `PtOFF` (default: the resistance, as the original), `Pt100`,
+  `P1000`.
+- **Effect:** the main display shows the temperature of a platinum sensor (IEC 60751, the usual "385" type) with 0.1 °,
+  in °C or °F as chosen for the temperature function, from -200.0 to 850.0 °C (outside: `OFL` / `-OFL`). Logging,
+  Bluetooth and MIN/MAX keep the resistance in Ω.
+- **Lead resistance:** the meter measures with two wires, so the test leads add to the sensor: 0.1 Ω reads about
+  0.26 °C high with a PT100. To remove it, press RANGE until the sensor's range is shown (PT100: 500.00 Ω, PT1000:
+  5.0000 kΩ), short the leads, press REL, then connect the sensor. A PT1000 is ten times less affected.
 
 ## Continuity beep hold time
 

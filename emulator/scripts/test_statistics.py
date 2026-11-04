@@ -3,7 +3,7 @@
     python -I emulator/scripts/test_statistics.py [image]      default firmware/build/EEVBlog.bin (production build)
 
 DCV with the input switched between 1.0 V and 1.1 V while MIN/MAX is on.  Every reading that enters the statistics is
-recorded from the meter (func_stats_n polled every 10 ms; DCV publishes a value every 200 ms), and the count, mean and
+recorded from the meter (func_stats_n polled every 10 ms; DCV publishes a value every 100 ms in the production image, IMP-23), and the count, mean and
 sample standard deviation computed here with Python's statistics module from that list must equal the meter's binary64
 mean, m2 and the shown standard deviation.  Checks: page n shown when MIN/MAX is switched on, its text (count, and the
 thousands form with the k sign), page Sd on the sub display and the standard deviation on the main digits (one more
@@ -73,7 +73,8 @@ def run_tests(image, sym):
             if n != n_prev:
                 if n != n_prev + 1:
                     T.check('one reading per poll', False, 'n %d -> %d' % (n_prev, n))
-                rec.append(s32(e, ADDR_MM_LAST))
+                e.advance(0.001)                     # the poll may stop between func_stats_add and the store of the
+                rec.append(s32(e, ADDR_MM_LAST))     # last reading (func/minmax.s): let the record path finish first
                 n_prev = n
 
     e.command({'key': 'MINMAX', 'down': True})
@@ -118,7 +119,10 @@ def run_tests(image, sym):
     e.m.uc.mem_write(ADDR_REDRAW, bytes([1]))
     e.advance(0.2)
     sub, n_now = T.sub_text(e), u32(e, a_n)
-    T.check('page n: "n" and the count %d right-aligned, no k' % n_now, sub == 'n%4d' % n_now and subk(e) == 0, 'sub=%r' % sub)
+    # a reading may have entered after the last redraw: the page is redrawn in the refresh pass that follows the new
+    # result (ui_stats_tick), so the count shown is n or, until that pass, n - 1
+    T.check('page n: "n" and the count %d right-aligned, no k' % n_now,
+            sub in ('n%4d' % n_now, 'n%4d' % (n_now - 1)) and subk(e) == 0, 'sub=%r' % sub)
     e.m.uc.mem_write(a_n, struct.pack('<I', 123456))
     e.m.uc.mem_write(ADDR_REDRAW, bytes([1]))
     e.advance(0.2)
@@ -157,7 +161,8 @@ def run_tests(image, sym):
     T.press(e, 'SETUP', gap=0.3)
     T.check('MIN/MAX off: SETUP short on tr goes to item 0', T.rd(e, ADDR_ITEM) == 0)
     T.press(e, 'MINMAX', gap=0.3)
-    T.check('MIN/MAX on again: statistics restarted', T.rd(e, ADDR_MM_STATE) == 1 and u32(e, a_n) <= 2, 'n=%d' % u32(e, a_n))
+    T.check('MIN/MAX on again: statistics restarted', T.rd(e, ADDR_MM_STATE) == 1 and u32(e, a_n) <= 5,
+            'n=%d' % u32(e, a_n))                    # 0.45 s at up to 10 readings per second (DCV, IMP-23)
     s = e.snapshot()
     T.check('no unmodelled access, no safety violation', s['unmodelled'] == 0 and not s['safety'])
 

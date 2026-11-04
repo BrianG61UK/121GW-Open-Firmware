@@ -668,6 +668,11 @@ FUNC fn_0800D190
     bl set_lp_load
     b .L0800D280
 .Lto_not_lp:
+    cmp r0, #38                             @ IMP-25: the same for the page Pt (item 38)
+    bne .Lto_not_rtd
+    bl set_rtd_load
+    b .L0800D280
+.Lto_not_rtd:
     cmp r0, #30                             @ IMP-21: the same for the page tr (item 30; byte 0x020)
     bne 1f
     bl set_relp_load

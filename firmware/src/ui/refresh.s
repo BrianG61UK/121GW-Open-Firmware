@@ -899,6 +899,11 @@ FUNC fn_08016E08
     bl ui_loop_draw                         @ IMP-24: the current as percent of the 4..20 / 0..20 mA span
     b .L08017090
 .Lrf_no_loop:
+    bl ui_rtd_view
+    cbz r0, .Lrf_no_rtd                     @ IMP-25: OHM RTD temperature view off or not shown
+    bl ui_rtd_draw                          @ IMP-25: the resistance as the temperature of a Pt100 / Pt1000
+    b .L08017090
+.Lrf_no_rtd:
     .endif
     @ r4 = displayed reading D (0x20007D64); inside -99999..99999 it is drawn directly
     ldr r0, =v_20007D64                      @ 0801702E &displayed reading D (signed counts)

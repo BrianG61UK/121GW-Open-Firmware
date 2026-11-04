@@ -9,7 +9,8 @@
 @ (analysis/hy3131_modes_ac_current.md 7.6, full scale table: 50000 counts, 4 / 3 decimals).  Below 4 mA the percent is
 @ negative (-25.00 % at 0 mA), up to 55 mA it stays within five digits (318.75 %).  An overload shows OFL as v2.05 (the
 @ overload path of fn_08016E08 comes first).
-@ When the view is shown: DCmA, setting not off, REL off (REL keeps its own display and its percent view), not with
+@ When the view is shown: DCmA, setting not off, REL off (REL keeps its own display and its percent view), outside
+@ calibration mode (0x2000808A), not with
 @ 0x20007FE1 / 0x20007FE4 (as the REL sign).  Only the main display changes: D, logging, MIN/MAX and the BLE frame keep
 @ the current in counts (the BLE value 0x20007D70 is set to D, as ui_relpct_draw does).  While it is shown the unit and
 @ prefix signs are off and the % sign is on (ui_relpct_mask applies the same mask for either view).  Nothing is drawn while
@@ -52,6 +53,9 @@ FUNC ui_loop_view
     ldr r0, =rel_active
     ldrb r0, [r0]
     cbnz r0, 2f                             @ REL keeps its own display
+    ldr r1, =v_2000808A
+    ldrb r1, [r1]
+    cbnz r1, 2f                             @ calibration mode: the current
     ldr r1, =v_20007FE1
     ldrb r1, [r1]
     cbnz r1, 2f
