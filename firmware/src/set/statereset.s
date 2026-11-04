@@ -81,6 +81,7 @@ FUNC fn_08024DE0
     bl set_ch_load                          @ IMP-21: logging change threshold (EEPROM 0x022)
     bl set_lp_load                          @ IMP-24: current-loop percent view of DCmA (EEPROM 0x028)
     bl set_rtd_load                         @ IMP-25: RTD temperature view of OHM (EEPROM 0x029)
+    bl set_btrim_load                       @ IMP-27: battery voltage trim (EEPROM 0x02A)
     .endif
     bl fn_08010F4C                          @ 08024E1E  load the date code from EEPROM 0x001
     bl fn_08010F8C                          @ 08024E22  load the ID number from EEPROM 0x003

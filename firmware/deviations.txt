@@ -825,3 +825,9 @@ OF-63  gpio  hold_sequence_dcv    pin == buzzer and step == 12
 # range.
 OF-61  lcd        mem_logging_no_card  step in 5..7
 OF-61  lcd_final  mem_logging_no_card  any
+
+# IMP-27 (set/btrim.s, production only): the battery page (setup item 1) is editable, it edits the battery trim.  In
+# setup_bat_not_editable the long SETUP of line 8 starts the edit ("bA" and the voltage blink) and the REL of line 10 raises
+# the trim (v2.05: the edit is refused and REL switches REL on); nothing is saved, so the EEPROM assertion still holds.
+IMP-27  lcd        setup_bat_not_editable  build == production and step in 8..10
+IMP-27  lcd_final  setup_bat_not_editable  build == production

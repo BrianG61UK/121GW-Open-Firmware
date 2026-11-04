@@ -351,6 +351,19 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   or in calibration mode; HOLD freezes the display; an overload shows OFL.
 - Storage: one byte 0x029 (0 = off); a value above 2 reads as 0 (EEPROM_MAP.md 4.1).
 
+### 2.16 Battery voltage trim (implemented, IMP-27)
+- Request (GitHub issue 2, 2026-11-03; owner): the battery reading differs from a reference meter by a few percent.
+- Facts: since OF-52 the battery value follows the nominal divider (R69 1 M, R70 330 k, 3.300 V reference); part tolerances
+  remain and nothing calibrates them: one meter read 5.2 V at 5.0 V (+3 %), another 0.1 V low at 4 to 6 V (-2 %).
+- Where: the battery page (SETUP item 1, `BAT5.0`), editable in the production image only (v2.05 refuses the edit). Long
+  SETUP: the page shows `bA` and the trimmed voltage in 0.01 V (`bA5.03`); REL +0.2 %, PEAK -0.2 % (stops at +-10 %, no
+  wrap); long SETUP saves; SETUP short leaves without saving; the edit timeout re-reads the EEPROM.
+- How: `pwr_bat_trim` (pwr/battery.s) scales the filtered value by (1000 + 2 t) / 1000 before the low-battery limit and the
+  page, so the 4.1 V limit acts on the trimmed (more accurate) voltage; the reading history stays untrimmed, so a new trim
+  shows at the next reading (200 ms).
+- Storage: one byte 0x02A = t + 100 (t = -50..+50); any value outside 50..150 (0x00, 0xFF included) means no trim
+  (EEPROM_MAP.md 4.1).
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
@@ -365,7 +378,8 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 | 0x022 | 2.6 | change threshold 1..255 | 1 | as 0x020 | approved, implemented |
 | 0x028 | 2.14 loop | view code 0..2 (off / 4..20 / 0..20 mA) | off | none (free word 0x028..0x02B) | approved, implemented (planned for the LO limit of 2.1, which stays RAM only) |
 | 0x029 | 2.15 RTD | view code 0..2 (off / Pt100 / Pt1000) | off | as 0x028 | approved, implemented |
-| 0x02A..0x02B | - | - | - | as 0x028 | approved, not used |
+| 0x02A | 2.16 battery | trim t + 100 (t = -50..+50, 0.2 % steps) | no trim | as 0x028 | approved, implemented |
+| 0x02B | - | - | - | as 0x028 | approved, not used |
 | 0x02C..0x02F | 2.1 | HI limit, s32 big-endian | 0 | none (free word) | approved, not used (limits RAM only) |
 
 0x023 stays unused. Every offset above is in the never-accessed list of EMAP 4. The alternative locations 0x4B0..0x4CF (32

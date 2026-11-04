@@ -100,6 +100,9 @@ The image has only run in the emulator. These checks confirm on hardware what th
 24. PT100 / PT1000 view (production build, IMP-25): OHM, SETUP page `Pt` = `Pt100`; a resistor near 100 ohm (or a PT100
    sensor): the display shows the IEC 60751 temperature of the reading with the degC sign (100.00 ohm = 0.0 degC,
    138.51 ohm = 100.0 degC); `PtOFF` shows the resistance again.
+25. Battery trim (production build, IMP-27): measure the battery with another meter; SETUP to `BAT`, long SETUP (`bA` and
+   the voltage in 0.01 V), REL / PEAK until it matches, long SETUP saves. Power off and on: the trimmed value is kept. Dump
+   the EEPROM after the save: only byte 0x02A may differ.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

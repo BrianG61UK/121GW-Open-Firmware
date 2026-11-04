@@ -1,6 +1,7 @@
 @ =============================================================================
 @ battery.s - PWR: battery voltage measurement and low-battery state
 @
+@ IMP-27 (production image only): the filtered value is scaled by the owner's battery trim (pwr_bat_trim, set/btrim.s).
 @ Replaces adc_ch5_process 0x080134DA, FUN_080135B0 (20-value history with trimmed mean), FUN_0801368A (sort)
 @ and FUN_08013728 (ADC code -> battery value by the table 0x08028C9C) (v2.05).
 @ OF-52: the conversion follows the hardware divider (fn_08013728); the v2.05 table v205_tab_08028C9C (src/pwr/tables_v205.s,
@@ -22,6 +23,14 @@
     .equ PWR_HIST_LEN,      20              @ history length (0x080135BE)
     .equ PWR_BAT_NUM,       1330            @ OF-52: B+ (0.01 V) = code x 1330 / 4095 = code x 3.3 / 4095 x (1M + 330k) / 330k x 100
     .equ PWR_BAT_DEN,       4095            @ 12-bit ADC full-scale code (VDDA = VREF+ = 3.300 V)
+
+    .if LOOP_V205 == 0
+    .section .bss_port.pwr, "aw", %nobits
+    .balign 2
+@ pwr_bat_cv: the trimmed, filtered battery voltage in 0.01 V (owner PWR; read by set_btrim_draw)
+    .global pwr_bat_cv
+pwr_bat_cv:     .space 2
+    .endif
 
     .section .text.pwr.battery, "ax", %progbits
 
@@ -53,6 +62,9 @@ FUNC adc_ch5_process
     mov r0, r4
     bl fn_08013728                          @ code -> B+ in 0.01 V (0x0801351A; OF-52 hardware relation)
     bl fn_080135B0                          @ history and trimmed mean (0x08013522)
+    .if LOOP_V205 == 0
+    bl pwr_bat_trim                         @ IMP-27: x (1000 + 2 t) / 1000, the owner's trim (set/btrim.s)
+    .endif
     movs r1, #10
     udiv r0, r0, r1                         @ 0x0801352A
     ldr r1, =v_20007FBA
@@ -263,5 +275,45 @@ LFUNC fn_08013728
     udiv r0, r0, r1                         @ / 4095
     bx lr
 ENDFUNC fn_08013728
+
+    .if LOOP_V205 == 0
+@ -----------------------------------------------------------------------------
+@ pwr_bat_trim - apply the battery trim (production image only, DESIGN.md 10 IMP-27)
+@ In       : r0 = filtered battery voltage in 0.01 V (fn_080135B0; 331..1013)
+@ Out      : r0 = r0 x (1000 + 2 t) / 1000, rounded half up; also stored in pwr_bat_cv.  t = set_btrim (the value being
+@            edited) while the battery page (item 1) is in edit mode, else set_btrim_saved (-50..+50 both), which is
+@            then copied to set_btrim so that the next edit starts from the saved trim
+@ Clobbers : r1, r2, flags
+@ Context  : main (adc_ch5_process)
+@ Note     : the history keeps the untrimmed values, so a new trim shows at the next reading; 1013 x 1100 + 500 fits
+@            easily in 32 bits.
+@ -----------------------------------------------------------------------------
+FUNC pwr_bat_trim
+    ldr r2, =v_2000806E                     @ set_edit
+    ldrb r2, [r2]
+    cbz r2, 1f
+    ldr r2, =v_20008037                     @ set_item
+    ldrb r2, [r2]
+    cmp r2, #1
+    bne 1f
+    ldr r1, =set_btrim                      @ item 1 being edited: the edit value
+    ldrsb r1, [r1]
+    b 2f
+1:  ldr r1, =set_btrim_saved                @ otherwise the saved trim, which is also the start value of the next edit
+    ldrsb r1, [r1]
+    ldr r2, =set_btrim
+    strb r1, [r2]
+2:
+    lsls r1, r1, #1
+    add r1, r1, #1000                       @ 1000 + 2 t (900..1100)
+    muls r0, r1, r0
+    add r0, r0, #500                        @ round half up (the product is positive)
+    movw r1, #1000
+    udiv r0, r0, r1
+    ldr r1, =pwr_bat_cv
+    strh r0, [r1]
+    bx lr
+ENDFUNC pwr_bat_trim
+    .endif
 
     .ltorg

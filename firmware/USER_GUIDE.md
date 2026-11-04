@@ -2,7 +2,7 @@
 
 Everything on this page is in the **fast build** (`2_fast/EEVBlog.bin`). The `1_like_v2.05` build behaves like the
 original firmware apart from the defect fixes and has none of these features. At power-on the fast build shows its
-version, `F-0.96` (the release number, v0.9.6); the `1_like_v2.05` build shows `V-2.05` like the original.
+version, `F-0.97` (the release number, v0.9.7); the `1_like_v2.05` build shows `V-2.05` like the original.
 
 All settings are stored in bytes of the data EEPROM that the original firmware never uses. Calibration, serial number
 and the original settings are not touched, and a meter flashed back to v2.05 simply ignores the new bytes.
@@ -144,6 +144,15 @@ stays short and readable.
   -25.00 %. Logging, Bluetooth and MIN/MAX keep the current in mA.
 
 Tip: with `L4-20` a sensor's output reads directly in percent of its range, for example a pressure transmitter at 63.50 %.
+
+## Battery voltage trim
+
+- **Where:** SETUP page `BAT` (the battery voltage, the page after the temperature unit).
+- **Use:** measure the meter's battery with another meter. Hold SETUP until the page shows `bA` and the voltage with two
+  decimals, press REL (up) or PEAK (down) until it matches (steps of 0.2 %, at most ±10 %), then hold SETUP to save.
+  A short SETUP leaves without saving.
+- **Why:** the battery is measured through two resistors whose tolerance varies from meter to meter by a few percent; the
+  trim corrects your meter. The low-battery symbol then also comes at the right voltage.
 
 ## PT100 / PT1000 temperature sensors (Ω)
 

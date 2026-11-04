@@ -1466,6 +1466,20 @@ FUNC fn_080165F4
     .if LOOP_V205 == 0
     b .L08016800
 .Lse_port:  @ IMP-07, IMP-08: reached from 080167EA bne with r0 = set_item
+    cmp r0, #0x1                            @ IMP-27: the battery page (item 1) edits the battery trim
+    bne .Lse_not_btrim
+    uxtb r4, r4
+    cmp r4, #0x0                            @ query?
+    bne .Lse_btrim_act
+    movs r0, #0x1
+    movs r5, r0                             @ query result: editable (v2.05: not editable)
+    b .L08016800
+.Lse_btrim_act:
+    movs r0, r4
+    uxtb r0, r0
+    bl set_btrim_edit                       @ up, down or save of the battery trim
+    b .L08016800
+.Lse_not_btrim:
     cmp r0, #0xb                            @ IMP-08: item 11 ...
     bne .Lse_bl
     ldr r1, =meter_mode
@@ -2280,6 +2294,14 @@ FUNC fn_0801797C
     orrs r0, r0, #0x20000                   @ 08017EFC  r0 = lcd_shadow+8 | 0x20000
     ldr.w r1, =lcd_shadow                   @ 08017F00
     str r0, [r1, #0x8]                      @ 08017F04  lcd_shadow+8 = (lcd_shadow+8 | 0x20000)
+    .if LOOP_V205 == 0
+    ldr r0, =set_edit
+    ldrb r0, [r0]
+    cbz r0, 1f
+    bl set_btrim_draw                       @ IMP-27: while the trim is edited, "bA" and the voltage in 0.01 V
+    b .L08017F26
+1:
+    .endif
     ldr.w r0, =set_bat_value                @ 08017F06
     ldrh r0, [r0, #0x0]                     @ 08017F0A  r0 = set_bat_value
     bl fn_0801839A                          @ 08017F0C  draw "BAT" and the battery value [r0=set_bat_value, r1=&lcd_shadow]
