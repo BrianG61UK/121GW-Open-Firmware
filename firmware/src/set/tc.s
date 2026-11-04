@@ -1,5 +1,5 @@
 @ =============================================================================
-@ tc.s - SET: SETUP page tc, the thermocouple type (production image only, DESIGN.md 10 IMP-10, FEATURES.md 2.8)
+@ tc.s - SET: SETUP page tc, the thermocouple type (production image only, DESIGN.md 10 IMP-10 and IMP-26, FEATURES.md 2.8)
 @
 @ SET module, part 8.  A setup page in the style of the page bt (bt.s), reached only in TEMP (mode 5): after the page bt
 @ SETUP short shows tc in TEMP and item 0 in every other mode.  Long SETUP starts the edit (the value blinks), REL steps
@@ -8,10 +8,11 @@
 @ (mtmp_tc_select), so the reading follows it.
 @
 @ Type code (EEPROM 0x00F, EEPROM_MAP.md 4.1): 0 = K (v2.05, default; also the value of an erased or unknown byte),
-@ 1 = J, 2 = T.  The tables and input windows are mtmp/tctype.s and mtmp/tc_tables.s.
+@ 1 = J, 2 = T, 3 = N, 4 = R, 5 = S (IMP-26).  The tables and input windows are mtmp/tctype.s and mtmp/tc_tables.s.
 @
-@ Page text (five characters, font of analysis/lcd_map.md 2: 't' 0xAC, 'c' 0xA4, '-' 0x04, 'K' 0x2D, 'J' 0xB1):
-@     "tc-K "   "tc-J "   "tc-t "
+@ Page text (five characters, font of analysis/lcd_map.md 2: 't' 0xAC, 'c' 0xA4, '-' 0x04, 'K' 0x2D, 'J' 0xB1; N and R
+@ in the lower-case forms 'n' and 'r', as 't'; 'S' looks like '5' on seven segments):
+@     "tc-K "   "tc-J "   "tc-t "   "tc-n "   "tc-r "   "tc-S "
 @
 @ Not present in the strict image (LOOP_V205 = 1): this file assembles to nothing there.
 @ Context: main only.
@@ -28,7 +29,7 @@
     .if LOOP_V205 == 0
 
     .equ SET_TC_EEPROM,       0x00F         @ EEPROM offset of the type code (EEPROM_MAP.md 4.1)
-    .equ SET_TC_CODE_MAX,     2             @ highest valid code = T
+    .equ SET_TC_CODE_MAX,     5             @ highest valid code = S
     .equ set_tc_redraw,       v_20008062    @ sub display redraw request
     .equ set_tc_commit_req,   v_2000805B    @ LCD commit request
 
@@ -38,6 +39,9 @@ set_tc_texts:
     .ascii "tc-K "
     .ascii "tc-J "
     .ascii "tc-t "
+    .ascii "tc-n "
+    .ascii "tc-r "
+    .ascii "tc-S "
     .size set_tc_texts, . - set_tc_texts
 
     .section .text.set.tc, "ax", %progbits
@@ -49,13 +53,13 @@ set_tc_texts:
 @ Clobbers : r0-r3, r12, flags (AAPCS)
 @ Context  : main only (set_state_reset at boot and after a STOP wake; fn_0800D190 when an edit times out)
 @ RAM      : writes mtmp_tc_type, mtmp_tc_descp (mtmp_tc_select)
-@ Spec     : EEPROM_MAP.md 4.1 (a value above 2, 0xFF included, reads as 0 = K; the byte is left as found)
+@ Spec     : EEPROM_MAP.md 4.1 (a value above 5, 0xFF included, reads as 0 = K; the byte is left as found)
 @ -----------------------------------------------------------------------------
 FUNC set_tc_load
     push {r4, lr}
     movs r0, #SET_TC_EEPROM
     bl eeprom_read_u8                       @ r0 = EEPROM byte 0x00F (cache or EEPROM, NVM reader)
-    bl mtmp_tc_select                       @ 0..2 selected, anything else selects K
+    bl mtmp_tc_select                       @ 0..5 selected, anything else selects K
     pop {r4, pc}
 ENDFUNC set_tc_load
 
@@ -68,7 +72,7 @@ ENDFUNC set_tc_load
 @ Context  : main only (fn_080165F4)
 @ RAM      : reads mtmp_tc_type; writes mtmp_tc_type, mtmp_tc_descp (mtmp_tc_select), set_tc_redraw
 @ Spec     : EEPROM_MAP.md 4.1, 9.2
-@ Note     : up: K, J, T, then K again; down in the reverse order.  Save writes EEPROM 0x00F through set_nvm_store (NVM_ARM
+@ Note     : up: K, J, T, N, R, S, then K again; down in the reverse order.  Save writes EEPROM 0x00F through set_nvm_store (NVM_ARM
 @            SETTINGS and nvm_write_setting; NVM rejects any offset outside the class, and skips a byte that does not change).
 @ -----------------------------------------------------------------------------
 FUNC set_tc_edit
@@ -90,12 +94,12 @@ FUNC set_tc_edit
     adds r0, r0, #1
     cmp r0, #SET_TC_CODE_MAX
     bls 1f
-    movs r0, #0                             @ past T: K
+    movs r0, #0                             @ past S: K
     b 1f
 .Lce_down:
     subs r0, r0, #1
     bpl 1f
-    movs r0, #SET_TC_CODE_MAX               @ below K: T
+    movs r0, #SET_TC_CODE_MAX               @ below K: S
 1:  bl mtmp_tc_select                       @ the new type converts the next reading
 .Lce_redraw:
     movs r0, #1

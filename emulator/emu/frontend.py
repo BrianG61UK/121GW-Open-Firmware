@@ -19,7 +19,7 @@ ADR3440/ADR3450 data sheet Rev. C, Table 3 "ADR3412 Electrical Characteristics" 
 (specification tables), SCH = 121GW circuit diagram.
 
 Stimulus (set_stimulus): {'kind': k, 'value': x, 'ac': bool, 'freq': Hz, 'duty': 0..1, 'width': s, 'dc': V,
-                          'amps': A, 'board': degC or None, 'probe': 'K' | 'J' | 'T'}
+                          'amps': A, 'board': degC or None, 'probe': 'K' | 'J' | 'T' | 'N' | 'R' | 'S'}
     kind 'V'      volts: the DC value, or with ac the RMS of a sine of `freq` Hz plus the DC component 'dc'
     kind 'A'      amperes (DC, or RMS of a sine with ac), entering through the plugged current jack (A or mA)
     kind 'ohm'    resistance (also continuity in BEEP)
@@ -204,7 +204,8 @@ TH_TMIN, TH_TMAX = -2500, 8500
 TC_MIN_C, TC_MAX_C = -210.0, 1360.0
 # thermocouple probe types: temperature span of the NIST ITS-90 EMF tables of emu/tc_nist.py (degC; the shape of the v2.05
 # K table 0x08025CF8)
-TC_PROBES = {'K': (-210.0, 1360.0), 'J': (-210.0, 1200.0), 'T': (-210.0, 400.0)}
+TC_PROBES = {'K': (-210.0, 1360.0), 'J': (-210.0, 1200.0), 'T': (-210.0, 400.0), 'N': (-210.0, 1300.0),
+             'R': (-50.0, 1760.0), 'S': (-50.0, 1760.0)}
 # CORR tables X (address, words per row) by idx (acc 5.2)
 CORR_X = {0: (0x08028A18, 9), 1: (0x08028A60, 9), 4: (0x08028E08, 7), 5: (0x08028E40, 7), 6: (0x08028E78, 7),
           7: (0x08028EB0, 7)}
@@ -322,7 +323,7 @@ class _Base:
         b = s.get('board', self.stim.get('board'))
         probe = str(s.get('probe', self.stim.get('probe', 'K'))).upper()
         if probe not in TC_PROBES:
-            raise ValueError(f'unknown thermocouple probe {probe} (K, J or T)')
+            raise ValueError(f'unknown thermocouple probe {probe} (K, J, T, N, R or S)')
         st = {'kind': kind, 'value': float(s.get('value', 0.0)), 'ac': bool(s.get('ac', False)),
               'freq': float(s.get('freq', 0.0) or 0.0), 'duty': float(s.get('duty', 0.5)),
               'width': float(s.get('width', 0.0) or 0.0), 'dc': float(s.get('dc', 0.0) or 0.0),
@@ -788,7 +789,8 @@ class CalibratedFrontend(_Base):
         """Thermocouple EMF in uV at t degC: linear interpolation of the probe's NIST ITS-90 table (emu/tc_nist.py, t[k] at
         10 k - 210 degC), the physical probe.  The v2.05 K table 0x08025CF8, which the firmware inverts in 0x08013C40 (misc
         4.1), equals the NIST K table except at 270 degC (10970 uV against 10971, ORIGINAL_FIRMWARE_ISSUES.md OF-56)."""
-        tab = {'K': tc_nist.TC_K, 'J': tc_nist.TC_J}.get(probe, tc_nist.TC_T)
+        tab = {'K': tc_nist.TC_K, 'J': tc_nist.TC_J, 'T': tc_nist.TC_T, 'N': tc_nist.TC_N, 'R': tc_nist.TC_R,
+               'S': tc_nist.TC_S}[probe]
         u = (t + 210.0) / 10.0
         k = max(0, min(len(tab) - 2, int(math.floor(u))))
         return tab[k] + (tab[k + 1] - tab[k]) * (u - k)

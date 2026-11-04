@@ -76,15 +76,18 @@ Tip: use `bt 10` or `bt 20` for live plotting on a phone or computer, `bt  2` wh
 Tip: sorting parts against a nominal value. Measure a known-good part, press **REL**, then each part shows its deviation
 in percent directly (for example 1 % resistors should stay within -1.000 .. 1.000).
 
-## Thermocouple type K, J or T (TEMP)
+## Thermocouple type K, J, T, N, R or S (TEMP)
 
 - **Where:** dial to **mV / Temp**, press **MODE** until TEMP, then page `tc` (it is only offered in TEMP):
-  `tc-K` (default, as the original), `tc-J`, `tc-t`.
-- **Ranges:** K -200 .. 1350 °C (as the original), J -200 .. 936 °C, T -200 .. 400 °C. Outside the range the display
-  shows OFL. J stops at 936 °C because the meter's TEMP input is only proven up to the voltage K reaches at 1350 °C;
+  `tc-K` (default, as the original), `tc-J`, `tc-t`, `tc-n`, `tc-r`, `tc-S`.
+- **Ranges:** K -200 .. 1350 °C (as the original), J -200 .. 936 °C, T -200 .. 400 °C, N -200 .. 1300 °C, R and S
+  -50 .. 1760 °C. Outside the range the display shows OFL. J stops at 936 °C because the meter's TEMP input is only proven up to the voltage K reaches at 1350 °C;
   a J thermocouple reaches that voltage at 936 °C.
-- The cold junction (meter temperature) is compensated with the curve of the chosen type. The J and T curves are the
-  official NIST ITS-90 tables.
+- The cold junction (meter temperature) is compensated with the curve of the chosen type. All curves are the official
+  NIST ITS-90 tables.
+- R and S (platinum) thermocouples give a small voltage (about 6 µV per °C near room temperature), so near room
+  temperature the reading moves in steps of about 0.2 °C and depends strongly on the meter's microvolt accuracy; they are
+  meant for high temperatures.
 
 Tip: a probe read with the wrong setting shows a wrong temperature: a J probe at 100 °C reads about 122 °C with the K
 setting (meter at 25 °C). Set `tc` to the probe you plug in.
