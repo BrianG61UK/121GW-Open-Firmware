@@ -656,7 +656,14 @@ class FLASH(Periph):
             return
         if not self._prog_precheck("page erase", addr, PAGE_SIZE):
             return
-        self._start_op(self._tprog(1), lambda: self.m.uc.mem_write(addr, bytes(PAGE_SIZE)))
+        self._start_op(self._tprog(1), lambda: self._flash_write(addr, bytes(PAGE_SIZE)))
+
+    def _flash_write(self, addr, data):
+        """Program-flash content changes (erase or programming): the memory, and Unicorn's translated code of that range
+        is dropped, so code that runs there later is the new code (the starter installs a bootloader over code that
+        ran before; Unicorn keeps translated blocks otherwise)."""
+        self.m.uc.mem_write(addr, data)
+        self.m.uc.ctl_remove_cache(addr, addr + len(data))
 
     def _commit_half_page(self, base, words):
         self._program_words(base, words, "half page write")
@@ -697,7 +704,7 @@ class FLASH(Periph):
             if any(c != 0 and c != d for c, d in zip(cur, data)):
                 self._log(f"{what} at 0x{base:08X}: target is not erased, nothing written")
                 return
-            self.m.uc.mem_write(base, data)
+            self._flash_write(base, data)
         self._start_op(self._tprog(1), commit)
 
     # --- option bytes ----------------------------------------------------------

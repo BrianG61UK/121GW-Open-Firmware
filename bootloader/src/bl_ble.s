@@ -17,7 +17,9 @@
 @   3 END     all bytes sent: the flash is checked against the CRC-32; firmware: image check, firmware mark; bootloader:
 @             slot header, INSTALL record; the meter restarts half a second after the answer
 @   4 ABORT   back to waiting (an erased firmware stays without mark: the bootloader stays in update mode)
-@   5 STATUS  payload index(1): 0 bootloader version (major << 8 | minor), 1 state, 2 bytes received / 256
+@   5 STATUS  payload index(1): 0x80 bootloader version (major << 8 | minor << 4 | patch), 1 state, 2 bytes received
+@             / 256; the
+@             firmware's page Ld refuses index 0x80 (status 3), so the answer tells the bootloader from the firmware
 @ Status: 0 accepted, 1 CRC wrong, 2 not the expected packet (next = expected), 3 not allowed now, 4 START refused,
 @         5 bytes beyond the size, 0x10 + n END failed: n = 2 length or CRC-32 wrong, 3 not a firmware image,
 @         6 flash write or check failed.
@@ -365,16 +367,18 @@ LFUNC bl_packet
     cmp r0, #1
     bne .Lp_notallowed
     ldrb r0, [r4, #6]
-    cmp r0, #0
+    cmp r0, #0x80
     bne 1f
-    ldr r1, =((BL_VERSION >> 8) & 0xFFFF)
+    ldr r1, =((((BL_VERSION >> 16) & 0xFF) << 8) | (((BL_VERSION >> 8) & 0xF) << 4) | (BL_VERSION & 0xF))
     b 3f
 1:  cmp r0, #1
     bne 2f
     ldr r1, =bl_state
     ldrb r1, [r1]
     b 3f
-2:  ldr r1, =bl_recv
+2:  cmp r0, #2
+    bne .Lp_notallowed
+    ldr r1, =bl_recv
     ldr r1, [r1]
     lsrs r1, r1, #8
 3:  movs r0, #0

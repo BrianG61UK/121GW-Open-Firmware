@@ -10,8 +10,8 @@ project's firmware (firmware/build/EEVBlog.bin, `make` in firmware/).  The insta
      (the first install writes those pages before page 0)
   I2 battery 4.5 V: END status 0x18 ("LdE 8"), nothing written
   I3 battery 6.0 V: END status 0, the meter restarts, the starter installs the bootloader from slot A, the firmware
-     runs again; flash: starter, bootloader, mark, firmware mark of the running firmware, control records INSTALL then
-     TRIAL; the data EEPROM is unchanged; no safety violation
+     runs again; flash: starter, bootloader, mark, firmware mark of the running firmware, control records INSTALL,
+     TRIAL, OK; the data EEPROM is unchanged; no safety violation
   I4 a second install: END status 0x17 ("LdE 7"), nothing written
 """
 import os
@@ -114,8 +114,8 @@ def run(bl_path):
         if not any(area[off:off + 16]):
             break
         recs.append(struct.unpack_from('<III', area, off)[1:])
-    T.check('control records INSTALL slot A, then TRIAL slot B',
-            recs == [(B.CMD_INSTALL, B.SLOT_A), (B.CMD_TRIAL, B.SLOT_B)], repr(recs))
+    T.check('control records INSTALL slot A, TRIAL slot B (starter), OK (the new bootloader confirmed itself)',
+            recs == [(B.CMD_INSTALL, B.SLOT_A), (B.CMD_TRIAL, B.SLOT_B), (B.CMD_OK, 0)], repr(recs))
     T.check('the firmware runs again', firmware_running(e))
     T.check('data EEPROM unchanged (calibration, serial, settings)', bytes(e.m.eeprom) == ee0)
     s = e.snapshot()

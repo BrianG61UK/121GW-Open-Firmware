@@ -230,8 +230,8 @@ def b5(ee0):
     e.usart2.rx_feed(b'\xF4' + b'9191')
     e.advance(2.0)
     T.check('update mode after the request', texts(e) == ('-1AP-', '-1AP-'), repr(texts(e)))
-    st = Host(e).send(btft.packet(5, 0, b'\x00'))
-    T.check('STATUS 0 answers the bootloader version 1.0', st is not None and st[1] == 0 and st[2] == 0x0100, repr(st))
+    st = Host(e).send(btft.packet(5, 0, b'\x80'))
+    T.check('STATUS 0x80 answers the bootloader version 1.0', st is not None and st[1] == 0 and st[2] == 0x0100, repr(st))  # 1.0.0
 
 
 
