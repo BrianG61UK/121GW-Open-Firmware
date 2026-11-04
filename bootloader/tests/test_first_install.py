@@ -5,7 +5,7 @@
 The meter runs EEVblog's bootloader (default: the owner's dump inputs/binaries/dump_2026-11-04_bootloader.bin and the
 2018 read-out inputs/binaries/bootloader.bin, not in the repository; a missing file is reported as SKIPPED) and this
 project's firmware (firmware/build/EEVBlog.bin, `make` in firmware/).  The install file is the starter
-(bootloader/build/starter.bin) and a pass-through test bootloader that starts the firmware at 0x08006000.
+(bootloader/build/starter.bin) and the bootloader (bootloader/build/bootloader.bin).
   I1 intermediate state: EEVblog's bootloader with pages 1..3 replaced by the starter's still starts the firmware
      (the first install writes those pages before page 0)
   I2 battery 4.5 V: END status 0x18 ("LdE 8"), nothing written
@@ -35,10 +35,8 @@ STARTER = open(os.path.join(ROOT, 'bootloader', 'build', 'starter.bin'), 'rb').r
 INPUTS = os.path.normpath(os.path.join(ROOT, '..', '..', '121gw-re', 'inputs', 'binaries'))
 DEFAULT_BL = [os.path.join(INPUTS, 'dump_2026-11-04_bootloader.bin'), os.path.join(INPUTS, 'bootloader.bin')]
 
-# pass-through bootloader at 0x08000400: MSP and reset vector from the firmware's table at 0x08006000
-#   0x408 ldr r0,[pc,#8]   0x40A ldr r1,[r0]   0x40C msr msp,r1   0x410 ldr r1,[r0,#4]   0x412 bx r1   0x414 .word
-PASS = (struct.pack('<II', 0x20002000, B.BL_BASE + 8 + 1) + bytes.fromhex('0248016881f3088841680847')
-        + struct.pack('<I', 0x08006000))
+# the bootloader of this build (make in bootloader/)
+PASS = open(os.path.join(ROOT, 'bootloader', 'build', 'bootloader.bin'), 'rb').read()
 
 
 def flash(e, addr, n):
@@ -85,7 +83,7 @@ def run(bl_path):
     _open_page(e)
     link = U.Link(e)
     ee0 = bytes(e.m.eeprom)
-    data = B.install(STARTER, PASS, 7)
+    data = B.install(STARTER, PASS, 0x00010000)
 
     print('I2 battery 4.5 V')
     e.command({'battery': 4.5})
@@ -105,7 +103,7 @@ def run(bl_path):
     e.advance(3.0)                                   # 0.5 s quiet, restart, starter install (about 1 s), firmware start
     T.check('starter at 0x08000000', flash(e, 0x08000000, 0x400) == STARTER)
     T.check('bootloader at 0x08000400', flash(e, B.BL_BASE, len(PASS)) == PASS)
-    T.check('bootloader mark valid', B.parse_header(flash(e, B.MARK, 20)) == (len(PASS), B.crc32(PASS), 7))
+    T.check('bootloader mark valid', B.parse_header(flash(e, B.MARK, 20)) == (len(PASS), B.crc32(PASS), 0x00010000))
     fw = B.parse_fw_mark(flash(e, B.FW_MARK, 20))
     T.check('firmware mark of the running firmware',
             fw is not None and fw[1] == B.crc32(flash(e, B.APP_BASE, fw[0])) and image[:fw[0]] == flash(e, B.APP_BASE, fw[0]),
@@ -140,9 +138,9 @@ def run(bl_path):
     e.usart2.rx_feed(b'\xF4' + b'9292')
     e.advance(1.0)
     got = bytes(e.ble_rx[n0:])
-    want = b'\xF7B-007'
-    want += bytes([0xF7 ^ 0x42 ^ 0x2D ^ 0x30 ^ 0x30 ^ 0x37])
-    T.check('0x92 answered F7 "B-007" (version word 7 of the install file)', want in got, got.hex())
+    want = b'\xF7B-100'
+    want += bytes([0xF7 ^ 0x42 ^ 0x2D ^ 0x31 ^ 0x30 ^ 0x30])
+    T.check('0x92 answered F7 "B-100" (bootloader 1.0.0)', want in got, got.hex())
     seen = []
     orig = e.system_reset
 
@@ -153,6 +151,9 @@ def run(bl_path):
     e.usart2.rx_feed(b'\xF4' + b'9191')
     e.advance(0.5)
     T.check('0x91: system reset with RTC_BKP0R = 0x55504454', ('AIRCR.SYSRESETREQ', 0x55504454) in seen, repr(seen))
+    e.advance(2.0)
+    T.check('the bootloader is in update mode', T.DEC.text(e.snapshot()['lcd'])[:2] == ('-1AP-', '-1AP-'),
+            repr(T.DEC.text(e.snapshot()['lcd'])[:2]))
 
 
 def _tmpfile(name, data):

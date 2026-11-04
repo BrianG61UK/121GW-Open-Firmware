@@ -69,19 +69,17 @@ entry changes it and its effect on v2.05 and on this project's builds is tested 
 | G5 | Update over Bluetooth into the bootloader (no SD card) | later stage, needs G1/G2 first; largest code |
 | G6 | Configurable key-window timeout | owner request |
 
-Kept exactly: the key sequence, the file name, the LCD texts, the 0x08006000 hand-over contract (MSP and reset vector,
-DESIGN.md 2.1, the state the applications expect; the one planned exception is VTOR, section 6), PF15 as in the owner's build, the data EEPROM never touched.  Both the
-original v2.05 application and every build of this project must start unchanged.
+Kept: the key sequence, the file name, the LCD texts, PF15 as in the owner's build, the data EEPROM never touched.
+The bootloader is for the fast build (owner, 2026-11-04): it starts this project's firmware, which does not depend on
+the old bootloader's hand-over state (emulator/app.py DIRECT_BOOT_NOTE, firmware/DESIGN.md 2.1); the original v2.05
+application is not a target (it relies on that state until it sets VTOR).
 
 ## 3. Approach
 
-Two stages, as with the application (owner 2026-11-04: a rewrite must not lose what the old bootloader does, and it can
-be optimised):
-1. Strict port: every function and data region of the owner's bootloader (complete inventory first: vectors, code,
-   library code, tables, hand-over state) translated to native Thumb-2 source that assembles byte-identical to his dump
-   (same SHA-256).  The identical hash proves nothing was dropped.
-2. Optimised build from that source: each change a numbered, documented entry (as the IMP list), dead and duplicated
-   code removed only where the inventory shows it unreachable, then the goals below.  The optimised build:
+Owner decision 2026-11-04 (replaces the strict port first planned): no strict port; the bootloader is written for the
+fast build only, from this project's own modules.  What the old bootloader does is kept as behaviour, from the
+inventory (section 1.1): the key sequence, the file name, the LCD texts, PF15 as in the owner's build; nothing of its
+code is copied.  The new bootloader:
 - reuses the project's SD driver (`src/sd`) and the FatFs R0.16 translation (`src/ff16`, read-only configuration plus
   the exFAT routines, translated and checked against ChaN's C with the existing differential harness);
 - the "valid application" mark: the last 256-byte page of the application area (0x0805FF00..0x0805FFFF).  The present
