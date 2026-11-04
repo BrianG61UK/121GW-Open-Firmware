@@ -12,7 +12,8 @@ collection buffer; --full sends the whole image).
      CRC: status 1.
   T3 transfer: START, every DATA accepted ("Ld nn" shown meanwhile), one packet sent twice (accepted, not stored again),
      one packet skipped (status 2 with the packet expected), one packet cut short (dropped after 200 ms without a byte,
-     the full packet after it is accepted), END: status 0 and "Ld oK"; the card then holds EEVBlog.bin
+     the full packet after it is accepted), 3 card write faults injected before packet 30 (the write is repeated),
+     END: status 0 and "Ld oK"; the card then holds EEVBlog.bin
      equal to the file sent, and BTLOAD.TMP.
   T4 a file that is not an application image (initial SP 0): END status 0x13 ("LdE 3") and EEVBlog.bin unchanged.
   T5 leaving the page: status frames again.
@@ -116,6 +117,8 @@ def run_tests(image, full):
     pkts = btft.data_packets(payload)
     ok, shown, t0 = True, set(), T.now(e)
     for n, p in enumerate(pkts):
+        if n == 30:
+            link.e.sdcard.faults['write_crc'] = 3    # the card refuses 3 blocks of the next write (OF-59 fault model)
         if n == 10:
             link.e.usart2.rx_feed(p[:20])            # a packet cut short (bytes lost): dropped after 200 ms idle
             link.e.advance(0.5)
@@ -132,9 +135,12 @@ def run_tests(image, full):
             T.check('packet 7 again: accepted (not stored twice)', a is not None and a[1] == 0 and a[2] == 8, repr(a))
         shown.add(T.sub_text(e))
     T.check('every DATA packet accepted (%d)' % len(pkts), ok)
+    T.check('the 3 injected card write faults were met (and repeated)', e.sdcard.faults['write_crc'] == 0,
+            'left %d' % e.sdcard.faults['write_crc'])
     T.check('percent shown during the transfer', any(s.startswith('LD') and s[2:].strip().isdigit() for s in shown),
             'shown %r' % sorted(shown)[:6])
     a = link.send(btft.packet(btft.T_END, len(pkts)), timeout=120.0)
+    e.advance(0.3)                                   # the page is redrawn in the next refresh pass
     T.check('END: status 0, "Ld oK"', a is not None and a[1] == 0 and T.sub_text(e) == 'LD oK', '%r sub %r' % (a, T.sub_text(e)))
     print('    %.1f s emulated for %d bytes (%.0f B/s)' % (T.now(e) - t0, len(payload), len(payload) / (T.now(e) - t0)))
     s = e.snapshot()
@@ -146,6 +152,7 @@ def run_tests(image, full):
     for p in btft.data_packets(junk):
         a = link.send(p, timeout=20.0)
     a = link.send(btft.packet(btft.T_END, len(btft.data_packets(junk))), timeout=120.0)
+    e.advance(0.3)
     T.check('END: status 0x13, "LdE 3"', a is not None and a[1] == 0x13 and T.sub_text(e) == 'LDE 3',
             '%r sub %r' % (a, T.sub_text(e)))
 

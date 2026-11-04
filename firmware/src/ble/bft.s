@@ -59,6 +59,7 @@
     .equ BFT_COPY_LEN,      4096            @ copy step
     .equ BFT_GAP_TICKS,     20              @ 200 ms without a byte ends a packet being assembled
     .equ BFT_COPY_TRIES,    3               @ attempts of the copy to EEVBlog.bin
+    .equ BFT_FLUSH_TRIES,   10              @ card sessions for one collected write
     .equ BFT_ST_WAIT,       0               @ waiting for START
     .equ BFT_ST_RECV,       1               @ receiving
     .equ BFT_ST_DONE,       2               @ EEVBlog.bin written and verified
@@ -279,11 +280,31 @@ LFUNC bft_card_end
 ENDFUNC bft_card_end
 
 @ -----------------------------------------------------------------------------
-@ bft_flush - write the collected bytes to the temporary file
+@ bft_flush - write the collected bytes to the temporary file, up to BFT_FLUSH_TRIES card sessions
+@ Out      : r0 = 0 written, 1 every attempt failed
+@ Clobbers : r0-r3, r12, flags (r4 saved)
+@ Note     : on a meter one write of 8 KiB failed after 14 good ones (2026-11-03, the transfer stopped with LdE 1);
+@            log_write_step repeats a failed log session the same way (20 attempts).  A repeated attempt rewrites the
+@            same bytes at the same offset (bft_flushed advances only after a complete write), so a partial write of a
+@            failed attempt is overwritten.
+@ -----------------------------------------------------------------------------
+LFUNC bft_flush
+    push {r4, lr}
+    movs r4, #BFT_FLUSH_TRIES
+1:  bl bft_flush_once
+    cbz r0, 2f
+    subs r4, r4, #1
+    bne 1b
+    movs r0, #1
+2:  pop {r4, pc}
+ENDFUNC bft_flush
+
+@ -----------------------------------------------------------------------------
+@ bft_flush_once - one card session that writes the collected bytes to the temporary file
 @ Out      : r0 = 0 written (bft_flushed advanced, bft_staged = 0), 1 failed
 @ Clobbers : r0-r3, r12, flags (r4-r6 saved)
 @ -----------------------------------------------------------------------------
-LFUNC bft_flush
+LFUNC bft_flush_once
     push {r4-r6, lr}
     sub sp, sp, #8
     ldr r0, =bft_staged
@@ -343,7 +364,7 @@ LFUNC bft_flush
     movs r0, #1
     add sp, sp, #8
     pop {r4-r6, pc}
-ENDFUNC bft_flush
+ENDFUNC bft_flush_once
 
 @ -----------------------------------------------------------------------------
 @ bft_file_crc - CRC-32 and length of a file
