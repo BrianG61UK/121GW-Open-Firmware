@@ -1,0 +1,201 @@
+# Companion: PyInstaller one-folder program with everything it needs (Python, bleak with the system's backend, pywebview,
+# the page), packaged as macOS .dmg (Apple Silicon), Windows installer .exe (Inno Setup), Linux AppImage and .deb (x86_64).
+# Every package is started (or installed and started) and must answer on its local server, page and protections included
+# (.github/scripts/smoke.py), before it is uploaded.  On a tag companion-vA.B.C the packages are attached to that release,
+# created without the "latest" mark so the fast firmware release stays the default download of the repository.
+name: Companion
+
+on:
+  push:
+    branches: ['companion']
+    tags: ['companion-v*']
+  pull_request:
+    branches: ['companion']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: companion-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+env:
+  # tag companion-v1.2.3 -> 1.2.3 (step "Version"); any other ref -> dev
+  REF_TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
+  PIP_PKGS: bleak==1.1.1 pywebview==6.1 pyinstaller==6.22.3 pillow
+
+jobs:
+  macos:
+    name: macOS arm64
+    runs-on: macos-15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Version
+        run: echo "VER=${REF_TAG#companion-v}" >> "$GITHUB_ENV"
+      - name: Build tools and libraries
+        run: python -m pip install $PIP_PKGS
+      - name: Icons and third-party licences
+        run: |
+          python -I packaging/make_icons.py build/icons
+          python -I packaging/third_party.py build/THIRD_PARTY_LICENSES.txt
+      - name: Application bundle
+        run: APP_VERSION="$VER" APP_ICON="$PWD/build/icons/121gw-companion.icns" pyinstaller --noconfirm packaging/companion.spec
+      - name: The bundle answers (page, state, protections)
+        run: |
+          set -euo pipefail
+          "dist/121GW Companion.app/Contents/MacOS/121gw-companion" --no-open --port 8251 > app.log 2>&1 &
+          pid=$!
+          python -I .github/scripts/smoke.py http://127.0.0.1:8251 || { cat app.log; exit 1; }
+          kill "$pid"
+      - name: Disk image
+        run: sh packaging/make_dmg.sh "dist/121GW Companion.app" build/THIRD_PARTY_LICENSES.txt "121GW-Companion-$VER-macos-arm64.dmg"
+      - name: Checksum
+        run: python -I .github/scripts/sha256sum.py 121GW-Companion-*.dmg > "121GW-Companion-$VER-macos-arm64.dmg.sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: companion-macos
+          path: 121GW-Companion-*
+          if-no-files-found: error
+      - name: Attach to the release
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'companion-v')
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --verify-tag --latest=false \
+            --title "121GW Companion ${tag#companion-}" --notes-file .github/release-notes.md || gh release view "$tag" >/dev/null
+          gh release upload "$tag" 121GW-Companion-* --clobber
+
+  windows:
+    name: Windows x64
+    runs-on: windows-2025
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Version
+        run: echo "VER=${REF_TAG#companion-v}" >> "$GITHUB_ENV"
+      - name: Build tools and libraries
+        run: python -m pip install $PIP_PKGS
+      - name: Icons and third-party licences
+        run: |
+          python -I packaging/make_icons.py build/icons
+          python -I packaging/third_party.py build/THIRD_PARTY_LICENSES.txt
+      - name: Program folder
+        run: APP_VERSION="$VER" APP_ICON="$PWD/build/icons/121gw-companion.ico" pyinstaller --noconfirm packaging/companion.spec
+      - name: Installer (Inno Setup)
+        run: |
+          set -euo pipefail
+          iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          if [ ! -x "$iscc" ]; then choco install innosetup -y --no-progress; fi
+          "$iscc" "/DAppVersion=$VER" "/DSourceDir=$(cygpath -w "$PWD/dist/121gw-companion")" "/DOutputDir=$(cygpath -w "$PWD")" \
+            "/DLicenseFile=$(cygpath -w "$PWD/LICENSE")" "/DThirdParty=$(cygpath -w "$PWD/build/THIRD_PARTY_LICENSES.txt")" \
+            packaging/windows/121gw_companion.iss
+      - name: Installed program answers (page, state, protections)
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem "121GW-Companion-*-windows-x64.exe" | Select-Object -First 1
+          $dir = Join-Path $PWD "installed"
+          Start-Process -FilePath $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$dir" -Wait
+          $p = Start-Process -FilePath (Join-Path $dir "121gw-companion.exe") -ArgumentList "--no-open", "--port", "8251" -PassThru
+          python -I .github/scripts/smoke.py http://127.0.0.1:8251 --timeout 180
+          $ok = $LASTEXITCODE -eq 0
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          if (-not $ok) { exit 1 }
+      - name: Checksum
+        run: python -I .github/scripts/sha256sum.py 121GW-Companion-*-windows-x64.exe > "121GW-Companion-$VER-windows-x64.exe.sha256"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: companion-windows
+          path: 121GW-Companion-*
+          if-no-files-found: error
+      - name: Attach to the release
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'companion-v')
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --verify-tag --latest=false \
+            --title "121GW Companion ${tag#companion-}" --notes-file .github/release-notes.md || gh release view "$tag" >/dev/null
+          gh release upload "$tag" 121GW-Companion-* --clobber
+
+  linux:
+    name: Linux x86_64
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - name: Version
+        run: echo "VER=${REF_TAG#companion-v}" >> "$GITHUB_ENV"
+      - name: Build tools and libraries
+        run: python -m pip install $PIP_PKGS
+      - name: Icons and third-party licences
+        run: |
+          python -I packaging/make_icons.py build/icons
+          python -I packaging/third_party.py build/THIRD_PARTY_LICENSES.txt
+      - name: Program folder
+        run: APP_VERSION="$VER" pyinstaller --noconfirm packaging/companion.spec
+      - name: AppImage
+        run: |
+          set -euo pipefail
+          curl -fsSL -o appimagetool.AppImage https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool.AppImage" | sha256sum -c -
+          chmod +x appimagetool.AppImage
+          sh packaging/linux/build_appimage.sh dist/121gw-companion build/THIRD_PARTY_LICENSES.txt \
+            "121GW-Companion-$VER-linux-x86_64.AppImage" build/icons/121gw-companion.png "$PWD/appimagetool.AppImage"
+      - name: The AppImage answers (page, state, protections)
+        run: |
+          set -euo pipefail
+          ./"121GW-Companion-$VER-linux-x86_64.AppImage" --no-open --port 8251 > app.log 2>&1 &
+          pid=$!
+          python -I .github/scripts/smoke.py http://127.0.0.1:8251 || { cat app.log; exit 1; }
+          kill "$pid"
+      - name: Debian package, installed and started
+        run: |
+          set -euo pipefail
+          deb="121GW-Companion-$VER-linux-amd64.deb"
+          sh packaging/linux/build_deb.sh dist/121gw-companion "$REF_TAG" build/THIRD_PARTY_LICENSES.txt "$deb" build/icons/121gw-companion.png
+          sudo apt-get install -y "./$deb"
+          121gw-companion --no-open --port 8252 > deb.log 2>&1 &
+          pid=$!
+          python -I .github/scripts/smoke.py http://127.0.0.1:8252 || { cat deb.log; exit 1; }
+          kill "$pid"
+          sudo apt-get remove -y 121gw-companion
+      - name: Checksums
+        run: for f in 121GW-Companion-*.AppImage 121GW-Companion-*.deb; do python -I .github/scripts/sha256sum.py "$f" > "$f.sha256"; done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: companion-linux
+          path: 121GW-Companion-*
+          if-no-files-found: error
+      - name: Attach to the release
+        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'companion-v')
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --verify-tag --latest=false \
+            --title "121GW Companion ${tag#companion-}" --notes-file .github/release-notes.md || gh release view "$tag" >/dev/null
+          gh release upload "$tag" 121GW-Companion-* --clobber

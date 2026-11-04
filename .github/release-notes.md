@@ -1,0 +1,12 @@
+121GW Companion: live view, recording and firmware information for the EEVblog 121GW over Bluetooth LE.
+
+Assets
+- `121GW-Companion-<version>-macos-arm64.dmg`: macOS on Apple chips. Drag the app to Applications; macOS asks once to open an app that is not paid-signed (see "First start - READ ME.txt" in the image) and once for Bluetooth access.
+- `121GW-Companion-<version>-windows-x64.exe`: installer for Windows 10 / 11.
+- `121GW-Companion-<version>-linux-amd64.deb`: Ubuntu, Debian, Mint, Pop!_OS (`sudo apt install ./<file>`).
+- `121GW-Companion-<version>-linux-x86_64.AppImage`: any other 64-bit Linux (make it executable, double-click).
+- `*.sha256`: checksum of the file with the same name.
+
+Everything the program needs is inside each package; nothing else has to be installed. Meter: Bluetooth on (hold PEAK), phone app closed. The firmware version is shown with the fast firmware F-1.01 or later.
+
+Free for individuals, schools and non-profits; companies need written permission (see LICENSE). Third-party licences: THIRD_PARTY_LICENSES.txt in each package.
