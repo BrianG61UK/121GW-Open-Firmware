@@ -13,7 +13,9 @@ program lives here.  The firmware and the emulator are on `main`, the build that
 | Statistics | minimum, maximum, mean, standard deviation and count of the readings; they restart when the mode, unit or range changes |
 | Trend | the last 10 minutes on a scope-style grid; the trace breaks where the meter had no value (overload, range change) |
 | Recording | every reading with its time to a CSV file (`Documents/121GW` by default) |
-| Firmware version | the fast firmware from F-1.01 on reports its version; the header shows it |
+| Firmware version | the fast firmware from F-1.02 on reports its version; the header shows it |
+| Firmware update | when a newer fast release exists, a notice offers "Update now" or "Later" (checked at every connection and every 30 minutes); Update now downloads and checks the release, waits until the meter shows the SETUP page `Ld-bt`, sends the file with a progress bar, and shows the key sequence that installs it |
+| Meter clock | "Sync time" sets the meter's clock from an NTP server (pool.ntp.org, or your own) to the second |
 
 The meter accepts one Bluetooth connection at a time: close the phone application before connecting.  Turn Bluetooth
 on at the meter with a long press of PEAK.  While the SETUP page `Ld` (firmware transfer) is shown the meter sends no
@@ -50,7 +52,11 @@ then `packaging/make_dmg.sh` (macOS), `packaging/windows/121gw_companion.iss` (I
 | `meter121/display.py` | the status frame decoded as the meter's display shows it; the decimal point and unit tables come from the firmware |
 | `meter121/record.py` | statistics, trend history, CSV recording |
 | `meter121/server.py` | local server between the window and the program (127.0.0.1 only; commands need a custom header) |
-| `meter121/app.py` | the program: link, version request, window |
+| `meter121/releases.py` | the fast firmware's releases: latest version, image downloaded and checked (SHA-256, header) |
+| `meter121/transfer.py` | the file transfer to the meter's SD card (packets with CRC-16, stop and wait, retries) |
+| `meter121/clock.py` | NTP query and the meter's set-clock frame |
+| `meter121/paths.py` | the user's settings, cache and documents folders |
+| `meter121/app.py` | the program: link, version request, update, clock, window |
 | `ui/index.html` | the window |
 
 The status frame does not carry the main decimal point or the unit prefix; both come from the firmware's tables

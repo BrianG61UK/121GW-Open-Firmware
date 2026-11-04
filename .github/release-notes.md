@@ -7,6 +7,6 @@ Assets
 - `121GW-Companion-<version>-linux-x86_64.AppImage`: any other 64-bit Linux (make it executable, double-click).
 - `*.sha256`: checksum of the file with the same name.
 
-Everything the program needs is inside each package; nothing else has to be installed. Meter: Bluetooth on (hold PEAK), phone app closed. The firmware version is shown with the fast firmware F-1.01 or later.
+Everything the program needs is inside each package; nothing else has to be installed. Meter: Bluetooth on (hold PEAK), phone app closed. The firmware version is shown with the fast firmware F-1.02 or later.
 
 Free for individuals, schools and non-profits; companies need written permission (see LICENSE). Third-party licences: THIRD_PARTY_LICENSES.txt in each package.

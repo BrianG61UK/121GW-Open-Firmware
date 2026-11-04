@@ -1,0 +1,108 @@
+"""File transfer to the meter's SD card (the firmware's protocol of FEATURES.md 2.10, ble/bft.s).
+
+Packet to the meter: B5 5B type seq(2) len(1) payload crc16(2), little-endian, CRC-16/CCITT-FALSE over type..payload.
+Answer: B5 5B 81 seq(2) 03 status next(2) crc16(2).  Stop and wait: every packet is answered before the next one goes.
+The transfer works only while the meter shows the SETUP page Ld ("Ld-bt"); there the meter checks length, CRC-32 and the
+image header at END and writes the file as EEVBlog.bin.  Timeouts and retries are those of the sender that wrote a
+firmware image to a meter over Bluetooth (155 kB in 159 to 172 s, 2026-11-04).
+"""
+import queue
+import struct
+import time
+import zlib
+
+from .frames import crc16
+
+T_START, T_DATA, T_END, T_STATUS = 1, 2, 3, 5
+MAX_PAYLOAD = 232
+TIMEOUT_DATA = 20.0
+TIMEOUT_END = 120.0
+RETRIES = 8
+STATUS_TEXT = {0: 'accepted', 1: 'CRC wrong', 2: 'not the expected packet', 3: 'not allowed now', 4: 'size refused',
+               5: 'beyond the announced size', 0x11: 'the card could not be written', 0x12: 'length or CRC-32 wrong',
+               0x13: 'not an application image', 0x14: 'the copy to EEVBlog.bin failed',
+               0x15: 'EEVBlog.bin read back differs', 0x16: 'the received file could not be read back'}
+
+
+class TransferError(Exception):
+    pass
+
+
+def packet(ptype, seq, payload=b''):
+    body = struct.pack('<BHB', ptype, seq & 0xFFFF, len(payload)) + bytes(payload)
+    return b'\xB5\x5B' + body + struct.pack('<H', crc16(body))
+
+
+def answer(frame):
+    """(seq, status, next) of a checked answer frame (frames.BFT)."""
+    if frame[2] != 0x81 or frame[5] != 3:
+        return None
+    return struct.unpack_from('<H', frame, 3)[0], frame[6], struct.unpack_from('<H', frame, 7)[0]
+
+
+class Sender:
+    """Runs a transfer over `send` (bytes -> None) with the answers put into `answers` (a queue of answer tuples)."""
+
+    def __init__(self, send):
+        self.send = send
+        self.answers = queue.Queue()
+        self.done = 0
+        self.total = 0
+        self.cancelled = False
+
+    def _ask(self, pkt, seq, timeout):
+        for _ in range(RETRIES):
+            while not self.answers.empty():
+                self.answers.get_nowait()
+            self.send(pkt)
+            end = time.monotonic() + timeout
+            while time.monotonic() < end:
+                if self.cancelled:
+                    raise TransferError('cancelled')
+                try:
+                    a_seq, status, nxt = self.answers.get(timeout=min(0.5, max(0.01, end - time.monotonic())))
+                except queue.Empty:
+                    continue
+                if status == 1:
+                    break                                     # CRC wrong: send again
+                if a_seq != seq:
+                    continue
+                return status, nxt
+        raise TransferError('no answer to packet %d (is "Ld-bt" still shown on the meter?)' % seq)
+
+    def probe(self, timeout=1.5):
+        """True when the meter answers a status request, i.e. it shows the page Ld."""
+        while not self.answers.empty():
+            self.answers.get_nowait()
+        self.send(packet(T_STATUS, 0, b'\x00'))
+        try:
+            self.answers.get(timeout=timeout)
+            return True
+        except queue.Empty:
+            return False
+
+    def run(self, data):
+        """Send `data` as EEVBlog.bin; returns the number of card sessions the meter had to repeat."""
+        pkts = [packet(T_DATA, n, data[i:i + MAX_PAYLOAD]) for n, i in enumerate(range(0, len(data), MAX_PAYLOAD))]
+        self.total, self.done = len(data), 0
+        status, _ = self._ask(packet(T_START, 0, struct.pack('<II', len(data), zlib.crc32(data) & 0xFFFFFFFF)), 0,
+                              TIMEOUT_DATA)
+        if status:
+            raise TransferError('START: %s' % STATUS_TEXT.get(status, status))
+        n = 0
+        while n < len(pkts):
+            status, nxt = self._ask(pkts[n], n, TIMEOUT_DATA)
+            if status == 2:
+                n = nxt                                       # the meter names the packet it expects
+                continue
+            if status:
+                raise TransferError('packet %d: %s' % (n, STATUS_TEXT.get(status, status)))
+            n += 1
+            self.done = min(len(data), n * MAX_PAYLOAD)
+        status, info = self._ask(packet(T_END, len(pkts)), len(pkts), TIMEOUT_END)
+        if status in (0x14, 0x15):
+            raise TransferError('%s: the card holds the old EEVBlog.bin untouched or none at all; do not use the update keys,'
+                                ' send the file again' % STATUS_TEXT[status])
+        if status:
+            raise TransferError('END: %s' % STATUS_TEXT.get(status, status))
+        return info

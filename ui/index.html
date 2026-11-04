@@ -16,7 +16,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.35 var(--sans); }
-body { display: grid; grid-template-rows: auto 1fr auto; -webkit-font-smoothing: antialiased; user-select: none; }
+body { display: grid; grid-template-rows: auto auto 1fr auto; -webkit-font-smoothing: antialiased; user-select: none; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .cap { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
 button {
@@ -41,6 +41,15 @@ header { display: flex; align-items: center; gap: 22px; padding: 12px 22px; bord
 @keyframes blink { 50% { opacity: .25; } }
 .spacer { flex: 1; }
 .fwv { color: var(--ink); letter-spacing: .04em; margin-left: 6px; }
+/* update notice: one hairline band under the header, the accent only where the user acts */
+.notice { display: none; align-items: center; gap: 16px; padding: 11px 22px; border-bottom: 1px solid var(--acc-dim);
+          background: var(--panel); }
+.notice.show { display: flex; }
+.notice .num { color: var(--acc); }
+.notice .text { flex: 1; }
+.notice .text.bad { color: var(--warn); }
+.prog { width: 220px; height: 4px; background: var(--rule); }
+.prog i { display: block; height: 100%; width: 0; background: var(--acc); }
 
 /* main area */
 main { display: grid; grid-template-columns: minmax(0, 1fr) 260px; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
@@ -73,6 +82,9 @@ aside { grid-row: 1 / span 2; grid-column: 2; border-left: 1px solid var(--rule)
 .recdot.on { background: var(--warn); border-color: var(--warn); animation: blink 1.2s steps(2) infinite; }
 .path { color: var(--dim); font-size: 11px; word-break: break-all; margin-top: 8px; }
 .devices { margin-top: 10px; display: grid; gap: 6px; }
+input { flex: 1; min-width: 0; background: transparent; border: 1px solid var(--rule-hi); color: var(--ink);
+        font: 12px/1 var(--mono); padding: 7px 8px; border-radius: 0; outline: none; }
+input:focus { border-color: var(--acc); }
 .devices button { text-align: left; text-transform: none; letter-spacing: 0; font: 12px/1.2 var(--mono); }
 
 .trendwrap { position: relative; min-height: 180px; }
@@ -94,6 +106,9 @@ footer { display: flex; align-items: center; gap: 16px; padding: 9px 22px; borde
   <button id="connect" class="primary">Connect</button>
 </header>
 
+<div class="notice" id="notice"><span class="cap">firmware</span><span class="text" id="ntext"></span>
+  <div class="prog" id="nprog" hidden><i id="nbar"></i></div>
+  <button id="nprimary" class="primary"></button><button id="nsecondary"></button></div>
 <main>
   <div>
     <section class="readout">
@@ -121,6 +136,11 @@ footer { display: flex; align-items: center; gap: 16px; padding: 9px 22px; borde
       <div class="rec"><i class="recdot" id="recdot"></i><span class="num" id="rectime">00:00:00</span><span class="msg num" id="recrows"></span></div>
       <div class="row"><button id="rec">Record</button></div>
       <div class="path" id="recpath"></div>
+    </div>
+    <div class="section">
+      <div class="cap">meter clock</div>
+      <div class="row"><input id="ntp" class="num" spellcheck="false" aria-label="NTP server"><button id="sync">Sync time</button></div>
+      <div class="path num" id="clockres"></div>
     </div>
     <div class="section" id="devsec">
       <div class="cap">meter</div>
@@ -217,6 +237,52 @@ function drawTrend() {
   g.textAlign = 'left'; g.fillText(Math.round(t1 - t0) + ' s', L, B + 16);
 }
 
+let syncing = false;
+$('ntp').oninput = () => { $('ntp').dataset.edited = '1'; };
+$('sync').onclick = async () => {
+  syncing = true; $('clockres').textContent = 'asking ' + $('ntp').value + ' …';
+  try { const j = await api({sync_time: true, server: $('ntp').value}); $('ntp').dataset.edited = ''; say('meter clock set to ' + j.set_to); }
+  catch (e) { $('clockres').textContent = e.message; say(e.message, true); }
+  syncing = false;
+};
+let upStart = null;
+function drawUpdate(u, M) {
+  const n = $('notice'), t = $('ntext'), p = $('nprimary'), q = $('nsecondary'), pr = $('nprog');
+  const show = (text, prim, sec, bad) => {
+    n.classList.add('show'); t.innerHTML = text; t.className = 'text' + (bad ? ' bad' : '');
+    p.hidden = !prim; p.textContent = prim || ''; q.hidden = !sec; q.textContent = sec || ''; pr.hidden = true;
+  };
+  const st = u.state;
+  if (st === 'available' && !u.later)
+    show(`<span class="num">${u.latest}</span> is available — this meter runs <span class="num">${M.version}</span>`, 'Update now', 'Later');
+  else if (st === 'downloading') show(`getting <span class="num">${u.latest}</span> …`);
+  else if (st === 'waiting_ld') show('On the meter: press <b>SETUP</b> until the page shows <span class="num">Ld-bt</span>. The transfer starts by itself.', null, 'Cancel');
+  else if (st === 'sending') {
+    if (upStart === null) upStart = state.now;
+    const f = u.total ? u.done / u.total : 0, el = state.now - upStart, left = f > .02 ? el / f - el : null;
+    show(`sending <span class="num">${u.latest}</span> · <span class="num">${Math.round(u.done / 1024)} / ${Math.round(u.total / 1024)} KB</span>` +
+         (left !== null ? ` · about <span class="num">${Math.ceil(left / 60)} min</span> left` : ''), null, 'Cancel');
+    pr.hidden = false; $('nbar').style.width = (f * 100).toFixed(1) + '%';
+  }
+  else if (st === 'done' && !u.later)
+    show(`<span class="num">${u.latest}</span> is on the meter's SD card${u.message ? ' (' + u.message + ')' : ''}. To install: switch the meter off, hold <b>HOLD</b> and <b>MEM</b> while switching it on, then press <b>SETUP</b>.`, 'OK');
+  else if (st === 'error' && !u.later) show('update stopped: ' + u.message, 'Try again', 'Close', true);
+  else n.classList.remove('show');
+  if (st !== 'sending') upStart = null;
+}
+$('nprimary').onclick = async () => {
+  const st = state && state.update.state;
+  try {
+    if (st === 'available' || st === 'error') await api({update_now: true});
+    else if (st === 'done') await api({update_later: true});
+  } catch (e) { say(e.message, true); }
+};
+$('nsecondary').onclick = async () => {
+  const st = state && state.update.state;
+  try { await api(st === 'waiting_ld' || st === 'sending' ? {update_cancel: true} : {update_later: true}); }
+  catch (e) { say(e.message, true); }
+};
+
 function hms(s) { s = Math.max(0, Math.floor(s)); return [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(x => String(x).padStart(2, '0')).join(':'); }
 
 async function poll() {
@@ -253,6 +319,11 @@ async function poll() {
   $('rectime').textContent = S.recording ? hms(state.now - S.rec_start) : '00:00:00';
   $('recrows').textContent = S.recording ? S.rec_rows + ' rows' : '';
   $('recpath').textContent = S.rec_path || '';
+  drawUpdate(state.update, M);
+  const C = state.clock, ntp = $('ntp');
+  if (document.activeElement !== ntp && !ntp.dataset.edited) ntp.value = C.server;
+  $('sync').disabled = L.state !== 'connected';
+  if (C.last && !syncing) $('clockres').textContent = `set to ${C.last.time} from ${C.server} · offset ${(C.last.offset * 1000).toFixed(0)} ms` + (C.last.note || '');
   const dev = $('devices');
   if (L.state === 'connected' && L.device) dev.innerHTML = `<span class="num">${L.device[1]}</span><span class="msg num">${L.device[0]}</span>`;
   else if (L.found && L.found.length)
