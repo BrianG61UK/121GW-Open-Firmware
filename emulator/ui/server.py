@@ -9,7 +9,7 @@ POST /input          JSON command: {"key": name, "down": bool} | {"dial": positi
                      {"input": {"kind": "open"|"V"|"A"|"ohm"|"Hz"|"F"|"degC"|"diode"|"VA", "value": x,
                                 "ac": bool, "freq": f, "duty": d, "width": s, "dc": v, "amps": a, "board": t}} |
                      {"environment": {"pickup_hz": 50|60, "pickup_v": v, "coupling_pf": c, "drift": d}} |
-                     {"sdcard": bool} | {"sysreset": true} | {"firmware": "2_fast"|"1_like_v2.05"}
+                     {"sdcard": bool} | {"sysreset": true} | {"firmware": "2_fast"|"1_like_v2.05"} (a release build, fetched on demand)
                      (stimulus fields: emu/frontend.py module docstring; app.py Emulator.command; all: emulator/API.md)
 POST /firmware       run the application image in the request body (raw bytes, at most 1 MiB; the file name in the header
                      "X-121GW-File"); needs the request header "X-121GW: firmware" for the reason given for /quit;

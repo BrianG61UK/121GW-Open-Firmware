@@ -17,10 +17,13 @@ repo = os.path.abspath(os.path.join(root, '..'))
 version = os.environ.get('EMU_VERSION', 'dev')
 icon = os.environ.get('EMU_ICON') or None                    # .ico / .icns from packaging/make_icons.py, optional
 
-for need in ('data/synthetic_eeprom.bin', 'data/v205_tables.json', 'data/firmware/2_fast/EEVBlog.bin',
-             'data/firmware/1_like_v2.05/EEVBlog.bin', 'ui/assets/lcd/LICENSE'):
+for need in ('data/synthetic_eeprom.bin', 'data/v205_tables.json', 'ui/assets/lcd/LICENSE'):
     if not os.path.isfile(os.path.join(root, need)):
         raise SystemExit('packaging: %s is missing (run emulator/tools/prepare_data.py)' % need)
+# the emulator ships no firmware: the builds are fetched on demand (emu/fetch.py); a data/firmware folder left from an
+# older prepare_data.py must not end up in a package
+if os.path.exists(os.path.join(root, 'data', 'firmware')):
+    raise SystemExit('packaging: emulator/data/firmware exists; the emulator ships no firmware (emu/fetch.py): delete it')
 
 # unicorn keeps its native library in unicorn/lib (libunicorn.so.2 on Linux, a versioned name that
 # collect_dynamic_libs does not match); bundle every file of that folder at the same relative place

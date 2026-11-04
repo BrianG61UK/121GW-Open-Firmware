@@ -78,7 +78,8 @@ On Linux the emulator opens in your web browser; stop it with the **Quit emulato
 ## 3. Use it
 
 - Click the keys and turn the dial on the drawn meter; set what is connected to the probes under **Input stimulus**.
-- **Firmware:** the two builds of this project are included (choose in the **firmware** list). To try your own
+- **Firmware:** the two builds of this project are downloaded from GitHub the first time you choose them in the
+  **firmware** list (fast at the first start), then kept on the computer, so this needs the internet once. To try your own
   `EEVBlog.bin` click **Load firmware file…** or drag the file onto the window. The meter restarts with it; a file
   that is not a 121GW firmware is refused and the reason is shown.
 

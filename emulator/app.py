@@ -9,7 +9,8 @@ Without any original image the emulator needs nothing but its own data directory
   * direct boot: no bootloader image is loaded and the core starts the application from its vector table at 0x08006000
     (stack pointer = word 0, reset vector = word 1, VTOR = 0x08006000), the state the bootloader hands over in
     (firmware/DESIGN.md 2.1) except for what DIRECT_BOOT_NOTE lists;
-  * the application is a bundled firmware build (--firmware, default 2_fast) or any image given with --app;
+  * the application is a firmware build fetched on demand from the project's GitHub releases and cached
+    (--firmware, default 2_fast; emu/fetch.py) or any image given with --app; with neither the meter stays dark;
   * the EEPROM is the bundled SYNTHETIC image (not a meter's calibration) unless --eeprom gives one;
   * the v2.05 constant tables the calibrated front end needs come from the bundled table data (emu/v205tables.py).
 Original images, all optional:
@@ -50,7 +51,7 @@ from emu.hy3131 import HY3131
 from emu.frontend import make_frontend, FrontendUnavailable
 from emu.safety import Safety
 from emu.v205tables import V205Tables
-from emu import bundle
+from emu import bundle, fetch
 
 APP_BASE = 0x08006000
 APP_MAX = FLASH_BASE + FLASH_SIZE - APP_BASE        # room for an application image above the bootloader (368 KiB)
@@ -132,11 +133,12 @@ class Emulator:
     def __init__(self, inputs=None, app=None, eeprom=None, speed=1.0, hw_cal=None, *, bootloader=None, option_bytes=None,
                  v205_image=None, tables=None, firmware=None):
         """inputs: directory with bootloader.bin, EEVBlog2_05.bin and option.bytes (None: none of them is needed).
-        app: application image (default: inputs/EEVBlog2_05.bin, else the bundled firmware `firmware`, default 2_fast).
+        app: application image (default: inputs/EEVBlog2_05.bin, else the release build `firmware`, default 2_fast,
+        fetched on demand by emu/fetch.py; when that fails the meter stays dark and firmware_note says why).
         eeprom: raw EEPROM image from offset 0 (default: the bundled synthetic image when `inputs` is None, else a blank
         EEPROM as before).  Keyword-only, each overriding the file of `inputs`: bootloader (without one the core boots
         the application directly), option_bytes (default: synthetic_option_bytes()), v205_image (original v2.05 image
-        the front end reads its tables from; default the table data `tables` / bundle), firmware (bundled build name)."""
+        the front end reads its tables from; default the table data `tables` / bundle), firmware (release build name)."""
         self.inputs = inputs
         # physical calibration of the emulated front end (frontend._Base.hw_cal): the EEPROM as first loaded, or the
         # image given here (raw bytes from EEPROM offset 0), kept across power cycles and firmware EEPROM writes
@@ -146,14 +148,19 @@ class Emulator:
         self.bootloader_path = bootloader or join('bootloader.bin')
         self.option_path = option_bytes or join('option.bytes')
         self.v205_path = v205_image or join('EEVBlog2_05.bin')
-        self.firmware_name = None
+        self.firmware_name = None           # release build name (emu/fetch.py) or None for an image file
+        self.firmware_tag = None            # release tag of that build
+        self.firmware_note = None           # why the build is a cached one or missing
         if app:
             self.app_path = app
         elif inputs:
             self.app_path = join('EEVBlog2_05.bin')
         else:
-            self.firmware_name = firmware or bundle.DEFAULT_FIRMWARE
-            self.app_path = bundle.firmware_path(self.firmware_name)
+            self.firmware_name = firmware or fetch.DEFAULT_BUILD
+            try:
+                self.app_path, self.firmware_tag, self.firmware_note = fetch.fetch(self.firmware_name, check_app_image)
+            except fetch.FirmwareUnavailable as e:
+                self.app_path, self.firmware_note = None, str(e)
         if eeprom is None and inputs is None:
             self.eeprom_path, self.eeprom_kind = bundle.eeprom_path(), 'synthetic'
         else:
@@ -251,7 +258,8 @@ class Emulator:
             m.load(FLASH_BASE, open(self.bootloader_path, 'rb').read())
         else:
             m.boot_base = APP_BASE
-        m.load(APP_BASE, open(self.app_path, 'rb').read())
+        if self.app_path:                       # no image: the meter stays dark (advance() / loop() do not run the core)
+            m.load(APP_BASE, open(self.app_path, 'rb').read())
         m.load(INFO_BASE, parse_option_bytes(self.option_path) if self.option_path else synthetic_option_bytes())
         if self.eeprom_path:
             m.load(EEPROM_BASE, open(self.eeprom_path, 'rb').read())
@@ -343,7 +351,7 @@ class Emulator:
         done, stop = 0.0, None
         while done < seconds - 1e-12 and stop is None:
             with self.lock:
-                if not self.running or not self.board.powered():
+                if not self.running or not self.app_path or not self.board.powered():
                     return None
                 stop = self._run_slice(int(self.m.sysclk_hz * slice_ms / 1000))
             done += slice_ms / 1000
@@ -352,7 +360,7 @@ class Emulator:
     def loop(self):
         slice_ms = 10
         while True:
-            if not self.running or not self.board.powered():
+            if not self.running or not self.app_path or not self.board.powered():
                 time.sleep(0.02)
                 continue
             t0 = time.monotonic()
@@ -384,9 +392,12 @@ class Emulator:
     def machine_info(self):
         """What the emulated meter was started with (GET /state 'machine'): the application image (bundled build name or
         file name), the boot mode, the EEPROM source and where the v2.05 tables come from."""
-        return {'firmware': self.firmware_name or os.path.basename(self.app_path),
+        return {'firmware': self.firmware_name or os.path.basename(self.app_path or ''),
                 'firmware_bundled': self.firmware_name is not None,
-                'firmware_choices': [{'name': n, 'label': label} for n, label in bundle.firmware_choices()],
+                'firmware_tag': self.firmware_tag,
+                'firmware_note': self.firmware_note,
+                'firmware_loaded': bool(self.app_path),
+                'firmware_choices': [{'name': n, 'label': label} for n, (_, label) in fetch.BUILDS.items()],
                 'boot': 'bootloader' if self.bootloader_path else 'direct',
                 'boot_note': None if self.bootloader_path else DIRECT_BOOT_NOTE,
                 'eeprom': self.eeprom_kind,
@@ -399,7 +410,7 @@ class Emulator:
         with self.lock:
             m = self.m
             return {
-                'running': self.running and self.board.powered(),
+                'running': self.running and bool(self.app_path) and self.board.powered(),
                 'time_ms': float(m.elapsed_s()) * 1000,
                 'sysclk': m.sysclk_hz,
                 'lcd': list(self.lcd.display[:8]),
@@ -433,8 +444,11 @@ class Emulator:
          'drift': 0..<1}; keys left out keep their value.  A 'board' temperature also sets the PA4
         thermistor voltage; an 'analog' PA4 command sets the voltage directly and the board temperature follows it.
         Currents flow only through a plugged current jack ('jack' command, A or mA).
-        {'firmware': name} switches to a bundled firmware build (machine_info()['firmware_choices']) and power cycles;
+        {'firmware': name} switches to a release build (machine_info()['firmware_choices'], fetched by select_firmware())
+        and power cycles;
         load_app() runs an image given as bytes (the page's "load firmware file")."""
+        if 'firmware' in c:                      # may download: not under the lock
+            return self.select_firmware(c['firmware'])
         with self.lock:
             if 'key' in c:
                 self.board.key(c['key'], bool(c['down']))
@@ -483,16 +497,22 @@ class Emulator:
                 self.set_sdcard(c['sdcard'])
             elif 'speed' in c:
                 self.speed = float(c['speed'])
-            elif 'firmware' in c:
-                # run another bundled firmware build: power cycle with the new image (EEPROM, board inputs and clock chip
-                # stay, as when a meter is updated)
-                name = c['firmware']
-                if name not in dict(bundle.firmware_choices()):
-                    raise ValueError(f'unknown firmware {name!r}; available: {[n for n, _ in bundle.firmware_choices()]}')
-                self.firmware_name, self.app_path = name, bundle.firmware_path(name)
-                self.power_cycle(); self.running = True
             else:
                 raise ValueError('unknown command')
+
+    def select_firmware(self, name):
+        """Run release build `name`: fetched (or taken from the cache) outside the lock, so the meter keeps running
+        during a download, then a power cycle with the new image (EEPROM, board inputs and clock chip stay, as when a
+        meter is updated).  Raises ValueError when the build is unknown or cannot be had (the meter is unchanged)."""
+        if name not in fetch.BUILDS:
+            raise ValueError(f'unknown firmware {name!r}; builds: {list(fetch.BUILDS)}')
+        try:
+            path, tag, note = fetch.fetch(name, check_app_image)
+        except fetch.FirmwareUnavailable as e:
+            raise ValueError(str(e)) from e
+        with self.lock:
+            self.firmware_name, self.firmware_tag, self.firmware_note, self.app_path = name, tag, note, path
+            self.power_cycle(); self.running = True
 
     def load_app(self, data, name):
         """Run the application image `data` (bytes, file name `name` for the display) instead of the present firmware:
@@ -510,7 +530,7 @@ class Emulator:
         with open(path, 'wb') as f:
             f.write(data)
         with self.lock:
-            self.firmware_name, self.app_path = None, path
+            self.firmware_name, self.firmware_tag, self.firmware_note, self.app_path = None, None, None, path
             self.power_cycle(); self.running = True
 
 
@@ -534,9 +554,9 @@ def main(argv=None, on_ready=None):
     ap.add_argument('--inputs', metavar='DIR', help='directory with bootloader.bin, EEVBlog2_05.bin, option.bytes (default: '
                     'inputs/binaries of the source tree when it exists)')
     ap.add_argument('--no-inputs', action='store_true', help='do not use inputs/binaries of the source tree')
-    ap.add_argument('--app', metavar='FILE', help='application image (default: inputs/EEVBlog2_05.bin, else the bundled --firmware)')
-    ap.add_argument('--firmware', choices=[n for n, _ in bundle.FIRMWARES], default=None,
-                    help='bundled firmware build (default %s)' % bundle.DEFAULT_FIRMWARE)
+    ap.add_argument('--app', metavar='FILE', help='application image (default: inputs/EEVBlog2_05.bin, else the release build --firmware)')
+    ap.add_argument('--firmware', choices=list(fetch.BUILDS), default=None,
+                    help='release build fetched on demand from GitHub and cached (default %s)' % fetch.DEFAULT_BUILD)
     ap.add_argument('--eeprom', metavar='FILE', help='EEPROM image, raw bytes from offset 0 (default: bundled SYNTHETIC image)')
     ap.add_argument('--bootloader', metavar='FILE', help='bootloader image: boot through it instead of starting the application directly')
     ap.add_argument('--option-bytes', metavar='FILE', help="OpenOCD 'mdb 0x1FF80000 256' dump (default: synthetic option bytes)")
@@ -565,8 +585,11 @@ def main(argv=None, on_ready=None):
     emu = Emulator(inputs, a.app, a.eeprom, a.speed, hw_cal=a.hw_cal, bootloader=a.bootloader, option_bytes=a.option_bytes,
                    v205_image=a.v205_image, tables=a.tables, firmware=a.firmware)
     info = emu.machine_info()
-    print(f"121GW emulator: firmware {info['firmware']}, boot {info['boot']}, EEPROM {info['eeprom']}, "
+    print(f"121GW emulator: firmware {info['firmware']}{' ' + info['firmware_tag'] if info['firmware_tag'] else ''}, "
+          f"boot {info['boot']}, EEPROM {info['eeprom']}, "
           f"v2.05 tables from {info['v205_tables']}", flush=True)
+    if info['firmware_note']:
+        print('  firmware: ' + info['firmware_note'], flush=True)
     if info['boot_note']:
         print('  ' + info['boot_note'], flush=True)
     if info['eeprom_note']:

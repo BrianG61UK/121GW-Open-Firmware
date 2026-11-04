@@ -15,7 +15,7 @@ if 8121 is taken).  The packages take every option below and also `--browser` (t
 `--no-open` (neither).  From the source tree:
 
 ```
-sh firmware/tools/build_dist.sh /tmp/dist none          # both firmware builds (GNU binutils arm-none-eabi 2.46 on PATH)
+sh firmware/tools/build_dist.sh /tmp/dist none          # the v2.05 table data (GNU binutils arm-none-eabi 2.46 on PATH)
 python3 emulator/tools/prepare_data.py --dist /tmp/dist # fills emulator/data (once)
 python3 emulator/app.py [options]                       # then open http://127.0.0.1:8121
 ```
@@ -28,8 +28,8 @@ Needs Python 3 with `unicorn` and `capstone` (`pip install unicorn capstone`); n
 | `--open` / `--no-open` | open the browser when the server is up (packages open it unless `--no-open`) |
 | `--no-ui` | no HTTP server (the process runs the machine only) |
 | `--speed X` (1.0) | run rate: 1.0 is real time, 2.0 twice as fast (limited by the host's speed) |
-| `--firmware 2_fast\|1_like_v2.05` | bundled firmware build (default `2_fast`); also selectable in the page |
-| `--app FILE` | any application image (raw binary, loaded at 0x08006000) instead of a bundled build; in the page: **Load firmware file…** or drop the file (`POST /firmware`) |
+| `--firmware 2_fast\|1_like_v2.05` | firmware build from the project's GitHub releases, fetched on demand (2.4; default `2_fast`); also selectable in the page |
+| `--app FILE` | any application image (raw binary, loaded at 0x08006000) instead of a release build; in the page: **Load firmware file…** or drop the file (`POST /firmware`) |
 | `--eeprom FILE` | EEPROM image, raw bytes from EEPROM offset 0 (default: the bundled SYNTHETIC image) |
 | `--hw-cal FILE` | EEPROM image that describes the physical calibration of the emulated front end (default: the EEPROM as loaded at start) |
 | `--sdcard PATH`, `--sdcard-mb N` (512) | SD card backed by the raw image file PATH (created and formatted FAT32 when missing, at least 64 MiB); without it the socket is empty |
@@ -42,7 +42,7 @@ Needs Python 3 with `unicorn` and `capstone` (`pip install unicorn capstone`); n
 
 The environment variable `EEV121GW_DATA` names a data directory to use before the built-in ones (2.1).
 
-## 2. Boot modes and bundled data
+## 2. Boot modes, bundled data and firmware on demand
 
 ### 2.1 What ships with the emulator
 
@@ -50,13 +50,11 @@ The environment variable `EEV121GW_DATA` names a data directory to use before th
 
 | File | Content |
 |---|---|
-| `firmware/2_fast/EEVBlog.bin` | production firmware build (`make`) |
-| `firmware/1_like_v2.05/EEVBlog.bin` | strict build (`make LOOP_V205=1`) that behaves like v2.05 apart from the defect fixes |
 | `v205_tables.json` | the v2.05 constant tables at their v2.05 addresses, written by `firmware/tools/gen_emu_tables.py` from the `TABLE_V205` tables of the firmware sources |
 | `synthetic_eeprom.bin` | the SYNTHETIC data EEPROM (2.3), written by `emulator/tools/gen_synthetic_eeprom.py` |
 
-No original EEVblog image and no calibration of any meter is part of the emulator or of its release packages. The page and
-`GET /state` (`machine`) show which firmware runs, the boot mode and the EEPROM source.
+No firmware, no original EEVblog image and no calibration of any meter is part of the emulator or of its release packages.
+The page and `GET /state` (`machine`) show which firmware runs, the boot mode and the EEPROM source.
 
 ### 2.2 Direct boot (no bootloader image)
 
@@ -97,6 +95,23 @@ Option bytes without a dump: RDP level 0, USER 0xF0 (BOR off), no write protecti
 
 With `--inputs` and no `--eeprom` the EEPROM is blank, as before.
 
+### 2.4 Firmware on demand
+
+The firmware builds are not shipped; `emu/fetch.py` gets them from the project's GitHub releases when one is selected
+(`--firmware`, the page's selector, `{"firmware": NAME}`):
+
+| Build | Release tags | Branch | Image in `firmware-<tag>.zip` |
+|---|---|---|---|
+| `2_fast` (fast, the default) | `vA.B.C` | `main` | `2_fast/EEVBlog.bin` |
+| `1_like_v2.05` (like v2.05: v2.05 with its defects fixed) | `like205-vA.B.C` | `like-v2.05` | `1_like_v2.05/EEVBlog.bin` |
+
+The latest release of the build is looked up, its zip downloaded once, checked against the published `.sha256` and with the
+application image test of `POST /firmware` (5), and the image kept in a cache: `EEV121GW_CACHE`, else
+`~/Library/Caches/121GW-Emulator` (macOS), `%LOCALAPPDATA%\121GW-Emulator` (Windows), `~/.cache/121GW-Emulator` (other).
+Later starts use the cached image of the latest release.  Without a connection the newest cached image runs and
+`machine.firmware_note` says so; with none cached the meter stays dark, the note says why, and **Load firmware file…** or
+`--app FILE` runs an image instead.
+
 ## 3. GET /state
 
 `GET /state` returns one JSON object, a snapshot of the machine (`Emulator.snapshot()`). Fields:
@@ -112,7 +127,7 @@ With `--inputs` and no `--eeprom` the EEPROM is blank, as before.
 | `dial` | int 0..9 | rotary switch position (4.2) |
 | `keys` | list of str | keys held down |
 | `jacks` | list of str | plugged jacks (`A`, `mA`, `COM`, `V`) |
-| `unmodelled` | int | number of distinct (address, read / write) peripheral accesses the emulator does not model (0 for the bundled firmware) |
+| `unmodelled` | int | number of distinct (address, read / write) peripheral accesses the emulator does not model (0 for the release builds) |
 | `analog` | `{PA5, PA4}`, V | voltages at the ADC pins: PA5 battery sense, PA4 board thermistor |
 | `battery` | float, V | B+ battery voltage: PA5 divided by the divider ratio 330 / 1330 (R69 1 M, R70 330 k) |
 | `stimulus` | object | the signal at the test leads as set by the `input` command (4.4), fields completed with their defaults |
@@ -122,7 +137,7 @@ With `--inputs` and no `--eeprom` the EEPROM is blank, as before.
 | `sdcard` | object | `configured` (an image was given), `present` (inserted), `image` (file name), `capacity_mb`, `state`, `rca`, `blocks` (512 bytes each), `reads`, `writes`, `bus_width` |
 | `stop` | str or null | why the machine stopped (invalid memory access, CPU exception, hardware-safety stop), null while it runs |
 | `safety` | list of str | violations found by the hardware-safety monitor (`emu/safety.py`) |
-| `machine` | object | what the emulated meter was started with: `firmware` (bundled build name or file name), `firmware_bundled`, `firmware_choices` (list of `{name, label}`), `boot` (`direct` or `bootloader`), `boot_note`, `eeprom` (`synthetic`, `file` or `blank`), `eeprom_note`, `option_bytes` (`synthetic` or `file`), `v205_tables` (`table data` or `original image`) |
+| `machine` | object | what the emulated meter was started with: `firmware` (release build name or file name), `firmware_bundled` (true for a release build), `firmware_tag` (its release tag), `firmware_loaded` (false: no image, the meter is dark), `firmware_note` (why a cached image runs or none), `firmware_choices` (list of `{name, label}`), `boot` (`direct` or `bootloader`), `boot_note`, `eeprom` (`synthetic`, `file` or `blank`), `eeprom_note`, `option_bytes` (`synthetic` or `file`), `v205_tables` (`table data` or `original image`) |
 | `log` | list of str | the last 200 events, `"<ms> ms  <text>"` |
 
 ```
@@ -243,8 +258,9 @@ curl -s -X POST localhost:8121/input -d '{"sdcard":false}'
 - `{"sysreset": true}`: system reset of the MCU in place (as the firmware writing SCB_AIRCR.SYSRESETREQ): SRAM, EEPROM and the
   RTC domain stay; with a bootloader image the bootloader runs again, in direct boot the application restarts (2.2).
 - `{"speed": X}`: run rate, 1.0 = real time.
-- `{"firmware": NAME}`: switch to the bundled build `NAME` (`2_fast` or `1_like_v2.05`, `machine.firmware_choices`) and power
-  cycle. The EEPROM stays, as when a meter is updated.
+- `{"firmware": NAME}`: switch to the release build `NAME` (`2_fast` or `1_like_v2.05`, `machine.firmware_choices`; fetched
+  on demand, 2.4) and power cycle. The EEPROM stays, as when a meter is updated. When the build cannot be had the answer
+  is 400 with the reason and the meter keeps running what it ran.
 
 ```
 curl -s -X POST localhost:8121/input -d '{"firmware":"1_like_v2.05"}'
@@ -278,13 +294,13 @@ Emulator(inputs=None, app=None, eeprom=None, speed=1.0, hw_cal=None, *,
 | Argument | Meaning |
 |---|---|
 | `inputs` | directory with `bootloader.bin`, `EEVBlog2_05.bin`, `option.bytes` (the earlier usage); `None`: none needed |
-| `app` | application image file (default: `inputs/EEVBlog2_05.bin`, else the bundled `firmware`) |
+| `app` | application image file (default: `inputs/EEVBlog2_05.bin`, else the release build `firmware`, 2.4) |
 | `eeprom` | EEPROM image file from offset 0 (default: the synthetic image when `inputs` is `None`, else blank) |
 | `speed` | run rate of the real-time loop |
 | `hw_cal` | EEPROM image file for the physical calibration of the front end (default: the EEPROM as loaded) |
 | `bootloader`, `option_bytes`, `v205_image` | files that override those of `inputs` |
 | `tables` | v2.05 table data file (default: bundled) |
-| `firmware` | bundled build name, default `2_fast` |
+| `firmware` | release build name, default `2_fast` (fetched on demand, 2.4) |
 
 Class attributes to set before constructing: `Emulator.frontend_kind` (`'calibrated'` or `'netlist'`), `hy_noise`
 (measurement noise on / off), `hy_seed` (noise seed, reproducible runs), `sdcard_path`, `sdcard_mb`.
@@ -307,7 +323,7 @@ from app import Emulator
 import smoke                                   # smoke.lit_names / smoke.main_reading decode the display
 
 bits = json.load(open('emulator/ui/assets/lcd_bits.json'))
-e = Emulator()                                 # direct boot, bundled 2_fast, synthetic EEPROM
+e = Emulator()                                 # direct boot, release build 2_fast, synthetic EEPROM
 e.advance(2.0)                                 # 2 s emulated: boot, splash, first readings
 e.command({'input': {'kind': 'V', 'value': 1.5}})
 e.advance(1.0)

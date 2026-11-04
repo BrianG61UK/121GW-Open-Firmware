@@ -1,7 +1,8 @@
-# Emulator: PyInstaller one-folder application with the two firmware builds, the v2.05 table data and the SYNTHETIC EEPROM
-# image, packaged as macOS .dmg (Apple Silicon, arm64), Windows installer .exe (Inno Setup) and Linux AppImage (x86_64); on a
+# Emulator: PyInstaller one-folder application with the v2.05 table data and the SYNTHETIC EEPROM image (no firmware: the
+# emulator fetches the builds on demand from the releases, emu/fetch.py), packaged as macOS .dmg (Apple Silicon, arm64), Windows installer .exe (Inno Setup) and Linux AppImage (x86_64); on a
 # tag v* the packages are attached to the release that firmware.yml creates.  Every package is started once (the UI must
-# answer and the firmware must boot to a reading, emulator/tools/smoke.py) before it is published.
+# answer and the firmware must boot to a reading, emulator/tools/smoke.py) before it is published; the smoke tests start it with the
+# fast image built here (--app), so they do not depend on GitHub's API.
 #
 # NOTE: the macOS packaging is the part that was run on a machine before this workflow was written (macOS arm64 build,
 # .dmg, start from the mounted image).  The Windows and Linux jobs and this file as a whole have
@@ -38,7 +39,7 @@ jobs:
       - name: The tag matches the version the firmware shows
         if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
         run: python3 -I .github/scripts/check_fw_version.py "$RELEASE_TAG"
-      - name: Production and strict builds (image only; firmware.yml runs the checks)
+      - name: Production build for the v2.05 table data and the smoke tests (image only; firmware.yml runs the checks)
         uses: ./.github/actions/build-firmware
         with:
           target: none
@@ -73,7 +74,7 @@ jobs:
           path: dist
       - name: Install build tools
         run: python -m pip install unicorn==2.1.4 capstone==5.0.9 pyinstaller==6.22.3 pillow pywebview==6.1
-      - name: Prepare the emulator data (firmware builds, v2.05 tables, synthetic EEPROM) and icons
+      - name: Prepare the emulator data (v2.05 tables, synthetic EEPROM) and icons
         run: |
           python -I emulator/tools/prepare_data.py --dist dist
           python -I emulator/packaging/make_icons.py build/icons
@@ -93,13 +94,13 @@ jobs:
           dmg="121GW-Open-Firmware-Emulator-$RELEASE_TAG-macos-${{ matrix.arch }}.dmg"
           mkdir mnt
           hdiutil attach -nobrowse -readonly -mountpoint mnt "$dmg"
-          mnt/121GW\ Emulator.app/Contents/MacOS/121gw-emulator --no-open --port 8131 > app.log 2>&1 &
+          mnt/121GW\ Emulator.app/Contents/MacOS/121gw-emulator --no-open --port 8131 --app "$PWD/dist/2_fast/EEVBlog.bin" > app.log 2>&1 &
           python -I emulator/tools/smoke.py --url http://127.0.0.1:8131 --expect-direct --expect-synthetic \
-            --load emulator/data/firmware/1_like_v2.05/EEVBlog.bin || { cat app.log; exit 1; }
+            --load dist/2_fast/EEVBlog.bin || { cat app.log; exit 1; }
           curl -fsS -X POST -H 'X-121GW: quit' http://127.0.0.1:8131/quit
           sleep 2
           # as double-clicked: the front panel in the application's own window
-          mnt/121GW\ Emulator.app/Contents/MacOS/121gw-emulator --port 8132 > win.log 2>&1 &
+          mnt/121GW\ Emulator.app/Contents/MacOS/121gw-emulator --port 8132 --app "$PWD/dist/2_fast/EEVBlog.bin" > win.log 2>&1 &
           for i in $(seq 120); do grep -q 'own window shown' win.log && break; sleep 1; done
           cat win.log
           grep -q 'own window shown' win.log
@@ -186,9 +187,9 @@ jobs:
           $setup = "121GW-Open-Firmware-Emulator-$env:RELEASE_TAG-windows-x64.exe"
           $dir = Join-Path $PWD "installed"
           Start-Process -FilePath ".\$setup" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$dir" -Wait
-          $p = Start-Process -FilePath (Join-Path $dir "python\python.exe") -ArgumentList "`"$(Join-Path $dir 'app\launcher.py')`"", "--no-open", "--port", "8131" `
+          $p = Start-Process -FilePath (Join-Path $dir "python\python.exe") -ArgumentList "`"$(Join-Path $dir 'app\launcher.py')`"", "--no-open", "--port", "8131", "--app", "`"$(Join-Path $PWD 'dist\2_fast\EEVBlog.bin')`"" `
                  -RedirectStandardOutput app.log -RedirectStandardError app.err -PassThru -NoNewWindow
-          python -I emulator/tools/smoke.py --url http://127.0.0.1:8131 --timeout 300 --expect-direct --expect-synthetic --load emulator/data/firmware/1_like_v2.05/EEVBlog.bin
+          python -I emulator/tools/smoke.py --url http://127.0.0.1:8131 --timeout 300 --expect-direct --expect-synthetic --load dist/2_fast/EEVBlog.bin
           $ok = $LASTEXITCODE -eq 0
           if (-not $ok) {
             "has exited: $($p.HasExited)  exit code: $($p.ExitCode)  exit time: $($p.ExitTime)"
@@ -253,7 +254,7 @@ jobs:
       - name: The emulator runs from the source tree with the bundled data (direct boot, synthetic EEPROM)
         run: |
           set -euo pipefail
-          (cd emulator && python -I app.py --no-inputs --port 8130 > ../app-src.log 2>&1 &)
+          (cd emulator && python -I app.py --no-inputs --port 8130 --app ../dist/2_fast/EEVBlog.bin > ../app-src.log 2>&1 &)
           python -I emulator/tools/smoke.py --url http://127.0.0.1:8130 --expect-direct --expect-synthetic || { cat app-src.log; exit 1; }
           curl -fsS -X POST -H 'X-121GW: quit' http://127.0.0.1:8130/quit
           sleep 2
@@ -274,9 +275,9 @@ jobs:
       - name: Start the AppImage
         run: |
           set -euo pipefail
-          ./"121GW-Open-Firmware-Emulator-$RELEASE_TAG-linux-x86_64.AppImage" --no-open --port 8131 > app.log 2>&1 &
+          ./"121GW-Open-Firmware-Emulator-$RELEASE_TAG-linux-x86_64.AppImage" --no-open --port 8131 --app "$PWD/dist/2_fast/EEVBlog.bin" > app.log 2>&1 &
           python -I emulator/tools/smoke.py --url http://127.0.0.1:8131 --expect-direct --expect-synthetic \
-            --load emulator/data/firmware/1_like_v2.05/EEVBlog.bin || { cat app.log; exit 1; }
+            --load dist/2_fast/EEVBlog.bin || { cat app.log; exit 1; }
           curl -fsS -X POST -H 'X-121GW: quit' http://127.0.0.1:8131/quit
           sleep 2
       - name: Debian package, installed and started
@@ -285,7 +286,7 @@ jobs:
           deb="121GW-Open-Firmware-Emulator-$RELEASE_TAG-linux-amd64.deb"
           sh emulator/packaging/linux/build_deb.sh emulator/dist/121gw-emulator "$RELEASE_TAG" "$deb" build/icons/121gw-emulator.png
           sudo apt-get install -y "./$deb"
-          121gw-emulator --no-open --port 8133 > deb.log 2>&1 &
+          121gw-emulator --no-open --port 8133 --app "$PWD/dist/2_fast/EEVBlog.bin" > deb.log 2>&1 &
           python -I emulator/tools/smoke.py --url http://127.0.0.1:8133 --expect-direct --expect-synthetic || { cat deb.log; exit 1; }
           curl -fsS -X POST -H 'X-121GW: quit' http://127.0.0.1:8133/quit
           sleep 2

@@ -196,7 +196,7 @@ p.rect(60, 55, 300, 320, '#2b3238', '#2b3238', 18); p.text(210, 140, '1.5000', 3
 p.rect(390, 55, 450, 320, '#20262b', '#20262b', 10)
 p.text(410, 85, 'Pause    Power cycle', 13, color='#e6eaee')
 p.text(410, 125, 'firmware', 14, color='#e6eaee')
-p.button(480, 108, 230, 26, '2_fast - fast (production build) ▾', '#2b3238', '#e6eaee', 6, 12, '#3a434a')
+p.button(480, 108, 230, 26, '2_fast - fast ▾', '#2b3238', '#e6eaee', 6, 12, '#3a434a')
 p.button(480, 145, 200, 28, 'Load firmware file…', '#2b3238', '#e6eaee', 6, 13, '#3a434a')
 p.ring(480, 145, 200, 28, 1, 'your EEVBlog.bin', 'right')
 p.button(410, 190, 120, 26, 'Quit emulator', '#2b3238', '#e6eaee', 6, 12, '#3a434a')

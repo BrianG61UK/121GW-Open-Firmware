@@ -1,5 +1,6 @@
-# Firmware: build both variants with GNU binutils 2.46.0 (arm-none-eabi, built from the release tarball and cached, see
-# .github/actions/arm-binutils), run the checks that need no original image, and on a tag v* publish firmware-<tag>.zip.
+# Firmware: build the fast (production) variant with GNU binutils 2.46.0 (arm-none-eabi, built from the release tarball and cached, see
+# .github/actions/arm-binutils), run the checks that need no original image, and on a tag v* publish firmware-<tag>.zip.  The like-v2.05 build has its own
+# branch (like-v2.05) and releases (like205-vA.B.C).
 name: Firmware
 
 on:
@@ -18,13 +19,13 @@ concurrency:
 
 jobs:
   build:
-    name: Build and check both variants
+    name: Build and check the fast variant
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - name: No Intel macOS build or package (owner decision)
         run: python3 -I .github/scripts/check_no_intel_mac.py
-      - name: Production (make) and strict (make LOOP_V205=1) builds, each with `make check-ci`
+      - name: Production build (make) with `make check-ci`
         uses: ./.github/actions/build-firmware
         with:
           target: check-ci
@@ -61,10 +62,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir stage
-          cp -R dist/1_like_v2.05 dist/2_fast stage/
+          cp -R dist/2_fast stage/
           cp dist/FIXES.md LICENSE firmware/USER_GUIDE.md stage/
-          (cd stage && sha256sum 1_like_v2.05/EEVBlog.bin 2_fast/EEVBlog.bin USER_GUIDE.md FIXES.md LICENSE > SHA256SUMS)
-          (cd stage && zip -r -X "../firmware-$TAG.zip" 1_like_v2.05 2_fast USER_GUIDE.md FIXES.md LICENSE SHA256SUMS)
+          (cd stage && sha256sum 2_fast/EEVBlog.bin USER_GUIDE.md FIXES.md LICENSE > SHA256SUMS)
+          (cd stage && zip -r -X "../firmware-$TAG.zip" 2_fast USER_GUIDE.md FIXES.md LICENSE SHA256SUMS)
           unzip -l "firmware-$TAG.zip"
           python3 -I .github/scripts/check_no_originals.py "firmware-$TAG.zip"
           python3 -I .github/scripts/sha256sum.py "firmware-$TAG.zip" > "firmware-$TAG.zip.sha256"

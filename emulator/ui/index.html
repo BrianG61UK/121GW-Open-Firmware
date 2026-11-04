@@ -66,7 +66,7 @@
       <label>PA4 thermistor <input type="range" id="PA4" min="0" max="3.3" step="0.01"> <span id="PA4v"></span> V</label>
     </div>
     <div style="margin-top:6px">
-      <label title="bundled firmware build; changing it power cycles the meter (the EEPROM stays)">firmware <select id="fw"></select></label>
+      <label title="firmware build from the project's GitHub releases, downloaded when chosen and kept in a cache; changing it power cycles the meter (the EEPROM stays)">firmware <select id="fw"></select></label>
       <button id="fwload" title="run a firmware image of your own (EEVBlog.bin, the file a meter takes from the SD card); you can also drop the file on this page">Load firmware file&#8230;</button>
       <input type="file" id="fwfile" accept=".bin,application/octet-stream" style="display:none">
       <div id="fwmsg" style="margin-top:4px"></div>
@@ -166,7 +166,16 @@ sv('eoff').onclick = () => { sv('ev').value = 0; post({environment: {pickup_v: 0
 document.getElementById('run').onclick =e => post({run: e.target.textContent === 'Resume'});
 document.getElementById('reset').onclick = () => post({reset:true});
 document.getElementById('sdcard').onchange = e => post({sdcard: e.target.checked});
-document.getElementById('fw').onchange = e => { if (e.target.value) post({firmware: e.target.value}); };
+// a release build: fetched by the emulator (downloaded once, then from its cache), then the meter is power cycled
+document.getElementById('fw').onchange = async e => {
+  const name = e.target.value, msg = sv('fwmsg');
+  if (!name) return;
+  msg.className = ''; msg.textContent = 'getting the ' + e.target.selectedOptions[0].textContent + ' build ...';
+  const r = await post({firmware: name});
+  const j = await r.json().catch(() => ({}));
+  if (r.ok) msg.textContent = '';
+  else { msg.className = 'bad'; msg.textContent = 'not loaded: ' + (j.error || r.status); }
+};
 // a firmware image of your own: the button's file dialog or a file dropped anywhere on the page
 async function loadFirmware(file) {
   const msg = sv('fwmsg');
@@ -208,12 +217,15 @@ async function tick() {
       (s.stop ? `<br><b style="color:#ff6b6b">stopped: ${s.stop}</b>` : '');
     document.getElementById('run').textContent = s.running ? 'Pause' : 'Resume';
     if (s.machine) { const mi = s.machine, fw = sv('fw');
-      if (fw.dataset.key !== JSON.stringify(mi.firmware_choices)) {          // choices of the bundled builds
+      if (fw.dataset.key !== JSON.stringify(mi.firmware_choices)) {          // the release builds
         fw.dataset.key = JSON.stringify(mi.firmware_choices); fw.innerHTML = '';
         for (const c of mi.firmware_choices) { const o = document.createElement('option'); o.value = c.name; o.textContent = c.name + ' - ' + c.label; fw.appendChild(o); }
         if (!mi.firmware_bundled) { const o = document.createElement('option'); o.value = ''; o.textContent = mi.firmware + ' (file)'; fw.insertBefore(o, fw.firstChild); } }
       fw.value = mi.firmware_bundled ? mi.firmware : ''; fw.disabled = mi.firmware_choices.length === 0;
-      document.getElementById('machine').innerHTML = `<span>boot: ${mi.boot === 'direct' ? 'direct (no bootloader image)' : 'through the bootloader image'}</span> &nbsp; ` +
+      const fwtext = !mi.firmware_loaded ? `<span class="bad">no firmware: ${mi.firmware_note || ''}</span>` :
+        `<span>firmware: ${mi.firmware}${mi.firmware_tag ? ' ' + mi.firmware_tag : ''}</span>` +
+        (mi.firmware_note ? ` <span class="bad">(${mi.firmware_note})</span>` : '');
+      document.getElementById('machine').innerHTML = fwtext + ` &nbsp; <span>boot: ${mi.boot === 'direct' ? 'direct (no bootloader image)' : 'through the bootloader image'}</span> &nbsp; ` +
         `<span class="${mi.eeprom === 'synthetic' ? 'bad' : ''}">EEPROM: ${mi.eeprom}${mi.eeprom_note ? ' - ' + mi.eeprom_note : ''}</span>`; }
     pointer.setAttribute('transform', `rotate(${DOTS[s.dial][2]} 347 873.6)`);
     for (const k in keyEls) keyEls[k].classList.toggle('down', s.keys.includes(k));

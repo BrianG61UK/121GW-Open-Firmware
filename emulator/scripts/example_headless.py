@@ -1,9 +1,10 @@
-"""Headless use of the emulator from Python (emulator/API.md, "Python API"): boot the bundled firmware, apply 1.5 V DC at
+"""Headless use of the emulator from Python (emulator/API.md, "Python API"): boot a release build (fetched on demand), apply 1.5 V DC at
 the test leads, read the display.  No server, no browser.
 
     python3 -I emulator/scripts/example_headless.py [2_fast | 1_like_v2.05]
 
-Needs emulator/data (tools/prepare_data.py) or a release package's data folder (EEV121GW_DATA).
+Needs emulator/data (tools/prepare_data.py) or a release package's data folder (EEV121GW_DATA), and the
+firmware build from the project's releases (downloaded once, then cached: emu/fetch.py).
 """
 import json
 import os
@@ -16,7 +17,7 @@ from app import Emulator                                       # noqa: E402
 import smoke                                                   # noqa: E402
 
 bits = json.load(open(os.path.join(HERE, '..', 'ui', 'assets', 'lcd_bits.json')))
-e = Emulator(firmware=sys.argv[1] if len(sys.argv) > 1 else None)   # direct boot, bundled firmware, synthetic EEPROM
+e = Emulator(firmware=sys.argv[1] if len(sys.argv) > 1 else None)   # direct boot, release build, synthetic EEPROM
 e.advance(2.0)                                                       # 2 s of emulated time: boot, splash, first readings
 e.command({'input': {'kind': 'V', 'value': 1.5}})                    # 1.5 V DC at the V jack; the dial is at V (DCV)
 e.advance(1.0)

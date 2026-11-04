@@ -12,7 +12,7 @@
 <text x='410' y='85' font-size='13' font-weight='normal' fill='#e6eaee' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Pause    Power cycle</text>
 <text x='410' y='125' font-size='14' font-weight='normal' fill='#e6eaee' text-anchor='start' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>firmware</text>
 <rect x='480' y='108' width='230' height='26' rx='6' fill='#2b3238' stroke='#3a434a' stroke-width='1'/>
-<text x='595.0' y='126.0' font-size='12' font-weight='normal' fill='#e6eaee' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>2_fast - fast (production build) ▾</text>
+<text x='595.0' y='126.0' font-size='12' font-weight='normal' fill='#e6eaee' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>2_fast - fast ▾</text>
 <rect x='480' y='145' width='200' height='28' rx='6' fill='#2b3238' stroke='#3a434a' stroke-width='1'/>
 <text x='580.0' y='164.0' font-size='13' font-weight='normal' fill='#e6eaee' text-anchor='middle' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>Load firmware file…</text>
 <rect x='473' y='138' width='214' height='42' rx='12' fill='none' stroke='#e01e1e' stroke-width='4'/>
