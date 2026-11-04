@@ -31,6 +31,13 @@ sd_dg_reason:   .space 1                    @ read: 1 no transfer state (CMD13 p
                                             @ 3 SDIO error code (CRC status token, timeout, underrun)
 sd_dg_terr:     .space 1                    @ sd_transfer_error at the failure
 sd_dg_wait:     .space 1                    @ write: result of sd_wait_write
+sd_dg_flags:    .space 1                    @ read, end wait ran out: sd_transfer_end << 1 | sd_dma_end
+sd_dg_dmaisr:   .space 1                    @ DMA2_ISR channel 4 flags (bits 15..12 >> 12: TE HT TC GIF)
+sd_dg_cndtr:    .space 2                    @ DMA2 channel 4 CNDTR (words still to move)
+sd_dg_dcount:   .space 2                    @ SDIO_DCOUNT (bytes still to receive, low 16 bits)
+sd_dg_stahi:    .space 2                    @ SDIO_STA bits 31..16 (FIFO state)
+sd_dg_recov:    .space 2                    @ reads taken on the hardware counters after the end wait ran out
+    .global sd_dg_flags, sd_dg_dmaisr, sd_dg_cndtr, sd_dg_dcount, sd_dg_stahi, sd_dg_recov
     .previous
     .endif
 
@@ -370,6 +377,56 @@ LFUNC sd_dg_note
     strh r2, [r1]
     bx lr
 ENDFUNC sd_dg_note
+
+@ -----------------------------------------------------------------------------
+@ sd_dg_end_state - record the transfer state after a read's end wait ran out, and tell whether the block is complete
+@ Out      : r0 = 0 complete (DCOUNT 0, CNDTR 0, no data error flag), 1 not
+@ Clobbers : r1-r3, flags
+@ -----------------------------------------------------------------------------
+LFUNC sd_dg_end_state
+    ldr r1, =sd_transfer_end
+    ldr r1, [r1]
+    ldr r2, =sd_dma_end
+    ldr r2, [r2]
+    cmp r1, #0
+    ite ne
+    movne r3, #2
+    moveq r3, #0
+    cmp r2, #0
+    it ne
+    orrne r3, r3, #1
+    ldr r1, =sd_dg_flags
+    strb r3, [r1]
+    ldr r1, =DMA2_BASE
+    ldr r2, [r1]                            @ DMA2_ISR
+    ubfx r2, r2, #12, #4
+    ldr r3, =sd_dg_dmaisr
+    strb r2, [r3]
+    ldr r2, [r1, #DMA_CH4_CNDTR]
+    ldr r3, =sd_dg_cndtr
+    strh r2, [r3]
+    ldr r1, =SDIO_BASE
+    ldr r3, [r1, #SDIO_DCOUNT]
+    ldr r0, =sd_dg_dcount
+    strh r3, [r0]
+    ldr r0, [r1, #SDIO_STA]
+    lsrs r1, r0, #16
+    ldr r3, =sd_dg_stahi
+    strh r1, [r3]
+    movw r1, #0x23a
+    tst r0, r1
+    bne 1f                                  @ a data error flag: not complete
+    ldr r0, =sd_dg_cndtr
+    ldrh r0, [r0]
+    cbnz r0, 1f                             @ the DMA has words left
+    ldr r1, =SDIO_BASE
+    ldr r0, [r1, #SDIO_DCOUNT]
+    cbnz r0, 1f                             @ bytes still to come
+    movs r0, #0
+    bx lr
+1:  movs r0, #1
+    bx lr
+ENDFUNC sd_dg_end_state
     .ltorg
     .endif
 
@@ -443,9 +500,21 @@ FUNC disk_read
     subs    r7, r7, #1
     bne     1b
     .if LOOP_V205 == 0
+    @ the end wait ran out without an error: record the state, then take the block if the hardware counters show it
+    @ complete: SDIO_DCOUNT = 0 (every byte received, RM0038 29.9.10) and DMA2 channel 4 CNDTR = 0 (every word moved to
+    @ the buffer, RM0038 11.4.4), no data error flag in SDIO_STA.  On a meter this wait ran out with SDIO_STA = 0 and
+    @ no error code (2026-11-04) while the file read back on a computer was intact.
+    bl      sd_dg_end_state
+    cbz     r0, .Ldr_ok_recov
     movw    r0, #0x103
     bl      sd_dg_note                      @ diagnosis: read, data end or DMA end not seen within the polls
     b       .Ldr_err
+.Ldr_ok_recov:
+    ldr     r1, =sd_dg_recov
+    ldrh    r0, [r1]
+    adds    r0, r0, #1
+    strh    r0, [r1]
+    b       .Ldr_ok
 .Ldr_flag:
     movw    r0, #0x102
     bl      sd_dg_note                      @ diagnosis: read, SDIO error
