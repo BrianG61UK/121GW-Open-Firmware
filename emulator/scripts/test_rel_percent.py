@@ -2,7 +2,7 @@
 
     python -I emulator/scripts/test_rel_percent.py [image]      default firmware/build/EEVBlog.bin (production build)
 
-Drives the emulated meter in DCV: SETUP page rEL (bL -> bt -> rEL -> dSP outside TEMP) set to percent and saved, REL on
+Drives the emulated meter in DCV: SETUP page rEL (bL -> bt -> Ld -> rEL -> dSP outside TEMP) set to percent and saved, REL on
 at 1 V, then other inputs; checks the main display (percent with the decimal point by magnitude, minus sign), the signs
 (V off and % on while the view is shown, V back after REL off), that the BLE value 0x20007D70 keeps the REL value in
 counts, the base-0 dashes and the over-99999 % OFL (base set in RAM, the OL flag untouched), that only EEPROM byte 0x020
@@ -65,11 +65,11 @@ def run_tests(image, a_relp):
     e.command({'dial': 2})
     e.advance(3.0)
     T.check('0x020 = 0x06 loads difference', T.rd(e, a_relp) == 0)
-    to_item(e, 21)
+    to_item(e, 39)                                   # the page Ld (IMP-28), between bt and rEL
     T.press(e, 'SETUP', gap=0.5)
     e.advance(0.6)
     texts = T.sample_texts(e)
-    T.check('SETUP short on bt shows rEL: "rEL-d" (decoded rEL-D)', T.rd(e, ADDR_ITEM) == 22 and 'rEL-D' in texts, 'samples=%r' % (texts,))
+    T.check('SETUP short on Ld shows rEL: "rEL-d" (decoded rEL-D)', T.rd(e, ADDR_ITEM) == 22 and 'rEL-D' in texts, 'samples=%r' % (texts,))
     before = bytes(e.m.eeprom)
     T.long_press(e, 'SETUP')
     T.press(e, 'REL', gap=0.5)
@@ -130,7 +130,7 @@ def run_tests(image, a_relp):
     e.command({'dial': 2})
     e.advance(3.0)
     T.check('0x020 = 0xFF reads as difference', T.rd(e, a_relp) == 0)
-    to_item(e, 21)
+    to_item(e, 39)                                   # the page Ld (IMP-28), between bt and rEL
     T.press(e, 'SETUP', gap=0.5)
     T.long_press(e, 'SETUP')
     T.press(e, 'REL', gap=0.5)

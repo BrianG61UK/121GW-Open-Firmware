@@ -29,7 +29,7 @@ Memory protection unit (PM0056 4.2, class MPU below)
   default-map XN attribute of the peripheral and system regions (PM0056 Table 12), and BusFault / UsageFault generation.
 """
 import struct
-from emu.core import SRAM_BASE, SRAM_SIZE
+from emu.core import SRAM_BASE, SRAM_SIZE, XPSR_IT, it_bits, it_xpsr, it_advance
 from unicorn import UC_HOOK_MEM_READ, UC_HOOK_MEM_WRITE, UC_HOOK_CODE, UC_MEM_WRITE, UC_CTL_IO_WRITE
 from unicorn.unicorn_const import UC_CTL_TLB_FLUSH
 from unicorn.arm_const import UC_ARM_REG_PC, UC_ARM_REG_XPSR, UC_ARM_REG_CONTROL, UC_ARM_REG_PRIMASK, \
@@ -233,7 +233,8 @@ class MPU:
         """Install the memory hooks the present configuration needs.  The write hook is installed with the first
         enabled MPU; the read hook only when a read can fault, because Unicorn 2.1.4 mishandles the IT state after a
         load that precedes an opposite-condition instruction of the same IT block when a memory-read hook exists
-        (firmware/requests/W5_to_W10.md item 2; tools/check_image.py item 6).  Hooks stay installed; `active` gates them."""
+        (firmware/requests/W5_to_W10.md item 2; tools/check_image.py item 6).  Hooks stay installed; `active` gates them.
+        The write hook also corrects the IT state Unicorn leaves after an access inside an IT block (_mem_hook)."""
         if not self.ctrl & 1:
             return
         uc = self.m.uc
@@ -249,6 +250,18 @@ class MPU:
             uc.ctl(UC_CTL_TLB_FLUSH, UC_CTL_IO_WRITE)
 
     def _mem_hook(self, uc, access, addr, size, value, ud):
+        # Unicorn 2.1.4 with a memory hook writes the IT state of an access inside an IT block to the CPU state and
+        # leaves it there after the block has ended; the next translated block it looks up is then decoded as part of
+        # an IT block (measured: `it hi; strhi ...; b loop` followed by `cmp r6, #0` at the loop head, the compare
+        # skipped while "hi" was false, ff16_f_write of the production image).  The state written for this access
+        # is the access's own (confirmed against the code, Machine.it_state_at); the CPU state is set to the state of
+        # the next instruction (ITAdvance, ARMv7-M ARM A7.3.2), which a Cortex-M3 has after this instruction.
+        x = uc.reg_read(UC_ARM_REG_XPSR)
+        it = it_bits(x)
+        if it:
+            nxt = it_advance(self.m.it_state_at(uc.reg_read(UC_ARM_REG_PC), it))
+            if nxt != it:
+                uc.reg_write(UC_ARM_REG_XPSR, (x & ~XPSR_IT) | it_xpsr(nxt))
         if not self.active:
             return
         scs = self.scs

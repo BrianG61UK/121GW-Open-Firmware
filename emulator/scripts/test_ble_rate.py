@@ -4,7 +4,7 @@
 
 Drives the emulated meter in DCV with 1 V applied and the transfer on (PEAK long), counts the complete status frames the
 meter sends on USART2 (19 bytes from 0xF2, XOR of all 19 bytes 0, analysis/ble_packet.md 3, 5) for each rate of the SETUP
-page bt, and checks the page navigation (bL -> bt -> item 0), the page texts, that only EEPROM byte 0x015 is written and
+page bt, and checks the page navigation (bL -> bt -> Ld, then on to item 0), the page texts, that only EEPROM byte 0x015 is written and
 only by the save, the rate after a power cycle, the fallback of invalid bytes, and that an edit left unsaved is undone by
 the edit timeout (fn_0800D190) for bt and for the dBm reference.  The helpers are those of test_backlight_timer.py.
 """
@@ -86,7 +86,9 @@ def run_tests(image, a_rate, a_dbm):
     T.check('after the save the edit has ended: steady "bt 20", no blink', 'BT 20' in texts and '     ' not in texts,
             'samples=%r' % (texts,))
     T.press(e, 'SETUP', gap=0.5)
-    T.check('SETUP short on bt goes to item 0', T.rd(e, ADDR_ITEM) == 0)
+    T.check('SETUP short on bt goes to the page Ld (item 39, IMP-28)', T.rd(e, ADDR_ITEM) == 39)
+    to_item(e, 0)
+    T.check('SETUP short through the remaining pages: item 0', T.rd(e, ADDR_ITEM) == 0)
     T.long_press(e, 'PEAK')
     e.advance(0.5)
     n = frames(e, 2.0)

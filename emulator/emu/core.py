@@ -17,6 +17,8 @@ Execution model
   Unicorn M-class "exception exit" interrupt (intno 8): the frame is popped here and execution resumes.
 - WFI/WFE: Unicorn rejects them as invalid instructions; run() catches that and emulates the sleep (_sleep,
   semantics in add_idle_hook), at no cost to code that does not sleep.
+- IT state: Unicorn can report a stale ITSTATE after an IT block has ended; the IT bits stacked at an exception
+  entry and those a slice starts with are the architectural state at the PC (it_state_at), never Unicorn's alone.
 """
 import struct
 from bisect import bisect_left
@@ -43,6 +45,26 @@ SCS_BASE, SCS_SIZE = 0xE0000000, 0x100000
 
 FRAME_REGS = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3,
               UC_ARM_REG_R12, UC_ARM_REG_LR, UC_ARM_REG_PC, UC_ARM_REG_XPSR]
+
+# xPSR IT bits (ARMv7-M ARM B1.4.2 / A2.5.2): ITSTATE[1:0] in xPSR[26:25], ITSTATE[7:2] in xPSR[15:10]
+XPSR_IT = (3 << 25) | (0x3F << 10)
+
+
+def it_bits(xpsr):
+    """ITSTATE (8 bits: IT[7:5] base condition, IT[4:0] mask) from an xPSR value."""
+    return ((xpsr >> 25) & 3) | (((xpsr >> 10) & 0x3F) << 2)
+
+
+def it_xpsr(itstate):
+    """The xPSR IT bits that hold `itstate`."""
+    return ((itstate & 3) << 25) | (((itstate >> 2) & 0x3F) << 10)
+
+
+def it_advance(itstate):
+    """ITAdvance() of the ARMv7-M ARM (A7.3.2): the state of the next instruction of the IT block."""
+    if itstate & 7 == 0:
+        return 0
+    return (itstate & 0xE0) | ((itstate << 1) & 0x1F)
 
 
 class Machine:
@@ -405,6 +427,52 @@ class Machine:
                 best = e
         return best
 
+    def it_state_at(self, pc, reported):
+        """Architectural ITSTATE of the instruction at pc, given the state Unicorn reports (`reported`).
+
+        Unicorn 2.1.4 keeps its IT state in the translated code and writes it to the CPU state only at some
+        instructions of an IT block; after the block has ended the stale value stays.  Measured: after
+        `cmp r0, r1; it hi; strhi r0, [r2]; b L` with the store executed under a memory hook, a stop at L reports
+        ITSTATE 0x88 although L is outside the block; stacked at an exception entry and restored at its return, that
+        value makes the instruction at L conditional ("hi"), and with the condition false it is skipped (seen in the
+        production image: `cmp r6, #0` at the loop head of ff16_f_write skipped, the loop never ended).
+        A real Cortex-M3 advances ITSTATE with every instruction (ARMv7-M ARM A7.3.2), so the state at pc is fixed by
+        the code: pc must be the k-th instruction after an IT instruction (k = 1..4) whose state, advanced k - 1 times,
+        equals `reported`.  The IT instruction is searched in the 8 halfwords before pc (IT + 3 instructions of up to
+        4 bytes), and the instruction sizes from it to pc decide whether pc is reached.  Returns `reported` when it is
+        confirmed that way, else 0."""
+        if reported & 0xF == 0:
+            return 0
+        pc &= ~1
+        for back in range(2, 18, 2):
+            a = pc - back
+            try:
+                hw = int.from_bytes(self.uc.mem_read(a, 2), 'little')
+            except UcError:                            # before the start of the mapped region: no instruction there
+                continue
+            if hw & 0xFF00 != 0xBF00 or hw & 0xF == 0:
+                continue                               # not an IT instruction (IT: 0xBFxx with a nonzero mask)
+            state, addr = hw & 0xFF, a + 2
+            while addr < pc and state:
+                first = int.from_bytes(self.uc.mem_read(addr, 2), 'little')
+                addr += 4 if first >> 11 in (0x1D, 0x1E, 0x1F) else 2
+                state = it_advance(state)
+            if addr == pc and state == reported:
+                return reported
+        return 0
+
+    def _it_checked_xpsr(self):
+        """Unicorn's xPSR with the IT bits replaced by the architectural ITSTATE of the instruction at self.pc
+        (it_state_at); written back when they differ, so that the next slice is translated with the right state."""
+        x = self.uc.reg_read(UC_ARM_REG_XPSR)
+        it = it_bits(x)
+        if it:
+            good = self.it_state_at(self.pc, it)
+            if good != it:
+                x = (x & ~XPSR_IT) | it_xpsr(good)
+                self.uc.reg_write(UC_ARM_REG_XPSR, x)
+        return x
+
     def _enter(self, exc, pc):
         uc = self.uc
         sp = uc.reg_read(UC_ARM_REG_SP)
@@ -412,6 +480,9 @@ class Machine:
         sp = (sp - 32) & ~(7 if self.nvic.stkalign() else 3)
         vals = [uc.reg_read(r) for r in FRAME_REGS]
         vals[6] = pc & ~1
+        it = it_bits(vals[7])
+        if it:                                         # the stacked IT bits: the architectural state at pc
+            vals[7] = (vals[7] & ~XPSR_IT) | it_xpsr(self.it_state_at(pc, it))
         vals[7] = (vals[7] | (1 << 24)) | ((1 << 9) if align else 0)
         bad = self.nvic.mpu.frame_violation(sp, exc)      # MPU: frame not writable -> MSTKERR (PM0056 4.4.10)
         if bad is None:
@@ -625,6 +696,7 @@ class Machine:
             self._restart = False
             self._cur = None
             self._in_slice = True
+            self._it_checked_xpsr()                    # no stale IT state into the translation at self.pc
             try:
                 self.uc.emu_start(self.pc, 0xFFFFFFFF, count=n)
             except UcError as e:

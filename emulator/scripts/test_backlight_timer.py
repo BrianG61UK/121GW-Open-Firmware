@@ -77,7 +77,7 @@ def make(image, patch=None, **kw):
     ee = bytearray(SYNTHETIC)
     for off, v in (patch or {}).items():
         ee[off] = v
-    path = os.path.join(TMP, 'bl_test_eeprom.bin')
+    path = os.path.join(TMP, 'bl_test_eeprom_%d.bin' % os.getpid())   # one per process: tests run in parallel
     open(path, 'wb').write(ee)
     return Emulator(app=image, eeprom=path, **kw)
 
@@ -291,7 +291,7 @@ def run_tests(image, a_count, a_setting):
 
 def of55(original):
     """The original v2.05 image, booted through the bootloader image as a meter does (inputs/binaries)."""
-    path = os.path.join(TMP, 'bl_test_eeprom.bin')
+    path = os.path.join(TMP, 'bl_test_eeprom_%d.bin' % os.getpid())   # one per process: tests run in parallel
     open(path, 'wb').write(SYNTHETIC)
     e = Emulator(inputs=os.path.join(ROOT, 'inputs', 'binaries'), app=original, eeprom=path)
     e.command({'dial': 0})

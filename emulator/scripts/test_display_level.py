@@ -4,7 +4,7 @@
 
 Measures, in ACV (smoothing threshold 20 counts, depth 10, a mean every 100 ms), for display level 1 and level 2: the time
 a step of 15 counts (inside the threshold, so it goes through the smoothing) takes until the reading is within 2 counts
-of its final value, and the spread of the reading over 5 s at 1 V.  Checks the page navigation (rEL -> dSP -> item 0
+of its final value, and the spread of the reading over 5 s at 1 V.  Checks the page navigation (rEL -> dSP -> CL
 outside TEMP, rEL -> tc -> dSP in TEMP), the page texts, that only EEPROM byte 0x013 is written and only by the save, the
 level after a power cycle, the fallback of invalid bytes and the undo of an unsaved edit by the edit timeout.
 The helpers are those of test_backlight_timer.py.
@@ -94,7 +94,7 @@ def run_tests(image, a_level):
     diff = {i: (before[i], e.m.eeprom[i]) for i in range(len(before)) if before[i] != e.m.eeprom[i]}
     T.check('save wrote only 0x013 = 1', diff == {0x13: (0, 1)}, 'diff=%r' % (diff,))
     T.press(e, 'SETUP', gap=0.5)
-    T.check('SETUP short on dSP goes to item 0', T.rd(e, ADDR_ITEM) == 0)
+    T.check('SETUP short on dSP (DCV) goes to the page CL (item 25)', T.rd(e, ADDR_ITEM) == 25)
     e.power_cycle()
     e.command({'dial': 2})
     e.advance(3.0)
