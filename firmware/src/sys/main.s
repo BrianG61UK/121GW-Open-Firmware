@@ -256,6 +256,9 @@ FUNC sys_main
     .endif
     bl fn_08010B64
 .Lmain_step11:
+    .if LOOP_V205 == 0
+    bl bft_poll                             @ IMP-28: Bluetooth file transfer while the SETUP page Ld is shown
+    .endif
     @ step 11: BLE command received
     ldr r0, =v_20008030
     ldrb r0, [r0]

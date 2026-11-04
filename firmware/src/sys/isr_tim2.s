@@ -315,6 +315,7 @@ FUNC sys_tim2_isr
 
 .Lt2_ble_req:
     .if LOOP_V205 == 0
+    bl bft_tick                             @ IMP-28: idle time of the Bluetooth file transfer parser (every tick)
     @ IMP-09: a selected frame rate above 2 per second runs on its own counter (ble/rate.s); the 500 ms counter below
     @ then only serves its other users (500 ms flag, blink phases, jack-warning beep)
     ldr r0, =ble_rate

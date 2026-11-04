@@ -266,7 +266,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   continuity code and the APO flag only.
 - Constraints: no HY3131 access; absent from the strict image.
 
-### 2.10 Firmware update over Bluetooth
+### 2.10 Firmware update over Bluetooth (implemented, IMP-28)
 - Request (owner, 2026-11-02): update the firmware without taking the SD card out.
 - Facts (bootloader `inputs/binaries/bootloader.bin`, base 0x08000000, disassembly): update mode is entered only by the keys at
   reset (GPIOG IDR 0x40021C10 read at 0x0800486C..0x080048B2: MEM PG11 and HOLD PG13 low, then SETUP PG9 low within the wait
@@ -275,20 +275,28 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   bootloader erases 0x08006000..0x0805FF00 (0x08004B8C) before it reads the file, ignores the erase and `f_read` results, and
   checks only the initial stack pointer of the programmed image (0x08004994..0x080049A0): a truncated file is programmed. It
   never writes below 0x08006000, so a bad image is recovered by a good file and the key sequence.
-- Design: a receive mode in the production image (entry by a key combination to be chosen, shown on the display) takes the
-  image over the Bluetooth link (USART2, 19200 baud, `analysis/ble_packet.md` 1) in numbered chunks with a CRC per chunk and an
-  acknowledgement; a new frame type is needed, because the receive interrupt accepts only F4 and F8 frames (0x08024820). The
-  chunks are written to a temporary file on the card (`fat_f_write`, `src/sd/fat_file.s`); after the last chunk the length and
-  a CRC32 of the whole file are checked against the header sent first, and only then is the file renamed to `EEVBlog.bin`.
-  The meter then asks for the usual update sequence (HOLD+MEM at power-on, SETUP). The application never writes flash.
-- Host side: a sender program (computer Bluetooth; packaged with the emulator) that splits, sends and resends.
-- Verified working on a meter: the official iPhone application connects to the production image and shows live readings
-  (meter to phone direction).
-- Open, measured on a meter first: whether the BLE112 module passes arbitrary bytes from the host to USART2 at the full rate
-  (the official application writes only 5-byte F4 frames, `analysis/ble_packet.md` 7), and the real throughput. The UART bound
-  is 1920 bytes per second (141 124 bytes: 74 s at least); receive is deaf while the card is accessed (`src/ble/usart.s`
-  header), which the acknowledgement covers.
-- Storage: none.
+- Measured on a meter (2026-11-03, `bt_rate` test with the key frame of the unused code 0): the Bluetooth module accepts
+  writes of up to 244 bytes (MTU 247) and passes them to USART2; with v2.05's frame handling about 600 bytes per second
+  arrived (the losses at higher rates were the one-frame-per-pass parser and the 64-byte echo queue, not the radio).
+- What it does: on the SETUP page `Ld` (item 39, after `bt`; shown `Ld-bt`) with Bluetooth on, logging off and outside
+  calibration mode, the meter takes a file from the sender: packets of up to 232 bytes with a CRC-16, each answered
+  (stop and wait, so nothing is in flight while the card is written and the link is deaf, NF-04). The bytes are collected
+  in 8 KiB of log_buf and appended to `BTLOAD.TMP`; at the end the meter checks length and CRC-32 against the announced
+  values and the first two words (initial SP in the RAM, reset vector Thumb inside 0x08006000..0x0805FFFF), only then
+  copies the file to `EEVBlog.bin` and reads the copy back. The page shows `Ld nn` (percent), `Ld oK` or `LdE n` (1 card,
+  2 length/CRC, 3 not an image, 4 copy failed, 5 copy differs). The application never writes flash; the update itself is
+  the usual key sequence afterwards.
+- Residual risk: a failed copy is repeated from the intact temporary file (3 attempts in all). If the card keeps failing,
+  or the meter loses power while the copy is written, `EEVBlog.bin` is incomplete; the page then shows `LdE 4` / `LdE 5`
+  (or nothing, after a power loss), the sender says not to start the update, and the bootloader would program such a
+  file only if the key sequence is used.  The card needs free space for the file twice (`BTLOAD.TMP` stays: the FatFs
+  port has no unlink). Recovery as for any bad file: a good `EEVBlog.bin` and the key sequence (the
+  bootloader is never written).
+- How: `ble/bft.s` (protocol in its header), hooks in `ble/usart.s` (the USART2 handler gives every byte to the ring of
+  bft.s while the page owns the link; no status frames then), `sys/main.s` (bft_poll every pass) and `set/setup.s`.
+- Host side: `emulator/tools/bt_upload.py` (Python, needs the package bleak) with the packet code in
+  `emulator/tools/btft.py`; `emulator/scripts/test_bt_upload.py` runs the transfer against the emulated meter and card.
+- Storage: none (EEPROM untouched).
 
 ### 2.11 Bluetooth viewer for computers
 - Request (owner, 2026-11-02): the official phone application connects but draws badly (glitches, colours, unreadable

@@ -103,6 +103,10 @@ The image has only run in the emulator. These checks confirm on hardware what th
 25. Battery trim (production build, IMP-27): measure the battery with another meter; SETUP to `BAT`, long SETUP (`bA` and
    the voltage in 0.01 V), REL / PEAK until it matches, long SETUP saves. Power off and on: the trimmed value is kept. Dump
    the EEPROM after the save: only byte 0x02A may differ.
+26. Bluetooth firmware transfer (production build, IMP-28): Bluetooth on, SETUP to `Ld-bt`, run
+   `emulator/tools/bt_upload.py EEVBlog.bin` on a computer: `Ld nn` counts up, then `Ld oK`. Card in a computer: `EEVBlog.bin`
+   equals the file sent (compare the SHA-256). Then the usual update with HOLD + MEM at power-on and SETUP; the new version
+   shows at power-on. Leave the page during a transfer: the sender reports no answer, the old `EEVBlog.bin` is unchanged.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

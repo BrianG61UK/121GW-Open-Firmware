@@ -183,6 +183,11 @@ ENDFUNC ble_tx_kick
 @            (0x08024630..0x08024658) whenever 0x2000802B is set.
 @ -----------------------------------------------------------------------------
 FUNC ble_tx_start_frame
+    .if LOOP_V205 == 0
+    ldr r0, =bft_active
+    ldrb r0, [r0]
+    cbnz r0, .Lsf_ret                       @ IMP-28: no status frames while the page Ld owns the link
+    .endif
     ldr r0, =ble_enable
     ldrb r0, [r0]
     cbz r0, .Lsf_ret                        @ BLE off: nothing (v2.05 0x08024630)
@@ -408,6 +413,15 @@ FUNC ble_usart2_isr
     strb r0, [r1]                           @ NF-04: HSE in use, discard the byte and restart the frame
     b .Lisr_done
 .Lrx_store:
+    .if LOOP_V205 == 0
+    ldr r0, =bft_active
+    ldrb r0, [r0]
+    cbz r0, .Lrx_legacy
+    mov r0, r5
+    bl bft_rx_byte                          @ IMP-28: the page Ld owns the link, every byte goes to its ring
+    b .Lisr_done
+.Lrx_legacy:
+    .endif
     ldr r1, =ble_rx_buf
     ldr r2, =ble_rx_idx
     ldrb r3, [r2]

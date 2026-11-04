@@ -89,6 +89,7 @@
     .equ SET_ITEM_BH, 26                    @ IMP-16: continuity hold page bH (BEEP only, between dSP and CL)
     .equ SET_ITEM_LP, 37                    @ IMP-24: current-loop percent page LP (DCmA only, between dSP and CL)
     .equ SET_ITEM_RTD, 38                   @ IMP-25: RTD temperature page Pt (OHM only, between dSP and CL)
+    .equ SET_ITEM_BFT, 39                   @ IMP-28: Bluetooth file transfer page Ld (between bt and rEL)
     .equ SET_ITEM_LT, 27                    @ IMP-20: limit test pages Lt (27), Lo (28), HI (29), verdict (36)
     .equ SET_ITEM_LO, 28
     .equ SET_ITEM_HI, 29
@@ -124,7 +125,7 @@ FUNC fn_08015410
     push {r7, lr}                           @ 08015410
     .if LOOP_V205 == 0
     @ IMP-07, IMP-09, IMP-11, IMP-10, IMP-12: SETUP short on the page bL (item 20, the page after the last v2.05 item) goes
-    @ to the page bt (item 21), on bt to the page rEL (item 22); on rEL to the page tc (item 23) in TEMP (mode 5), else to
+    @ to the page bt (item 21), on bt to the page Ld (item 39, IMP-28), on Ld to the page rEL (item 22); on rEL to the page tc (item 23) in TEMP (mode 5), else to
     @ the page dSP (item 24); on tc to dSP; on dSP to the page bH (item 26, IMP-16) in BEEP (mode 10), to the page LP
     @ (item 37, IMP-24) in DCmA (mode 19), to the page Pt (item 38, IMP-25) in OHM (mode 9), else to the page CL (item 25);
     @ on bH, LP and Pt to CL; on CL to the limit pages Lt, Lo, HI (27..29, IMP-20); on HI to the verdict page (36) while
@@ -137,6 +138,8 @@ FUNC fn_08015410
     beq .Lsn_bl
     cmp r0, #SET_ITEM_BT
     beq .Lsn_bt
+    cmp r0, #SET_ITEM_BFT
+    beq .Lsn_bft
     cmp r0, #SET_ITEM_T_LO
     beq .Lsn_to0                            @ tLo: next is item 0
     cmp r0, #SET_ITEM_T_HI
@@ -235,7 +238,10 @@ FUNC fn_08015410
     movs r0, #SET_ITEM_TR
     b .Lsn_port_set
 .Lsn_bt:
-    movs r0, #SET_ITEM_RELP                 @ bt: next is rEL
+    movs r0, #SET_ITEM_BFT                  @ bt: next is Ld (IMP-28)
+    b .Lsn_port_set
+.Lsn_bft:
+    movs r0, #SET_ITEM_RELP                 @ Ld: next is rEL
     b .Lsn_port_set
 .Lsn_to0:
     movs r0, #0x0
@@ -244,7 +250,7 @@ FUNC fn_08015410
     movs r0, #SET_ITEM_BT                   @ bL: next is bt
 .Lsn_port_set:
     ldr.w r1, =set_item
-    strb r0, [r1, #0x0]                     @ set_item = 21..38 or 0
+    strb r0, [r1, #0x0]                     @ set_item = 21..39 or 0
     movs r0, #0x0
     ldr.w r1, =set_edit
     strb r0, [r1, #0x0]                     @ set_edit = 0 (v2.05 clears it at 0x08015422 for every item but 8)
@@ -2375,6 +2381,11 @@ FUNC fn_0801797C
     bl set_rtd_draw
     b .L08017F26
 .Lsd_not_rtd:
+    cmp r0, #SET_ITEM_BFT                   @ IMP-28: the Bluetooth file transfer page Ld (item 39)
+    bne .Lsd_not_bft
+    bl set_bft_draw
+    b .L08017F26
+.Lsd_not_bft:
     cmp r0, #SET_ITEM_CLK                   @ IMP-13: the clock page CL (item 25)
     bne .Lsd_not_clk
     bl set_clk_draw                         @ draw "CL 24" or "CL 12"

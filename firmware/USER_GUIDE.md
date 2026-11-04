@@ -2,7 +2,7 @@
 
 Everything on this page is in the **fast build** (`2_fast/EEVBlog.bin`). The `1_like_v2.05` build behaves like the
 original firmware apart from the defect fixes and has none of these features. At power-on the fast build shows its
-version, `F-0.99` (the release number, v0.9.9); the `1_like_v2.05` build shows `V-2.05` like the original.
+version, `F-1.00` (the release number, v1.0.0); the `1_like_v2.05` build shows `V-2.05` like the original.
 
 All settings are stored in bytes of the data EEPROM that the original firmware never uses. Calibration, serial number
 and the original settings are not touched, and a meter flashed back to v2.05 simply ignores the new bytes.
@@ -22,7 +22,7 @@ setting is kept over a power-off.
 
 The new pages come after the original SETUP pages, in this order:
 
-`bL` (backlight) → `bt` (Bluetooth speed) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) → `dSP` (display
+`bL` (backlight) → `bt` (Bluetooth speed) → `Ld` (firmware over Bluetooth) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) → `dSP` (display
 level) → `bH` (continuity hold, BEEP only) → `LP` (4–20 mA view, DC mA only) → `Pt` (PT100 / PT1000 view, Ω only) → `CL` (12 / 24-hour clock) → `Lt`, `Lo`, `HI` (limit test; the verdict page
 while the test is on) → `tr`, `Ch` (logging trigger) → back to the first page (while MIN/MAX is on, the statistics pages
 `n` and `Sd` and the time pages `tHI` and `tLo` come before it)
@@ -144,6 +144,18 @@ stays short and readable.
   -25.00 %. Logging, Bluetooth and MIN/MAX keep the current in mA.
 
 Tip: with `L4-20` a sensor's output reads directly in percent of its range, for example a pressure transmitter at 63.50 %.
+
+## Firmware update over Bluetooth
+
+- **On the meter:** Bluetooth on (hold PEAK), then press SETUP until the page `Ld-bt` (right after `bt`).
+- **On the computer:** `python emulator/tools/bt_upload.py EEVBlog.bin` (Python 3 with the package `bleak`: `pip install
+  bleak`). The meter shows the progress in percent (`Ld 45`), a full image takes a few minutes.
+- **Result:** `Ld oK` means the file is on the card as `EEVBlog.bin` and was read back correctly. `LdE n` means it was not
+  stored (1 card problem, 2 the file arrived damaged, 3 not a firmware file, 4 the copy failed, 5 the copy reads back
+  differently); start the transfer again or copy the file with a computer.
+- **Then update as usual:** switch off, hold HOLD and MEM while switching on, then press SETUP.
+- Logging must be off. The meter keeps measuring during the transfer. Leaving the page stops it; the old `EEVBlog.bin`
+  stays until a new file has arrived complete and checked.
 
 ## Battery voltage trim
 
