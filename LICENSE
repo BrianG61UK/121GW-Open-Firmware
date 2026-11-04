@@ -27,9 +27,11 @@ Copyright (c) 2026 zombu4
 5. Third-party material
    The LCD segment graphics in emulator/ui/assets/lcd are from the official 121GW app and are licensed under the MIT
    licence in that folder; that licence applies to them. The front-panel image emulator/ui/assets/panel.png is
-   derived from EEVblog artwork. The installers of the companion program include third-party software (Python and
-   Python packages) under their own licences, listed in THIRD_PARTY_LICENSES.txt inside each installer. The original
-   EEVblog bootloader and firmware images are not part of this software.
+   derived from EEVblog artwork. firmware/src/ff16 is a hand translation of ChaN's FatFs R0.16 and stays under the
+   FatFs licence quoted in those files (its copyright notice must be kept). The installers of the companion program
+   include third-party software (Python and Python packages) under their own licences, listed in
+   THIRD_PARTY_LICENSES.txt inside each installer. The original EEVblog bootloader and firmware images are not part of
+   this software.
 
 6. No warranty
    This software is provided "as is", without warranty of any kind. Flashing firmware to a meter is done at the

@@ -4,7 +4,7 @@
 @
 @ Hand translation of ChaN's FatFs R0.16 w/patch 2 (ff.c), configuration of DESIGN.md 7A.  Each routine names the C function
 @ it translates; the code follows the C statements in order, the comments quote them.  Calling convention AAPCS (r0-r3,
-@ r12 scratch, r4-r11 preserved), as the C functions.  The R0.08a port of the strict image (src/sd/fat*.s) is not used here.
+@ r12 scratch, r4-r11 preserved), as the C functions.  (The FatFs R0.08a port of v2.05 is on the branch like-v2.05.)
 @
 @ FatFs license (ChaN): "FatFs module is an open source software. Redistribution and use of FatFs in source and binary forms,
 @ with or without modification, are permitted provided that the following condition is met: 1. Redistributions of source

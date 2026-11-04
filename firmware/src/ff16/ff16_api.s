@@ -5,7 +5,7 @@
 @ log, cal.bin, the Bluetooth file transfer and sd_probe_mount call fat_f_* (and the v2.05 fn_ aliases of cal.bin) with the
 @ R0.08a arguments.  R0.16 keeps those arguments for every function used, except f_mount (R0.08a: f_mount(vol, fs);
 @ R0.16: f_mount(fs, path, opt)) and f_tell (R0.16: a macro reading fp->fptr, which moved from FIL +8 to FIL +20).
-@ The strict image keeps the R0.08a routines of src/sd/fat_file.s under the same names.
+@ (The like-v2.05 build on its branch keeps the R0.08a routines under the same names.)
 @ Context: main only.
 @ =============================================================================
 
