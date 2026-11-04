@@ -917,6 +917,17 @@ after DATAEND would otherwise not be seen.  Whether the SDIO block sets DATAEND 
 RM0038; the flag test covers both orders.  The log's retry path then repeats the session.  Together with OF-64 the same test gives one
 complete file, rows 1..N without a gap, for a disturbed write and a disturbed read.
 
+Port correction (fast build, 2026-11-04, found with the Bluetooth file transfer of IMP-28): on a meter the SDIO
+"data end" notification (`sd_transfer_end`, set by the SDIO interrupt on DATAEND) was sometimes never seen after a block
+read, while the DMA end was seen, SDIO_STA held no error flag and the hardware counters showed the block complete
+(SDIO_DCOUNT = 0, DMA2 channel 4 CNDTR = 0): 16 of the reads of one 155 kB transfer.  The OF-59 wait for both
+notifications then failed the read (FatFs: disk error), so card writes (FatFs reads the FAT while it writes) and the
+read-back check failed now and then, although every byte on the card was right (files compared on a computer).  v2.05
+never waited for the notifications, so it never saw this.  `disk_read` now takes such a block on the hardware counters
+(no error flag, DCOUNT 0, CNDTR 0) and counts it (`sd_dg_recov`); why the DATAEND notification is missed is not known
+yet (the emulator does not reproduce it).  Verified working on a meter: the 155 kB transfer then ran with 0 failed
+card sessions and 16 reads taken on the counters, and `EEVBlog.bin` was written and verified.
+
 ### OF-60 — the file forced after 20 failed attempts has no header
 `log_session_once` sets the header due (0x20008026) after creating a file only while the forced-file counter 0x20007FAE is 0
 (`0x0801D202`..`0x0801D214`).  `log_force_new_file` (`0x0801D51A`) increments that counter, so the file it starts after 20

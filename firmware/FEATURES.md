@@ -296,6 +296,9 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   bft.s while the page owns the link; no status frames then), `sys/main.s` (bft_poll every pass) and `set/setup.s`.
 - Host side: `emulator/tools/bt_upload.py` (Python, needs the package bleak) with the packet code in
   `emulator/tools/btft.py`; `emulator/scripts/test_bt_upload.py` runs the transfer against the emulated meter and card.
+- Verified working on a meter (2026-11-04): the 155 kB production image sent with `bt_upload.py` in 159 s (about
+  1060 bytes per second over the link), checked and written as `EEVBlog.bin`.  The way there found an SD driver
+  problem (ORIGINAL_FIRMWARE_ISSUES.md OF-59, port correction): reads whose "data end" notification was missed.
 - Storage: none (EEPROM untouched).
 
 ### 2.11 Bluetooth viewer for computers
