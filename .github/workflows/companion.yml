@@ -101,13 +101,13 @@ jobs:
       - name: Program folder
         run: APP_VERSION="$VER" APP_ICON="$PWD/build/icons/121gw-companion.ico" pyinstaller --noconfirm packaging/companion.spec
       - name: Installer (Inno Setup)
+        shell: pwsh
         run: |
-          set -euo pipefail
-          iscc="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
-          if [ ! -x "$iscc" ]; then choco install innosetup -y --no-progress; fi
-          "$iscc" "/DAppVersion=$VER" "/DSourceDir=$(cygpath -w "$PWD/dist/121gw-companion")" "/DOutputDir=$(cygpath -w "$PWD")" \
-            "/DLicenseFile=$(cygpath -w "$PWD/LICENSE")" "/DThirdParty=$(cygpath -w "$PWD/build/THIRD_PARTY_LICENSES.txt")" \
-            packaging/windows/121gw_companion.iss
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc "/DAppVersion=$env:VER" "/DSourceDir=$PWD\dist\121gw-companion" "/DOutputDir=$PWD" `
+            "/DLicenseFile=$PWD\LICENSE" "/DThirdParty=$PWD\build\THIRD_PARTY_LICENSES.txt" packaging\windows\121gw_companion.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Installed program answers (page, state, protections)
         shell: pwsh
         run: |
