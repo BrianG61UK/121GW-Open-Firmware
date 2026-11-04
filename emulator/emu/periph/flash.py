@@ -17,6 +17,11 @@ Machine integration
 * A wrong key sequence returns a bus error on the real device (rm0038.txt:3052).  The memory
   callback interface cannot raise a bus fault, so the event is written to the machine log and
   counted in `bus_errors`.
+* While a program memory half page write runs, a read of the same bank (an instruction fetch or a
+  data read) is a bus error (3.4.3 note 2, rm0038.txt:3230; banks Table 10: 0x08000000..0x0802FFFF
+  and 0x08030000..0x0805FFFF).  Hooks on that bank are installed for the duration of the operation;
+  a hit is logged, counted in `bus_errors` and stops the machine (stop reason "bus error ..."), so a
+  program that would fault on the device cannot pass a test.
 * `reset(power_on)` must be called by the machine on every system reset: it reloads the option
   bytes into FLASH_OBR / FLASH_WRPRx (3.5, rm0038.txt:3643) and re-locks everything.
 
@@ -436,6 +441,7 @@ class FLASH(Periph):
         if op is None or op['gen'] != gen:
             return
         self._op = None
+        self._bank_guard_off()
         if op['commit'] is not None:
             op['commit']()
             self.sr |= SR_EOP
@@ -654,6 +660,31 @@ class FLASH(Periph):
 
     def _commit_half_page(self, base, words):
         self._program_words(base, words, "half page write")
+        self._bank_guard_on(base)
+
+    # --- same-bank reads during a half page write (3.4.3 note 2, rm0038.txt:3230) ---------------------------
+    BANK_SIZE = 0x30000                                 # 192 Kbytes per bank (Table 10, rm0038.txt:2686)
+
+    def _bank_guard_on(self, base):
+        from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_READ
+        lo = FLASH_BASE + (base - FLASH_BASE) // self.BANK_SIZE * self.BANK_SIZE
+        hi = lo + self.BANK_SIZE - 1
+        uc = self.m.uc
+
+        def hit(kind, addr):
+            self._bank_guard_off()
+            self._bus_error(f"{kind} at 0x{addr:08X} while a half page write to 0x{base:08X} runs in the same bank "
+                            "(3.4.3 note 2, rm0038.txt:3230)")
+            self.m._stop_reason = f"bus error: {kind} at 0x{addr:08X} during a half page write"
+            uc.emu_stop()
+        self._bank_hooks = [
+            uc.hook_add(UC_HOOK_CODE, lambda u, a, sz, ud: hit('instruction fetch', a), begin=lo, end=hi),
+            uc.hook_add(UC_HOOK_MEM_READ, lambda u, acc, a, sz, v, ud: hit('data read', a), begin=lo, end=hi)]
+
+    def _bank_guard_off(self):
+        for h in getattr(self, '_bank_hooks', ()):
+            self.m.uc.hook_del(h)
+        self._bank_hooks = []
 
     def _program_words(self, base, words, what):
         data = b''.join(w.to_bytes(4, 'little') for w in words)

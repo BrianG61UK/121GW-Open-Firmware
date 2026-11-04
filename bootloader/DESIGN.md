@@ -147,7 +147,7 @@ The SD driver is not reusable unchanged: it uses fixed application RAM addresses
    is accepted with a battery check before it.  The owner tests it on his meter exactly that way; his SWD connection is
    only the fallback.  Design in section 6.
 6. Accepted with section 6: firmware limit 0x4C000 (304 KB); the application may write flash only in slot A, slot B,
-   the control page and, at the first install, 0x08000000..0x080001FF, bounds checked in code (DESIGN.md rule and
+   the control area and, at the first install, 0x08000000..0x080003FF, bounds checked in code (DESIGN.md rule and
    build check 9.3 change with the implementation); BLE off after 10 minutes in update mode without a connection.
 
 ## 6. Two-part bootloader and bootloader update from the companion
@@ -159,6 +159,9 @@ Facts used (copies on disk: RM0038, DS8576, PM0056 in the work folder):
   is 0x08000000..0x0802FFFF, bank 2 0x08030000..0x0805FFFF (192 KB each);
 - VTOR: the table offset must be aligned to the number of entries, at least 128 words, so bits 8..0 are zero (PM0056
   4.4.4); the bootloader's table has 73 entries, so it needs a 512-byte boundary;
+- the old bootloader's start without keys uses nothing in 0x08000100..0x080003FF: that range holds vector entries
+  IRQ48..IRQ56 (none enabled on that path) and SD functions from 0x08000124 used only by the update path (inventory:
+  SD_Init 0x08000124 called from 0x0800323E and 0x08004B06, SD_PowerON 0x08000232 from SD_Init);
 - the old bootloader's reset handler is at 0x08004EEC, its code fills 0x08000124..0x0800514B (inventory), so changing
   any page of it breaks the old start.
 
@@ -166,28 +169,28 @@ Facts used (copies on disk: RM0038, DS8576, PM0056 in the work folder):
 
 | Area | Range | Written by |
 |---|---|---|
-| Starter | 0x08000000..0x080001FF (two pages) | first install only, never again |
-| Bootloader | 0x08000200..0x08005EFF, vector table at 0x08000200 (512-byte boundary) | the starter, from a slot |
+| Starter | 0x08000000..0x080003FF (four pages, 688 bytes used) | first install only, never again |
+| Bootloader | 0x08000400..0x08005EFF (23296 bytes), vector table at 0x08000400 | the starter, from a slot |
 | Bootloader mark | 0x08005F00..0x08005FFF (length, CRC-32, self-CRC; erased first, written last) | the starter |
 | Firmware | 0x08006000..0x08051FFF (limit 0x4C000 = 311296 bytes; v2.05 144616, F-1.02 155464) | the bootloader |
 | Slot A, slot B | 0x08052000..0x08057FFF and 0x08058000..0x0805DFFF (24 KB each, image + header with length, CRC-32, version) | the bootloader (6.3) or, at the first install, the firmware (6.4) |
-| Control page | 0x0805E000..0x0805E0FF: install request, trial flag, which slot holds the new and which the previous bootloader | bootloader, firmware, starter |
+| Control area | 0x0805E000..0x0805FEFF: records of 16 bytes (magic, command, slot, CRC-32) appended into erased words, the last valid one counts: INSTALL slot, TRIAL previous slot, OK | bootloader, firmware, starter |
 | Firmware mark | 0x0805FF00..0x0805FFFF | the bootloader |
 
 The firmware erase range of the new bootloader stops at 0x08051FFF, so a firmware update never touches the slots, the
-control page or the bootloader.  All marks and the request live in flash, so the starter needs no RTC code.
+control area or the bootloader.  All marks and the request live in flash, so the starter needs no RTC code.
 
-### 6.2 The starter (512 bytes, size to be proven by a build before this design is accepted)
+### 6.2 The starter (src/starter.s, 688 of 1024 bytes)
 
 At every reset, with interrupts off and on the reset clock (MSI):
-1. read the control page and the bootloader mark (the mark is checked, not a CRC over the 24 KB bootloader);
-2. install request set and the new slot's header and CRC-32 valid: erase 0x08000200..0x08005FFF, copy the slot with
-   half-page programming from a routine copied to RAM (target bank 1, routine in SRAM: allowed), compare, write the
-   bootloader mark, set the trial flag, clear the request.  Time: 95 page erases + 190 half-pages, about 0.94 s typical,
-   1.1 s maximum (Table 35 times).  A power cut repeats it from the start at the next reset;
-3. trial flag still set at a reset (the new bootloader never confirmed, see 6.3): copy the previous bootloader's slot
-   back the same way, clear the trial flag;
-4. bootloader mark valid: set VTOR to 0x08000200, start the bootloader (MSP and reset vector from 0x08000200);
+1. read the control area and the bootloader mark (the mark is checked, not a CRC over the 24 KB bootloader);
+2. last record INSTALL and the slot's header and CRC-32 valid: erase the mark page, then 0x08000400..0x08005EFF, copy
+   the slot with half-page programming from a routine copied to RAM (target bank 1, routine in SRAM: allowed),
+   compare, write the mark (copy of the slot header) last, append TRIAL (previous = the other slot).  Slot invalid:
+   append OK.  Time for a full 23296-byte image: 92 page erases + 182 half-pages, about 0.9 s typical, 1.1 s maximum;
+   emulator, 12345-byte image: 0.95 s with 198 operations.  A power cut repeats it at the next reset;
+3. last record TRIAL (the new bootloader never confirmed, see 6.3): install the previous slot the same way, append OK;
+4. bootloader mark valid: lock FLASH_PECR, set VTOR to 0x08000400, start the bootloader (MSP and reset vector);
    else, with a valid slot: install it as in 2; with nothing valid: wait with the LCD off (only SWD helps; this needs
    both the bootloader and both slots to be bad).
 
@@ -195,9 +198,10 @@ At every reset, with interrupts off and on the reset clock (MSI):
 
 The companion restarts the meter into update mode (G3) and sends the image over Bluetooth with the bft protocol (new
 transfer kind "bootloader image"; per-block CRC-16, end CRC-32).  The bootloader writes it into the slot not holding
-the running bootloader (half-page programming from RAM, bank 2 target), checks it, records "new = that slot, previous
-= the other" and the install request in the control page, resets.  The starter installs it (6.2).  The new bootloader
-clears the trial flag once it has reached its main loop with the LCD and BLE working; if it hangs, removing the
+the running bootloader (half-page programming from RAM, bank 2 target), checks it, appends INSTALL
+with that slot to the control area (after erasing the area when fewer than 4 records are free; a full area makes the
+starter ignore requests), resets.  The starter installs it (6.2).  The new bootloader
+appends OK once it has reached its main loop with the LCD and BLE working; if it hangs, removing the
 batteries makes the starter put the previous one back (6.2 step 3).  A power cut at any moment leaves either the old
 bootloader, a repeated install, or a rollback.
 
@@ -207,8 +211,8 @@ directly over Bluetooth, never through the slots.
 ### 6.4 First install on a meter with EEVblog's bootloader (once per meter, done by this project's firmware)
 
 This adds flash writing to the application, against its rule "program flash is never written" (DESIGN.md 2.x, build
-check 9.3, ble/bft.s header).  The rule changes to: the application writes only slot A, slot B, the control page and,
-during the first install, 0x08000000..0x080001FF, each write checked against these bounds in code; DESIGN.md and the
+check 9.3, ble/bft.s header).  The rule changes to: the application writes only slot A, slot B, the control area and,
+during the first install, 0x08000000..0x080003FF, each write checked against these bounds in code; DESIGN.md and the
 build check are changed with it.
 
 1. The companion sends the install image (starter + bootloader) over Bluetooth to the running firmware; the bootloader
@@ -217,12 +221,13 @@ build check are changed with it.
    section 1; the meter computes and compares them), and unless the battery measurement is above a limit (the
    firmware's battery measurement, DESIGN.md adc_ch5_process; limit to be set from measurements on the meter; BOR is
    off on the owner's meter, USER 0xF0, so the measured battery voltage is the only guard).
-3. Just before writing: check slot A's CRC again.  Then, with interrupts off, from a routine in RAM: erase page 1
-   (0x08000100), program its two half-pages, erase page 0, program its two half-pages, compare both pages.  From the
-   first erase to the last half-page: 2 erases + 4 half-pages, about 20 ms typical, 24 ms maximum (Table 35).  This is
-   the only moment where a power cut bricks the meter (the old bootloader's code in page 1 is already gone, page 0 is
-   then all zero).
-4. Write the install request in the control page; reset.  The starter finds no valid bootloader mark, installs slot A
+3. Just before writing: check slot A's CRC again.  Then, with interrupts off, from a routine in RAM: write pages 3, 2
+   and 1 of the starter (erase, two half-pages, compare each).  The old bootloader still starts the firmware normally
+   after a power cut here (section 6 facts: its start without keys uses nothing in 0x08000100..0x080003FF; to be shown
+   in the emulator with the old bootloader and v2.05 before the first install is released); only its key update mode
+   is gone.  Last, page 0: erase and two half-pages, about 10 ms typical, 12 ms maximum (Table 35).  This is the only
+   moment where a power cut bricks the meter (page 0 then holds no valid vector table).
+4. Write the install request in the control area; reset.  The starter finds no valid bootloader mark, installs slot A
    (6.2), starts it.
 
 ### 6.5 Bluetooth in the bootloader
@@ -237,11 +242,22 @@ meter stays in update mode, waiting for keys or a card (battery protection); a k
 
 ### 6.6 Size
 
-Starter 512.  Bootloader (24064 bytes available): section 3 budget about 12900 + Bluetooth about 3000 (application's
+Starter 1024.  Bootloader (23296 bytes available): section 3 budget about 12900 + Bluetooth about 3000 (application's
 usart.o 1608, bft.o 2164, commands.o 635 hold more than needed) + slot/control-page code about 600 = about 16500,
-leaving about 7500 for exFAT, whose size is still unknown (FF_USE_LFN needed).  If exFAT does not fit, the owner decides.
+leaving about 6800 for exFAT, whose size is still unknown (FF_USE_LFN needed).  If exFAT does not fit, the owner decides.
 
 ### 6.7 No other way back for users
 
 ST's built-in loader cannot be reached without soldering: BOOT0 (pin 138) goes through R129 (0 R) to a node tied to VSS
 by R90 (0 R); R89 from that node to VDD_P is marked "x", not fitted (circuit diagram 2018-01-15, MCU sheet).
+
+## 7. Tests
+
+- Emulator: program flash writes are modelled (emulator/emu/core.py routes CPU stores to flash into the FLASH model),
+  and a read of the bank a half-page write runs in stops the run as a bus error (periph/flash.py, RM0038 3.4.3 note 2;
+  checked once by pointing the starter's RAM call at the flash copy of the routine: stopped with "instruction fetch
+  at 0x0800029A during a half page write").
+- `make test` (tests/test_starter.py): every decision of the starter (S1..S9), and power cuts during an install and
+  during a rollback, one at each kind of step (first, middle, last erase and half-page; first and last word of the
+  mark and of the record), the cut operation ending not done, done or with random contents (S10, S11).  Result
+  2026-11-04: all passed, the starter always ends in the expected bootloader, no bus error.
