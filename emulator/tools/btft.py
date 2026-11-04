@@ -14,6 +14,12 @@ STATUS_TEXT = {0: 'accepted', 1: 'CRC wrong', 2: 'not the expected packet', 3: '
                5: 'beyond the announced size', 0x11: 'card could not be written', 0x12: 'length or CRC-32 wrong',
                0x13: 'not an application image', 0x14: 'copy to EEVBlog.bin failed', 0x15: 'EEVBlog.bin read back differs'}
 MIN_SIZE, MAX_SIZE = 0x124, 0x5A000
+CARD_STEP = {1: 'open', 2: 'seek', 3: 'write', 4: 'short write (card full?)', 5: 'close'}
+
+
+def card_diag(nxt):
+    """The 'next' field of a status 0x11 answer: failed step << 8 | FatFs result of that step."""
+    return 'step %s, FatFs result %d' % (CARD_STEP.get(nxt >> 8, nxt >> 8), nxt & 0xFF)
 
 
 def crc16(data):

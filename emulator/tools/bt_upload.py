@@ -73,6 +73,8 @@ async def main(path):
             if status == 2:
                 n = nxt                             # the meter names the packet it expects
                 continue
+            if status == 0x11:
+                raise SystemExit('packet %d: %s (%s)' % (n, btft.STATUS_TEXT[status], btft.card_diag(nxt)))
             if status:
                 raise SystemExit('packet %d: %s' % (n, btft.STATUS_TEXT.get(status, status)))
             n += 1
@@ -81,12 +83,16 @@ async def main(path):
             print('\r%6d / %d bytes  %5.0f B/s' % (done, len(data), rate), end='', flush=True)
         print()
         print('checking and writing EEVBlog.bin on the card ...')
-        status, _ = await send(btft.packet(btft.T_END, len(pkts)), len(pkts), TIMEOUT_END)
+        status, info = await send(btft.packet(btft.T_END, len(pkts)), len(pkts), TIMEOUT_END)
         if status in (0x14, 0x15):
             raise SystemExit('END: %s.  EEVBlog.bin on the card may be incomplete: do NOT start the update; send the file'
                              ' again or copy it with a computer.' % btft.STATUS_TEXT[status])
+        if status == 0x11:
+            raise SystemExit('END: %s (%s)' % (btft.STATUS_TEXT[status], btft.card_diag(info)))
         if status:
             raise SystemExit('END: %s' % btft.STATUS_TEXT.get(status, status))
+        if info:
+            print('note: %d card write session(s) failed and were repeated successfully' % info)
         print('done in %.0f s: EEVBlog.bin is on the card and verified.  Switch the meter off, hold HOLD and MEM while'
               ' switching it on, then press SETUP.' % (time.monotonic() - t0))
 

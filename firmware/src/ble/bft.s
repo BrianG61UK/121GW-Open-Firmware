@@ -24,7 +24,9 @@
 @     type 0x02 DATA   seq = packet number from 0, payload = the next bytes of the file
 @     type 0x03 END    all bytes sent: flush, check, copy, check the copy
 @     type 0x04 ABORT  back to waiting
-@ Answer: B5 5B 81 seq(2) 03 status next(2) crc16(2), seq = the packet answered, next = the packet number expected.
+@ Answer: B5 5B 81 seq(2) 03 status next(2) crc16(2), seq = the packet answered, next = the packet number expected
+@     (with status 0x11 instead: the failed step << 8 | its FatFs result, step 1 open, 2 seek, 3 write, 4 short write,
+@     5 close; with status 0 to END: the number of failed card sessions that were repeated successfully).
 @     status 0 accepted; 1 CRC wrong (resend); 2 not the expected packet (send "next"); 3 not allowed in this state;
 @     4 START refused (size); 5 bytes beyond the announced size; 0x10 + n: END failed with error n (below)
 @ Errors (shown "LdE n"): 1 the card could not be written; 2 length or CRC-32 of the received file wrong; 3 not an
@@ -96,6 +98,9 @@ bft_rx_head:    .space 2                    @ ring write index (USART2 handler)
 bft_rx_tail:    .space 2                    @ ring read index (main)
 bft_pos:        .space 2                    @ bytes of the packet assembled so far
 bft_seq:        .space 2                    @ packet number expected next
+bft_diag:       .space 2                    @ last failed card write session: step << 8 | FatFs result
+bft_fails:      .space 2                    @ failed card write sessions of this transfer (repeated successfully or not)
+bft_alt_next:   .space 3                    @ u16 for the "next" field of the coming answer, and at +2 the flag 1 = use it
     .global bft_active
 bft_active:     .space 1                    @ 1 = the page Ld owns the link (read by usart.s)
 bft_state:      .space 1                    @ BFT_ST_*
@@ -238,7 +243,13 @@ LFUNC bft_answer
     strb r1, [r4, #5]
     strb r0, [r4, #6]                       @ status
     ldr r1, =bft_seq
-    ldrh r1, [r1]
+    ldr r2, =bft_alt_next
+    ldrb r3, [r2, #2]
+    cbz r3, 1f
+    mov r1, r2                              @ an answer that carries other information in the field (bft_alt_next)
+    movs r3, #0
+    strb r3, [r2, #2]
+1:  ldrh r1, [r1]
     strb r1, [r4, #7]                       @ next expected
     lsrs r1, r1, #8
     strb r1, [r4, #8]
@@ -283,8 +294,10 @@ ENDFUNC bft_card_end
 @ bft_flush - write the collected bytes to the temporary file, up to BFT_FLUSH_TRIES card sessions
 @ Out      : r0 = 0 written, 1 every attempt failed
 @ Clobbers : r0-r3, r12, flags (r4 saved)
-@ Note     : on a meter one write of 8 KiB failed after 14 good ones (2026-11-03, the transfer stopped with LdE 1);
-@            log_write_step repeats a failed log session the same way (20 attempts).  A repeated attempt rewrites the
+@ Note     : on a meter a card write session failed after 14 and, in a second transfer, after 5 good ones (2026-11-03,
+@            the transfer stopped with LdE 1; cause not known yet, bft_diag reports the step and the FatFs result);
+@            log_write_step repeats a failed log session the same way (20 attempts), and log_open_and_seek its f_open
+@            and f_lseek (21 attempts each).  A repeated attempt rewrites the
 @            same bytes at the same offset (bft_flushed advances only after a complete write), so a partial write of a
 @            failed attempt is overwritten.
 @ -----------------------------------------------------------------------------
@@ -293,6 +306,10 @@ LFUNC bft_flush
     movs r4, #BFT_FLUSH_TRIES
 1:  bl bft_flush_once
     cbz r0, 2f
+    ldr r1, =bft_fails
+    ldrh r0, [r1]
+    adds r0, r0, #1
+    strh r0, [r1]                           @ one more failed session
     subs r4, r4, #1
     bne 1b
     movs r0, #1
@@ -309,9 +326,11 @@ LFUNC bft_flush_once
     sub sp, sp, #8
     ldr r0, =bft_staged
     ldr r5, [r0]
-    cbz r5, .Lfl_ok                         @ nothing collected
+    cmp r5, #0
+    beq .Lfl_ok                             @ nothing collected
     bl bft_card_begin
     movs r6, #1                             @ r6 = result, failed until proven
+    movs r4, #1                             @ r4 = step for the diagnosis: 1 open
     ldr r0, =bft_created
     ldrb r0, [r0]
     cmp r0, #0
@@ -321,31 +340,48 @@ LFUNC bft_flush_once
     ldr r0, =bft_fil_a
     ldr r1, =bft_name_tmp
     bl fat_f_open
-    cbnz r0, .Lfl_end
+    cmp r0, #0
+    bne .Lfl_diag
+    movs r4, #2                             @ 2 seek
     ldr r0, =bft_fil_a
     ldr r1, =bft_flushed
     ldr r1, [r1]
     bl fat_f_lseek                          @ to the end of what is written
-    cbnz r0, .Lfl_close
+    cmp r0, #0
+    bne .Lfl_close_diag
+    movs r4, #3                             @ 3 write
     ldr r0, =bft_fil_a
     ldr r1, =bft_stage
     mov r2, r5
     add r3, sp, #0
     bl fat_f_write
-    cbnz r0, .Lfl_close
+    cmp r0, #0
+    bne .Lfl_close_diag
+    movs r4, #4                             @ 4 short write (card full)
     ldr r0, [sp, #0]
     cmp r0, r5
-    bne .Lfl_close                          @ card full or short write
+    bne .Lfl_close_diag
     movs r6, #0
-.Lfl_close:
+    movs r4, #5                             @ 5 close
     ldr r0, =bft_fil_a
     bl fat_f_close
     cmp r0, #0
-    it ne
-    movne r6, #1                            @ the directory entry must be written too
+    beq .Lfl_end
+    movs r6, #1                             @ the directory entry must be written too
+    b .Lfl_diag
+.Lfl_close_diag:
+    push {r0}
+    ldr r0, =bft_fil_a
+    bl fat_f_close
+    pop {r0}
+.Lfl_diag:
+    orr r0, r0, r4, lsl #8                  @ step << 8 | FatFs result of that step
+    ldr r1, =bft_diag
+    strh r0, [r1]
 .Lfl_end:
     bl bft_card_end
-    cbnz r6, .Lfl_fail
+    cmp r6, #0
+    bne .Lfl_fail
     movs r0, #1
     ldr r1, =bft_created
     strb r0, [r1]
@@ -548,6 +584,18 @@ LFUNC bft_finish
 ENDFUNC bft_finish
 
 @ -----------------------------------------------------------------------------
+@ bft_alt - the coming answer carries r0 (u16) in its "next" field
+@ Clobbers : r1, r2
+@ -----------------------------------------------------------------------------
+LFUNC bft_alt
+    ldr r1, =bft_alt_next
+    strh r0, [r1]
+    movs r2, #1
+    strb r2, [r1, #2]
+    bx lr
+ENDFUNC bft_alt
+
+@ -----------------------------------------------------------------------------
 @ bft_set_state - state change with redraw
 @ In       : r0 = state, r1 = error code
 @ Clobbers : r0-r2
@@ -607,6 +655,10 @@ LFUNC bft_packet
     ldr r1, =bft_staged
     str r0, [r1]
     ldr r1, =bft_seq
+    strh r0, [r1]
+    ldr r1, =bft_fails
+    strh r0, [r1]
+    ldr r1, =bft_diag
     strh r0, [r1]
     ldr r1, =bft_created
     strb r0, [r1]
@@ -687,6 +739,9 @@ LFUNC bft_packet
     movs r0, #BFT_ST_ERR
     movs r1, #1                             @ error 1: card
     bl bft_set_state
+    ldr r0, =bft_diag
+    ldrh r0, [r0]
+    bl bft_alt                              @ the answer reports the failed step and its FatFs result
     movs r0, #0x11
     b .Lpk_answer
 5:  @ percent for the page: recv * 100 / size, at most 99 until END has succeeded
@@ -725,6 +780,9 @@ LFUNC bft_packet
     bne .Lpk_order                          @ bytes missing: the answer names the packet expected
     bl bft_flush                            @ anything left (normally written with the last DATA)
     cbz r0, 2f
+    ldr r0, =bft_diag
+    ldrh r0, [r0]
+    bl bft_alt
     movs r0, #1
     b 3f
 2:  bl bft_finish
@@ -738,6 +796,9 @@ LFUNC bft_packet
 4:  movs r0, #BFT_ST_DONE
     movs r1, #0
     bl bft_set_state
+    ldr r0, =bft_fails
+    ldrh r0, [r0]
+    bl bft_alt                              @ success: the field reports the failed card sessions that were repeated
     movs r0, #0
     b .Lpk_answer
 .Lpk_notallowed:

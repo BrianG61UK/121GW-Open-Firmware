@@ -142,6 +142,8 @@ def run_tests(image, full):
     a = link.send(btft.packet(btft.T_END, len(pkts)), timeout=120.0)
     e.advance(0.3)                                   # the page is redrawn in the next refresh pass
     T.check('END: status 0, "Ld oK"', a is not None and a[1] == 0 and T.sub_text(e) == 'LD oK', '%r sub %r' % (a, T.sub_text(e)))
+    T.check('END answer reports the repeated card sessions (> 0 after the injected faults)', a is not None and a[2] > 0,
+            repr(a))
     print('    %.1f s emulated for %d bytes (%.0f B/s)' % (T.now(e) - t0, len(payload), len(payload) / (T.now(e) - t0)))
     s = e.snapshot()
     T.check('no unmodelled access, no safety violation', s['unmodelled'] == 0 and not s['safety'])
