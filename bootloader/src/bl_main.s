@@ -27,7 +27,7 @@
     .equ KEYS_UPDATE,       0xD700          @ PG8, 9, 10, 12, 14, 15 high; PG11 MEM and PG13 HOLD low
     .equ WINDOW_TICKS,      3000            @ 30 s
     .equ BLE_OFF_TICKS,     60000           @ 10 min
-    .equ RESET_DELAY,       30              @ 300 ms after the last answer
+    .equ RESET_DELAY,       150             @ 1.5 s after the last answer: "Ld oK" stays readable
     .equ NVIC_ISER1,        0xE000E104
     .equ NVIC_ICER0,        0xE000E180
     .equ IRQ45_53_BITS,     0x00202000      @ IRQ45 (SDIO) bit 13, IRQ53 (DMA2 channel 4) bit 21 of ISER1

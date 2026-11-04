@@ -25,7 +25,7 @@ FW_OBJS := $(addprefix $(FW_OBJ)/,sd/diskio.o sd/sdcard.o sd/sdio.o sd/tables_v2
            ff16/ff16_file.o ff16/ff16_file2.o ff16/ff16_low.o ff16/ff16_vol.o brd/gpio.o sys/clock.o lcd/font.o)
 BL_SRCS := $(wildcard src/bl_*.s)
 BL_OBJS := $(patsubst src/%.s,$(BUILD)/%.o,$(BL_SRCS))
-BL_VERSION ?= 0x00010000
+BL_VERSION ?= 0x00010001
 PY      := $(PYTHON) -I
 
 all: $(BUILD)/starter.bin $(BUILD)/bootloader.bin $(BUILD)/install.bin

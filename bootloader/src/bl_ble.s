@@ -72,6 +72,9 @@ bl_seq:         .space 2
 bl_staged:      .space 2
 bl_state:       .space 1
 bl_kind:        .space 1
+bl_last_pct:    .space 1                    @ percent shown, 200 = "Ld oK" shown, 0xFF = draw at the next chance
+bl_show_err:    .space 1                    @ END or flash error to show, 0 none
+bl_txt:         .space 5                    @ main display text
     .global bl_reset_due
 bl_reset_due:   .space 1                    @ 1: restart (bl_main.s) once the answer is out
 
@@ -465,6 +468,9 @@ LFUNC bl_packet
     strh r0, [r1]
     ldr r1, =bl_staged
     strh r0, [r1]
+    movs r0, #0xFF                          @ the percent is drawn at the next redraw
+    ldr r1, =bl_last_pct
+    strb r0, [r1]
     movs r0, #ST_RECV
     ldr r1, =bl_state
     strb r0, [r1]
@@ -532,6 +538,9 @@ LFUNC bl_packet
     mov r1, r6
     b .Lp_answer
 .Lp_flash_fail:
+    movs r0, #6
+    ldr r1, =bl_show_err
+    strb r0, [r1]
     movs r0, #ST_WAIT
     ldr r1, =bl_state
     strb r0, [r1]
@@ -560,6 +569,8 @@ LFUNC bl_packet
     b .Lp_answer
 2:  bl bl_end_check                         @ r0 = 0 or the END error n
     cbz r0, 3f
+    ldr r1, =bl_show_err
+    strb r0, [r1]
     adds r0, r0, #0x10
     movs r1, #ST_WAIT
     ldr r2, =bl_state
@@ -576,8 +587,92 @@ LFUNC bl_packet
     movs r1, #0
 .Lp_answer:
     bl bl_answer
+    bl bl_ble_draw                          @ the display after the answer: the sender is not held up
     pop {r4-r7, pc}
 ENDFUNC bl_packet
+
+@ -----------------------------------------------------------------------------
+@ bl_ble_draw - main display during a transfer (as the firmware's page Ld): "Ld nn" percent received with the
+@ bargraph, "Ld oK" when the image is checked (shown until the restart), "LdE n" after a failed END (n = END error 2, 3
+@ or 6) or a failed flash write (6); the sub display keeps "-IAP-"
+@ Clobbers : r0-r3, r12, flags (r4, r5 saved)
+@ -----------------------------------------------------------------------------
+LFUNC bl_ble_draw
+    push {r4, r5, lr}
+    ldr r4, =bl_txt
+    movs r0, #'L'
+    strb r0, [r4, #0]
+    movs r0, #'d'
+    strb r0, [r4, #1]
+    ldr r0, =bl_show_err
+    ldrb r5, [r0]
+    cbz r5, 1f
+    movs r1, #0
+    strb r1, [r0]
+    movs r0, #'E'                           @ "LdE n"
+    strb r0, [r4, #2]
+    movs r0, #' '
+    strb r0, [r4, #3]
+    adds r0, r5, #'0'
+    strb r0, [r4, #4]
+    b 8f
+1:  ldr r0, =bl_state
+    ldrb r0, [r0]
+    cmp r0, #ST_DONE
+    bne 2f
+    ldr r1, =bl_last_pct
+    ldrb r2, [r1]
+    cmp r2, #200
+    beq 9f                                  @ "Ld oK" already shown
+    movs r2, #200
+    strb r2, [r1]
+    movs r0, #' '                           @ "Ld oK"
+    strb r0, [r4, #2]
+    movs r0, #'o'
+    strb r0, [r4, #3]
+    movs r0, #'K'
+    strb r0, [r4, #4]
+    movs r0, #26
+    bl bl_lcd_bar
+    b 8f
+2:  cmp r0, #ST_RECV
+    bne 9f
+    ldr r0, =bl_recv                        @ percent = received x 100 / size, at most 99 until the check
+    ldr r0, [r0]
+    ldr r1, =bl_size
+    ldr r1, [r1]
+    movs r2, #100
+    muls r2, r0, r2
+    udiv r2, r2, r1
+    cmp r2, #99
+    it hi
+    movhi r2, #99
+    ldr r3, =bl_last_pct
+    ldrb r12, [r3]
+    cmp r2, r12
+    beq 9f                                  @ unchanged: no redraw
+    strb r2, [r3]
+    movs r3, #10
+    udiv r12, r2, r3
+    mls r3, r12, r3, r2
+    movs r0, #' '
+    strb r0, [r4, #2]
+    adds r12, r12, #'0'
+    strb r12, [r4, #3]
+    adds r3, r3, #'0'
+    strb r3, [r4, #4]
+    ldr r0, =bl_recv                        @ bargraph 25 x received / size
+    ldr r0, [r0]
+    movs r2, #25
+    muls r0, r2, r0
+    udiv r0, r0, r1
+    bl bl_lcd_bar
+8:  movs r0, #5
+    mov r1, r4
+    bl bl_lcd_text
+    bl bl_lcd_commit
+9:  pop {r4, r5, pc}
+ENDFUNC bl_ble_draw
 
 @ -----------------------------------------------------------------------------
 @ bl_flush_stage - program the full half-pages of bl_stage; with r0 = 1 on entry from bl_end_check also the last,

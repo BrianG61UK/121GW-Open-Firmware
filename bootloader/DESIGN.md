@@ -280,6 +280,9 @@ Verified working:
   request with version 1.0.0;
 - firmware over Bluetooth into the bootloader, two packets in flight: 157352 bytes in 108 s including the erase at
   START (stop and wait on page Ld took 160 s for 157344 bytes); the meter restarted into the new firmware.
+- bootloader update over Bluetooth through the slots: B-1.00 -> B-1.01 (21644 bytes in 15 s), the starter installed
+  it, the meter reports "B-1.01"; then a firmware update through B-1.01 (109 s), with "Ld nn" and "Ld oK" on the main
+  display (owner's request: progress and a confirmation before the restart).
 Found and fixed: the first F-1.03 build restarted after the first install before its END answer had gone out (the
 500 ms quiet time counted the ticks of the install itself); the companion now also accepts a missing END answer of
 the first install when the meter reports the new bootloader after its restart.

@@ -190,8 +190,21 @@ def b3(ee0):
     e.advance(2.0)
     new = APP
     h = Host(e)
+    seen = set()
+    orig_wait = h.wait
+
+    def wait(n, timeout):                            # the main display while the transfer runs
+        r = orig_wait(n, timeout)
+        seen.add(texts(e)[0])
+        return r
+    h.wait = wait
     a, secs = h.transfer(new, KIND_FW)
     T.check('END status 0', a is not None and a[1] == 0, repr(a))
+    e.advance(0.3)
+    seen.add(texts(e)[0])
+    T.check('percent shown while receiving ("Ld nn"), "Ld oK" at the end',
+            any(t.upper().startswith('LD') and t[2:].strip().isdigit() for t in seen)
+            and 'LD OK' in {t.upper() for t in seen}, repr(sorted(seen)[-4:]))
     print('     %d bytes in %.1f s emulated (%.0f B/s)' % (len(new), secs, len(new) / secs if secs else 0))
     e.advance(2.0)
     T.check('flash holds the new image', flash(e, 0x08006000, len(new)) == new)
