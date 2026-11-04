@@ -149,6 +149,17 @@ The SD driver is not reusable unchanged: it uses fixed application RAM addresses
 6. Accepted with section 6: firmware limit 0x4C000 (304 KB); the application may write flash only in slot A, slot B,
    the control area and, at the first install, 0x08000000..0x080003FF, bounds checked in code (DESIGN.md rule and
    build check 9.3 change with the implementation); BLE off after 10 minutes in update mode without a connection.
+7. The meter formats the SD card as exFAT (owner, 2026-11-04).  The application gets FatFs R0.16 with FF_FS_EXFAT 1
+   (needs FF_USE_LFN, ChaN's ff.c) and f_mkfs; the bootloader reads exFAT (G4).  A card formatted as exFAT cannot be
+   read by EEVblog's bootloader, so the meter offers the format only when the new bootloader is installed (its mark
+   valid), else the key / card update path of the old bootloader would be lost.  Formatting erases the card: it needs
+   a confirmation on the meter.  The application's rule "no reformat without approval" (firmware/DESIGN.md) is changed
+   by this decision.
+8. Bluetooth transfer into the bootloader allows two packets in flight.  Measured on the owner's meter (page Ld,
+   2026-11-04, 15 round trips each): 9-byte packet answered in 60..120 ms (median 90, 30 ms steps of the BLE link),
+   240-byte packet in 209..240 ms (median 210); the 240 bytes take 125 ms on USART2 at 19200 baud.  Stop and wait gives
+   232 bytes / 210 ms = 1.1 KB/s (as measured for 2.10: 155 kB in 159..172 s); two in flight are limited by USART2,
+   232 bytes / 125 ms = 1.8 KB/s, about 85..90 s for 155 kB (calculated, to be measured).
 
 ## 6. Two-part bootloader and bootloader update from the companion
 

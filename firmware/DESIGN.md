@@ -51,11 +51,11 @@ Appendix C: cross-module interface routines (C.1 replaced v2.05 functions, C.2 n
 | Calibration, serial number and option/settings locations in data EEPROM preserved exactly | Same offsets, widths, byte order, validation and triggers as v2.05; one NVM module holds the only EEPROM write path; write classes with an allowed-byte table generated from EMAP; caller-side arming token; range re-check at the store; instruction-level build checks; emulator EEPROM comparison | EMAP 9-10; 6.21; 9.3 |
 | No erase, no reformat, no new locations without approval | NVM sets only PELOCK and clears FTDW in FLASH_PECR, never ERASE/PROG/DATA/FPRG/OBL_LAUNCH; nothing outside 0x000..0x4FC is in any write class; the cal.bin extension (OF-12) adds no EEPROM location; the only new locations are the owner-approved port-only settings of EMAP 4.1 (production image only; so far 0x00F, IMP-10, 0x011, IMP-08, 0x015, IMP-09, 0x017, IMP-07, 0x020, IMP-11, 0x013, IMP-12, and 0x021, IMP-16) | EMAP 4.1, 9.1-9.2, 10 |
 | RAM copies of calibration, serial and options keep their v2.05 RAM addresses | every v2.05 RAM variable keeps its address; port-only variables live at 0x20008100 and above | 5 |
-| Never brick | program flash, the bootloader region 0x08000000..0x08005FFF, option bytes, RDP and WRP are never written (no instruction with a statically known address may address PRGKEYR, OPTKEYR, WRPR or 0x1FF8xxxx, and the FLASH
+| Never brick | option bytes, RDP and WRP are never written; program flash and the bootloader region 0x08000000..0x08005FFF are written only by `nvm/blinst.s` for the first install of the two-part bootloader (owner decision 2026-11-04, bootloader/DESIGN.md 6.4): slot A 0x08052000..0x08057FFF, control area 0x0805E000..0x0805FEFF, firmware mark 0x0805FF00..0x0805FFFF and the starter 0x08000000..0x080003FF, each write checked against these ranges and only while the bootloader area is one of EEVblog's builds; nothing else of program flash is written (no instruction with a statically known address may address PRGKEYR (except nvm/blinst.o), OPTKEYR, WRPR or 0x1FF8xxxx, and the FLASH
 block may only be addressed through its own literal with offset 0: coding rule 8.2 and build check 9.3); PELOCK set at reset (the bootloader leaves FLASH_PECR = 0x4, EMAP 2.5); the v2.05 option-byte BOR rewrite (EMAP 2.4) is not carried over; every hardware wait is bounded; the bootloader update path (MEM+HOLD at power-up, then SETUP) works whatever the application does | 2, 3, 9 |
 | Start-up tolerates any EEPROM content | v2.05 read-side validation kept byte for byte; no loop bound or table index taken from EEPROM without the v2.05 range check; float helpers are bit-exact copies, so the v2.05 divide-by-zero results are reproduced | EMAP 6, 9.4 |
 | Clock set-up never leaves the device unbootable | same clock sequence as v2.05 with bounded waits and an MSI fallback at every step; no change of BOR, option bytes or boot configuration | 3.2 |
-| Bootloader accepts the image as it accepts v2.05 | vector table at 0x08006000, initial SP 0x20001240 (passes the only check, `(SP & 0x2FFE0000) == 0x20000000` at bootloader 0x08004994), reset vector with bit 0 set, file size a multiple of 4 and at most 0x5A000 | 2.1 |
+| Bootloader accepts the image as it accepts v2.05 | vector table at 0x08006000, initial SP 0x20001240 (passes the only check, `(SP & 0x2FFE0000) == 0x20000000` at bootloader 0x08004994), reset vector with bit 0 set, file size a multiple of 4 and at most 0x4C000 (slots of the two-part bootloader above, bootloader/DESIGN.md 6.1) | 2.1 |
 | The firmware can never damage hardware | HY3131 configuration only from a table of the v2.05 rows and sequences, checked at build time; pins driven by external devices never become outputs; power and analog-control outputs only in v2.05 combinations and order, with the listed safety improvements | 4 |
 | Behaviour identical to v2.05 except documented deviations | port routines replace v2.05 functions one by one (Appendix A); a v2.05-equivalent run mode for strict differential testing; each deviation has an ID, a module, a scenario and an allowlist entry | 3.5, 9, 10 |
 
@@ -90,7 +90,7 @@ block may only be addressed through its own literal with offset 0: coding rule 8
 |---|---|
 | Load address | 0x08006000 (linker script `firmware/link/121gw.ld`) |
 | Vector table | 73 words at 0x08006000 (16 system + 57 IRQ, RM0038 Cat.4 table, same count as v2.05): word 0 = 0x20001240, word 1 = `sys_reset` with bit 0 set |
-| Output file | `firmware/build/EEVBlog.bin` (raw binary from objcopy), padded with 0x00 to a multiple of 4, at most 0x5A000 bytes; the build fails otherwise |
+| Output file | `firmware/build/EEVBlog.bin` (raw binary from objcopy), padded with 0x00 to a multiple of 4, at most 0x4C000 bytes; the build fails otherwise |
 | Header | none (the bootloader reads none) |
 | Flash use | 0x08006000..0x0805FFFF only; nothing at a fixed address except the vector table |
 
@@ -477,7 +477,7 @@ clears the buzzer state first (HW-08).
 
 EMAP 9 and section 9.3: PELOCK at reset; NVM holds the only PEKEY values and EEPROM base; keys are written only when
 PELOCK reads 1 (as v2.05, 0x0801FA02), once per unlock, because a key write while unlocked or a third write gives a bus
-error (RM0038 FLASH_PECR bit 0); no instruction may address PRGKEYR, OPTKEYR, WRPR, OBR or the option bytes; no data
+error (RM0038 FLASH_PECR bit 0); no instruction may address PRGKEYR (except nvm/blinst.o), OPTKEYR, WRPR, OBR or the option bytes; no data
 EEPROM erase or fast-write bit is ever set.
 
 ### 4.7 Fault-safe state
@@ -1208,16 +1208,16 @@ comment states only what is true of the code below it; a comment about v2.05 cit
 
 ### 9.2 Linker script (`link/121gw.ld`)
 
-MEMORY: FLASH 0x08006000, length 0x5A000; RAM_V205 0x20000000, length 0x80FC; RAM_PORT 0x20008100, length 0x1700.
+MEMORY: FLASH 0x08006000, length 0x4C000; RAM_V205 0x20000000, length 0x80FC; RAM_PORT 0x20008100, length 0x1700.
 SECTIONS: `.vectors` (KEEP, at 0x08006000), `.text*`, `.rodata*`, `.v205tab` (not loaded), `.data_v205` at 0x20000000
 (AT> FLASH, exactly 0x23E bytes), `.stack` 0x2000023E..0x2000123F (NOLOAD), `.bss_v205` 0x20001240..0x200080FB (NOLOAD,
-zeroed by `sys_reset`), `.bss_port` in RAM_PORT. ASSERTs: image end <= 0x08060000; `.data_v205` size 574; `.bss_v205`
+zeroed by `sys_reset`), `.bss_port` in RAM_PORT. ASSERTs: image end <= 0x08052000; `.data_v205` size 574; `.bss_v205`
 start 0x20001240; `.bss_port` inside RAM_PORT.
 
 ### 9.3 Static checks (`make check`, every build)
 
 1. Image: word 0 = 0x20001240 and passes the bootloader test; word 1 odd and inside the image; size a multiple of 4 and
-   <= 0x5A000; 73 vectors.
+   <= 0x4C000; 73 vectors.
 2. Never-brick check at instruction level (`tools/check_image.py`, disassembles the linked ELF): for every load and
    store, the effective address is computed when the base register holds a known constant in the basic block (pool
    literal, `movw`/`movt`, `adr`, add of constants); rejected: any effective address 0x40023C10 (PRGKEYR), 0x40023C14 (OPTKEYR)
@@ -1446,7 +1446,7 @@ New optimisations are added here before they are implemented; anything that chan
 | Interface drift between workers | link errors, wrong arguments | Appendix C names and signatures; `--no-undefined`; routine tests at module boundaries |
 | ISR/main races | rare wrong state | ISR rules (3.4), NF-11 |
 | Stack overflow | silent RAM corruption | canary, per-scenario depth, 3072-byte limit |
-| Image size | must stay <= 0x5A000 | v2.05 is 144 616 bytes; build assertion |
+| Image size | must stay <= 0x4C000 | v2.05 is 144 616 bytes; build assertion |
 | Bootloader erases before reading the file | a bad file leaves no application (recovery: a correct file) | release procedure: `make check` passed and SHA-256 recorded before copying to a card |
 
 ### 12.2 Decisions (2026-10-31; owner policy: fix every defect, safety first, technical calls by the project)

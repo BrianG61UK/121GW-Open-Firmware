@@ -30,7 +30,7 @@
 @ -----------------------------------------------------------------------------
     .equ FLASH_PROG_BASE,     0x08000000      @ program flash (never written by this firmware)
     .equ APP_BASE,            0x08006000      @ application load address (bootloader contract, DESIGN.md 2.1)
-    .equ APP_LIMIT,           0x08060000      @ end of program flash (384 KB device)
+    .equ APP_LIMIT,           0x08052000      @ end of the firmware area; slots above (bootloader/DESIGN.md 6.1)
     .equ SRAM_BASE,           0x20000000
     .equ SRAM_END,            0x2000C000      @ 48 KB
     .equ V205_INITIAL_SP,     0x20001240      @ v2.05 vector word 0 (image 0x08006000); the bootloader test

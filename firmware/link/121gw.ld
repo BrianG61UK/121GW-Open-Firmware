@@ -13,7 +13,7 @@ ENTRY(sys_reset)
 
 MEMORY
 {
-    FLASH    (rx)  : ORIGIN = 0x08006000, LENGTH = 0x5A000   /* 0x08006000..0x0805FFFF */
+    FLASH    (rx)  : ORIGIN = 0x08006000, LENGTH = 0x4C000   /* 0x08006000..0x08051FFF; above: bootloader slots (bootloader/DESIGN.md 6.1) */
     RAM_V205 (rwx) : ORIGIN = 0x20000000, LENGTH = 0x80FC    /* 0x20000000..0x200080FB, v2.05 layout */
     RAM_PORT (rw)  : ORIGIN = 0x20008100, LENGTH = 0x1700    /* 0x20008100..0x200097FF, port-only state */
 }
@@ -95,7 +95,8 @@ SECTIONS
 
 /* Build-time assertions (DESIGN.md 9.2) */
 ASSERT(SIZEOF(.vectors) == 73 * 4, "vector table must be 73 words (16 system + 57 IRQ)")
-ASSERT(__image_end <= 0x08060000, "image exceeds 0x5A000 bytes")
+ASSERT(__image_end <= 0x08052000, "image exceeds 0x4C000 bytes")
+ASSERT(blinst_hp_code_end - (blinst_hp_code & ~1) <= 96, "blinst_hp_code does not fit blinst_ram (nvm/blinst.s)")
 ASSERT(SIZEOF(.data_v205) == 574, ".data_v205 must be exactly 574 bytes (ram_init.txt)")
 ASSERT(__data_v205_start == 0x20000000, ".data_v205 must start at 0x20000000")
 ASSERT(__stack_top == 0x20001240, "initial SP must be 0x20001240")

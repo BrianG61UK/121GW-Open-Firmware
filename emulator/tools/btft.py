@@ -17,7 +17,7 @@ STATUS_TEXT = {0: 'accepted', 1: 'CRC wrong', 2: 'not the expected packet', 3: '
                5: 'beyond the announced size', 0x11: 'card could not be written', 0x12: 'length or CRC-32 wrong',
                0x13: 'not an application image', 0x14: 'copy to EEVBlog.bin failed', 0x15: 'EEVBlog.bin read back differs',
                0x16: 'the received file could not be read back'}
-MIN_SIZE, MAX_SIZE = 0x124, 0x5A000
+MIN_SIZE, MAX_SIZE = 0x124, 0x4C000     # firmware limit (firmware/link/121gw.ld)
 CARD_STEP = {1: 'open', 2: 'seek', 3: 'write', 4: 'short write (card full?)', 5: 'close', 6: 'read back'}
 
 
@@ -81,8 +81,8 @@ def check_image(data):
     sp, reset = struct.unpack_from('<II', data, 0)
     if not 0x20000001 <= sp <= 0x20014000:
         return 'initial stack pointer 0x%08X is not in the RAM' % sp
-    if not (reset & 1) or not 0x08006000 <= reset < 0x08060000:
-        return 'reset vector 0x%08X is not a Thumb address in 0x08006000 .. 0x0805FFFF' % reset
+    if not (reset & 1) or not 0x08006000 <= reset < 0x08052000:
+        return 'reset vector 0x%08X is not a Thumb address in 0x08006000 .. 0x08051FFF' % reset
     return None
 
 
