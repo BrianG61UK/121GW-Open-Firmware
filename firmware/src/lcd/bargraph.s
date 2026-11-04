@@ -23,7 +23,8 @@
 @ In       : -
 @ Out      : -
 @ Context  : main only; called by fn_08016D34 when 0x2000805E is set
-@ RAM      : clears 0x2000805E; reads meter_mode (0x2000803C)
+@ RAM      : clears 0x2000805E; reads meter_mode (0x2000803C); production: reads lowz_bar_hold (mres/lowz.s, LowZ settling
+@            mean: the bargraph keeps its segments)
 @ Spec     : analysis/lcd_map.md 3 (the bargraph is switched off for modes 5, 6, 7, 8, 12)
 @ Clobbers : r0, r1, r2, r3 (v2.05 regeffects.txt)
 @ -----------------------------------------------------------------------------
@@ -54,7 +55,15 @@ FUNC fn_08018B14
     b .L08018B4C                             @ 08018B46
 .L08018B48:                                @ reached from 08018B44 bne (not equal / non-zero)
     @ every other mode: lcd_update_bargraph
-
+    .if LOOP_V205 == 0
+    ldr r0, =meter_mode
+    ldrb r0, [r0]
+    cbnz r0, 1f
+    ldr r0, =lowz_bar_hold
+    ldrb r0, [r0]
+    cbnz r0, .L08018B4C                     @ LowZ settling mean after an AC/DC re-apply: the bar keeps its segments
+1:
+    .endif
     bl lcd_update_bargraph                   @ 08018B48
 .L08018B4C:                                @ reached from 08018B46 b; falls in
     pop {r0, pc}                             @ 08018B4C
