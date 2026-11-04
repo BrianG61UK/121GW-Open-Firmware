@@ -22,6 +22,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+      - name: No Intel macOS build or package (owner decision)
+        run: python3 -I .github/scripts/check_no_intel_mac.py
       - name: Production (make) and strict (make LOOP_V205=1) builds, each with `make check-ci`
         uses: ./.github/actions/build-firmware
         with:

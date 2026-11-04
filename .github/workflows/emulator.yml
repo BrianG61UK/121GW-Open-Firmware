@@ -33,6 +33,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+      - name: No Intel macOS build or package (owner decision)
+        run: python3 -I .github/scripts/check_no_intel_mac.py
       - name: The tag matches the version the firmware shows
         if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
         run: python3 -I .github/scripts/check_fw_version.py "$RELEASE_TAG"
@@ -119,6 +121,7 @@ jobs:
             gh release create "$RELEASE_TAG" --verify-tag --title "121GW-Open-Firmware $RELEASE_TAG" --notes-file .github/release-notes.md \
               || gh release view "$RELEASE_TAG" >/dev/null
           fi
+          python3 -I .github/scripts/check_no_intel_mac.py --dist 121GW-Open-Firmware-Emulator-*
           gh release upload "$RELEASE_TAG" 121GW-Open-Firmware-Emulator-* --clobber
 
   windows:
