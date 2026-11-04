@@ -240,7 +240,13 @@ class Companion:
                                              'update the firmware first')
             self._sender = transfer.Sender(self.link.send)
             self._wait_ld()
-            self._send_tracked(lambda: self._sender.run(install, kind=transfer.KIND_INSTALL), len(install), text)
+            try:
+                self._send_tracked(lambda: self._sender.run(install, kind=transfer.KIND_INSTALL), len(install), text)
+            except transfer.TransferError as e:
+                # F-1.03 as first built could restart before its END answer went out (2026-11-04): the meter's own
+                # report after the restart decides
+                if 'no answer to packet' not in str(e):
+                    raise
         else:
             self._enter_update_mode()
             ver = releases.version_of_bootloader(text)
@@ -260,7 +266,10 @@ class Companion:
         if self.mode == 'bootloader':
             return
         self.update.update(state='restarting', message='the meter restarts into its update mode')
-        self.link.send(frames.UPDATE_MODE_REQUEST)
+        try:
+            self.link.send(frames.UPDATE_MODE_REQUEST)
+        except Exception:                               # noqa: BLE001 - the meter restarts at once: the write's
+            pass                                        # confirmation can be lost with the link (bleak: disconnected)
         self._wait_restart(lambda: self.mode == 'bootloader', 'the meter did not come back in its update mode')
 
     def _wait_restart(self, ready, failure, timeout=90.0):
