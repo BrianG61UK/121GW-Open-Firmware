@@ -437,7 +437,7 @@ dead band rises above the threshold for one mean (Bluetooth frames of a meter in
 about every 2.9 s), so the dashes flashed briefly every few seconds (GitHub issue 1). v2.05 hid that mean behind its
 forced 0. The port now keeps the digits on the glass for the first unconfirmed mean and shows the dashes from the second
 on (`ui_blank_req` = 3, `mres/lowz.s`); a real voltage still shows dashes one mean later and its value after the five
-means of v2.05.
+means of v2.05. Verified working on a meter (v0.9.8, LowZ, nothing connected: no more dashes).
 
 ### OF-31 — main loop paced by the LCD update busy-wait
 `lcd_commit_shadow` (`0x0801B304`) waits before every RAM write until LCD_SR.UDR clears: `0x0801B336 movs r0,#4`,
