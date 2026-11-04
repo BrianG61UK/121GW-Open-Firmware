@@ -12,12 +12,15 @@ send without a CORS preflight this server never grants.  So no web page can make
 import json
 import mimetypes
 import os
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-UI = os.path.join(HERE, '..', 'ui')
+# the page: next to the package in a source tree; in the packaged program (PyInstaller) in the bundle folder
+# sys._MEIPASS, because there the package's own folder exists only inside the archive, not on disk
+UI = os.path.join(getattr(sys, '_MEIPASS', None) or os.path.normpath(os.path.join(HERE, '..')), 'ui')
 HEADER = 'X-121GW-Companion'
 
 
