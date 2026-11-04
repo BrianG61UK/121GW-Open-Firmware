@@ -101,4 +101,4 @@ Read `firmware/HARDWARE_TEST.md` first; it is the procedure and checklist.
 
 ## Licence
 
-Free to use, modify and share; selling or bundling only by zombu4 and EEVblog (David L. Jones). See `LICENSE`.
+Free for individuals, schools and non-profits to use, modify and share; companies need written permission from zombu4; selling or bundling only by zombu4 and EEVblog (David L. Jones), who both keep full rights. See `LICENSE`.
