@@ -54,10 +54,16 @@ def explain_diag(values):
            (2, 2): 'write: the end-of-write wait ran out of polls (or CMD12 failed)', (2, 3): 'write: SDIO error code'}
     sta = values[4]
     flags = [n for b, n in ((1, 'DCRCFAIL'), (3, 'DTIMEOUT'), (4, 'TXUNDERR'), (5, 'RXOVERR'), (9, 'STBITERR')) if sta >> b & 1]
-    return ('%d failed card sessions in this transfer, last card failure %s; driver: %d failed calls since power-on, last %s,'
+    text = ('%d failed card sessions in this transfer, last card failure %s; driver: %d failed calls since power-on, last %s,'
             ' SDIO_STA 0x%04X %s, transfer error %d, wait result %d'
             % (values[0], card_diag(values[1]), values[2], why.get((op, reason), 'op %d reason %d' % (op, reason)), sta,
                flags, values[5], values[6]))
+    if len(values) >= 13:
+        f = values[7]
+        text += ('; at the last end-wait timeout: data end flag %d, DMA end flag %d, DMA ch4 flags 0x%X, DMA words left %d,'
+                 ' SDIO bytes left %d, SDIO_STA high 0x%04X; %d reads taken on the hardware counters'
+                 % (f >> 1 & 1, f & 1, values[8], values[9], values[10], values[11], values[12]))
+    return text
 
 
 def start_packet(data):
