@@ -551,6 +551,9 @@ LFUNC bft_finish
     movs r0, #1
     ldr r1, =bft_reset_due
     strb r0, [r1]
+    movs r0, #0                             @ the 500 ms are counted from now: the END answer goes out first (the
+    ldr r1, =bft_idle                       @ ticks of the install itself must not count, on a meter the restart
+    strb r0, [r1]                           @ came before the answer, 2026-11-04)
     b .Lfi_end
 21:
     @ 2. an application image: initial SP in the RAM (0x20000001 .. 0x20014000), reset vector Thumb and inside

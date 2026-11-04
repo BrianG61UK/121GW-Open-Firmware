@@ -270,3 +270,16 @@ by R90 (0 R); R89 from that node to VDD_P is marked "x", not fitted (circuit dia
   during a rollback, one at each kind of step (first, middle, last erase and half-page; first and last word of the
   mark and of the record), the cut operation ending not done, done or with random contents (S10, S11).  Result
   2026-11-04: all passed, the starter always ends in the expected bootloader, no bus error.
+
+## 8. On the owner's meter (2026-11-04)
+
+Verified working:
+- first install through the firmware (F-1.03, page Ld, install file 22784 bytes): starter and bootloader B-1.00
+  installed, the firmware starts through them, the meter reports "B-1.00" (key code 0x92);
+- the firmware's update-mode request (0x91): the meter restarts into the bootloader, which answers its status
+  request with version 1.0.0;
+- firmware over Bluetooth into the bootloader, two packets in flight: 157352 bytes in 108 s including the erase at
+  START (stop and wait on page Ld took 160 s for 157344 bytes); the meter restarted into the new firmware.
+Found and fixed: the first F-1.03 build restarted after the first install before its END answer had gone out (the
+500 ms quiet time counted the ticks of the install itself); the companion now also accepts a missing END answer of
+the first install when the meter reports the new bootloader after its restart.
