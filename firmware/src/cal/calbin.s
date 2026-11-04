@@ -30,7 +30,11 @@
 
     .equ CALBIN_BUF,        v_20001240      @ log / cal.bin buffer (v2.05 0x0801CD2C)
     .equ CALBIN_FS,         v_20006830      @ FatFs file system object (f_mount argument 0x0801CD50)
+    .if LOOP_V205 == 0
+    .equ CALBIN_FIL,        ff16_fil_a      @ FatFs file object production image: FatFs R0.16 objects (FIL 552 bytes, DIR 44: larger than the v2.05 areas) in .bss_port (ff16_api.s, IMP-29)
+    .else
     .equ CALBIN_FIL,        v_20006A60      @ FatFs file object (0x0801CD80)
+    .endif
     .equ CALBIN_RDBUF,      v_20006EA8      @ read-back buffer, 0x200 bytes (0x0801CDC6)
     .equ CALBIN_FIL_FSIZE,  0x0C            @ file size field of the file object (see header)
     .equ CALBIN_LEN_V205,   1200            @ v2.05 file length 0x4B0

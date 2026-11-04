@@ -14,6 +14,9 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
+    @ FatFs R0.08a of v2.05: strict image only; the production image uses FatFs R0.16 (src/ff16/, DESIGN.md 7A, IMP-29)
+    .if LOOP_V205 == 1
+
     .section .text.sd, "ax", %progbits
 
 @ names of the v2.05 variables used in this file (addresses unchanged, DESIGN.md 5.1)
@@ -1487,3 +1490,4 @@ FUNC fat_chk_mounted
 ENDFUNC fat_chk_mounted
     .ltorg
 
+    .endif

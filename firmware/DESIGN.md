@@ -1033,6 +1033,50 @@ retry counts, file time and display sequence are v2.05's (EMAP 8).
 
 ---
 
+## 7A. FatFs R0.16 in the production image (IMP-29, owner decision 2026-11-04)
+
+The strict image keeps the FatFs R0.08a port of v2.05 (`src/sd/fat.s`, `fat_dir.s`, `fat_file.s`, with the OF-64 error-path
+fixes).  The production image replaces it with ChaN's FatFs R0.16 with patch 1 and patch 2 (CVE-2026-6682 BPB FAT-size
+check, minimum volume and FAT12 cluster limits), translated by hand into Thumb-2 (`src/ff16/`, owner choice: hand
+translation, not compiler output).  Every routine names the R0.16 C function it translates and follows its statements in
+order; the source is `ff.c` "R0.16 w/patch 2" (ff16.zip sha256 99f7dc1f..., ff16p1.diff 7996ddc3..., ff16p2.diff
+5cd39f1f...), kept outside the repository with the configuration below.
+
+Configuration (ffconf.h): FF_FS_READONLY 0, FF_FS_MINIMIZE 0, FF_USE_CHMOD 1 (for f_utime; f_chmod is not translated),
+FF_USE_FIND/MKFS/FASTSEEK/EXPAND/LABEL/FORWARD/STRFUNC 0, FF_CODE_PAGE 932 (as the v2.05 port: DBCS lead bytes 0x81..0x9F,
+0xE0..0xFC), FF_USE_LFN 0 (8.3 names, as v2.05), FF_FS_RPATH 0, FF_VOLUMES 1, FF_MULTI_PARTITION 0, FF_MIN_SS = FF_MAX_SS
+512, FF_LBA64 0, FF_USE_TRIM 0, FF_FS_TINY 0, FF_FS_EXFAT 0, FF_FS_NORTC 0 (get_fattime of `sd/diskio.s`), FF_FS_CRTIME 0,
+FF_FS_NOFSINFO 0, FF_FS_LOCK 0, FF_FS_REENTRANT 0.
+
+Translated: the public f_mount, f_open, f_read, f_write, f_sync, f_close, f_lseek, f_opendir, f_readdir, f_stat, f_utime,
+f_unlink, f_rename, f_getfree and the 34 static routines they need (ld_16 .. mount_volume, validate).
+
+Structures (measured with the ARM compiler on the configuration above): FATFS 560 bytes (fits the v2.05 work area
+0x20006830, 0x230 bytes), FIL 552 bytes (the v2.05 areas hold 548: the two FIL objects of log, cal.bin and the Bluetooth
+transfer move to `.bss_port`), DIR 44 bytes (v2.05 area 28: moves to `.bss_port`), FILINFO 24 bytes with the v2.05 offsets
+(fsize 0, fdate 4, ftime 6, fattrib 8, fname 9: log_finfo stays).  Fields read by callers: the file size at FIL +12
+(obj.objsize, as R0.08a +12, cal.bin), the file pointer at FIL +20 (R0.08a +8: `fat_f_tell` returns it).
+
+Interface to the callers (unchanged symbols, so log, cal.bin and the Bluetooth transfer keep their calls): `fat_f_mount`
+(r0 = volume 0, r1 = FATFS, the R0.08a form) calls f_mount(fs, "", 0) (registration without access, as R0.08a); the other
+`fat_f_*` routines take the R0.08a arguments, which R0.16 keeps; FRESULT codes 0..15 and the FA_* open modes are the same in
+both versions.  New: `fat_f_unlink`, `fat_f_rename`, `fat_f_getfree`.  Disk interface: disk_read / disk_write receive the
+sector count as UINT (R0.16) instead of BYTE; `sd/diskio.s` takes the full count in the production image.
+
+Verification: a differential harness runs the same operation sequences on the same FAT images through ChaN's C (host build,
+RAM disk) and through the translation (Unicorn, RAM disk hooked to disk_read / disk_write) and compares every FRESULT,
+every returned value and the images byte for byte; then the emulator card tests and the meter.
+Results (2026-11-04): 8 images (FAT12 4 MiB and 300 KiB, FAT16 32 MiB, FAT16 98 MiB with 32 KiB clusters, FAT16 and FAT32
+behind an MBR, FAT32 68 MiB, the emulator's 64 MiB FAT32 format) x 55 scripts (8.3 and DBCS names, a 70 kB file, directories, a volume
+filled to the last cluster, 40 random operation sequences, 10 with an injected read or write error): every output line
+and every image identical; r4-r11 and sp preserved by every call; deepest stack use 228 bytes (f_open with the mount,
+without the SD driver).  Emulator: test_sd_errors, test_sd_large_card (8, 32, 128 GiB), test_log_trigger,
+test_log_minmax_time, test_bt_upload (with a card that is full for the copy) pass; the card scenarios of the differential
+comparison with v2.05 diverge only where the R0.08a image does, plus the clock-read timing of mem_logging_sd
+(deviations.txt, IMP-29).  Verified working on a meter (2026-11-04): a log of 76 rows with the closing MAX / MIN rows
+written and complete; the production image sent over Bluetooth (172 s, 3 failed card writes repeated), checked, written
+as EEVBlog.bin and BTLOAD.TMP deleted; that image flashed and started.
+
 ## 8. Conventions
 
 ### 8.1 File layout
@@ -1047,6 +1091,7 @@ firmware/
             macros.inc           FUNC/ENDFUNC/LFUNC, CRIT_ENTER/EXIT, GPIO_SET/CLR, DELAY, TABLE_V205
             ram_v205.inc         v2.05 RAM symbols (generated once by tools/gen_ram_symbols.py, then maintained by review)
             config.inc           build switches (LOOP_V205, AR profiles, calibration switches, NVM keys, DEBUG)
+            ff16.inc             FatFs R0.16 constants and structure offsets (7A)
   src/sys/  vectors.s reset.s clock.s isr_tim2.s main.s fault.s
   src/brd/  gpio.s board.s frontend.s adc.s delay.s exti.s stop.s
   src/pwr/  apo.s poweroff.s battery.s
@@ -1069,10 +1114,11 @@ firmware/
   src/cal/  calmode.s capture.s records.s cache.s calbin.s bootwin.s
   src/nvm/  nvm.s nvm_allow.s flash.s
   src/log/  log.s csv.s files.s
-  src/sd/   sdio.s sdcard.s fat.s fat_dir.s fat_file.s diskio.s
+  src/sd/   sdio.s sdcard.s fat.s fat_dir.s fat_file.s diskio.s tables_v205.s   (fat*.s: strict image only)
+  src/ff16/ ff16_low.s ff16_dir.s ff16_vol.s ff16_file.s ff16_file2.s ff16_api.s     (production image only, 7A)
   src/set/  setup.s settings.s rotmem.s statereset.s
   src/rtc/  nju6350.s datetime.s
-  src/ble/  usart.s packet.s commands.s
+  src/ble/  usart.s packet.s commands.s rate.s bft.s
   tools/    gen_ram_symbols.py extract_tables.py gen_nvm_allow.py check_image.py check_hy.py check_gpio.py
             fe_levels.txt
   build/    (generated: *.o, 121gw.elf, 121gw.map, EEVBlog.bin, check report; not tracked)
@@ -1352,7 +1398,8 @@ a build switch, default stated; required = forced by a non-negotiable requiremen
 | IMP-25 | platinum RTD temperature in OHM | OHM shows the resistance only | production only: SETUP page Pt (item 38, OHM only): off / Pt100 / Pt1000; the main display shows the IEC 60751 temperature with 0.1 degree and the degC / degF sign of TEMP, table of R / R0 every 5 degC with linear interpolation (`set/rtd.s`, `ui/rtd.s`, `mtmp/rtd_table.s` from `tools/gen_rtd_table.py`, mask shared with IMP-11); REL subtracts the lead resistance; EEPROM 0x029 | approved (owner, 2026-11-03: forum request) | SET, UI, MTMP |
 | IMP-26 | thermocouple types N, R, S | types K, J, T (IMP-10) | production only: the SETUP page tc also offers N, R and S (codes 3..5); NIST ITS-90 tables of the IMP-10 shape (`mtmp/tc_tables.s` from `tools/gen_tc_tables.py`; R and S start at -50 degC, entries 0..15 are search sentinels), windows N -200..1300, R and S -50..1760 degC (`mtmp/tctype.s`) | approved (owner, 2026-11-03: forum request) | MTMP, SET |
 | IMP-27 | battery voltage trim | battery value from the nominal divider (OF-52), not editable | production only: the battery page (item 1) edits a trim t = -50..+50 (0.2 % steps); `pwr_bat_trim` scales the filtered value by (1000 + 2 t) / 1000 before the low-battery limit and the page (`set/btrim.s`, `pwr/battery.s`); EEPROM 0x02A = t + 100 | approved (owner, 2026-11-03: GitHub issue 2) | SET, PWR |
-| IMP-28 | firmware file over Bluetooth to the SD card | an update needs the card in a computer | production only: SETUP page Ld (item 39, after bt) owns the Bluetooth link: packets with CRC-16, answered one by one, collected in log_buf (8 KiB) and appended to BTLOAD.TMP; at the end length, CRC-32 and image header are checked, then the file is copied to EEVBlog.bin and read back (`ble/bft.s`; hooks in `ble/usart.s`, `sys/main.s`, `set/setup.s`); sender `emulator/tools/bt_upload.py`; flash and EEPROM untouched | approved (owner, 2026-11-03) | BLE, SET |
+| IMP-28 | firmware file over Bluetooth to the SD card | an update needs the card in a computer | production only: SETUP page Ld (item 39, after bt) owns the Bluetooth link: packets with CRC-16, answered one by one, collected in log_buf (8 KiB) and appended to BTLOAD.TMP; at the end length, CRC-32 and image header are checked, then the file is copied to EEVBlog.bin and read back, BTLOAD.TMP is deleted, and an EEVBlog.bin whose copy failed in every attempt is deleted (`ble/bft.s`; hooks in `ble/usart.s`, `sys/main.s`, `set/setup.s`); sender `emulator/tools/bt_upload.py`; flash and EEPROM untouched | approved (owner, 2026-11-03) | BLE, SET |
+| IMP-29 | FatFs R0.16 with patches 1 and 2 | FatFs R0.08a (2010) with the error-path fixes of OF-64; no f_unlink, f_rename, f_getfree | production only: the R0.16 functions used by the firmware translated by hand (`src/ff16/`, section 7A); the R0.08a entry points `fat_f_*` keep their arguments (`ff16/ff16_api.s`); FIL and DIR objects in `.bss_port`, the FATFS work area stays at 0x20006830; checked against ChaN's C by the differential harness (same results and images) | approved (owner, 2026-11-04) | SD, LOG, CAL, BLE |
 
 Each deviation gets entries in `firmware/deviations.txt` and at least one scenario showing v2.05 and port behaviour.
 

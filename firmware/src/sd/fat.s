@@ -31,6 +31,9 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
+    @ FatFs R0.08a of v2.05: strict image only; the production image uses FatFs R0.16 (src/ff16/, DESIGN.md 7A, IMP-29)
+    .if LOOP_V205 == 1
+
     .section .text.sd, "ax", %progbits
 
 @ -----------------------------------------------------------------------------
@@ -864,3 +867,4 @@ FUNC fat_create_chain
 ENDFUNC fat_create_chain
     .ltorg
 
+    .endif

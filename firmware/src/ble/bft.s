@@ -6,7 +6,10 @@
 @ (FEATURES.md 2.10); the application never writes flash.  This module receives a file over the Bluetooth link and
 @ writes it to the card: first to a temporary file, then, only after its length and CRC-32 match what the sender
 @ announced and its first two words look like an application image, it is copied to EEVBlog.bin and that copy is read
-@ back and checked again.  A broken or refused transfer never touches EEVBlog.bin.
+@ back and checked again, and the temporary file is deleted.  A broken or refused transfer never touches EEVBlog.bin; a copy
+@ that fails in every attempt deletes the EEVBlog.bin it had begun, so that no part of an image is left to program.  (A
+@ rename of the temporary file is not used: R0.16 f_rename writes the new entry before it removes the old one, and a card
+@ error between the two writes leaves two entries on one cluster chain.)
 @
 @ Consent and state.  The transfer is possible only while the SETUP page Ld (setup item 39, after the page bt) is shown
 @ with Bluetooth on, logging off and outside calibration mode (bft_poll).  The sub display shows "Ld-bt" (waiting),
@@ -32,7 +35,8 @@
 @     4 START refused (size); 5 bytes beyond the announced size; 0x10 + n: END failed with error n (below)
 @ Errors (shown "LdE n"): 1 the card could not be written; 2 length or CRC-32 of the received file wrong; 3 not an
 @     application image (initial SP outside the RAM, reset vector outside 0x08006000..0x0805FFFF or not Thumb);
-@     4 the copy to EEVBlog.bin failed; 5 the copy read back differs; 6 the received file could not be read back.
+@     4 the copy to EEVBlog.bin failed; 5 the copy read back differs (after 4 or 5 no EEVBlog.bin is left once an
+@     open for writing was tried); 6 the received file could not be read back.
 @ Buffers: the received bytes are collected in log_buf (8 KiB of its 10000 bytes, 0x20001240..0x2000394F; 0x20003950 is
 @ the BLE value ring, written all the time) and written to the card
 @ when the next packet might not fit; the card work uses the FIL objects of the log (log_fil, log_fil_new) and the
@@ -74,8 +78,8 @@
 
     .equ bft_stage,         v_20001240      @ log_buf (log/files.s)
     .equ bft_fatfs,         v_20006830      @ fat_fs_obj
-    .equ bft_fil_a,         v_20006A60      @ log_fil
-    .equ bft_fil_b,         v_20006C84      @ log_fil_new
+    .equ bft_fil_a,         ff16_fil_a      @ log_fil (FatFs R0.16 FIL in .bss_port, ff16_api.s, IMP-29)
+    .equ bft_fil_b,         ff16_fil_b      @ log_fil_new
     .equ bft_vbuf,          v_20006EA8      @ log_verify_buf, 0x200 bytes
     .equ bft_set_item,      v_20008037      @ setup item
     .equ bft_ble_enable,    v_2000802B      @ Bluetooth on (long PEAK)
@@ -476,7 +480,7 @@ LFUNC bft_file_crc
 ENDFUNC bft_file_crc
 
 @ -----------------------------------------------------------------------------
-@ bft_finish - END: check the temporary file, copy it to EEVBlog.bin, check the copy
+@ bft_finish - END: check the temporary file, copy it to EEVBlog.bin, check the copy, delete the temporary file
 @ Out      : r0 = 0 done, else the error code 2..5
 @ Clobbers : r0-r3, r12, flags (r4-r7 saved)
 @ -----------------------------------------------------------------------------
@@ -539,6 +543,8 @@ LFUNC bft_finish
     @ 3. copy to EEVBlog.bin (create always: the old file is replaced only now), 4. read the copy back; a failed copy is
     @    repeated from the intact temporary file (BFT_COPY_TRIES attempts), so a card hiccup does not leave EEVBlog.bin short
     movs r4, #BFT_COPY_TRIES
+    movs r0, #0
+    str r0, [sp, #8]                        @ 1 once an open of EEVBlog.bin for writing was tried (its old content may be gone)
 .Lfi_try:
     movs r7, #4
     ldr r0, =bft_fil_a
@@ -547,6 +553,8 @@ LFUNC bft_finish
     bl fat_f_open
     cmp r0, #0
     bne .Lfi_retry
+    movs r0, #1                             @ set before the open: a CREATE_ALWAYS that fails while it truncates the old
+    str r0, [sp, #8]                        @ file may already have written its entry with size 0
     ldr r0, =bft_fil_b
     ldr r1, =bft_name_img
     movs r2, #(FA_WRITE | FA_CREATE_ALWAYS)
@@ -596,7 +604,11 @@ LFUNC bft_finish
     ldr r0, [r0]
     cmp r1, r0
     bne .Lfi_retry
+    @ 5. done: the temporary file is deleted (its result does not matter: EEVBlog.bin is complete and checked, a
+    @    remaining BTLOAD.TMP is replaced by the next transfer)
     movs r7, #0
+    ldr r0, =bft_name_tmp
+    bl fat_f_unlink
     b .Lfi_end
 .Lfi_close_b:
     ldr r0, =bft_fil_b
@@ -607,6 +619,12 @@ LFUNC bft_finish
 .Lfi_retry:
     subs r4, r4, #1
     bne .Lfi_try                            @ r7 keeps the error of the last attempt
+    @ every attempt failed: an EEVBlog.bin opened for writing is short or wrong and is deleted, so that the bootloader
+    @ finds no file to program instead of a part of an image
+    ldr r0, [sp, #8]
+    cbz r0, .Lfi_end
+    ldr r0, =bft_name_img
+    bl fat_f_unlink
 .Lfi_end:
     bl bft_card_end
     mov r0, r7

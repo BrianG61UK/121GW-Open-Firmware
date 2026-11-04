@@ -980,8 +980,9 @@ ff8a, ff10a, ff10b, ff10c from elm-chan.org):
 These paths are reached only on a disk error, which v2.05 never reports (OF-59); with OF-59 fixed they are reached.
 Execution check (`test_sd_errors.py` with the OF-59 fix but without these): a disturbed write left a directory entry with
 start cluster 0xFFFFFFFF and size 0, the retries could not reopen it and a second file was forced.
-Port (both builds, `src/sd/fat.s`, `src/sd/fat_file.s`): the four changes above as in R0.10a..R0.10c (window invalid =
-sector number 0xFFFFFFFF).  Kept as v2.05: the write results of the second FAT copy and of the FSInfo sector are not checked
+Port (strict build, `src/sd/fat.s`, `src/sd/fat_file.s`): the four changes above as in R0.10a..R0.10c (window invalid =
+sector number 0xFFFFFFFF).  The production build runs FatFs R0.16 with patches 1 and 2 instead (DESIGN.md 7A, IMP-29),
+which contains these fixes.  Kept as v2.05 in both builds (R0.16 does the same in sync_window and sync_fs): the write results of the second FAT copy and of the FSInfo sector are not checked
 (the first FAT is the one read back).
 
 ### OF-65 — the status frame's bar byte exceeds the display's 25 segments on an overload

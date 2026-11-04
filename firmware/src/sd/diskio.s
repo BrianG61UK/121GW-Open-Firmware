@@ -335,7 +335,8 @@ ENDFUNC disk_status
 @ -----------------------------------------------------------------------------
 @ disk_read - read r3 sectors from the SD card (FatFs disk_read)
 @ Replaces : 0x08023F7E FUN_08023F7E (v2.05)
-@ In       : r0 = drive (0), r1 = buffer, r2 = first sector number, r3 = sector count (u8)
+@ In       : r0 = drive (0), r1 = buffer, r2 = first sector number, r3 = sector count (strict image: u8, as the BYTE of
+@            FatFs R0.08a; production image: the UINT of FatFs R0.16, IMP-29)
 @ Out      : r0 = 0 ok, 2 the card did not return to the transfer state within 20000 status polls, 1 (RES_ERROR) the SDIO
 @            reported an error for the block or its data end / DMA end did not come within 20000 polls (OF-59)
 @ Clobbers : r1-r3, r12, flags (AAPCS)
@@ -436,7 +437,11 @@ FUNC disk_read
     movs    r4, r0                          @ r4 = drive (unused, v2.05 keeps it in r4)
     mov     r8, r1                          @ r8 = buffer
     movs    r5, r2                          @ r5 = first sector
+    .if LOOP_V205 == 0
+    mov     r6, r3                          @ r6 = sectors left (FatFs R0.16 passes the count as UINT, IMP-29)
+    .else
     uxtb    r6, r3                          @ r6 = sectors left (u8, as disk_write)
+    .endif
 .Ldr_next:
     .if LOOP_V205 == 0
     cmp     r6, #0
@@ -540,7 +545,8 @@ ENDFUNC disk_read
 @ -----------------------------------------------------------------------------
 @ disk_write - write r3 sectors to the SD card (FatFs disk_write)
 @ Replaces  : 0x08023FB8 FUN_08023FB8 (v2.05), called by fat_move_window, fat_f_read, fat_f_write, fat_f_sync, fat_f_lseek, fat_sync_fs
-@ In        : r0 = drive, r1 = buffer, r2 = first sector number, r3 = sector count (u8)
+@ In        : r0 = drive, r1 = buffer, r2 = first sector number, r3 = sector count (strict image: u8, as the BYTE of
+@             FatFs R0.08a; production image: the UINT of FatFs R0.16, IMP-29)
 @ Out       : r0 = 0 ok, 2 the card did not return to the transfer state within 20000 CMD13 polls, 1 (RES_ERROR) the block was
 @             rejected (OF-59)
 @ Clobbers  : r0-r3, flags (v2.05 regeffects.txt; r4-r11 preserved)
@@ -569,7 +575,9 @@ FUNC disk_write
     movs    r7, r0                          @ 08023FD0 r7 = r0
     @ loop over the sectors: buffer offset 512 * i, 64-bit byte address (first sector + i) * 512
 .Ldisk_write_3FD2:                      @ v2.05 0x08023FD2, reached from 0x08024026
+    .if LOOP_V205 == 1
     uxtb    r6, r6                          @ 08023FD2 r6 = u8(r6)
+    .endif                                  @ production: the full UINT count of FatFs R0.16 (IMP-29)
     cmp     r7, r6                          @ 08023FD4 compare r7 with r6
     bhs     .Ldisk_write_4028               @ 08023FD6 if (r7 >=u r6) goto 0x8024028
     mov.w   r0, #0x200                      @ 08023FD8 r0 = 0x200

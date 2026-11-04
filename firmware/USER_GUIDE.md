@@ -150,9 +150,11 @@ Tip: with `L4-20` a sensor's output reads directly in percent of its range, for 
 - **On the meter:** Bluetooth on (hold PEAK), then press SETUP until the page `Ld-bt` (right after `bt`).
 - **On the computer:** `python emulator/tools/bt_upload.py EEVBlog.bin` (Python 3 with the package `bleak`: `pip install
   bleak`). The meter shows the progress in percent (`Ld 45`), a full image takes a few minutes.
-- **Result:** `Ld oK` means the file is on the card as `EEVBlog.bin` and was read back correctly. `LdE n` means it was not
-  stored (1 card problem, 2 the file arrived damaged, 3 not a firmware file, 4 the copy failed, 5 the copy reads back
-  differently); start the transfer again or copy the file with a computer.
+- **Result:** `Ld oK` means the file is on the card as `EEVBlog.bin` and was read back correctly (the temporary file
+  `BTLOAD.TMP` is deleted). `LdE n` means it was not stored (1 card problem, 2 the file arrived damaged, 3 not a firmware
+  file, 4 the copy failed, 5 the copy reads back differently); start the transfer again or copy the file with a computer.
+  After `LdE 4` or `LdE 5` the card holds either the old `EEVBlog.bin` untouched or none at all (a partly written one is
+  deleted, so the update key sequence then leaves the installed firmware unchanged).
 - **Then update as usual:** switch off, hold HOLD and MEM while switching on, then press SETUP.
 - Logging must be off. The meter keeps measuring during the transfer. Leaving the page stops it; the old `EEVBlog.bin`
   stays until a new file has arrived complete and checked.

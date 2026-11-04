@@ -647,6 +647,10 @@ IMP-06  tolerance:rtc  *  0.18 and build == production
 # (mem_logging_no_card: no clock read from 3.65 to 4.91 s), production runs them as state machines and keeps its 100 ms reads.
 IMP-06  rtc  mem_logging_no_card        build == production and text ~ "read *"
 IMP-06  rtc  mem_hold_combo_logging     build == production and text ~ "read *"
+# mem_logging_sd: the date and time reads of the rows follow the SD sessions too; with FatFs R0.16 (IMP-29) the stop session
+# of line 10 ends at another time and the n-th read pairs with v2.05's 0.205 s apart (year 0x26 at 19.191 s against
+# 19.397 s), beyond the 0.18 s above; the values reach the card and are compared there (sd_block, sd_files).
+IMP-06+IMP-29  rtc  mem_logging_sd         build == production and text ~ "read *"
 IMP-02+IMP-06  rtc  poweron_mem_sdcal_timeout  build == production and text ~ "read *"
 # The logging start (long MEM) is served by the production loop without v2.05's blocking card access: the first records come
 # earlier and their time stamps differ (mem_logging_sd: record 2 at 12:00:05 against 12:00:06, block 2066 of the file;

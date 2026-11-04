@@ -30,10 +30,19 @@
 @ names of the v2.05 variables used in this file (addresses unchanged, DESIGN.md 5.1)
     .equ log_buf,                 v_20001240            @ 0x20001240 byte buffer in which one flush of rows is assembled before f_write (also the cal.bin buffer)
     .equ fat_fs_obj,              v_20006830            @ 0x20006830 FATFS work area of drive 0 (registered by f_mount)
+    .if LOOP_V205 == 0
+    .equ log_fil,                 ff16_fil_a            @ production image: FatFs R0.16 objects (FIL 552 bytes, DIR 44: larger than the v2.05 areas) in .bss_port (ff16_api.s, IMP-29)
+    .equ log_fil_new,             ff16_fil_b
+    .else
     .equ log_fil,                 v_20006A60            @ 0x20006A60 FIL object of the log file (also used by calbin_save/calbin_load)
     .equ log_fil_new,             v_20006C84            @ 0x20006C84 FIL object used by log_create_file when it creates a file from a previous one (dead branch in v2.05)
+    .endif
     .equ log_verify_buf,          v_20006EA8            @ 0x20006EA8 0x200-byte read-back buffer of log_verify_file (also cal.bin read-back)
+    .if LOOP_V205 == 0
+    .equ log_dir,                 ff16_dir_a            @ DIR object of the root scan (production: R0.16 DIR, 44 bytes, in .bss_port, IMP-29)
+    .else
     .equ log_dir,                 v_20007B1C            @ 0x20007B1C DIR object used to scan the root directory for existing log files
+    .endif
     .equ log_finfo,               v_20007B38            @ 0x20007B38 FILINFO (fsize u32, fdate u16, ftime u16, fattrib u8, fname[13]) of the scan and of f_utime/f_stat
     .equ log_name_buf,            v_20007BD0            @ 0x20007BD0 file name buffer "YYMMDDnn.csv" (12 characters + NUL)
     .equ sd_csd,                  v_20007BF0            @ 0x20007BF0 CSD register of the card (4 words, word 0 = bits 127..96)

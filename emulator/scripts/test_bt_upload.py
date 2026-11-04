@@ -14,9 +14,12 @@ collection buffer; --full sends the whole image).
      one packet skipped (status 2 with the packet expected), one packet cut short (dropped after 200 ms without a byte,
      the full packet after it is accepted), 3 card write faults injected before packet 30 (the write is repeated),
      2 card read faults injected during the check (repeated in new sessions), END: status 0 and "Ld oK"; the card then holds EEVBlog.bin
-     equal to the file sent, and BTLOAD.TMP.
+     equal to the file sent and no BTLOAD.TMP (deleted after the checked copy).
   T4 a file that is not an application image (initial SP 0): END status 0x13 ("LdE 3") and EEVBlog.bin unchanged.
   T5 leaving the page: status frames again.
+  T6 (new card) a copy that fails in every attempt: the card has free space for BTLOAD.TMP but not for the copy as
+     well, so each of the 3 attempts ends with a short write; END status 0x14 ("LdE 4"), the EEVBlog.bin that was begun
+     is deleted (the bootloader finds no file and erases nothing, FEATURES.md 2.10) and BTLOAD.TMP holds the file.
 The helpers are those of test_backlight_timer.py.
 """
 import os
@@ -75,15 +78,20 @@ def card_files(path):
     return out
 
 
-def run_tests(image, full):
-    payload = open(image, 'rb').read()
-    if not full:
-        payload = payload[:20000]
-    tmp = tempfile.mkdtemp(prefix='bft_')
-    card = os.path.join(tmp, 'card.img')
+def new_card(free_clusters=None):
+    """A 64 MiB FAT32 card image with the old EEVBlog.bin; with `free_clusters`, a filler file leaves only that many free."""
+    card = os.path.join(tempfile.mkdtemp(prefix='bft_'), 'card.img')
     format_fat32(card, 64 * 1024 * 1024)
     with Volume(card, writable=True) as v:
         v.add_file('EEVBLOG.BIN', OLD, fat_date(2026, 11, 1), fat_time(12, 0, 0))
+        if free_clusters is not None:
+            free = sum(1 for n in range(2, v.clusters + 2) if v.fat(n) == 0)
+            v.add_file('FILLER.BIN', bytes((free - free_clusters) * v.csize), fat_date(2026, 11, 1), fat_time(12, 0, 0))
+    return card
+
+
+def open_page(image, card):
+    """Emulator with `card`, Bluetooth on, SETUP page Ld shown."""
     T.Emulator.sdcard_path, T.Emulator.sdcard_mb = card, 64
     e = T.make(image)
     e.command({'dial': 2})
@@ -92,14 +100,29 @@ def run_tests(image, full):
     e.advance(1.0)
     T.check('Bluetooth on', T.rd(e, ADDR_BLE_ENABLE) == 1)
     T.check('status frames sent before the page', status_frames(e, 1.0) > 0)
-
-    print('T1 page and link')
     e.m.uc.mem_write(ADDR_ITEM, bytes([21]))
     T.press(e, 'SETUP', gap=0.6)
     T.check('bt -> Ld (item 39), "Ld-bt"', T.rd(e, ADDR_ITEM) == 39 and T.sub_text(e) == 'LD-BT',
             'item %d sub %r' % (T.rd(e, ADDR_ITEM), T.sub_text(e)))
     T.check('no status frames while the page is shown', status_frames(e, 1.5) == 0)
-    link = Link(e)
+    return e, Link(e)
+
+
+def send_file(link, data):
+    """START, every DATA packet, END; the answer to END (or None)."""
+    link.send(btft.start_packet(data))
+    for p in btft.data_packets(data):
+        link.send(p, timeout=20.0)
+    return link.send(btft.packet(btft.T_END, len(btft.data_packets(data))), timeout=120.0)
+
+
+def run_tests(image, full):
+    payload = open(image, 'rb').read()
+    if not full:
+        payload = payload[:20000]
+    card = new_card()
+    print('T1 page and link')
+    e, link = open_page(image, card)
 
     print('T2 refusals')
     a = link.send(btft.packet(btft.T_START, 0, struct.pack('<II', 16, 0)))
@@ -157,13 +180,12 @@ def run_tests(image, full):
     print('    %.1f s emulated for %d bytes (%.0f B/s)' % (T.now(e) - t0, len(payload), len(payload) / (T.now(e) - t0)))
     s = e.snapshot()
     T.check('no unmodelled access, no safety violation', s['unmodelled'] == 0 and not s['safety'])
+    files = card_files(card)                         # the card model writes every block through to the image file
+    T.check('BTLOAD.TMP deleted after the checked copy', '/BTLOAD.TMP' not in files, 'files %r' % sorted(files))
 
     print('T4 a file that is not an application image')
     junk = bytes(0x200)
-    a = link.send(btft.start_packet(junk))
-    for p in btft.data_packets(junk):
-        a = link.send(p, timeout=20.0)
-    a = link.send(btft.packet(btft.T_END, len(btft.data_packets(junk))), timeout=120.0)
+    a = send_file(link, junk)
     e.advance(0.3)
     T.check('END: status 0x13, "LdE 3"', a is not None and a[1] == 0x13 and T.sub_text(e) == 'LDE 3',
             '%r sub %r' % (a, T.sub_text(e)))
@@ -179,6 +201,21 @@ def run_tests(image, full):
             'size %s' % (None if img is None else len(img)))
     T.check('BTLOAD.TMP holds the last transfer (the refused file)', files.get('/BTLOAD.TMP') == junk,
             'files %r' % sorted(files))
+
+    print('T6 a copy that fails in every attempt (card full)')
+    need = -(-len(payload) // 512)                   # clusters of BTLOAD.TMP (512-byte clusters on 64 MiB)
+    card = new_card(free_clusters=need + 10)         # the copy finds 10 + the 4 of the old EEVBlog.bin: too few
+    e, link = open_page(image, card)
+    a = send_file(link, payload)
+    e.advance(0.3)
+    T.check('END: status 0x14, "LdE 4"', a is not None and a[1] == 0x14 and T.sub_text(e) == 'LDE 4',
+            '%r sub %r' % (a, T.sub_text(e)))
+    files = card_files(card)
+    T.check('the EEVBlog.bin that was begun is deleted', '/EEVBLOG.BIN' not in files, 'files %r' % sorted(files))
+    T.check('BTLOAD.TMP holds the file sent', files.get('/BTLOAD.TMP') == payload, 'files %r' % sorted(files))
+    s = e.snapshot()
+    T.check('no unmodelled access, no safety violation', s['unmodelled'] == 0 and not s['safety'])
+    del e
 
 
 def main(argv):

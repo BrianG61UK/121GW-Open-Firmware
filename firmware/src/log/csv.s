@@ -35,7 +35,11 @@
 
 @ names of the v2.05 variables used in this file (addresses unchanged, DESIGN.md 5.1)
     .equ log_interval,            v_2000022C            @ 0x2000022C logging interval in seconds (u16; setup item 9, EEPROM 0x18); 0 = no timed records
+    .if LOOP_V205 == 0
+    .equ log_fil,                 ff16_fil_a            @ production image: FatFs R0.16 objects (FIL 552 bytes, DIR 44: larger than the v2.05 areas) in .bss_port (ff16_api.s, IMP-29)
+    .else
     .equ log_fil,                 v_20006A60            @ 0x20006A60 FIL object of the log file (also used by calbin_save/calbin_load)
+    .endif
     .equ sys_id_number,           v_20007D14            @ 0x20007D14 setup ID number (u32) printed by the ID line of the CSV header
     .equ log_view_value1,         v_20007D1C            @ 0x20007D1C main value of the record loaded by log_slot_load (i32)
     .equ log_view_value2,         v_20007D20            @ 0x20007D20 second value of the loaded record

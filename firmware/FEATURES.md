@@ -283,15 +283,17 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   (stop and wait, so nothing is in flight while the card is written and the link is deaf, NF-04). The bytes are collected
   in 8 KiB of log_buf and appended to `BTLOAD.TMP`; at the end the meter checks length and CRC-32 against the announced
   values and the first two words (initial SP in the RAM, reset vector Thumb inside 0x08006000..0x0805FFFF), only then
-  copies the file to `EEVBlog.bin` and reads the copy back. The page shows `Ld nn` (percent), `Ld oK` or `LdE n` (1 card,
+  copies the file to `EEVBlog.bin`, reads the copy back and deletes `BTLOAD.TMP`. The page shows `Ld nn` (percent), `Ld oK` or `LdE n` (1 card,
   2 length/CRC, 3 not an image, 4 copy failed, 5 copy differs). The application never writes flash; the update itself is
   the usual key sequence afterwards.
-- Residual risk: a failed copy is repeated from the intact temporary file (3 attempts in all). If the card keeps failing,
-  or the meter loses power while the copy is written, `EEVBlog.bin` is incomplete; the page then shows `LdE 4` / `LdE 5`
-  (or nothing, after a power loss), the sender says not to start the update, and the bootloader would program such a
-  file only if the key sequence is used.  The card needs free space for the file twice (`BTLOAD.TMP` stays: the FatFs
-  port has no unlink). Recovery as for any bad file: a good `EEVBlog.bin` and the key sequence (the
-  bootloader is never written).
+- Residual risk: a failed copy is repeated from the intact temporary file (3 attempts in all). If every attempt fails,
+  an `EEVBlog.bin` that an attempt had opened for writing is deleted (FatFs R0.16, IMP-29) and the page shows `LdE 4` / `LdE 5`: the bootloader
+  opens `EEVBlog.bin` before it erases anything (0x08004A8A: f_mount, f_open of the name at 0x08004EF4 with FA_READ;
+  a failed open branches to 0x08004982 past the erase and program step 0x080049C2), so with no file the key sequence
+  leaves the installed firmware as it is.  Only a power loss while the copy is written leaves an incomplete
+  `EEVBlog.bin`, which the bootloader would program if the key sequence is used.  After a checked copy `BTLOAD.TMP` is
+  deleted; the card needs free space for the file twice during the transfer.  Recovery as for any bad file: a good
+  `EEVBlog.bin` and the key sequence (the bootloader is never written).
 - How: `ble/bft.s` (protocol in its header), hooks in `ble/usart.s` (the USART2 handler gives every byte to the ring of
   bft.s while the page owns the link; no status frames then), `sys/main.s` (bft_poll every pass) and `set/setup.s`.
 - Host side: `emulator/tools/bt_upload.py` (Python, needs the package bleak) with the packet code in
