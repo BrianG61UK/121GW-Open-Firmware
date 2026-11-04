@@ -574,6 +574,12 @@ IMP-06  lcd  mem_logging_sd  build == production and step == 10 and since in 0.6
 # Leaving the MEM view (mem_logging_sd line 18) v2.05 draws the live display in two LCD passes (bargraph segments in the
 # second, 26.702 / 26.716 s), production in one pass (26.702 s).
 IMP-06  lcd  mem_logging_sd  build == production and step == 18 and since in 0.19..0.2
+# Entering the MEM view (mem_logging_sd line 12, key at 22.000 s): v2.05 draws it in two LCD passes 13.84 ms apart (22.2184 s:
+# MEM lit, the secondary digits still those of the live display without their decimal point, " 270c"; 22.2323 s: the record
+# number), production in one (22.1916 s, equal to v2.05's second pass).  The commit of the production image never waits for
+# UDR and writes the eight words when they differ from the last committed copy (src/lcd/lcd.s, IMP-06); that this is what merges
+# the two passes is not shown at instruction level.
+IMP-06  lcd  mem_logging_sd  build == production and step == 12 and sub == " 270c"
 IMP-06  mask:lcd:sub  sd_insert_remove  build == production and step in 10..12
 # range_cycle_all_modes: the long RANGE of line 273 (leaving the DIODE 15 V source) acts 0.344 s earlier in production
 # (PE15 / PF6 at 0.407 s against 0.751 s after the key goes down; IMP-06), beyond the general 0.2 s (power) / 0.283 s (gpio).
@@ -622,6 +628,15 @@ IMP-02  lcd  mem_*    build == production and boot in 2.70..3.05
 IMP-15  mask:lcd:bar  setup_date  build == production
 IMP-15  mask:lcd:bar  setup_id    build == production
 IMP-15  mask:lcd:bar  mem_hold_combo_logging  build == production
+# The same single frame in battery_low (14.6906 s, 3.69 s after the PA5 restore of line 10) and sd_insert_remove (14.6905 s,
+# 0.69 s after line 14): v2.05 shows 0.0000 with word 2 bit 0 (Bar+) clear and word 4 bit 0 (BarTick-) set for one LCD frame
+# (13.8 ms; the frames before and after, 14.4831 / 14.7045 s, show Bar+).  v2.05 sets that polarity from the sign of the
+# per-sample value 0x20007D68 (src/lcd/bargraph.s 0x08018FD6..0x08019020); the production image takes the sign of the
+# displayed value when no bar is lit (lcd_bar_negative), so its frames stay "+" (battery_low: one frame at 14.3732 s and none
+# after it).  The per-sample value itself is not in the trace.  The windows include the frames before the flicker, because
+# a masked frame is dropped only when it equals the masked frame before it.
+IMP-15  mask:lcd:bar  battery_low  build == production and step == 10 and since in 3.3..3.8
+IMP-15  mask:lcd:bar  sd_insert_remove  build == production and step in 12..14
 # IMP-01 (DESIGN 10; ARS 5): acmv_values ends at 400.00 mV with the bar count taken from the last per-sample value,
 # which sits at a segment boundary: the final frames differ in one bargraph segment (w6 bit 6, 16.490 s) and are equal
 # otherwise.
@@ -629,7 +644,24 @@ IMP-01  lcd_final  acmv_values  build == production and main == "400.00"
 # The same in peak_acv: the final frames (1.0000 V, 50.00 Hz) differ in one bargraph segment (w4 bit 2), the count of the
 # last per-sample value; equal otherwise (present before IMP-17 / IMP-18, checked with the image of a66d119).
 IMP-01  lcd_final  peak_acv  build == production and main == "1.0000"
+# mem_logging_sd (1.000 V DC from line 6): the frames of the live display differ only in the bargraph segment bar06 (word 4
+# bit 2; digits, annunciators and the other segments are equal).  With the tick group A (word 0 bit 12) the bar count is
+# |0x20007D68| / 2000 (src/lcd/bargraph.s 0x08019092..0x080190B6), and 1.0000 V is 10000 counts, so bar06 (count 5) is on or
+# off with the per-sample noise at the boundary; the two images change it at other instants (3.5..4.5 s: 31 lcd events against
+# 24 in v2.05; 5..17 s: 291 against 272), the candidate reading and servicing every conversion (80 AD1 reads in 3.5..4.5 s
+# against 72; IMP-01, IMP-06).  The per-sample values themselves are not in the trace.  Steps 6..12 are the live display before the MEM view, step 18 the one after
+# it.
+IMP-01+IMP-06  mask:lcd:bar  mem_logging_sd  build == production and step in 6..12
+IMP-01+IMP-06  mask:lcd:bar  mem_logging_sd  build == production and step == 18
 # Defects found from the forum report of 2026-11-03 (ORIGINAL_FIRMWARE_ISSUES.md OF-57..OF-64), both builds:
+# OF-35 (src/log/log.s log_store_value): v2.05 stores the single per-sample value 0x20007D68 in a log record, the port the
+# displayed mean.  mem_logging_sd (1.000 V, noise on): the display shows 1.0000 in all 272 lcd events of 5..17 s, and the
+# record 8 recalled by the REL press of line 14 shows 1.0001 in v2.05 (23.5745 s) and 1.0000 in the port (23.5753 s).  The
+# data blocks 2067..2071 written at the stop of line 10 (2066 is covered by the IMP-06 entry above) and block 2071 of the
+# second flush (19.2 s) have other hashes in the two runs.  The file contents are not in the trace (hashes only), so that
+# the rows carry the recalled record's value is not shown.
+OF-35  mask:lcd:main  mem_logging_sd  step == 14 and since in 0..0.3
+OF-35  sd_block       mem_logging_sd  lba in 2067..2071
 # OF-58: files are created with the clock chip's date instead of 2006-02-09 22:30, so the root directory sector (block 2064 of
 # the scenario card) differs from its creation on (mem_logging_sd line 8, mem_hold_combo_logging line 6, sd_insert_remove
 # line 10).

@@ -303,15 +303,64 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   problem (ORIGINAL_FIRMWARE_ISSUES.md OF-59, port correction): reads whose "data end" notification was missed.
 - Storage: none (EEPROM untouched).
 
-### 2.11 Bluetooth viewer for computers
-- Request (owner, 2026-11-02): the official phone application connects but draws badly (glitches, colours, unreadable
-  text); a viewer of our own.
-- Design: a desktop program (macOS, Windows, Linux) that connects to the meter over the computer's Bluetooth LE, decodes
-  the status frame (`analysis/ble_packet.md` 3) and draws the display with the emulator's LCD renderer
-  (`emulator/ui/assets/lcd`), so the picture is the meter's own segments. Additions: CSV logging, a trend graph,
-  statistics. It is the host side of 2.10 as well (sender of a firmware image).
-- Open: the BLE112's GATT service and characteristic that carry the frames (to be read from a meter with a BLE scanner);
-  no firmware change is needed for viewing.
+### 2.11 Meter companion program (planned, owner go 2026-11-04)
+- Request (owner, 2026-11-02 and 2026-11-04): the official phone application connects but draws badly; a program of our
+  own for Windows, macOS and Linux that shows the meter live, records, and updates the firmware, with a design of its
+  own ("sleek, functional, not the run-of-the-mill look").
+- Where (owner decision 2026-11-04): a separate program on its own branch `companion` (orphan branch: only the
+  companion's code, its own CI, installers and releases tagged `companion-vA.B.C`); the emulator stays on `main`.
+  Every package bundles everything it needs (Python, the Bluetooth library, the UI): nothing to install.  What the
+  operating system provides is used as it is: the macOS Bluetooth permission prompt, BlueZ on Linux.
+- Link (facts, `emulator/tools/bt_upload.py`, working on a meter 2026-11-04): Bluetooth LE service
+  0bd51666-e7cb-469b-8e4d-2742f1ba77cc, characteristic e7add780-b042-4876-aae1-112855353cc1 (notify: the meter's
+  USART2 bytes; write: bytes to the meter).  The status frame is the 19-byte frame of `analysis/ble_packet.md` 3
+  (start 0xF2, XOR checksum); it carries mode, range, value, sub display, bargraph and symbols, no firmware version.
+- Stages:
+  1. Live view: scan, connect, decode the status frame into the reading as the meter shows it (decimal point and unit
+     from the mode and range, the sub display, bargraph, symbols), connection state.  No firmware change.
+  2. Recording: CSV file of the decoded readings with time stamps while connected; trend graph; min / max / mean /
+     count.  No firmware change.
+  3. Firmware version (firmware change, fast build): a key frame with the unused code 0x90 (`F4 39 30 39 30`; fn_0800C470
+     decodes '9','0' to 0x90, the pairs are equal) is echoed as every key frame and then answered with a version frame
+     `F6 c0 c1 c2 c3 c4 x` (FW_VER_C0..C4 of config.inc, x = XOR of the six bytes before it), queued with
+     ble_tx_queue_put after the echo.  The answer is made in fn_0800C332 and 0x90 is not handed to the key routine: a
+     remote key would restart the backlight countdown and clear a pending SdExx / setup message (keys.s:831-839).
+     Host rule: echo and F6 = fast build with that version; echo without F6 within the timeout = v2.05 or the like-v2.05
+     build (both echo 0x90, analysis/ble_packet.md 6); neither = the link is not ready (page Ld owns it, the system clock
+     is HSE during an SD access, the queue was full) and the host asks again later.  Version characters: one digit each
+     (tag vA.B.C = "F-A.BC", checked by check_fw_version.py), so A, B, C stay 0..9.
+  4. Update: when a newer fast release exists than the version the meter reports (emu/fetch.py looks it up), the program
+     shows it and offers "Update now" or "Later".  Update now = the transfer of 2.10; the user brings the meter to the
+     SETUP page Ld and afterwards does the bootloader key sequence: the program never sends key frames for it (a remote
+     SETUP is refused while logging, starts an offset calibration in calibration mode, and the page shown cannot be told
+     from the status frame for every item; on Ld remote keys no longer arrive).  Later = remind at the next connection.
+  5. Time sync (owner request 2026-11-04): a button that takes the time from an NTP server (default pool.ntp.org,
+     configurable, e.g. the owner's 10.0.10.123) and sends the set-clock frame `F8` (analysis/ble_packet.md 6).  To be
+     established on a meter first: the meaning of the six values (UNPROVEN in ble_packet.md 6).  v2.05 applies the
+     clock only once per Bluetooth session (0x20008033, cleared only by the Bluetooth toggle); the fast build may lift
+     that (firmware change, owner decision when it comes up).
+  6. SD card file manager and synced folder (owner request 2026-11-04; owner chose the synced folder over a drive mount,
+     which would need macFUSE / WinFsp / FUSE and is slow for file browsers at about 1 KB/s): list, download, delete and
+     rename files, and a "sync" that copies new or changed files of the card into a normal folder on the computer.
+     Firmware change (fast build): the transfer protocol of 2.10 gains list / read / delete / rename requests, using
+     FatFs R0.16 (f_opendir / f_readdir / f_read / f_unlink / f_rename); only while logging is off and outside
+     calibration mode, as 2.10.  Speed about 1 KB/s (measured for 2.10: 155 kB in 159 to 172 s).
+- Decoding rules (plan review 2026-11-04): the decimal point and unit prefix per mode and range are not in the frame
+  (only the range index): taken from the firmware's range tables, not from the official app (they differ for modes 12,
+  13, 14, 18, 23, ble_packet.md 8); the magnitude has 18 bits (bytes [5] bits 7..6, [7], [8]); the bar count [14] is
+  clamped to 25 (OF-65: 45..55 on an overload); frames arrive split over several notifications and are reassembled by
+  start byte, length (F2 19, F4 5, F8 15, F6 7, bft B5 5B) and checksum, with a resync after a frame abandoned under NF-04;
+  no frames come while the main digits are blank and while page Ld is shown.
+- Safety of the local program: every request that sends anything to the meter (version request, clock, file operations,
+  firmware transfer) needs a custom request header, so no web page can trigger it; one Bluetooth central at a time (not
+  together with the phone application or another bridge); reconnect after the meter's auto power-off.
+- Packaging: bleak and its platform backends bundled (hidden imports), the macOS Bluetooth usage text in Info.plist.
+- Design (owner choice "bench instrument"): matte black, the 121GW yellow as the only accent, hairlines instead of
+  boxes, large tabular digits for the reading, oscilloscope-style grid for the trend graph; dense, no rounded cards, no
+  shadows, no decorative gradients; system fonts only (works offline).
+- Platform notes: the Bluetooth library is bleak (CoreBluetooth on macOS, WinRT on Windows, BlueZ on Linux); the macOS
+  application needs the Bluetooth usage text in its Info.plist; only macOS can be tested against a meter here, Windows and
+  Linux connections need a tester with Bluetooth there.
 
 ### 2.12 12-hour clock (implemented, IMP-13; verified working on a meter)
 - Where: SETUP page `CL`, item 25, the last port page (after `dSP`): `CL 24` (v2.05, default) or `CL 12`.
