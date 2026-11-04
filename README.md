@@ -1,0 +1,64 @@
+# 121GW Companion
+
+A program for Windows, macOS and Linux that connects to an EEVblog 121GW multimeter over Bluetooth LE.
+
+This is the branch `companion` of [121GW-Open-Firmware](https://github.com/zombu4/121GW-Open-Firmware): only the companion
+program lives here.  The firmware and the emulator are on `main`, the build that behaves like v2.05 on `like-v2.05`.
+
+## What it does
+
+| | |
+|---|---|
+| Live view | the reading as the meter shows it: value with the meter's decimal point and unit for every mode and range, the small display (board temperature, frequency, dB, VA pages, setup values), the bargraph and the symbols (AC, DC, AUTO, HOLD, REL, MIN/MAX/AVG, PEAK, MEM, 1 kHz, high voltage, APO, battery) |
+| Statistics | minimum, maximum, mean, standard deviation and count of the readings; they restart when the mode, unit or range changes |
+| Trend | the last 10 minutes on a scope-style grid; the trace breaks where the meter had no value (overload, range change) |
+| Recording | every reading with its time to a CSV file (`Documents/121GW` by default) |
+| Firmware version | the fast firmware from F-1.01 on reports its version; the header shows it |
+
+The meter accepts one Bluetooth connection at a time: close the phone application before connecting.  Turn Bluetooth
+on at the meter with a long press of PEAK.  While the SETUP page `Ld` (firmware transfer) is shown the meter sends no
+readings.
+
+## Everything included
+
+The installers carry everything the program needs (Python, the Bluetooth library bleak, the window toolkit); nothing
+else has to be installed.  The system provides only what every desktop has: macOS asks once for Bluetooth access,
+Windows shows the window with its built-in WebView2 (otherwise the default browser opens), Linux uses its Bluetooth
+service BlueZ and opens the program in the browser.
+
+## Run from the source
+
+    python -m pip install bleak pywebview
+    python -m meter121            # from this folder; --browser, --no-open, --port N, --folder DIR
+
+## Build
+
+    python -m pip install bleak pywebview pyinstaller pillow
+    python packaging/make_icons.py build/icons
+    python packaging/third_party.py build/THIRD_PARTY_LICENSES.txt
+    APP_VERSION=1.0.0 APP_ICON=build/icons/121gw-companion.icns pyinstaller --noconfirm packaging/companion.spec
+
+then `packaging/make_dmg.sh` (macOS), `packaging/windows/121gw_companion.iss` (Inno Setup) or
+`packaging/linux/build_appimage.sh` / `build_deb.sh`.
+
+## How it works
+
+| File | |
+|---|---|
+| `meter121/link.py` | Bluetooth LE: scan, connect, notifications, writes, reconnect after the meter's auto power-off |
+| `meter121/frames.py` | frames on the meter's byte stream (status, echoes, version answer, transfer answers), reassembled and checked |
+| `meter121/display.py` | the status frame decoded as the meter's display shows it; the decimal point and unit tables come from the firmware |
+| `meter121/record.py` | statistics, trend history, CSV recording |
+| `meter121/server.py` | local server between the window and the program (127.0.0.1 only; commands need a custom header) |
+| `meter121/app.py` | the program: link, version request, window |
+| `ui/index.html` | the window |
+
+The status frame does not carry the main decimal point or the unit prefix; both come from the firmware's tables
+(`dec_table` in `firmware/src/mode/mode.s`, annunciators in `firmware/src/lcd/annun.s` on `main`).  What the frame cannot
+tell is not shown rather than guessed: texts such as " LEAD", the port-only views (REL percent, loop percent, Pt100,
+statistics pages), the dB reference, the 12-hour clock setting and the sign of an overload.
+
+## Licence
+
+Free for individuals, schools and non-profits to use, modify and share; companies need written permission from zombu4; selling or bundling only by zombu4 and EEVblog (David L. Jones), who both keep full rights. See `LICENSE`.
+The installers also contain third-party software under its own licences (THIRD_PARTY_LICENSES.txt).

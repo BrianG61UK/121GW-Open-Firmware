@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>121GW Companion</title>
+<style>
+/* Bench instrument: matte black panel, one accent (the 121GW's yellow), hairlines instead of boxes, tabular figures.
+   System fonts only, so the program works offline and looks native on each system. */
+:root {
+  --bg: #0c0c0b; --panel: #121211; --rule: #262622; --rule-hi: #3a3a34;
+  --ink: #e9e7df; --dim: #8b887e; --faint: #55534c;
+  --acc: #f2c200; --acc-dim: #7a6200; --warn: #ff5a36;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  --sans: -apple-system, "Segoe UI", "Helvetica Neue", Cantarell, "DejaVu Sans", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.35 var(--sans); }
+body { display: grid; grid-template-rows: auto 1fr auto; -webkit-font-smoothing: antialiased; user-select: none; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.cap { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+button {
+  font: 600 11px/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink);
+  background: transparent; border: 1px solid var(--rule-hi); padding: 8px 12px; border-radius: 0; cursor: pointer;
+}
+button:hover { border-color: var(--acc); color: var(--acc); }
+button:focus-visible { outline: 1px solid var(--acc); outline-offset: 2px; }
+button.primary { background: var(--acc); color: #111; border-color: var(--acc); }
+button.primary:hover { background: #ffd51f; color: #111; }
+button:disabled { opacity: .35; cursor: default; border-color: var(--rule-hi); color: var(--ink); }
+
+/* top bar */
+header { display: flex; align-items: center; gap: 22px; padding: 12px 22px; border-bottom: 1px solid var(--rule); }
+.mark { font: 700 15px/1 var(--mono); letter-spacing: .32em; }
+.mark b { color: var(--acc); font-weight: 700; }
+.link { display: flex; align-items: center; gap: 9px; }
+.dot { width: 7px; height: 7px; background: var(--faint); }
+.dot.on { background: var(--acc); }
+.dot.busy { background: var(--acc-dim); animation: blink 1s steps(2) infinite; }
+.dot.off { background: var(--warn); }
+@keyframes blink { 50% { opacity: .25; } }
+.spacer { flex: 1; }
+.fwv { color: var(--ink); letter-spacing: .04em; margin-left: 6px; }
+
+/* main area */
+main { display: grid; grid-template-columns: minmax(0, 1fr) 260px; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+.readout { padding: 26px 28px 18px; border-bottom: 1px solid var(--rule); }
+.flags { display: flex; gap: 16px; min-height: 16px; }
+.flags span { font: 600 11px/1 var(--mono); letter-spacing: .1em; color: var(--faint); }
+.flags span.on { color: var(--acc); }
+.value { display: flex; align-items: baseline; gap: 14px; margin: 10px 0 4px; }
+.digits { font: 300 clamp(64px, 11vw, 132px)/1 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.digits.ol { color: var(--warn); }
+.digits.blank { color: var(--faint); }
+.unit { font: 400 clamp(22px, 3vw, 34px)/1 var(--mono); color: var(--dim); }
+.sub { display: flex; gap: 12px; align-items: baseline; color: var(--dim); min-height: 22px; }
+.sub .num { font-size: 18px; color: var(--ink); }
+.bar { display: grid; grid-template-columns: 14px repeat(26, 1fr); gap: 3px; height: 14px; margin-top: 18px; max-width: 760px; }
+.bar i { background: var(--rule); }
+.bar i.on { background: var(--acc); }
+.bar .sign { font: 600 13px/14px var(--mono); color: var(--dim); background: none; text-align: center; }
+.scale { max-width: 760px; margin-top: 5px; text-align: right; font: 10px/1 var(--mono); color: var(--faint); }
+.stale .digits, .stale .unit, .stale .sub { opacity: .35; }
+.age { color: var(--warn); font: 600 10.5px/1 var(--mono); letter-spacing: .1em; margin-left: auto; }
+
+aside { grid-row: 1 / span 2; grid-column: 2; border-left: 1px solid var(--rule); display: flex; flex-direction: column; }
+.section { padding: 18px 20px; border-bottom: 1px solid var(--rule); }
+.stats { display: grid; grid-template-columns: auto 1fr; row-gap: 9px; column-gap: 14px; margin-top: 12px; }
+.stats .v { text-align: right; font-size: 15px; }
+.row { display: flex; gap: 8px; margin-top: 14px; }
+.rec { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+.recdot { width: 9px; height: 9px; border: 1px solid var(--dim); }
+.recdot.on { background: var(--warn); border-color: var(--warn); animation: blink 1.2s steps(2) infinite; }
+.path { color: var(--dim); font-size: 11px; word-break: break-all; margin-top: 8px; }
+.devices { margin-top: 10px; display: grid; gap: 6px; }
+.devices button { text-align: left; text-transform: none; letter-spacing: 0; font: 12px/1.2 var(--mono); }
+
+.trendwrap { position: relative; min-height: 180px; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.trendlabel { position: absolute; left: 22px; top: 12px; }
+
+/* notices */
+footer { display: flex; align-items: center; gap: 16px; padding: 9px 22px; border-top: 1px solid var(--rule); min-height: 40px; }
+.msg { color: var(--dim); }
+.msg.bad { color: var(--warn); }
+</style>
+</head>
+<body>
+<header>
+  <div class="mark">121<b>GW</b></div>
+  <div class="link"><i class="dot" id="dot"></i><span class="cap" id="linktext">not connected</span></div>
+  <div class="spacer"></div>
+  <div class="cap">firmware <span class="fwv num" id="fw">—</span></div>
+  <button id="connect" class="primary">Connect</button>
+</header>
+
+<main>
+  <div>
+    <section class="readout">
+      <div class="flags" id="flags"><span class="age" id="age"></span></div>
+      <div class="value"><span class="digits blank" id="digits">-----</span><span class="unit" id="unit"></span></div>
+      <div class="sub"><span class="cap" id="sublabel"></span><span class="num" id="subval"></span><span id="subunit"></span></div>
+      <div class="bar" id="bar"></div>
+      <div class="scale" id="scale"></div>
+    </section>
+  </div>
+  <aside>
+    <div class="section">
+      <div class="cap">statistics</div>
+      <div class="stats">
+        <span class="cap">min</span><span class="v num" id="smin">—</span>
+        <span class="cap">max</span><span class="v num" id="smax">—</span>
+        <span class="cap">mean</span><span class="v num" id="smean">—</span>
+        <span class="cap">std dev</span><span class="v num" id="ssd">—</span>
+        <span class="cap">count</span><span class="v num" id="sn">0</span>
+      </div>
+      <div class="row"><button id="sreset">Reset</button></div>
+    </div>
+    <div class="section">
+      <div class="cap">recording</div>
+      <div class="rec"><i class="recdot" id="recdot"></i><span class="num" id="rectime">00:00:00</span><span class="msg num" id="recrows"></span></div>
+      <div class="row"><button id="rec">Record</button></div>
+      <div class="path" id="recpath"></div>
+    </div>
+    <div class="section" id="devsec">
+      <div class="cap">meter</div>
+      <div class="devices" id="devices"><span class="msg">press Connect: the first 121GW found is used</span></div>
+    </div>
+  </aside>
+  <div class="trendwrap" id="trendwrap"><canvas id="trend"></canvas><div class="trendlabel cap" id="trendlabel">trend</div></div>
+</main>
+
+<footer><span class="msg" id="msg">Meter on, Bluetooth on (hold PEAK), phone app closed.</span></footer>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const api = async cmd => {
+  const r = await fetch('/api', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-121GW-Companion': '1'},
+                                 body: JSON.stringify(cmd)});
+  const j = await r.json().catch(() => ({error: 'no answer'}));
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+};
+const say = (text, bad) => { $('msg').textContent = text; $('msg').className = 'msg' + (bad ? ' bad' : ''); };
+const fmt = v => {
+  if (v === null || v === undefined) return '—';
+  const a = Math.abs(v);
+  if (a !== 0 && (a >= 1e6 || a < 1e-6)) return v.toExponential(3);
+  return (+v.toPrecision(6)).toString();
+};
+
+// bargraph: sign cell + 26 segments, scale labels from the reading
+const bar = $('bar');
+bar.innerHTML = '<i class="sign" id="barsign"></i>' + '<i></i>'.repeat(26);
+const segs = [...bar.querySelectorAll('i:not(.sign)')];
+
+const FLAGS = ['AC', 'DC', 'AUTO', 'HOLD', 'A-HOLD', 'REL', 'MIN', 'MAX', 'AVG', 'PEAK', 'MEM', '1kHz', 'HV', 'APO', 'BAT'];
+$('flags').insertAdjacentHTML('afterbegin', FLAGS.map(f => `<span data-f="${f}">${f}</span>`).join(''));
+const flagEls = [...$('flags').querySelectorAll('span[data-f]')];
+
+let since = null, trend = [], state = null, trendKey = null;
+
+function drawReading(r, now) {
+  const d = $('digits'), ro = document.querySelector('.readout');
+  if (!r) { d.textContent = '-----'; d.className = 'digits blank'; $('unit').textContent = ''; $('age').textContent = '';
+            ro.classList.remove('stale'); return; }
+  const age = now - r.t;                               // the meter sends nothing while its digits are blank (OF-34)
+  ro.classList.toggle('stale', age > 3);
+  $('age').textContent = age > 3 ? 'NO NEW READING · ' + Math.round(age) + ' S' : '';
+  d.textContent = r.text;
+  d.className = 'digits' + (r.overload ? ' ol' : r.value === null ? ' blank' : '');
+  $('unit').textContent = r.unit || '';
+  $('sublabel').textContent = r.sub_label || '';
+  $('subval').textContent = r.sub_text || '';
+  $('subunit').textContent = r.sub_unit || '';
+  const on = new Set(r.symbols || []);
+  flagEls.forEach(e => e.classList.toggle('on', on.has(e.dataset.f)));
+  const b = r.bar || {shown: false, lit: 0};
+  segs.forEach((e, i) => e.classList.toggle('on', i < b.lit));
+  $('barsign').textContent = b.shown ? (b.negative ? '−' : '+') : '';
+  bar.style.visibility = b.shown ? 'visible' : 'hidden';
+  $('scale').textContent = b.shown ? b.label : '';
+}
+
+function drawTrend() {
+  const c = $('trend'), w = c.clientWidth, h = c.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (c.width !== w * dpr || c.height !== h * dpr) { c.width = w * dpr; c.height = h * dpr; }
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const L = 22, R = w - 22, T = 34, B = h - 26;
+  // graticule: 10 x 8 divisions, dotted minor lines, solid centre lines, as on a scope
+  g.fillStyle = '#3a3a34';
+  for (let i = 0; i <= 10; i++) for (let j = 0; j <= 40; j++) g.fillRect(L + (R - L) * i / 10, T + (B - T) * j / 40, 1, 1);
+  for (let j = 0; j <= 8; j++) for (let i = 0; i <= 50; i++) g.fillRect(L + (R - L) * i / 50, T + (B - T) * j / 8, 1, 1);
+  g.strokeStyle = '#262622'; g.strokeRect(L + .5, T + .5, R - L, B - T);
+  if (trend.length < 2) return;
+  const t1 = trend[trend.length - 1][0], t0 = Math.max(trend[0][0], t1 - 600);
+  const pts = trend.filter(p => p[0] >= t0), vals = pts.filter(p => p[1] !== null).map(p => p[1]);
+  if (!vals.length) return;
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (hi - lo < 1e-12) { const m = Math.abs(hi) * 1e-4 || 1e-6; lo -= m; hi += m; }
+  const pad = (hi - lo) * .08; lo -= pad; hi += pad;
+  const X = t => L + (R - L) * (t - t0) / Math.max(1, t1 - t0), Y = v => B - (B - T) * (v - lo) / (hi - lo);
+  // the trace breaks where there was no value (overload, another mode / unit / range, a pause of the frames)
+  g.strokeStyle = '#f2c200'; g.lineWidth = 1.25; g.beginPath();
+  let pen = false, tp = null;
+  for (const p of pts) {
+    if (p[1] === null || (tp !== null && p[0] - tp > 1.5)) pen = false;
+    if (p[1] !== null) { if (pen) g.lineTo(X(p[0]), Y(p[1])); else g.moveTo(X(p[0]), Y(p[1])); pen = true; }
+    tp = p[0];
+  }
+  g.stroke();
+  g.fillStyle = '#8b887e'; g.font = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+  g.textAlign = 'right'; g.fillText(fmt(hi), R, T - 6); g.fillText(fmt(lo), R, B + 16);
+  g.textAlign = 'left'; g.fillText(Math.round(t1 - t0) + ' s', L, B + 16);
+}
+
+function hms(s) { s = Math.max(0, Math.floor(s)); return [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(x => String(x).padStart(2, '0')).join(':'); }
+
+async function poll() {
+  try {
+    const r = await fetch('/state' + (since ? '?since=' + since : ''));
+    state = await r.json();
+  } catch (e) { say('the program does not answer', true); return setTimeout(poll, 1000); }
+  const L = state.link, S = state.session;
+  const dot = $('dot');
+  dot.className = 'dot ' + ({connected: 'on', scanning: 'busy', connecting: 'busy', lost: 'off'}[L.state] || '');
+  $('linktext').textContent = L.state === 'connected' ? 'connected · ' + L.detail : L.state === 'idle' ? 'not connected' : L.state;
+  const M = state.meter;
+  $('fw').textContent = L.state !== 'connected' ? '—' : M.firmware === 'fast' ? M.version
+                      : M.firmware === 'other' ? 'v2.05 / like-v2.05' : 'asking…';
+  $('connect').textContent = L.state === 'idle' ? 'Connect' : 'Disconnect';
+  $('connect').className = L.state === 'idle' ? 'primary' : '';
+  if (L.detail && L.state !== 'connected') say(L.detail, L.state === 'lost');
+  drawReading(L.state === 'connected' ? S.last : null, state.now);
+  const st = S.stats;
+  const dp = S.stats_dp !== null && S.stats_dp !== undefined ? S.stats_dp : null;
+  const fx = (v, extra) => v === null || v === undefined ? '—' : dp === null ? fmt(v) : v.toFixed(dp + extra);
+  $('smin').textContent = fx(st.min, 0); $('smax').textContent = fx(st.max, 0);
+  $('smean').textContent = fx(st.mean, 1); $('ssd').textContent = fx(st.sd, 1); $('sn').textContent = st.n;
+  const unit = S.stats_unit ? ' · ' + S.stats_unit : '';
+  $('trendlabel').textContent = 'trend · last 10 min' + unit;
+  if (S.stats_key !== trendKey) {                      // other mode, unit or range: the trend starts over
+    trendKey = S.stats_key; trend = []; since = null; setTimeout(poll, 0); return;
+  }
+  for (const p of S.trend) trend.push(p);
+  if (S.trend.length) since = S.trend[S.trend.length - 1][0];
+  if (trend.length > 6000) trend = trend.slice(-6000);
+  $('recdot').className = 'recdot' + (S.recording ? ' on' : '');
+  $('rec').textContent = S.recording ? 'Stop' : 'Record';
+  $('rectime').textContent = S.recording ? hms(state.now - S.rec_start) : '00:00:00';
+  $('recrows').textContent = S.recording ? S.rec_rows + ' rows' : '';
+  $('recpath').textContent = S.rec_path || '';
+  const dev = $('devices');
+  if (L.state === 'connected' && L.device) dev.innerHTML = `<span class="num">${L.device[1]}</span><span class="msg num">${L.device[0]}</span>`;
+  else if (L.found && L.found.length)
+    dev.innerHTML = L.found.map(f => `<button data-a="${f[0]}">${f[1]}  ·  ${f[2]} dBm</button>`).join('');
+  else if (L.state === 'idle') dev.innerHTML = '<span class="msg">press Connect: the first 121GW found is used</span>';
+  drawTrend();
+  setTimeout(poll, 150);
+}
+
+$('connect').onclick = async () => {
+  try { await api(state && state.link.state !== 'idle' ? {disconnect: true} : {connect: null}); } catch (e) { say(e.message, true); }
+};
+$('devices').onclick = async e => {
+  const a = e.target.closest('button'); if (!a) return;
+  try { await api({connect: a.dataset.a}); } catch (err) { say(err.message, true); }
+};
+$('sreset').onclick = async () => { trend = []; since = null; try { await api({reset_stats: true}); } catch (e) { say(e.message, true); } };
+$('rec').onclick = async () => {
+  try { const j = await api({record: !(state && state.session.recording)}); if (j.path) say('recording to ' + j.path); }
+  catch (e) { say(e.message, true); }
+};
+window.addEventListener('resize', drawTrend);
+poll();
+</script>
+</body>
+</html>
