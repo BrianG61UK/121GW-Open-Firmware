@@ -303,7 +303,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   problem (ORIGINAL_FIRMWARE_ISSUES.md OF-59, port correction): reads whose "data end" notification was missed.
 - Storage: none (EEPROM untouched).
 
-### 2.11 Meter companion program (planned, owner go 2026-11-04)
+### 2.11 Meter companion program (stages 1 to 5 implemented, branch companion; owner go 2026-11-04)
 - Request (owner, 2026-11-02 and 2026-11-04): the official phone application connects but draws badly; a program of our
   own for Windows, macOS and Linux that shows the meter live, records, and updates the firmware, with a design of its
   own ("sleek, functional, not the run-of-the-mill look").
@@ -329,12 +329,13 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
      build (both echo 0x90, analysis/ble_packet.md 6); neither = the link is not ready (page Ld owns it, the system clock
      is HSE during an SD access, the queue was full) and the host asks again later.  Version characters: one digit each
      (tag vA.B.C = "F-A.BC", checked by check_fw_version.py), so A, B, C stay 0..9.
-  4. Update: when a newer fast release exists than the version the meter reports (emu/fetch.py looks it up), the program
+  4. Update (implemented; verified working on a meter 2026-11-04: F-1.01 to F-1.02 through the companion): when a
+     newer fast release exists than the version the meter reports (emu/fetch.py looks it up), the program
      shows it and offers "Update now" or "Later".  Update now = the transfer of 2.10; the user brings the meter to the
      SETUP page Ld and afterwards does the bootloader key sequence: the program never sends key frames for it (a remote
      SETUP is refused while logging, starts an offset calibration in calibration mode, and the page shown cannot be told
      from the status frame for every item; on Ld remote keys no longer arrive).  Later = remind at the next connection.
-  5. Time sync (owner request 2026-11-04): a button that takes the time from an NTP server (default pool.ntp.org,
+  5. Time sync (implemented; verified working on a meter 2026-11-04; owner request 2026-11-04): a button that takes the time from an NTP server (default pool.ntp.org,
      configurable, e.g. the owner's 10.0.10.123) and sends the set-clock frame `F8` with year 0..99, month, day, hour,
      minute, second as plain numbers (the firmware converts them to BCD: rtc_write_reg calls the binary-to-BCD routine,
      rtc/nju6350.s) and their XOR.  IMP-31 (F-1.02): the fast firmware applies every valid frame; v2.05 only the first one
