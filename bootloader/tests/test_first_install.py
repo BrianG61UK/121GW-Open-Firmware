@@ -133,6 +133,27 @@ def run(bl_path):
             '%r sub %r' % (a, T.sub_text(e)))
     T.check('nothing written', flash(e, 0x08000000, 0x60000) == before)
 
+    print('I5 bootloader version and update-mode request (key codes 0x92, 0x91)')
+    T.press(e, 'SETUP', gap=0.6)                     # leave the page Ld: the key / clock parser has the link again
+    e.advance(1.0)
+    n0 = len(e.ble_rx)
+    e.usart2.rx_feed(b'\xF4' + b'9292')
+    e.advance(1.0)
+    got = bytes(e.ble_rx[n0:])
+    want = b'\xF7B-007'
+    want += bytes([0xF7 ^ 0x42 ^ 0x2D ^ 0x30 ^ 0x30 ^ 0x37])
+    T.check('0x92 answered F7 "B-007" (version word 7 of the install file)', want in got, got.hex())
+    seen = []
+    orig = e.system_reset
+
+    def at_reset(why):
+        seen.append((why, e.rtc.bkp[0]))             # RTC_BKP0R at the moment of the reset
+        orig(why)
+    e.system_reset = at_reset
+    e.usart2.rx_feed(b'\xF4' + b'9191')
+    e.advance(0.5)
+    T.check('0x91: system reset with RTC_BKP0R = 0x55504454', ('AIRCR.SYSRESETREQ', 0x55504454) in seen, repr(seen))
+
 
 def _tmpfile(name, data):
     path = os.path.join(T.TMP, 'fi_%d_%s' % (os.getpid(), name))
