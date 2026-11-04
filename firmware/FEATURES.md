@@ -320,7 +320,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
      from the mode and range, the sub display, bargraph, symbols), connection state.  No firmware change.
   2. Recording: CSV file of the decoded readings with time stamps while connected; trend graph; min / max / mean /
      count.  No firmware change.
-  3. Firmware version (implemented in F-1.01, IMP-30; emulator test test_ble_version.py; meter test pending): a key frame with the unused code 0x90 (`F4 39 30 39 30`; fn_0800C470
+  3. Firmware version (implemented in F-1.02, IMP-30; emulator test test_ble_version.py; verified working on a meter with the F-1.01 test build): a key frame with the unused code 0x90 (`F4 39 30 39 30`; fn_0800C470
      decodes '9','0' to 0x90, the pairs are equal) is echoed as every key frame and then answered with a version frame
      `F6 c0 c1 c2 c3 c4 x` (FW_VER_C0..C4 of config.inc, x = XOR of the six bytes before it), queued with
      ble_tx_queue_put after the echo.  The answer is made in fn_0800C332 and 0x90 is not handed to the key routine: a
@@ -337,7 +337,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   5. Time sync (owner request 2026-11-04): a button that takes the time from an NTP server (default pool.ntp.org,
      configurable, e.g. the owner's 10.0.10.123) and sends the set-clock frame `F8` with year 0..99, month, day, hour,
      minute, second as plain numbers (the firmware converts them to BCD: rtc_write_reg calls the binary-to-BCD routine,
-     rtc/nju6350.s) and their XOR.  IMP-31 (F-1.01): the fast firmware applies every valid frame; v2.05 only the first one
+     rtc/nju6350.s) and their XOR.  IMP-31 (F-1.02): the fast firmware applies every valid frame; v2.05 only the first one
      after the Bluetooth toggle.  Emulator test test_ble_clock.py.
   6. SD card file manager and synced folder (owner request 2026-11-04; owner chose the synced folder over a drive mount,
      which would need macFUSE / WinFsp / FUSE and is slow for file browsers at about 1 KB/s): list, download, delete and
