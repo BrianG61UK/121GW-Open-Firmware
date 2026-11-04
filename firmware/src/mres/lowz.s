@@ -12,7 +12,10 @@
 @ threshold until the fifth, so "0.0" was shown for 1.1 to 2.4 s while 100..600 V were present, and the HV symbol (which looks at
 @ the displayed value) came up to 1.58 s late.  Both builds (production and the LOOP_V205 = 1 baseline): the port keeps the real
 @ value in 0x20007D64 (the HV logic sees it at the first mean) and sets the UI request byte ui_blank_req (W3, port RAM) to 2 while
-@ the voltage is not yet confirmed; the main digits show five dashes then (firmware/requests/W3_to_W5.md 1).  The byte is 0
+@ the voltage is not yet confirmed; the main digits show five dashes then (firmware/requests/W3_to_W5.md 1).
+@ OF-30 port correction (both builds, 2026-11-03): for the first unconfirmed mean the request is 3 (the digits on the glass stay): on a meter with nothing
+@ connected, the first mean after each AC/DC re-apply of the dead band rises above the threshold for one mean (Bluetooth log
+@ of a meter: one frame with a full bar about every 2.9 s), and the request 2 of OF-30 flashed "-----" for it.  The byte is 0
 @ whenever no voltage is pending.  The AC/DC selection logic is unchanged.
 @ =============================================================================
 
@@ -177,15 +180,21 @@ FUNC fn_08006558
     ldrb r0, [r0]
     cmp r0, #0
     bne .Llz_confirmed                      @ already confirmed: the real value is shown
-    movs r0, #2
-    ldr r1, =ui_blank_req
-    strb r0, [r1]                           @ OF-30: not confirmed yet - D keeps the real value, the UI shows five dashes
-                                            @ (ui_blank_req = 2, W3_to_W5.md 1); v2.05 stored D = 0 here (0x080065FA..0x08006600)
     ldr r0, =v_2000023A
     ldrb r0, [r0]
     subs r0, r0, #1                         @ one more mean with a voltage present
     ldr r1, =v_2000023A
     strb r0, [r1]
+    @ OF-30: not confirmed yet - D keeps the real value; v2.05 stored D = 0 here (0x080065FA..0x08006600).  The first
+    @ such mean (count 5 -> 4) keeps the digits on the glass (ui_blank_req = 3): on a meter the first mean after the AC/DC
+    @ re-apply of the dead band is a settling spike, which v2.05 hid behind its D = 0 and which must not flash
+    @ "-----"; from the second mean on, five dashes (ui_blank_req = 2, W3_to_W5.md 1).
+    cmp r0, #4
+    ite hs
+    movhs r2, #3                            @ first mean above the threshold: keep the previous digits
+    movlo r2, #2                            @ second and later: dashes
+    ldr r1, =ui_blank_req
+    strb r2, [r1]
     cmp r0, #0
     bne .L0800662A                          @ fewer than 5 means: keep waiting (pending stays set)
     movs r0, #1

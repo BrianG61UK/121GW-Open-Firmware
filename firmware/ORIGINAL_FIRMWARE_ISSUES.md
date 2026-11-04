@@ -432,6 +432,12 @@ times on an ideal front end; real settling can only lengthen them. The dead band
 covered by the manual's "not designed to be operated at low voltages (below 12V)" and is not part of this issue.
 Port: while the LowZ detector has not confirmed a voltage, blank the main digits (or show dashes) instead of a
 numeric 0.0.
+Port correction (2026-11-03, seen on a meter): with nothing connected, the first mean after each AC/DC re-apply of the
+dead band rises above the threshold for one mean (Bluetooth frames of a meter in LowZ at 0 V: one frame with a full bar
+about every 2.9 s), so the dashes flashed briefly every few seconds (GitHub issue 1). v2.05 hid that mean behind its
+forced 0. The port now keeps the digits on the glass for the first unconfirmed mean and shows the dashes from the second
+on (`ui_blank_req` = 3, `mres/lowz.s`); a real voltage still shows dashes one mean later and its value after the five
+means of v2.05.
 
 ### OF-31 — main loop paced by the LCD update busy-wait
 `lcd_commit_shadow` (`0x0801B304`) waits before every RAM write until LCD_SR.UDR clears: `0x0801B336 movs r0,#4`,

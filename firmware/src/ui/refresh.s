@@ -27,6 +27,7 @@
 @   0 = draw the value (v2.05 behaviour)
 @   1 = draw five spaces (OF-32 BEEP / FREQ / PULSE / DUTY until the first valid result; IMP-01 rule P5 after a range change)
 @   2 = draw five dashes (OF-30 LowZ while a voltage is present and the AC/DC decision is still pending)
+@   3 = draw nothing, the digits on the glass stay (OF-30 correction: LowZ, the first mean of a pending voltage)
 @ Written by AR / MODE (set at an apply, cleared on a mode change) and MRES / MFRQ (cleared when a valid result exists);
 @ read by fn_08016E08.  Cleared by sys_reset with the rest of .bss_port.
     .global ui_blank_req
@@ -822,7 +823,7 @@ FUNC fn_08016E08
     ldrb r0, [r0]
     cmp r0, #0
     beq .Lub_none                           @ 0: draw the value as v2.05 does
-    bl ui_blank_draw                        @ 1: spaces, 2: dashes; auto-hold stage 2 keeps the old digits; clears OL
+    bl ui_blank_draw                        @ 1: spaces, 2: dashes, 3: keep; auto-hold stage 2 keeps the old digits; clears OL
     b .L08017090                            @ done with this update (same exit as the v2.05 blank branch 0x08017004)
 .Lub_none:
     @ v2.05 blank rule: settle count (0x20000238) or blank flag (0x2000805C) non-zero outside mode 0: spaces (fn_08019A98) unless auto-hold stage 2, OL cleared
