@@ -32,6 +32,16 @@
     .equ ble_minute,            v_200080DB   @ minute 0..59 (register 12)
     .equ ble_second,            v_200080DC   @ second 0..59 (register 14)
 
+    .equ BLE_VERSION_CODE,  0x90             @ key code of the version request (F4 39 30 39 30; v2.05 ignores it)
+    .equ BLE_VERSION_LEN,   7
+
+    .section .rodata.ble.version, "a", %progbits
+@ ble_version_frame - answer to the version request: F6, the five characters the meter shows at power-on (config.inc
+@ FW_VER_C0..C4, the decimal point after the third), XOR of the six bytes before it (FEATURES.md 2.11 stage 3)
+ble_version_frame:
+    .byte 0xF6, FW_VER_C0, FW_VER_C1, FW_VER_C2, FW_VER_C3, FW_VER_C4
+    .byte 0xF6 ^ FW_VER_C0 ^ FW_VER_C1 ^ FW_VER_C2 ^ FW_VER_C3 ^ FW_VER_C4
+
     .section .text.ble, "ax", %progbits
 
 @ -----------------------------------------------------------------------------
@@ -71,8 +81,8 @@ ENDFUNC fn_0800C308
 @            pairs (offsets 1, 3, ..., 13), checks v6 == v0 ^ ... ^ v5, echoes the frame, and applies v0..v5 to
 @            rtc_year .. rtc_second and the NJU6350 (fn_0801016C) only if ble_clock_set is 0, then sets it; a failed
 @            checksum clears ble_clock_bad (never read).  0xF4 frame: pairs at offsets 1 and 3 must be equal; then
-@            echo, key_remote_req = 1 and key_remote_code = the code (decoded by fn_08014AE6 in KEY).  Any other first
-@            byte is ignored.
+@            echo, key_remote_req = 1 and key_remote_code = the code (decoded by fn_08014AE6 in KEY); code 0x90 is
+@            answered with ble_version_frame instead (FEATURES.md 2.11 stage 3).  Any other first byte is ignored.
 @ -----------------------------------------------------------------------------
 FUNC fn_0800C332
     push {r3, r4, r5, r6, r7, r8, r9, r10, r11, lr} @ 0800C332
@@ -183,7 +193,17 @@ FUNC fn_0800C332
     cmp r0, r1                              @ 0800C452  compare r0 with r1
     bne .L0800C46C                          @ 0800C454  if r0 != r1
     bl fn_0800C308                          @ 0800C456  echo the received command frame
-    movs r0, #0x1                           @ 0800C45A
+    ldrb r0, [sp, #0x1]                     @ the key code
+    cmp r0, #BLE_VERSION_CODE
+    bne 1f
+    @ FEATURES.md 2.11 stage 3: code 0x90 asks for the firmware version.  It is answered with ble_version_frame and is
+    @ not handed to the key routine (a remote key restarts the backlight countdown and clears a pending message).
+    @ Answer refused by a full queue: the host asks again.
+    ldr r0, =ble_version_frame
+    movs r1, #BLE_VERSION_LEN
+    bl ble_tx_queue_put
+    b .L0800C46C
+1:  movs r0, #0x1                           @ 0800C45A
     ldr.w r1, =ble_key_remote_req           @ 0800C45C
     strb r0, [r1, #0x0]                     @ 0800C460  ble_key_remote_req = 1
     ldrb r0, [sp, #0x1]                     @ 0800C462  r0 = local [sp+1]

@@ -320,7 +320,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
      from the mode and range, the sub display, bargraph, symbols), connection state.  No firmware change.
   2. Recording: CSV file of the decoded readings with time stamps while connected; trend graph; min / max / mean /
      count.  No firmware change.
-  3. Firmware version (firmware change, fast build): a key frame with the unused code 0x90 (`F4 39 30 39 30`; fn_0800C470
+  3. Firmware version (implemented in F-1.01, IMP-30; emulator test test_ble_version.py; meter test pending): a key frame with the unused code 0x90 (`F4 39 30 39 30`; fn_0800C470
      decodes '9','0' to 0x90, the pairs are equal) is echoed as every key frame and then answered with a version frame
      `F6 c0 c1 c2 c3 c4 x` (FW_VER_C0..C4 of config.inc, x = XOR of the six bytes before it), queued with
      ble_tx_queue_put after the echo.  The answer is made in fn_0800C332 and 0x90 is not handed to the key routine: a
