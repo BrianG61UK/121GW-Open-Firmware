@@ -11,4 +11,6 @@ for path in sys.argv[1:]:
     with open(path, 'rb') as f:
         for block in iter(lambda: f.read(1 << 20), b''):
             h.update(block)
-    print('%s  %s' % (h.hexdigest(), path.replace('\\', '/')))
+    # bytes with a bare LF: Windows text-mode output would end the line with CR LF, which sha256sum -c and shasum -c
+    # read as part of the file name
+    sys.stdout.buffer.write(('%s  %s\n' % (h.hexdigest(), path.replace('\\', '/'))).encode())
