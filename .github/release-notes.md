@@ -10,3 +10,5 @@ New in the fast build: backlight auto-off and memory, dBm reference (600 / 50 / 
 Verified working on a meter. Flashing is at your own risk (see `LICENSE`).
 
 Fixed in v1.0.5: the DCV reading no longer freezes on a steadily changing voltage (GitHub issue 3: the step detection of the fast averaging took a ramp for a step); SD sectors read into or written from an unaligned buffer were shifted by the DMA (a v2.05 driver defect, OF-66).
+
+Fixed in v1.0.6: restoring cal.bin (MEM at power-on, PEAK, MODE) works again: v1.0.4 and v1.0.5 refused every file ("-Err-", nothing written); a cal.bin is now restored only to the meter whose serial number it holds (another meter's file or one written by the emulator is refused, nothing written).
