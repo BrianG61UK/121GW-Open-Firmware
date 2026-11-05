@@ -466,6 +466,10 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   (item 40, after `Ld`) formats the card as exFAT after a confirmation, only with the two-part bootloader installed:
   EEVblog's bootloader cannot read exFAT, so its card update would stop working. `Fr --` while it works, `Fr oK`; `FrE n` a
   FatFs failure, `FrE L` refused while logging or in calibration mode (`set/fmt.s`).
+- Format from the 121GW Companion (IMP-39, F-1.09): on the page `Ld-bt` the companion's CARD view has "Format card"; after
+  the user types FORMAT the meter formats the card exactly as the page `For` does (request 0x15 of `ble/bftsd.s`, same
+  conditions: two-part bootloader, not while a firmware transfer runs).  The meter cannot report progress meanwhile (its
+  link is deaf during card work); the companion shows a window whose OK unlocks when the meter answers.
 
 ## 3. EEPROM bytes the features need
 

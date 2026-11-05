@@ -137,7 +137,7 @@ FUNC set_fmt_edit
 ENDFUNC set_fmt_edit
 
 @ -----------------------------------------------------------------------------
-@ fmt_run - one card session: HSE clock, card bring-up, f_mkfs("0:", {FM_EXFAT}, log_buf, 8192), card off, run clock
+@ fmt_run - one card session: HSE clock, card bring-up, fmt_mkfs, card off, run clock
 @ Out      : r0 = FatFs result
 @ Clobbers : r1-r3, r12, flags (r4 saved)
 @ -----------------------------------------------------------------------------
@@ -147,6 +147,25 @@ LFUNC fmt_run
     bl sys_clock_select                     @ HSE for the card (as bft_card_begin)
     movs r0, #10
     bl sd_bringup_retry
+    bl fmt_mkfs
+    mov r4, r0
+    bl sd_power_off
+    movs r0, #0
+    bl sys_clock_select                     @ run clock again
+    mov r0, r4
+    pop {r4, pc}
+ENDFUNC fmt_run
+
+@ -----------------------------------------------------------------------------
+@ fmt_mkfs - format the card as exFAT: f_mkfs("0:", {FM_EXFAT, defaults}, log_buf, 8192); the card session is the
+@            caller's (fmt_run here, bft_card_begin / end for the Bluetooth request 0x15 of ble/bftsd.s)
+@ Out      : r0 = FatFs result
+@ Clobbers : r1-r3, r12, flags (AAPCS)
+@ Note     : the working buffer is log_buf (logging is off whenever this runs: the page refuses, the Bluetooth gate
+@            requires it); f_mkfs invalidates a mounted volume of the drive itself (ffx/ffx_mkfs.s)
+@ -----------------------------------------------------------------------------
+FUNC fmt_mkfs
+    push {r4, lr}
     ldr r3, =fmt_parm
     movs r0, #FM_EXFAT
     strb r0, [r3, #0]                       @ fmt
@@ -160,13 +179,8 @@ LFUNC fmt_run
     ldr r2, =fmt_work
     mov r3, #FMT_WORK_LEN
     bl fat_f_mkfs
-    mov r4, r0
-    bl sd_power_off
-    movs r0, #0
-    bl sys_clock_select                     @ run clock again
-    mov r0, r4
     pop {r4, pc}
-ENDFUNC fmt_run
+ENDFUNC fmt_mkfs
 
 @ -----------------------------------------------------------------------------
 @ set_fmt_draw - draw the page For

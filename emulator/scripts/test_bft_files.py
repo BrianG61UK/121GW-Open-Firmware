@@ -249,8 +249,8 @@ def run_tests(image):
     bad[-1] ^= 0xFF
     a = link.send(bytes(bad))
     T.check('wrong CRC: 0x81 answer, status 1', isinstance(a, tuple) and a[1] == 1, repr(a))
-    a = link.send(btft.packet(0x15, 8))
-    T.check('unassigned type 0x15: 0x82 status 3', status_of(a) == 3 and a.seq == 8, repr(a))
+    a = link.send(btft.packet(btft.T_FORMAT, 8))
+    T.check('FORMAT without its payload: 0x82 status 0x22', status_of(a) == 0x22 and a.seq == 8, repr(a))
 
     print('T2 LIST')
     ents, pages, last = f.list_all()
@@ -359,6 +359,14 @@ def run_tests(image):
             status_of(a) == 0 and btft.parse_info(a) == (spc, free, total), repr(a) + ' ' + (repr(btft.parse_info(a)) if status_of(a) == 0 else ''))
     a = link.send(btft.packet(btft.T_INFO, 60, b'\x01'))
     T.check('INFO with a payload: 0x22', status_of(a) == 0x22, repr(a))
+
+    print('T5b FORMAT refused (EEVblog\'s bootloader, wrong word); the card is checked in T6')
+    a = link.send(btft.format_packet(61, b'FORMAX'))
+    T.check('FORMAT with another word: 0x22', status_of(a) == 0x22, repr(a))
+    a = link.send(btft.format_packet(62, b'FORMAT!'))
+    T.check('FORMAT with a longer payload: 0x22', status_of(a) == 0x22, repr(a))
+    a = f.ask(btft.format_packet)
+    T.check('FORMAT with EEVblog\'s bootloader: 0x25 (EEVblog\'s cannot read exFAT)', status_of(a) == 0x25, repr(a))
 
     print('T6 the EEPROM and the card')
     T.check('data EEPROM unchanged (%d bytes)' % len(eeprom0), bytes(e.m.eeprom) == eeprom0)

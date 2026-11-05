@@ -21,7 +21,8 @@ import zlib
 from collections import namedtuple
 
 T_START, T_DATA, T_END, T_ABORT, T_STATUS, T_ANSWER = 1, 2, 3, 4, 5, 0x81
-T_LIST, T_READ, T_CHUNK, T_DELETE, T_INFO, T_GET, T_PUT, T_ANSWER2 = 0x10, 0x11, 0x12, 0x13, 0x14, 0x16, 0x17, 0x82
+T_LIST, T_READ, T_CHUNK, T_DELETE, T_INFO, T_FORMAT, T_GET, T_PUT, T_ANSWER2 = 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x82
+FORMAT_WORD = b'FORMAT'      # the only payload FORMAT accepts (ble/bftsd.s)
 DIAG_NAMES = ['failed card sessions of the transfer', 'last card failure (step << 8 | FatFs result)',
               'failed disk_read / disk_write since power-on', 'their op | reason << 8', 'SDIO_STA', 'sd_transfer_error',
               'sd_wait_write result']
@@ -133,6 +134,12 @@ def delete_packet(seq, name):
 
 def info_packet(seq):
     return packet(T_INFO, seq)
+
+
+def format_packet(seq, word=FORMAT_WORD):
+    """FORMAT (0x15): the meter formats its card as exFAT; refused (0x22) unless the payload is exactly FORMAT_WORD,
+    and (0x25) without the two-part bootloader.  Everything on the card is gone."""
+    return packet(T_FORMAT, seq, word)
 
 
 def get_packet(seq):

@@ -2,7 +2,7 @@
 
 Everything on this page is in the **fast build** (`2_fast/EEVBlog.bin`). The `1_like_v2.05` build behaves like the
 original firmware apart from the defect fixes and has none of these features. At power-on the fast build shows its
-version, `F-1.08` (the release number, v1.0.8), on the small display; the main display stays blank until the first
+version, `F-1.09` (the release number, v1.0.9), on the small display; the main display stays blank until the first
 reading. The `1_like_v2.05` build shows `V-2.05` like the original.
 
 All settings are stored in bytes of the data EEPROM that the original firmware never uses. Calibration, serial number
@@ -201,6 +201,8 @@ The card update (HOLD + MEM at power-on, SETUP) keeps working with the two-part 
 - **How:** hold SETUP until `Fr no` blinks, press REL (or PEAK) for `Fr yE`, hold SETUP again.  `Fr --` while it works,
   then `Fr oK`.  **Everything on the card is erased.**  `FrE n` means the format failed (n = the FatFs result),
   `FrE L`: refused because logging is running or calibration mode is on.
+- **From the computer (F-1.09 or newer):** with Bluetooth on and the page `Ld-bt` shown, the 121GW Companion's CARD view
+  has **Format card**: type FORMAT to confirm, then a window stays open until the meter has finished.
 - The meter reads and writes FAT12, FAT16, FAT32 and exFAT cards, with long file names (cards larger than 32 GB come
   formatted as exFAT).
 
