@@ -22,7 +22,7 @@
     @ the end of each pass), DESIGN.md 3.5.  The build with the v2.05 loop structure lives on the branch like-v2.05.
 
     @ Version shown at power-on (ui_version_sub on the sub display from the start of the power-on window, IMP-02 /
-    @ IMP-35), five characters with the decimal point after the third: "F-1.02" (F = fast build, release v1.0.2;
+    @ IMP-35), five characters with the decimal point after the third: "F-A.BC" (F = fast build, release vA.B.C;
     @ a release tag vA.B.C must match "F-A.BC", checked by .github/scripts/check_fw_version.py before anything is
     @ published).
     .equ FW_VER_C0, 'F'

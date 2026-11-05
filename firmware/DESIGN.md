@@ -1243,7 +1243,8 @@ start 0x20001240; `.bss_port` inside RAM_PORT.
    store, the effective address is computed when the base register holds a known constant in the basic block (pool
    literal, `movw`/`movt`, `adr`, add of constants); rejected: any effective address 0x40023C10 (PRGKEYR), 0x40023C14 (OPTKEYR)
    or 0x40023C1C..0x40023C2F (OBR, WRPR; RM0038 3.9.10 register map: FLASH_SR at 0x40023C18 is not rejected, it is allowed in
-   NVM below) or 0x1FF80000..0x1FF800FF, any store to program flash 0x08000000..0x0805FFFF, any access to the
+   NVM below) or 0x1FF80000..0x1FF800FF, any store to program flash 0x08000000..0x0805FFFF (except in nvm/blinst.s, role
+   'blinst': the first install of the two-part bootloader, its four ranges only), any access to the
    FLASH block with a base plus non-zero offset or a register offset; any `movt` producing 0x1FF8 or a constant equal to one
    of the rejected FLASH addresses anywhere; aligned pool words with those values; the PRGKEY and OPTKEY values 0x8C9DAEBF,
    0x13141516, 0xFBEAD9C8, 0x24252627 as pool words or `movw`/`movt` pairs. Stores to PECR may only set PELOCK or clear
@@ -1393,6 +1394,7 @@ a build switch, default stated; required = forced by a non-negotiable requiremen
 | OF-62 | calibration | RAM variant flags 0x20008087 / 0x20007FE0 not refreshed after a marker write | read back with the boot routines after the write | fix | CAL |
 | OF-63 | buzzer | diode, auto-hold, APO warning and power-off beeps ignore the buzzer setting | gated (owner decision); continuity and the safety warnings still sound | fix (owner decision) | BZB, MRES, FUNC, PWR |
 | OF-64 | SD | FatFs R0.08a error paths (start cluster before the check, create_chain on a read error, stale window after a failed read, dirty flag after a failed load) | the R0.10a..R0.10c changes | fix | SD |
+| OF-65 | BLE | the status frame's bar byte (14) carries the raw segment count, above the display's 25 segments on an overload (45..55 seen); an application that masks the byte (the official one reads it & 0x1F) shows a wrong bar | byte 14 = min(count, 25), the segments the display shows (`ble/packet.s`; ORIGINAL_FIRMWARE_ISSUES.md OF-65) | fix (both builds) | BLE |
 | OF-66 | SD | disk_read / disk_write give the caller's buffer to the SDIO DMA, which aligns every word access down (RM0038 11.4.5 / 11.4.6): a sector read into or written from a buffer that is not word aligned lands 1..3 bytes off; FatFs passes the caller's buffer for whole sectors of f_read / f_write | such a sector goes through an aligned 512-byte buffer (`sd/diskio.s` sd_bounce, sd_copy512); emulator `test_bft_files.py` (READ at offset 12345: wrong data before, equal after) | fix | SD |
 | NF-18 | STOP | DBGMCU_CR \|= 7 at every start (0x0801BEF8) keeps the RC oscillator and FCLK/HCLK running in STOP (RM0038 DBGMCU_CR bit 1) | set only in debug builds; production enters the true STOP (hardware check in Q8) | fix | SYS |
 | IMP-01 | auto-range | `autorange_step` one range per decision | ARS 5: per-sample detection, direct target range, CP settle profile by default, TP per family only after H1..H8 (ARS 12); first value after a change from 4 clean samples (ARS 5.2 P5) | approved | AR, MDC, MAC, MRES, UI |
