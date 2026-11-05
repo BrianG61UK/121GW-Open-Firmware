@@ -1,6 +1,6 @@
 """exFAT on the meter, in the emulator (firmware IMP-32, bootloader/DESIGN.md 5 item 7, G4).
 
-    python3 -I bootloader/tests/test_exfat.py [REF]     REF: the host build of ChaN's FatFs R0.16 (exFAT configuration)
+    python3 -I bootloader/tests/test_exfat.py [--x6] [REF]   --x6: only X6;  REF: the host build of ChaN's FatFs R0.16 (exFAT configuration)
                                                         used to read the card image (default: the harness's `ref`)
 
 The meter: starter, bootloader and this project's firmware (flash image as tests/test_bootloader.py), a 64 MiB FAT32 card.
@@ -11,6 +11,8 @@ The meter: starter, bootloader and this project's firmware (flash image as tests
   X4 card update by the bootloader from the exFAT card (MEM + HOLD at power-on, SETUP): " Good", flash = the image,
      firmware mark, the firmware runs
   X5 without the two-part bootloader (EEVblog's bootloader area empty of a mark) the page For is not offered
+  X6 FORMAT over Bluetooth (request 0x15 on the page Ld, ble/bftsd.s): a FAT32 card with a file is formatted: status 0,
+     an empty exFAT volume, LIST over Bluetooth answers no entries
 The data EEPROM is unchanged.
 """
 import os
@@ -58,10 +60,56 @@ def to_page(e, item_before):
     T.press(e, 'SETUP', gap=0.6)
 
 
+def vbr_of(card):
+    """The volume boot sector of the card image: behind the MBR when f_mkfs made a partition, else sector 0."""
+    with open(card, 'rb') as f:
+        sec = f.read(512)
+    lba = struct.unpack_from('<I', sec, 0x1C6)[0] if sec[0x1FE:0x200] == b'\x55\xAA' and sec[3:11] != b'EXFAT   ' else 0
+    with open(card, 'rb') as f:
+        f.seek(lba * 512)
+        return f.read(512)
+
+
+def x6():
+    print('X6 FORMAT over Bluetooth')
+    card6 = X._card_with(b'')                          # FAT32 card with EEVBlog.bin on it
+    e = X.meter(X.flash_image(), card=card6)
+    e.advance(2.0)
+    e.command({'dial': 2})
+    e.advance(3.0)
+    T.long_press(e, 'PEAK')
+    e.advance(1.0)
+    to_page(e, 21)                                     # bt -> Ld
+    T.check('page Ld', T.rd(e, ADDR_ITEM) == 39 and sub(e).upper() == 'LD-BT', sub(e))
+    ee6 = bytes(e.m.eeprom)
+    first, names = listing(card6)
+    T.check('before: a card with files', names != [], '%r %r' % (first, names))
+    link = U.Link(e)
+    t0 = T.now(e)
+    a = link.send(btft.format_packet(1), timeout=120.0)
+    took = T.now(e) - t0
+    T.check('FORMAT answered with status 0 (%.1f s emulated)' % took, isinstance(a, btft.Answer2) and a.status == 0
+            and a.seq == 1, repr(a))
+    vbr = vbr_of(card6)
+    T.check('the card holds an exFAT volume', vbr[3:11] == b'EXFAT   ', repr(vbr[3:11]))
+    first, names = listing(card6)
+    T.check('the host FatFs mounts it, nothing on it', first == 'mount 0' and names == [], '%r %r' % (first, names))
+    a = link.send(btft.list_packet(2, 0), timeout=30.0)
+    ents, end = btft.parse_list(a) if isinstance(a, btft.Answer2) and a.status == 0 else (None, None)
+    T.check('LIST over Bluetooth after the format: no entries, end flag', ents == [] and end is True, repr(a))
+    T.check('data EEPROM unchanged', bytes(e.m.eeprom) == ee6)
+
+
 def main(argv):
     global REF
+    only6 = '--x6' in argv                             # X6 alone (the format over Bluetooth)
+    argv = [a for a in argv if a != '--x6']
     if argv:
         REF = argv[0]
+    if only6:
+        x6()
+        print('RESULT', ('FAIL: ' + ', '.join(T.fails)) if T.fails else 'ALL PASS', flush=True)
+        return 1 if T.fails else 0
     card = X._card_with(b'')                           # FAT32 card (an empty EEVBlog.bin on it)
 
     print('X1 format as exFAT from the page For')
@@ -152,6 +200,8 @@ def main(argv):
     e.advance(3.0)
     to_page(e, 39)
     T.check('Ld -> rEL (item 22)', T.rd(e, ADDR_ITEM) == 22, 'item %d' % T.rd(e, ADDR_ITEM))
+
+    x6()
 
     if T.fails:
         print('FAILED: %d checks' % len(T.fails))

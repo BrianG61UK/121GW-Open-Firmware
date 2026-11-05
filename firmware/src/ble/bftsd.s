@@ -15,6 +15,8 @@
 @     0x12 CHUNK   idx(2)                            bytes idx*232 .. of the staged data (RAM only, no card access)
 @     0x13 DELETE  namelen(1) name                   f_unlink of one root file (or empty directory)
 @     0x14 INFO    -                                 free and total clusters, cluster size
+@     0x15 FORMAT  "FORMAT"(6)                       format the card as exFAT (f_mkfs, as the SETUP page Fr, set/fmt.s);
+@                                                    only with the two-part bootloader (EEVblog's cannot read exFAT)
 @ Answer: B5 5B 82 seq(2) len(1) status(1) field(2) data crc16(2); seq = the request's seq, len = 3 + length of data,
 @     data <= 232 bytes, so an answer is at most 8 + 3 + 232 = 243 bytes (one Bluetooth write of 244 bytes; the transmit
 @     queue ble_txq of usart.s holds 256).  field and the data per request:
@@ -29,17 +31,20 @@
 @            the next READ or the next START of a firmware transfer.
 @     CHUNK  field = idx, data = the 232 bytes idx*232 .. of the staged data (fewer in the last chunk).
 @     DELETE field = 0, no data.
+@     FORMAT field = 0, no data; the answer comes when the card is formatted (seconds; the link is deaf meanwhile).
 @     INFO   field = sectors per cluster (512 bytes each), data = free clusters(4) total clusters(4).  A card whose free
 @            count is not known to the file system needs a scan of the allocation table: the answer can take seconds.
 @     status 0 accepted; 3 not allowed now (a firmware transfer fills the staging buffer, a restart is due, or the type
 @     is unknown); 0x20 not found (FatFs FR_NO_FILE or FR_NO_PATH); 0x21 name refused; 0x22 argument refused (payload
-@     length, len or idx out of range); 0x23 protected (DELETE of cal.bin, EEVBlog.bin or BTLOAD.TMP); 0x24 card error,
-@     field = step << 8 | FatFs result (step 1 open / opendir, 2 seek, 3 read / readdir, 4 delete, 5 getfree / close).
+@     length, len or idx out of range, a FORMAT payload other than "FORMAT"); 0x23 protected (DELETE of cal.bin,
+@     EEVBlog.bin or BTLOAD.TMP); 0x24 card error, field = step << 8 | FatFs result (step 1 open / opendir, 2 seek,
+@     3 read / readdir, 4 delete, 5 getfree / close, 6 format); 0x25 FORMAT without the two-part bootloader.
 @     (Statuses 1, 2, 4 and 5 of the transfer answers are not used here: a CRC error is answered with the 0x81 answer.)
 @ Names: 1 .. 63 bytes out of A-Z a-z 0-9 . _ space -, no "..", no space at either end and no dot at the end (FatFs
 @     removes trailing spaces and dots from a name, so "cal.bin." would reach cal.bin).  The path given to FatFs is "0:"
 @     and the name: the root directory only.  Names are matched without regard to case, as FatFs does, also for the
-@     protected names.  There is no write, rename, format or mkdir, and no EEPROM access of any kind in this module.
+@     protected names.  There is no write, rename or mkdir, and no EEPROM access of any kind in this module; FORMAT
+@     erases the whole card (the companion asks for a typed confirmation first).
 @
 @ Card session.  Every card access is one session exactly as the firmware transfer does it (bft_card_begin / end of
 @ bft.s): system clock HSE, SDIO up, drive registered, the operation, SDIO off, run clock.  The link is deaf meanwhile
@@ -66,6 +71,7 @@
     .equ BFX_T_CHUNK,       0x12
     .equ BFX_T_DELETE,      0x13
     .equ BFX_T_INFO,        0x14
+    .equ BFX_T_FORMAT,      0x15
     .equ BFX_T_GET,         0x16            @ settings (ble/bftset.s)
     .equ BFX_T_PUT,         0x17
     .equ BFX_MAXDATA,       232             @ data bytes of one answer (= BFT_MAXPAY of bft.s)
@@ -78,6 +84,9 @@
     .equ BFX_ST_ARG,        0x22
     .equ BFX_ST_PROTECTED,  0x23
     .equ BFX_ST_CARD,       0x24
+    .equ BFX_ST_NOFMT,      0x25            @ FORMAT refused: EEVblog's bootloader is installed (it cannot read exFAT)
+    .equ BFX_STEP_FORMAT,   6
+    .equ BFX_FMT_LEN,       6               @ the FORMAT payload "FORMAT"
     .equ BFX_STEP_OPEN,     1
     .equ BFX_STEP_READ,     3
     .equ BFX_STEP_DELETE,   4
@@ -693,13 +702,75 @@ LFUNC bfx_info
 ENDFUNC bfx_info
 
 @ -----------------------------------------------------------------------------
+@ bfx_format - FORMAT: the card is formatted as exFAT, everything on it is gone (as the SETUP page Fr, set/fmt.s)
+@ Out      : r0 = status, r1 = field, r2 = 0
+@ Clobbers : r0-r3, r12, flags (r4 saved)
+@ Note     : refused (0x22) unless the payload is exactly "FORMAT", so no other packet can erase a card; refused (0x25)
+@            without the two-part bootloader, as the page Fr is not offered then; refused (3) while a firmware transfer
+@            is receiving (f_mkfs works in log_buf, the staging buffer).  The staged READ bytes are lost (bfx_staged 0).
+@ -----------------------------------------------------------------------------
+LFUNC bfx_format
+    push {r4, lr}
+    ldr r0, =bft_state
+    ldrb r0, [r0]
+    cmp r0, #BFX_ST_RECV
+    beq .Lfm_busy                           @ the staging buffer holds received firmware bytes
+    ldr r4, =bft_pkt
+    ldrb r0, [r4, #5]                       @ payload length
+    cmp r0, #BFX_FMT_LEN
+    bne .Lfm_arg
+    adds r0, r4, #6                         @ the payload
+    ldr r1, =bfx_fmt_word
+    movs r2, #BFX_FMT_LEN
+1:  ldrb r3, [r0], #1
+    ldrb r12, [r1], #1
+    cmp r3, r12
+    bne .Lfm_arg
+    subs r2, r2, #1
+    bne 1b
+    bl set_fmt_available                    @ 1 = the two-part bootloader is installed
+    cbz r0, .Lfm_nofmt
+    movs r0, #0
+    ldr r1, =bfx_staged
+    strh r0, [r1]                           @ f_mkfs overwrites the staging buffer
+    bl bft_card_begin
+    bl fmt_mkfs                             @ r0 = FatFs result
+    cbnz r0, .Lfm_fail
+    bl bft_card_end
+    movs r0, #0
+    bl bfx_status
+    b .Lfm_ret
+.Lfm_fail:
+    movs r1, #BFX_STEP_FORMAT
+    bl bfx_fail                             @ card off, 0x24 with step << 8 | result
+    b .Lfm_ret
+.Lfm_nofmt:
+    movs r0, #BFX_ST_NOFMT
+    b .Lfm_stat
+.Lfm_busy:
+    movs r0, #BFX_ST_NOTALLOWED
+    b .Lfm_stat
+.Lfm_arg:
+    movs r0, #BFX_ST_ARG
+.Lfm_stat:
+    bl bfx_status
+.Lfm_ret:
+    pop {r4, pc}
+ENDFUNC bfx_format
+
+    .section .rodata.bftsd, "a", %progbits
+bfx_fmt_word:
+    .ascii "FORMAT"
+    .section .text.bftsd, "ax", %progbits
+
+@ -----------------------------------------------------------------------------
 @ bfx_request - handle a request of type 0x10 .. 0x17 and queue the 0x82 answer
 @ In       : r0 = type
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags (AAPCS)
 @ Context  : main only (bft_packet, after its CRC check and the gate of bft_poll)
 @ Note     : refused with status 3 while a bootloader install is done and the restart is due (bft_reset_due), and for
-@            the unassigned type 0x15 or any other type of the range.
+@            any type of the range that is not assigned.
 @ -----------------------------------------------------------------------------
 FUNC bfx_request
     push {r4, lr}
@@ -717,6 +788,8 @@ FUNC bfx_request
     beq .Lrq_delete
     cmp r4, #BFX_T_INFO
     beq .Lrq_info
+    cmp r4, #BFX_T_FORMAT
+    beq .Lrq_format
     cmp r4, #BFX_T_GET
     beq .Lrq_get
     cmp r4, #BFX_T_PUT
@@ -739,6 +812,9 @@ FUNC bfx_request
     b .Lrq_reply
 .Lrq_info:
     bl bfx_info
+    b .Lrq_reply
+.Lrq_format:
+    bl bfx_format
     b .Lrq_reply
 .Lrq_get:
     bl bfs_get
