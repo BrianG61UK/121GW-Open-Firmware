@@ -104,6 +104,12 @@ def x6(slow=False):
     T.check('data EEPROM unchanged', bytes(e.m.eeprom) == ee6)
     if slow:
         T.check('the slow block was met', e.sdcard.faults['write_slow'] == 0)
+        v = []
+        for i in range(21, 26):
+            r = link.send(btft.status_packet(i), timeout=10.0)
+            v.append(r[2] if isinstance(r, tuple) and r[1] == 0 else None)
+        T.check("STATUS 21..25: wait 2 (the card's busy) ran out, ACMD22 answered 1 block, 1 late block, 0 written again",
+                v[0] == 2 and v[1] is not None and v[1] >= 60 and v[2] == 0x8001 and v[3] == 1 and v[4] == 0, repr(v))
 
 
 def main(argv):

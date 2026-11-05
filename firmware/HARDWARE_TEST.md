@@ -20,7 +20,7 @@ These checks confirm on hardware what the emulator cannot.
 - Alternatively over SWD to 0x08006000 (application area only).
 
 ## First boot
-1. Power on (batteries; a current-limited supply instead of the batteries is optional). The version (`F-1.10` for the
+1. Power on (batteries; a current-limited supply instead of the batteries is optional). The version (`F-1.11` for the
    fast build, `V-2.05` for the like-v2.05 build) shows on the sub display; the fast build shows nothing on the main display
    until the first reading (IMP-35). First reading within about 0.5 s.
 2. Every dial position: reading and annunciators plausible; DCV/Ohm against a reference source.

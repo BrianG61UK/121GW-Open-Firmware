@@ -36,8 +36,14 @@ sd_dg_cndtr:    .space 2                    @ DMA2 channel 4 CNDTR (words still 
 sd_dg_dcount:   .space 2                    @ SDIO_DCOUNT (bytes still to receive, low 16 bits)
 sd_dg_stahi:    .space 2                    @ SDIO_STA bits 31..16 (FIFO state)
 sd_dg_recov:    .space 2                    @ reads taken on the hardware counters after the end wait ran out
-    .global sd_dg_late
+    .global sd_dg_late, sd_dg_wphase, sd_dg_wticks, sd_dg_a22, sd_dg_retry
 sd_dg_late:     .space 2                    @ writes whose busy wait ran out but which ACMD22 confirmed as written (IMP-40)
+    .equ SD_WR_TRIES, 3                     @ attempts of a block whose write wait ran out (IMP-40)
+sd_dg_wticks:   .space 2                    @ last write wait that ran out: its length in 10 ms ticks
+sd_dg_a22:      .space 2                    @ last ACMD22 answer: 0x8000 | SD error << 8 | count (low byte); 0 none yet
+sd_dg_retry:    .space 2                    @ block writes repeated after a failed attempt (IMP-40)
+sd_dg_wphase:   .space 1                    @ last write wait that ran out: 1 DMA / transfer end, 2 the card's busy (TXACT)
+sd_wr_try:      .space 1                    @ failed attempts of the block being written
     .global sd_dg_flags, sd_dg_dmaisr, sd_dg_cndtr, sd_dg_dcount, sd_dg_stahi, sd_dg_recov
     .balign 4
 sd_dg_r1:       .space 4                    @ card status of the last CMD13 answer before the failure (0xFFFFFFFF: no answer)
@@ -423,6 +429,22 @@ LFUNC sd_dg_note
     bx lr
 ENDFUNC sd_dg_note
 
+@ sd_dg_wtimeout - diagnosis: a write wait of sd_wait_write ran out (r0 = 1 the DMA / transfer end, 2 the card's busy;
+@ r3 = the tick when that wait began): its length, and the transfer state as sd_dg_end_state records it for a read
+@ (end flags, DMA flags and CNDTR, DCOUNT, SDIO_STA high half: values 7 .. 11 of the Bluetooth diagnosis); clobbers r0-r3
+FUNC sd_dg_wtimeout
+    push {r4, lr}
+    ldr r1, =sd_dg_wphase
+    strb r0, [r1]
+    ldr r1, =v_20007FC6
+    ldrh r0, [r1]
+    subs r0, r0, r3
+    ldr r1, =sd_dg_wticks
+    strh r0, [r1]
+    bl sd_dg_end_state
+    pop {r4, pc}
+ENDFUNC sd_dg_wtimeout
+
 @ sd_dg_start - diagnosis: the status polling of a block begins now (tick counter v_20007FC6); clobbers r0, r1
 LFUNC sd_dg_start
     ldr r0, =v_20007FC6
@@ -617,6 +639,8 @@ FUNC disk_write
     movs    r4, #0                          @ 08023FCC r4 = 0
     movs    r0, #0                          @ 08023FCE r0 = 0
     movs    r7, r0                          @ 08023FD0 r7 = r0
+    ldr     r1, =sd_wr_try
+    strb    r0, [r1]                        @ IMP-40: no failed attempt of this block yet
     @ loop over the sectors: buffer offset 512 * i, 64-bit byte address (first sector + i) * 512
 .Ldisk_write_3FD2:                      @ v2.05 0x08023FD2, reached from 0x08024026
     cmp     r7, r6                          @ 08023FD4 compare r7 with r6
@@ -684,6 +708,11 @@ FUNC disk_write
     ldrb    r0, [r0]
     cbnz    r0, 3f
     bl      sd_num_wr_blocks
+    uxtb    r2, r1
+    orr     r2, r2, r0, lsl #8
+    orr     r2, r2, #0x8000                 @ marks an answer
+    ldr     r3, =sd_dg_a22
+    strh    r2, [r3]                        @ diagnosis: SD error << 8 | count
     cbnz    r0, 3f
     cmp     r1, #1
     bne     3f
@@ -694,6 +723,26 @@ FUNC disk_write
     b       1f
 3:  ldr     r0, =sd_dg_wait
     ldrb    r0, [r0]
+    cmp     r0, #4
+    bne     4f                              @ only a wait that ran out is repeated (a CRC error stays as before, OF-59)
+    ldr     r0, =sd_transfer_error
+    ldrb    r0, [r0]
+    cbnz    r0, 4f
+    ldr     r1, =sd_wr_try
+    ldrb    r0, [r1]
+    adds    r0, r0, #1
+    strb    r0, [r1]
+    cmp     r0, #SD_WR_TRIES
+    bhs     4f
+    @ IMP-40: the card is back in the transfer state (the polling above ended there): the same block is written again;
+    @ writing a sector twice leaves what the second write wrote, and FatFs (f_mkfs above all) does not repeat a failed call
+    ldr     r1, =sd_dg_retry
+    ldrh    r0, [r1]
+    adds    r0, r0, #1
+    strh    r0, [r1]                        @ diagnosis: one more repeated block
+    b       .Ldisk_write_3FD2
+4:  ldr     r0, =sd_dg_wait
+    ldrb    r0, [r0]
     cmp     r0, #0
     ite     ne
     movwne  r0, #0x202                      @ diagnosis: write, sd_wait_write ran out of polls or CMD12 failed
@@ -702,6 +751,9 @@ FUNC disk_write
     movs    r0, #1                          @ OF-59: the block was not written: RES_ERROR
     b       .Ldisk_write_402A
 1:  adds    r7, r7, #1                      @ 08024024 r7 = r7 + 1
+    movs    r0, #0
+    ldr     r1, =sd_wr_try
+    strb    r0, [r1]                        @ the next block starts without a failed attempt
     b       .Ldisk_write_3FD2               @ 08024026 goto 0x8023FD2
 .Ldisk_write_4028:                      @ v2.05 0x08024028, reached from 0x08023FD6
     movs    r0, #0                          @ 08024028 r0 = 0
