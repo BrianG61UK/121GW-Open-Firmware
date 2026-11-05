@@ -1848,6 +1848,7 @@ FUNC sd_cmd_resp1_error
 @ sd_cmd_resp1_keep - as sd_cmd_resp1_error; In: r0 = command index, r1 = flags cleared after a good answer (sd_find_scr:
 @ the command flags only, so that the data flags of a block the card has already sent survive)
     .global sd_cmd_resp1_keep
+    .type sd_cmd_resp1_keep, %function
     .thumb_func
 sd_cmd_resp1_keep:
     push.w  {r4, r5, r6, r7, r8, lr}        @ 0802361C push {r4, r5, r6, r7, r8, lr}

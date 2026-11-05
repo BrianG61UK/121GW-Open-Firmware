@@ -118,9 +118,10 @@ FUNC bootwin_start
                                             @ adds no time to the start-up (before lcd_init it delayed the LCD start and every
                                             @ later event; DESIGN.md 3.2 step 5).  Every reader before this point
                                             @ (set_state_reset, lcd_init) reads the EEPROM itself (cal_cache_valid = 0).
-    bl fn_0801A81C                          @ IMP-35: v2.05 calls the splash FUN_0801A854 here ("V-2.05" on the main display,
-    bl ui_version_sub                       @ 0x0800EA74); the port shows the version on the sub display only, as during the
-                                            @ rest of the window (IMP-02): shadow cleared, version drawn, commit request
+    @ IMP-35: v2.05 calls the splash FUN_0801A854 here (0x0800EA74, "V-2.05" on the main display); the port shows the
+    @ version on the sub display only, as during the rest of the window (IMP-02)
+    bl fn_0801A81C                          @ clear the shadow (as the splash did first)
+    bl ui_version_sub                       @ the version on the sub display, commit request
     bl lcd_commit_shadow
     bl lcd_commit_flush                     @ production: wait as v2.05's commit does until the splash is written, so the
                                             @ first HY3131 write below is not earlier than in v2.05 (DESIGN.md 7.1)

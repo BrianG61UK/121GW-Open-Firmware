@@ -1,10 +1,7 @@
 # Planned features of the replacement firmware: user interface, storage, constraints
 
-Status: design. The backlight auto-off timer (2.9, IMP-07), the dBm reference (2.2, IMP-08), the Bluetooth frame rate
-(2.5, IMP-09), the thermocouple type (2.8, IMP-10), REL in percent (2.3, IMP-11), the display level (2.4, IMP-12), the 12-hour
-clock (2.12, IMP-13), the statistics (2.7, IMP-14), the continuity hold time (2.13, IMP-16) and the limit test (2.1, IMP-20) are
-implemented. The other features are designs for
-the production image; none of them is in the tree as code. The EEPROM bytes of section 3 are approved (owner, 2026-11-02);
+Status: sections 2.1 to 2.16 and 2.18 are implemented in the production image (the heading of each names its IMP number);
+section 2.17 is a design for the production image and is not in the tree as code. The EEPROM bytes of section 3 are approved (owner, 2026-11-02);
 each is added to `EEPROM_MAP.md` 4.1 and `nvm_allow` only with the code that uses it. Citations: `KS` = `analysis/keys_setup.md`, `EMAP` =
 `EEPROM_MAP.md`, `LCD` = `analysis/lcd_map.md`, `ARS` = `analysis/autorange_and_scheduler.md`, `DES` = `DESIGN.md`.
 
@@ -282,10 +279,10 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   calibration mode, the meter takes a file from the sender: packets of up to 232 bytes with a CRC-16, each answered
   (stop and wait, so nothing is in flight while the card is written and the link is deaf, NF-04). The bytes are collected
   in 8 KiB of log_buf and appended to `BTLOAD.TMP`; at the end the meter checks length and CRC-32 against the announced
-  values and the first two words (initial SP in the RAM, reset vector Thumb inside 0x08006000..0x0805FFFF), only then
+  values and the first two words (initial SP in the RAM, reset vector Thumb inside 0x08006000..0x08051FFF, `ble/bft.s`), only then
   copies the file to `EEVBlog.bin`, reads the copy back and deletes `BTLOAD.TMP`. The page shows `Ld nn` (percent), `Ld oK` or `LdE n` (1 card,
-  2 length/CRC, 3 not an image, 4 copy failed, 5 copy differs). The application never writes flash; the update itself is
-  the usual key sequence afterwards.
+  2 length/CRC, 3 not an image, 4 copy failed, 5 copy differs). The application writes flash only for the first install of the two-part
+  bootloader (2.10a); the update itself is the usual key sequence afterwards.
 - Residual risk: a failed copy is repeated from the intact temporary file (3 attempts in all). If every attempt fails,
   an `EEVBlog.bin` that an attempt had opened for writing is deleted (FatFs R0.16, IMP-29) and the page shows `LdE 4` / `LdE 5`: the bootloader
   opens `EEVBlog.bin` before it erases anything (0x08004A8A: f_mount, f_open of the name at 0x08004EF4 with FA_READ;
@@ -293,7 +290,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   leaves the installed firmware as it is.  Only a power loss while the copy is written leaves an incomplete
   `EEVBlog.bin`, which the bootloader would program if the key sequence is used.  After a checked copy `BTLOAD.TMP` is
   deleted; the card needs free space for the file twice during the transfer.  Recovery as for any bad file: a good
-  `EEVBlog.bin` and the key sequence (the bootloader is never written).
+  `EEVBlog.bin` and the key sequence (EEVblog's bootloader is not written by this path).
 - How: `ble/bft.s` (protocol in its header), hooks in `ble/usart.s` (the USART2 handler gives every byte to the ring of
   bft.s while the page owns the link; no status frames then), `sys/main.s` (bft_poll every pass) and `set/setup.s`.
 - Host side: `emulator/tools/bt_upload.py` (Python, needs the package bleak) with the packet code in
@@ -302,6 +299,18 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   1060 bytes per second over the link), checked and written as `EEVBlog.bin`.  The way there found an SD driver
   problem (ORIGINAL_FIRMWARE_ISSUES.md OF-59, port correction): reads whose "data end" notification was missed.
 - Storage: none (EEPROM untouched).
+
+### 2.10a Two-part bootloader support (implemented, F-1.04; verified working on a meter 2026-11-04/05)
+- Facts: `ble/bft.s` (header), `ble/blcmd.s` (header), `nvm/blinst.s`, `bootloader/README.md` and `bootloader/DESIGN.md` on the
+  branch `bootloader`.
+- First install: the transfer of 2.10 with START kind 1 carries the install file; the meter writes it to flash (only if the
+  bootloader area is one of EEVblog's builds and the battery is at least 4.80 V), restarts, and the starter installs the
+  bootloader. Errors `LdE 7` (bootloader area not EEVblog's, nothing written), `LdE 8` (battery), `LdE 9` (install file or
+  flash step failed).
+- Update requests: key code 0x91 of the key frame restarts the meter into the bootloader's update mode, only when the
+  two-part bootloader's mark is valid (the request is left in RTC_BKP0R for the bootloader; with EEVblog's bootloader
+  nothing happens); key code 0x92 is answered with the bootloader version frame `F7` (`B-` and three digits, or `B-EEV`).
+- Verified working on a meter: firmware update into bootloader B-1.11 and bootloader update 1.1.0 to 1.1.1 over Bluetooth.
 
 ### 2.11 Meter companion program (stages 1 to 5 implemented, branch companion; owner go 2026-11-04)
 - Request (owner, 2026-11-02 and 2026-11-04): the official phone application connects but draws badly; a program of our
@@ -332,7 +341,8 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   4. Update (implemented; verified working on a meter 2026-11-04: F-1.01 to F-1.02 through the companion): when a
      newer fast release exists than the version the meter reports (emu/fetch.py looks it up), the program
      shows it and offers "Update now" or "Later".  Update now = the transfer of 2.10; the user brings the meter to the
-     SETUP page Ld and afterwards does the bootloader key sequence: the program never sends key frames for it (a remote
+     SETUP page Ld and afterwards does the bootloader key sequence: the program never sends key frames for it with EEVblog's
+     bootloader (companion-v1.1.0 with the two-part bootloader sends the update-mode request of 2.10a instead; a remote
      SETUP is refused while logging, starts an offset calibration in calibration mode, and the page shown cannot be told
      from the status frame for every item; on Ld remote keys no longer arrive).  Later = remind at the next connection.
   5. Time sync (implemented; verified working on a meter 2026-11-04; owner request 2026-11-04): a button that takes the time from an NTP server (default pool.ntp.org,
@@ -446,6 +456,14 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - ESR is not measurable on this hardware (the CAP mode gives the firmware only counter times, AD1 is not read there and
   is far too slow for a step), so it is not part of this feature.
 
+### 2.18 exFAT, long file names and card format (implemented, IMP-32, F-1.04; format verified working on a meter 2026-11-04/05)
+- Facts: DESIGN.md section 10, IMP-32 (FatFs R0.16 with exFAT and long file names, translated by hand), IMP-33 and IMP-34
+  (the SD fixes found on the way, 5 Bluetooth transfers with 0 failed writes and 0 failed card start-ups in 220 start-ups).
+- What it does: the meter reads and writes FAT12, FAT16, FAT32 and exFAT cards with long file names. The SETUP page `For`
+  (item 40, after `Ld`) formats the card as exFAT after a confirmation, only with the two-part bootloader installed:
+  EEVblog's bootloader cannot read exFAT, so its card update would stop working. `Fr --` while it works, `Fr oK`; `FrE n` a
+  FatFs failure, `FrE L` refused while logging or in calibration mode (`set/fmt.s`).
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
@@ -485,6 +503,8 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 30 | `tr` (log trigger) | always | yes (implemented) |
 | 31 | `Ch` | with `tr-Ch` | yes (implemented) |
 | 36 | verdict `PASS`/`HI`/`Lo` | while the limit test is on (shown when it is switched on) | no (implemented) |
+| 39 | `Ld` firmware over Bluetooth (after `bt`) | with Bluetooth on | transfer (implemented) |
+| 40 | `For` card format (after `Ld`) | only with the two-part bootloader | yes, after a confirmation (implemented) |
 | 32 | `n` count | MIN/MAX on | no |
 | 33 | `Sd` | MIN/MAX on | no |
 | 34, 35 | `tHI`, `tLo` | MIN/MAX on | no |

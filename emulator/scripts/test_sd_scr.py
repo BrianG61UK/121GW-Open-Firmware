@@ -8,7 +8,9 @@ its buffer and the start-up fails with 0x25 (sd_enable_wide_bus: "1-bit bus not 
 (emu/sdcard.py SDCard.read_latency_us, normally the declared 1 ms) is set to 0 before logging is started with MEM long.
 Checks: logging starts, a CSV file with the START header is written; with the map of the image, the start-up counters
 (no failed start-up) and the SCR counters (the loop had read no word, the words came from the FIFO afterwards).
-A v2.05-style image without IMP-34 (no map given) is expected to fail the first check.
+An image without IMP-34 (no map given) fails: the F-1.04 build before IMP-34 never started the card here (every SCR read
+ran out of polls, error 4) and wrote no CSV file (2026-11-04).  The count of reads whose loop had one word (scr1) is
+printed only: with a read latency of 0 the block is always complete before the loop runs.
 The helpers are those of test_backlight_timer.py.
 """
 import os
