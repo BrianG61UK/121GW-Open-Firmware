@@ -771,10 +771,12 @@ FUNC sd_get_card_info
     lsrs    r2, r2, #8                      @ 08022CB6 r2 = r2 >> 8
     movs    r4, r2                          @ 08022CB8 r4 = r2
     ldr     r2, [r1, #0x10]                 @ 08022CBA r2 = u32 [r1+0x10]
-    adds    r2, r2, #1                      @ 08022CBC r2 = r2 + 1
-    movs.w  r3, #0x80000                    @ 08022CBE r3 = 0x80000
-    muls    r2, r3, r2                      @ 08022CC2 r2 = r3 * r2
-    movs    r3, #0                          @ 08022CC4 r3 = 0
+    adds    r2, r2, #1                      @ 08022CBC r2 = C_SIZE + 1
+    @ OF-68: CardCapacity = (C_SIZE + 1) * 512 KiB as a 64-bit value.  v2.05 multiplied in 32 bits (0x08022CBE..0x08022CC4:
+    @ movs.w r3, #0x80000; muls; movs r3, #0), which wraps above 4 GiB (a 32 GB card: 1.72 GiB); v2.05 never used the
+    @ value, the port's disk_ioctl GET_SECTOR_COUNT does (f_mkfs sizes the volume by it, IMP-32)
+    lsrs    r3, r2, #13                     @ high word: (C_SIZE + 1) >> (32 - 19)
+    lsls    r2, r2, #19                     @ low word: (C_SIZE + 1) << 19
     strd    r2, r3, [r1, #0x48]             @ 08022CC6
     mov.w   r2, #0x200                      @ 08022CCA r2 = 0x200
     str     r2, [r1, #0x50]                 @ 08022CCE u32 [r1+0x50] = r2
