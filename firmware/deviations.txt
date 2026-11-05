@@ -367,6 +367,10 @@ IMP-02  assert  powercycle_quick    build == production and line == 10
 IMP-02  lcd     *  build == production and boot in 0.09..2.7
 IMP-02  spi     *  build == production and boot in 0.06..2.7
 IMP-02  gpio    *  build == production and boot in 0.1..2.2 and pin != buzzer and pin != backlight and pin != supply and pin != ble_supply
+# The beep of the dial's mode, applied at once, comes with it: 0.137 s instead of 2.150 s after power-on (boot_v, beep 0.30 s; owner
+# 2026-11-05: "power on beep seems ok").
+IMP-02  gpio    *  build == production and pin == buzzer and boot in 0.13..0.45
+IMP-02  gpio    *  build == production and pin == buzzer and boot in 2.14..2.46
 IMP-02  power   *  build == production and boot in 0.1..2.2 and pin ~ "P[EF]*"
 # The loop's 100 ms and 1 s steps read the clock chip during the window too (v2.05: no reads between 0.04 s and 2.07 s).
 IMP-02  rtc     *  build == production and boot in 0.05..2.2
