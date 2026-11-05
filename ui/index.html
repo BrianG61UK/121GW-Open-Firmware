@@ -352,7 +352,7 @@ footer .r { color: var(--faint); min-width: 160px; }
   <div class="pad" id="cardmain" hidden>
     <div class="cardbar"><button id="c-refresh">Refresh</button>
       <input id="c-folder" class="num" spellcheck="false" aria-label="folder on this computer" placeholder="folder on this computer">
-      <button id="c-sync" class="pri">Sync to folder</button><span class="warn" id="c-err" hidden>Fault</span><span class="dim" id="c-errtext"></span></div>
+      <button id="c-sync" class="pri">Sync to folder</button><button id="c-format">Format card</button><span class="warn" id="c-err" hidden>Fault</span><span class="dim" id="c-errtext"></span></div>
     <div class="eng">Space</div>
     <div class="space sbar" id="spacebar"></div>
     <div class="stat num"><span id="sp-used">—</span><span id="sp-free">—</span><span id="sp-total">—</span></div>
@@ -401,6 +401,20 @@ footer .r { color: var(--faint); min-width: 160px; }
   <p>Delete <b class="num yel" id="cf-name"></b> from the meter's card? This cannot be undone. Type the name to confirm.</p>
   <input id="cf-input" class="num" spellcheck="false" autocomplete="off" aria-label="type the file name">
   <div class="btns" style="margin-top:0"><button id="cf-ok" disabled>Delete</button><button id="cf-cancel">Cancel</button></div>
+</div></div>
+
+<div class="confirm" id="fconfirm"><div class="box">
+  <div class="eng">Format the SD card</div>
+  <p>Everything on the meter's card is erased: the log files and <b>cal.bin</b>, the backup of the calibration (make a new
+  one afterwards: MEM while switching on, REL, MODE). The card becomes exFAT. This needs the two-part bootloader.
+  Type <b class="num yel">FORMAT</b> to confirm.</p>
+  <input id="fc-input" class="num" spellcheck="false" autocomplete="off" aria-label="type FORMAT">
+  <div class="btns" style="margin-top:0"><button id="fc-ok" disabled>Format</button><button id="fc-cancel">Cancel</button></div>
+</div></div>
+<div class="confirm" id="fprog"><div class="box">
+  <div class="eng">Formatting the SD card</div>
+  <p id="fp-text"></p>
+  <div class="btns" style="margin-top:0"><button id="fp-ok" disabled>OK</button></div>
 </div></div>
 
 <footer><span id="msg">Meter on, Bluetooth on (hold PEAK), phone app closed.</span><span class="r num" id="sline"></span></footer>
@@ -799,7 +813,33 @@ function progressOf(C, now) {
   }
   return {f, done, total, rate: rateSm};
 }
+// Format: typed confirmation, then a window that stays until the meter has answered (it cannot report progress: its
+// link is deaf while it writes the card); OK unlocks when the job is done (card.done_job reaches the job number)
+let fmtJob = null;
+$('c-format').onclick = () => {
+  $('fc-input').value = ''; $('fc-ok').disabled = true; $('fconfirm').classList.add('show'); $('fc-input').focus();
+};
+$('fc-input').oninput = () => { $('fc-ok').disabled = $('fc-input').value !== 'FORMAT'; };
+$('fc-cancel').onclick = () => $('fconfirm').classList.remove('show');
+$('fc-input').onkeydown = e => { if (e.key === 'Escape') $('fc-cancel').click(); else if (e.key === 'Enter' && !$('fc-ok').disabled) $('fc-ok').click(); };
+$('fc-ok').onclick = async () => {
+  $('fconfirm').classList.remove('show');
+  setText($('fp-text'), 'The meter is formatting its SD card. Leave the meter on the page Ld-bt and wait: it answers when it is done.');
+  $('fp-ok').disabled = true; $('fprog').classList.add('show');
+  try { fmtJob = (await send('card_format', {confirm: 'FORMAT'})).job; }
+  catch (e) { fmtJob = null; setText($('fp-text'), 'Format not started: ' + (e && e.message ? e.message : e)); $('fp-ok').disabled = false; }
+};
+$('fp-ok').onclick = () => $('fprog').classList.remove('show');
+function drawFormat(C) {
+  if (fmtJob === null || !C || C.done_job < fmtJob) return;
+  fmtJob = null; cardSig = '';
+  setText($('fp-text'), C.error ? 'Format failed: ' + C.error
+    : 'Done: the card is formatted (exFAT), ' + bytesH(C.free_bytes) + ' free of ' + bytesH(C.total_bytes) + '.');
+  $('fp-ok').disabled = false;
+}
+
 function drawCard(C, now) {
+  drawFormat(C);
   const on = desk();
   $('deskinfo').hidden = on; $('cardmain').hidden = !on;
   if (!on) return;
@@ -821,7 +861,7 @@ function drawCard(C, now) {
   const ef = $('c-folder'); if (document.activeElement !== ef && !ef.dataset.edited) ef.value = sy.folder || (state && state.folder) || '';
   const note = C.error ? ['Fault', C.error] : C.locked_reason && !C.busy ? ['Locked', C.locked_reason] : [null, C.result && !C.busy ? C.result : ''];
   $('c-err').hidden = !note[0]; $('c-err').textContent = note[0] || ''; $('c-errtext').textContent = note[1];
-  for (const id of ['c-refresh', 'c-sync']) $(id).disabled = !!C.busy;
+  for (const id of ['c-refresh', 'c-sync', 'c-format']) $(id).disabled = !!C.busy;
   const files = (C.files || []).map(f => Object.assign({when: (f.date || '') + ' ' + (f.time || '')}, f));
   files.sort((a, b) => { const x = a[sortKey], y = b[sortKey]; return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * sortDir; });
   const sig = JSON.stringify([files, sortKey, sortDir, !!C.busy]);

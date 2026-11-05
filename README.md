@@ -30,7 +30,7 @@ Recorded from a real 121GW with firmware F-1.07 over Bluetooth (nothing connecte
 | Five views | LIVE (reading, derived values, statistics, the meter's keys), SCOPE (trend with two cursors: time, voltage and frequency differences), LOG (recordings), CARD (the SD card), METER (versions, updates, clock, settings, diagnostics); keys 1..5 switch views |
 | Derived values | REL in percent, 4-20 / 0-20 mA loop percent, Pt100 / Pt1000 temperature from ohms (IEC 60751), a limit test with your own low and high limits (PASS / HI / LO) |
 | Meter keys | RANGE, HOLD, REL, PEAK, MODE, MIN/MAX and MEM (long) from the computer |
-| SD card (firmware F-1.05 or newer, meter on the page `Ld-bt`) | the card's files with size, date and time; download (about 1 KB/s, every 8 KB checked with a CRC-32), delete (cal.bin, EEVBlog.bin and BTLOAD.TMP are protected), free space, and "Sync to folder": new or changed files copied into a folder on the computer, nothing deleted there |
+| SD card (firmware F-1.05 or newer, meter on the page `Ld-bt`) | the card's files with size, date and time; download (about 1 KB/s, every 8 KB checked with a CRC-32), delete (cal.bin, EEVBlog.bin and BTLOAD.TMP are protected), free space, and "Sync to folder": new or changed files copied into a folder on the computer, nothing deleted there; "Format card" (firmware F-1.09 or newer with the two-part bootloader): the card formatted as exFAT after you type FORMAT |
 | Settings (firmware F-1.05 or newer, page `Ld-bt`) | the meter's SETUP settings read and changed from the computer, each stored as the meter's own page stores it; calibration, serial number and rotary memory cannot be reached |
 | Diagnostics | the meter's 21 SD card and transfer diagnosis values with their meaning (page `Ld-bt`) |
 

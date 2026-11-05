@@ -1,6 +1,6 @@
 """Shared helpers of the tests: the import path of the package and a fake meter that speaks the card / settings protocol.
 
-The fake meter implements the requests 0x10 .. 0x14, 0x16 and 0x17 of firmware/src/ble/bftsd.s and bftset.s (answer
+The fake meter implements the requests 0x10 .. 0x17 of firmware/src/ble/bftsd.s and bftset.s (answer
 B5 5B 82 seq len status field(2) data crc16) in Python over an in-memory set of files and settings, including the name
 rules, the statuses and the ranges of the firmware.  Its answers go through the real frames.Reassembler in notifications
 of a few bytes each, like the Bluetooth link delivers them, so the framing and resynchronisation of the program are in
@@ -57,6 +57,7 @@ class FakeMeter:
         self.corrupt_chunk_once = False                # one CHUNK answer with wrong data but a valid packet CRC
         self.refuse_put = None                         # status for PUT
         self.deliver = None                            # deliver(kind, frame, t) instead of `answers` (the app's _frame)
+        self.two_part = True                           # False: EEVblog's bootloader, FORMAT is answered 0x25
         self.on_ld = True                              # False: the meter shows a measuring page and ignores transfer requests
         self.echo_keys = True                          # answer a key frame F4 with its echo
         self.keys = []                                 # key frames received
@@ -159,6 +160,14 @@ class FakeMeter:
             if not found:
                 return card.ST_NOT_FOUND, 0, b''
             del self.files[found[0]]
+            return card.ST_OK, 0, b''
+        if rtype == card.T_FORMAT:
+            if p != card.FORMAT_WORD:
+                return card.ST_ARG, 0, b''
+            if not self.two_part:
+                return card.ST_NO_FORMAT, 0, b''
+            self.files.clear()
+            self.free = self.total
             return card.ST_OK, 0, b''
         if rtype == card.T_INFO:
             if p:

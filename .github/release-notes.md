@@ -1,5 +1,9 @@
 121GW Companion: live view, recording and firmware information for the EEVblog 121GW over Bluetooth LE.
 
+New in 1.2.3: "Format card" in the CARD view (meter on the page Ld-bt, firmware F-1.09 or newer with the two-part bootloader): type FORMAT to confirm, a window stays open until the meter has formatted the card.
+
+Fixed in 1.2.3: buttons answer the first click on macOS (Connect needed up to ten clicks, the update notice's button did not answer: the page rewrote the button text on every redraw, and WebKit drops a click whose pressed text was replaced); the CARD view shows the card's space (two requests sent together refused the second); the LOG view lists the recordings folder with size and date; the update notice says where the meter restarts to.
+
 Fixed in 1.2.2: the Windows installer asks for administrator rights at start and installs for all users into Program Files (before it installed into the user's AppData folder and could fail); an earlier per-user copy is removed first. Without administrator rights, start the installer with /CURRENTUSER. The .sha256 file of the Windows installer ends its line with LF, so sha256sum -c / shasum -c accept it.
 
 Fixed in 1.2.1: Connect works on the first click (macOS: the window is brought to the front at start; a Connect right after a Disconnect starts a new search; a search stopped half-way leaves no half-open connection behind, which kept the meter from being found); the button shows Connect / Stop searching / Disconnect; the update check shows "up to date" with the newest releases and the time of the check, or why it failed; versions shown once (F-1.05, not F-F-1.05).

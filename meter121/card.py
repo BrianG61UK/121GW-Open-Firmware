@@ -49,14 +49,16 @@ import zlib
 from . import transfer
 
 # ---------------------------------------------------------------------------------------------------- byte layouts
-T_LIST, T_READ, T_CHUNK, T_DELETE, T_INFO = 0x10, 0x11, 0x12, 0x13, 0x14
+T_LIST, T_READ, T_CHUNK, T_DELETE, T_INFO, T_FORMAT = 0x10, 0x11, 0x12, 0x13, 0x14, 0x15
+FORMAT_WORD = b'FORMAT'                            # the only payload the meter's FORMAT accepts (ble/bftsd.s)
 T_ANSWER = 0x82                                    # type byte of every answer to the requests above and to settings.py
-ST_OK, ST_NOT_NOW, ST_NOT_FOUND, ST_NAME, ST_ARG, ST_PROTECTED, ST_CARD = 0, 3, 0x20, 0x21, 0x22, 0x23, 0x24
+ST_OK, ST_NOT_NOW, ST_NOT_FOUND, ST_NAME, ST_ARG, ST_PROTECTED, ST_CARD, ST_NO_FORMAT = 0, 3, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25
 STATUS_TEXT = {ST_OK: 'accepted',
                ST_NOT_NOW: 'not allowed now (a firmware transfer, a restart due or a setting being edited on the meter)',
                ST_NOT_FOUND: 'not found on the card', ST_NAME: 'name refused', ST_ARG: 'argument or value refused',
-               ST_PROTECTED: 'protected file', ST_CARD: 'card error'}
-CARD_STEP = {1: 'open', 2: 'seek', 3: 'read', 4: 'delete', 5: 'getfree / close'}
+               ST_PROTECTED: 'protected file', ST_CARD: 'card error',
+               ST_NO_FORMAT: 'formatting needs the two-part bootloader (EEVblog\'s bootloader cannot read exFAT cards)'}
+CARD_STEP = {1: 'open', 2: 'seek', 3: 'read', 4: 'delete', 5: 'getfree / close', 6: 'format'}
 NAME_ENCODING = 'latin-1'                          # the meter's names are bytes; the permitted ones are ASCII
 CHUNK = transfer.MAX_PAYLOAD                       # 232: bytes of one CHUNK answer (bft.s BFT_MAXPAY)
 WINDOW = 8192                                      # largest READ (bft.s BFT_STAGE_LEN)
@@ -210,7 +212,8 @@ RETRIES = 4                                        # sends of one request withou
 CHUNK_RETRIES = 8                                  # CHUNK is cheap and idempotent: more sends
 WINDOW_TRIES = 3                                   # stagings of one window until its CRC-32 matches
 CHUNK_PASSES = 2                                   # fetches of the chunks of one staging
-TIMEOUTS = {T_LIST: 15.0, T_READ: 30.0, T_CHUNK: 5.0, T_DELETE: 20.0, T_INFO: 30.0}   # f_getfree scans the FAT
+TIMEOUTS = {T_LIST: 15.0, T_READ: 30.0, T_CHUNK: 5.0, T_DELETE: 20.0, T_INFO: 30.0,    # f_getfree scans the FAT
+            T_FORMAT: 180.0}                   # f_mkfs writes the whole file system; the meter answers when done
 
 
 class Client:
@@ -292,6 +295,13 @@ class Card:
         """{'free_bytes', 'total_bytes'} of the card."""
         free, total = parse_info(*self.c.ok(T_INFO))
         return {'free_bytes': free, 'total_bytes': total}
+
+    def format(self):
+        """Format the card as exFAT (FORMAT, firmware F-1.09 or newer with the two-part bootloader): everything on it
+        is gone.  Sent once (no repetition: the answer comes only when the meter has finished)."""
+        status, field, _ = self.c.request(T_FORMAT, FORMAT_WORD, retries=1)
+        if status != ST_OK:
+            raise CardError('format refused: ' + describe(status, field), status)
 
     def delete(self, name):
         """Delete a file; refused here for the protected names (the meter refuses them as well)."""

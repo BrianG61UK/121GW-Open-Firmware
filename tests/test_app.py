@@ -53,15 +53,17 @@ class AppCase(unittest.TestCase):
             card.TIMEOUTS[k] = 2.0                      # the default is long; nothing here waits for a lost answer
 
     def tearDown(self):
-        card.TIMEOUTS.update({card.T_LIST: 15.0, card.T_READ: 30.0, card.T_CHUNK: 5.0, card.T_DELETE: 20.0, card.T_INFO: 30.0})
+        card.TIMEOUTS.update({card.T_LIST: 15.0, card.T_READ: 30.0, card.T_CHUNK: 5.0, card.T_DELETE: 20.0, card.T_INFO: 30.0,
+                              card.T_FORMAT: 180.0})
         self.app.link.state = 'idle'
 
     def go_desk(self):
         self.assertTrue(wait(lambda: self.app.desk), 'desk mode not detected')
 
     def card_op(self, command):
-        self.assertEqual(self.app.command(command), {'ok': True})
-        self.assertTrue(wait(lambda: not self.app.state()['card']['busy']), 'card operation did not end')
+        r = self.app.command(command)
+        self.assertEqual(set(r), {'ok', 'job'})
+        self.assertTrue(wait(lambda: self.app.state()['card']['done_job'] >= r['job']), 'card operation did not end')
         return self.app.state()['card']
 
 
@@ -76,7 +78,7 @@ class State(AppCase):
         self.assertIs(st['desk'], False)
         self.assertEqual(st['diag'], {'values': [], 'text': ''})
         self.assertEqual(set(st['card']), {'files', 'free_bytes', 'total_bytes', 'busy', 'op', 'progress', 'sync', 'error',
-                                           'result', 'locked_reason'})
+                                           'result', 'job', 'done_job', 'locked_reason'})
         self.assertEqual(set(st['card']['sync']), {'folder', 'last', 'copied'})
         self.assertEqual(set(st['settings']), {'items', 'locked_reason', 'error'})
         self.assertEqual(st['settings']['locked_reason'], 'not connected to a meter')
@@ -185,6 +187,22 @@ class Diag(AppCase):
 
 
 class CardCommands(AppCase):
+    def test_format(self):
+        self.go_desk()
+        with self.assertRaises(ValueError):                              # the typed word is required
+            self.app.command({'card_format': True, 'confirm': 'format'})
+        self.assertEqual(len(self.meter.files), len(sample_files()))      # nothing sent, nothing erased
+        self.meter.two_part = False
+        st = self.card_op({'card_format': True, 'confirm': 'FORMAT'})
+        self.assertIn('two-part bootloader', st['error'] or '')         # the meter's refusal reaches the page
+        self.assertEqual(len(self.meter.files), len(sample_files()))
+        self.meter.two_part = True
+        st = self.card_op({'card_format': {'confirm': 'FORMAT'}})
+        self.assertIsNone(st['error'])
+        self.assertEqual((st['files'], st['result']), ([], 'the card is formatted'))
+        self.assertEqual(st['free_bytes'], st['total_bytes'])
+        self.assertEqual([p for t, p in self.meter.sent if t == card.T_FORMAT][-1], b'FORMAT')
+
     def test_refused_until_desk(self):
         with self.assertRaises(RuntimeError):
             self.app.command({'card_list': True})

@@ -100,7 +100,7 @@ class Companion:
         self.diag = {'values': [], 'text': ''}
         self.card_st = {'files': [], 'free_bytes': None, 'total_bytes': None, 'busy': False, 'op': '', 'progress': 0.0,
                         'sync': {'folder': self.settings.get('card_sync_folder'), 'last': None, 'copied': 0},
-                        'error': None, 'result': ''}
+                        'error': None, 'result': '', 'job': 0, 'done_job': 0}
         self.settings_st = {'items': [], 'error': None}
         self.link = MeterLink(self._frame, self._state)
         threading.Thread(target=self._ask_version, name='version', daemon=True).start()
@@ -498,7 +498,9 @@ class Companion:
                 raise RuntimeError(reason)
             if check:
                 check()
-            st.update(busy=True, op=op, progress=0.0, error=None, result='')
+            st['job'] += 1
+            job_no = st['job']                           # the page waits for done_job to reach it (a short job can end
+            st.update(busy=True, op=op, progress=0.0, error=None, result='')   # between two of its polls)
 
         def progress(done, total):
             st['progress'] = done / total if total else 1.0
@@ -514,10 +516,11 @@ class Companion:
                 st['error'] = 'internal error: %r' % (e,)
             finally:
                 st['busy'], st['op'] = False, ''
+                st['done_job'] = job_no
 
         # the lock is taken by run() itself; busy is set above so no second operation starts between the two
         threading.Thread(target=run, name='card', daemon=True).start()
-        return {'ok': True}
+        return {'ok': True, 'job': job_no}
 
     @staticmethod
     def _folder_arg(value, default):
@@ -573,6 +576,19 @@ class Companion:
             self.card_st['files'] = c.list()             # the page shows the folder as it is now
             return 'deleted %s' % name
         return self._card_start('delete', job, check)
+
+    def card_format(self, confirm):
+        """Format the meter's card (exFAT); `confirm` must be the word FORMAT the user typed."""
+        def check():
+            if confirm != 'FORMAT':
+                raise ValueError('type FORMAT to confirm')
+
+        def job(c, progress):
+            c.format()
+            self.card_st['files'] = c.list()
+            self.card_st.update(c.info())
+            return 'the card is formatted'
+        return self._card_start('format', job, check)
 
     def card_sync(self, folder):
         folder = self._folder_arg(folder, self.card_st['sync']['folder'] or os.path.join(self.folder, 'card'))
@@ -720,6 +736,8 @@ class Companion:
             return self.card_download(self._arg(c, 'card_download', 'name'), self._arg(c, 'card_download', 'dest'))
         if 'card_delete' in c:
             return self.card_delete(self._arg(c, 'card_delete', 'name'))
+        if 'card_format' in c:
+            return self.card_format(self._arg(c, 'card_format', 'confirm'))
         if 'card_sync' in c:
             return self.card_sync(self._arg(c, 'card_sync', 'folder'))
         if 'settings_get' in c:
