@@ -21,13 +21,17 @@ Contents
     identified, calibrated unit (the firmware then uses its defaults, e.g. date code 1708, ID 0).
   * Calibration records (section 5): offset 0 and one nominal gain per record, for every record of every mode and range
     in the base table T (section 5.1, read from --tables when given and compared with the documented values).
-      - Voltage-code records (all modes except CAP): raw AD1 LSB per display count g = 2^22 / 50000 = 83.88608, i.e.
-        50,000 display counts correspond to half of the AD1 positive full scale 2^23 (AD1_SCALE, emulator/emu/hy3131.py),
-        leaving the other half as headroom for over-range readings.  The gain is a DESIGN CHOICE of this synthetic unit:
-        it is neither measured nor derived from the circuit.  The emulator's calibrated front end builds the signal from
-        the calibration it finds, so a unit with any positive gain reads the stimulus; the gain sets only the size of the
-        raw codes (and with it the quantisation and the noise in raw LSB).
-      - CAP records (section 5.3, divisor 1e5): g is chosen so that 5000 display counts give a counter high time of
+      - Voltage-code records (all modes except CAP) and the peak record: TYPICAL gains, the mean of the calibration
+        of two real meters (two EEPROM images read in 2026), rounded to 3 significant digits.  The two meters agree within
+        3 % on every one of these records, so the values stand for a typical unit and copy neither.  The gain sets the
+        size of the raw AD1 codes per display count and with it the over-range point: the code is held at the register
+        limit 2^23 - 1 (emulator/emu/hy3131.py), which a typical unit reaches at 2^23 / (g * full-scale counts), e.g.
+        about 2.2 x full scale in OHM ranges 1..4 and 1.4 x in ranges 5 and 6, as a real meter does (a single nominal
+        gain of 83.9 for every record, used before 2026-11-05, put that point at exactly 2 x everywhere).  Offsets
+        stay 0: the emulator's calibrated front end builds the signal from the calibration it finds, so offsets change
+        only the raw codes, not the readings.
+      - CAP records (section 5.3, divisor 1e5): the two real meters differ by up to 27 x here, so no typical value
+        exists; g is chosen so that 5000 display counts give a counter high time of
         65536 SYSCLK ticks (ranges 0, 1, 5; ranges 2..4 use X / 100, so their gain is 100 times larger).  Also a design
         choice; the physical capacitance method is not documented (emu/frontend.py _plan_cap).
       - Records with no calibration role are left 0: the frequency reference word 0x104 (the firmware then uses its default
@@ -42,9 +46,28 @@ import sys
 sys.dont_write_bytecode = True
 
 SIZE = 0x500
-AD1_FS = 1 << 23                       # AD1 full-scale code (emu/hy3131.py AD1_SCALE)
-NOMINAL_COUNTS = 50000                 # display counts that map to half of AD1_FS
-GAIN = (AD1_FS // 2) / NOMINAL_COUNTS  # 83.88608 raw LSB per display count
+TYPICAL_GAIN = {                       # mode: (gain per range, VA current-record gain per range or None)
+    1: ((60.9, 62.5, 62.6, 62.7), None),
+    2: ((62.2, 62.1, 62.3, 622.0), None),
+    3: ((6.18, 62.4), None),
+    4: ((62.0, 62.0), None),
+    5: ((6.19,), None),
+    9: ((7.48, 74.9, 75.0, 75.1, 77.0, 123.0, 123.0), None),
+    11: ((30.9,), None),
+    13: ((62.3, 62.6, 62.3, 62.6), (125.0, 125.0, 125.0, 125.0)),
+    14: ((62.3, 62.2, 62.3, 62.2), (126.0, 126.0, 127.0, 127.0)),
+    15: ((62.2, 62.1, 60.1, 61.6), (123.0, 123.0, 124.0, 124.0)),
+    16: ((125.0, 125.0), None),
+    17: ((75.2, 12.6), None),
+    18: ((126.0, 126.0), None),
+    19: ((75.8, 12.7), None),
+    20: ((123.0, 123.0, 124.0), None),
+    21: ((73.9, 12.4, 124.0), None),
+    22: ((60.9, 62.5, 60.9, 62.5), (75.1, 75.1, 12.6, 12.6)),
+    23: ((60.9, 62.5, 60.9, 62.5), (75.8, 75.9, 12.7, 12.7)),
+    24: ((60.8, 62.5, 59.2, 62.4), (73.9, 73.9, 124.0, 124.0)),
+}
+TYPICAL_PEAK_GAIN = 1.04
 CAP_H_AT_5000 = 65536                  # CAP counter high time in SYSCLK ticks at 5000 display counts
 CAP_COUNTS = 5000
 
@@ -77,14 +100,14 @@ def build(table=T):
             if mode == 12:
                 g, div = cap_gain(r), 1e5
             else:
-                g, div = GAIN, 1e6
+                g, div = TYPICAL_GAIN[mode][0][r], 1e6
             if a in seen and seen[a] != (mode, g):
                 raise SystemExit('record 0x%03X is shared by modes %d and %d with different gains' % (a, seen[a][0], mode))
             seen[a] = (mode, g)
             put(a, 0, g, div)
             if mode in VA_MODES:
-                put(a + 8, 0, g, div)
-    put(table[25], 0, GAIN, 1e6)                       # peak record
+                put(a + 8, 0, TYPICAL_GAIN[mode][1][r], div)
+    put(table[25], 0, TYPICAL_PEAK_GAIN, 1e6)          # peak record
     e[MARK_AT:MARK_AT + len(MARK)] = MARK
     return bytes(e), len(seen) + 1
 

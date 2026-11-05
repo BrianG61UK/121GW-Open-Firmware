@@ -150,8 +150,9 @@ OPEN_LEADS = {
                'noise and offset; mains pickup not applied in this DC row (AD1CHOP = 1x, DS p30 (2))',
     'volt_ac': 'leads open: AD8436 path reads the RMS of the mains pickup at the V jack (environment)',
     'counter': 'leads open: no counter edges unless the pickup swing crosses the input thresholds',
-    'ohm': 'leads open: R -> infinity, no current through the reference resistor (VR -> 0), the AD1 code saturates '
-           '(DS p18 (1)); firmware range / OL logic 0x0800DE24',
+    'ohm': 'leads open: R -> infinity, no current through the reference resistor (VR -> 0); the model holds the AD1 code at '
+           'the register limit 7FFFFFh (DS p18 (1) gives the limit, not what an overloaded AD1 outputs: UNPROVEN); '
+           'firmware range / OL logic 0x0800DE24',
     'diode': 'leads open: the jack sits at the source open-circuit voltage, MAN diode table 1.4 mA (3 V) / 7 mA (15 V) '
              'x the nominal 2.2 kOhm series resistance = 3.08 V / 15.4 V (MAN p50-51, nominal values)',
     'cap': 'leads open: C = 0, the unit presents its calibration zero (X = offset of the EEPROM record); physical '
@@ -1000,7 +1001,7 @@ class CalibratedFrontend(_Base):
         w = int(64 / min(1.0, slope)) + 1
         for x in range(max(0, d - w), d + w + 1):
             consider(x)
-        if best is None:                               # target beyond the AD1 range: the code saturates
+        if best is None:                               # target beyond the AD1 range: held at the register limit (model, UNPROVEN)
             return d0max
         if best[0][0] != 0:
             if c['filt'] and 20 <= c['F'] < 6001:
@@ -1288,7 +1289,7 @@ class CalibratedFrontend(_Base):
             p['why'] = f'OHM range {rng} unknown'
             return
         d = st['value'] * 10.0 ** e
-        if not math.isfinite(d):                    # leads open: the code saturates in the chip (OPEN_LEADS['ohm'])
+        if not math.isfinite(d):                    # leads open: held at the register limit (model, UNPROVEN; OPEN_LEADS['ohm'])
             if not g:
                 raise ZeroDivisionError
             p.update(ok=True, raw=math.inf, gain=g)

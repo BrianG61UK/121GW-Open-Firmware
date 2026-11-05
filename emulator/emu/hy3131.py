@@ -61,7 +61,9 @@ Converters
   scale of AD1<23:0>; the register range 800000h..7FFFFFh (DS p18 (1)) makes 2^23 the natural full-scale code
   for a ratio of 1, and the calibration constants agree with it to 0.5..0.8 % for DCV r1..r3 (spec 5.5).  The
   scale is therefore AD1_SCALE = 2^23, still UNPROVEN as an explicit datasheet statement.  The code is rounded to
-  the nearest integer and limited to the register range (rounding mode: model choice).  The chip outputs a true
+  the nearest integer (rounding mode: model choice) and held at the register limits 800000h / 7FFFFFh when the
+  input is beyond them: the datasheet gives the register range only, not what AD1 outputs when overloaded, so the
+  clamp is a model choice (UNPROVEN).  The chip outputs a true
   two's-complement code; the firmware's off-by-one decode of negative codes (FW 0x080062F8, spec 4.1) is not
   compensated.
   AD1CHOP (DS p30 table): 00 -> VX + VOS, 01 -> VX - VOS, 1x -> VX.  VOS has no datasheet figure and is a
@@ -536,7 +538,7 @@ class HY3131:
                 x += self.zero_drift_counts_per_c * self.delta_t_c * rpc
             if nz.get('code_sigma'):
                 x += self.rng.gauss(0.0, nz['code_sigma'])
-            if not math.isfinite(x):                # e.g. an infinite input: the converter saturates
+            if not math.isfinite(x):                # e.g. an infinite input: held at the register limit (model, UNPROVEN)
                 x = AD1_MAX if x > 0 else AD1_MIN
             code = max(AD1_MIN, min(AD1_MAX, int(math.floor(x + 0.5))))
             info.update(vin=vin, vref=vr, ideal=x)

@@ -76,6 +76,13 @@ ar_state:
     .global ar_freq_tmo_count
 ar_freq_tmo_count:
     .space 1
+@ ar_ohm_jump (owner AR): 0, or 1 + the top range when ar_sample has just jumped there from a saturated OHM sample.
+@ The first step down from that range is the measured correction of the jump: it is not refused by the OHM direction
+@ guard (fn_0800E2A0), which would otherwise hold the low-resolution top-range reading for 1 s.  Cleared by that
+@ step, by any other range change of ar_sample, by a reading that belongs to the top range, and by every apply that
+@ ar_sample did not request (dial, MODE, RANGE, autorange_step).
+ar_ohm_jump:
+    .space 1
 
     .section .rodata.ar, "a", %progbits
     .balign 4
@@ -256,7 +263,11 @@ FUNC ar_apply
     ldr r2, =ar_ol_latch
     strb r3, [r2]                           @ the overload hysteresis starts clear at every apply (OF-20)
     ldr r4, =ar_state
-    strb r3, [r4, #AR_ST_OVER]              @ no confirmation under way
+    ldrb r2, [r4, #AR_ST_PEND]
+    cbnz r2, 9f
+    ldr r2, =ar_ohm_jump
+    strb r3, [r2]                           @ an apply ar_sample did not request: no jump correction pending
+9:  strb r3, [r4, #AR_ST_OVER]              @ no confirmation under way
     strb r3, [r4, #AR_ST_UNDER]
     strb r3, [r4, #AR_ST_DISCARD]
     strb r3, [r4, #AR_ST_FIRST]             @ no blank request in progress
@@ -477,6 +488,8 @@ FUNC ar_sample
 @ range 0 (cannot go down) or |value| >= L: between the thresholds
 .Las_inband:
     movs r2, #0                             @ between L and U: the confirmation starts again
+    ldr r3, =ar_ohm_jump
+    strb r2, [r3]                           @ the reading belongs here: a jump needs no correction
     strb r2, [r10, #AR_ST_OVER]
     strb r2, [r10, #AR_ST_UNDER]
     b .Las_accept
@@ -500,8 +513,16 @@ FUNC ar_sample
     adds r9, r6, #1                         @ saturated: one range up ...
     cmp r5, #MODE_OHM
     bne .Las_do_up
-    mov r9, r2                              @ ... but OHM jumps to the top range
-    b .Las_do_up
+    mov r9, r2                              @ ... but OHM jumps to the top range, whose reading then gives the target
+    movs r0, #1
+    bl fn_0800E2A0                          @ OHM direction guard for an up step (1 = refused)
+    cmp r0, #0
+    bne .Las_accept
+    bl .Las_commit_sub                      @ commit the jump (clears ar_ohm_jump) ...
+    adds r2, r9, #1
+    ldr r3, =ar_ohm_jump
+    strb r2, [r3]                           @ ... and mark it: the next step down is its correction
+    b .Las_accept
 @ confirmed and not saturated: find the lowest range that holds the value
 .Las_search_up:
     subs r4, r4, #1                         @ r4 = |value| - 1: lower bound of the true value
@@ -571,7 +592,15 @@ FUNC ar_sample
     b .Las_dn_loop
 @ target range in r9 (0 when none higher holds the value): ask the OHM direction guard, then commit
 .Las_do_down:
-    movs r0, #0
+    ldr r3, =ar_ohm_jump
+    ldrb r2, [r3]
+    subs r2, r2, #1
+    cmp r2, r6
+    bne 7f                                  @ not the first step down after an OHM jump to this range
+    movs r2, #0
+    ldr r3, =ar_ohm_dir
+    strb r2, [r3]                           @ the correction of the jump is measured, not a reversal: the guard allows it
+7:  movs r0, #0
     bl fn_0800E2A0                          @ OHM direction guard for a down step (1 = refused)
     cmp r0, #0
     bne .Las_accept
@@ -586,6 +615,14 @@ FUNC ar_sample
     strb r2, [r3]
 @ change the range: new range, apply request for the main loop, blank request, restart the confirmation
 .Las_commit:
+    bl .Las_commit_sub
+    b .Las_accept
+@ the commit itself, a local subroutine (r9 = new range, r5 = mode, r10 = ar_state; clobbers r0-r3, lr)
+.Las_commit_sub:
+    push {lr}
+    movs r2, #0
+    ldr r3, =ar_ohm_jump
+    strb r2, [r3]                           @ a new range: any jump correction is done or void
     cmp r5, #MODE_OHM
     bne 1f
     ldr r2, =hold_stage2
@@ -606,6 +643,7 @@ FUNC ar_sample
     movs r2, #0
     strb r2, [r10, #AR_ST_OVER]
     strb r2, [r10, #AR_ST_UNDER]
+    pop {pc}
 @ the sample is accepted into the mean
 .Las_accept:
     movs r0, #0
