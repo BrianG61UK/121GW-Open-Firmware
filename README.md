@@ -48,7 +48,7 @@ Once installed (once per meter, from the 121GW Companion over Bluetooth, no SWD 
 
 | First install | Firmware update | Format the card as exFAT |
 |---|---|---|
-| <img src="https://github.com/zombu4/121GW-Open-Firmware/raw/bootloader/bootloader/docs/first_install.gif" alt="First install from page Ld-bt" width="220"> | <img src="https://github.com/zombu4/121GW-Open-Firmware/raw/bootloader/bootloader/docs/bt_update.gif" alt="Firmware update over Bluetooth" width="220"> | <img src="https://github.com/zombu4/121GW-Open-Firmware/raw/bootloader/bootloader/docs/format.gif" alt="Setup page For" width="220"> |
+| <img src="firmware/docs/bootloader/first_install.gif" alt="First install from page Ld-bt" width="220"> | <img src="firmware/docs/bootloader/bt_update.gif" alt="Firmware update over Bluetooth" width="220"> | <img src="firmware/docs/bootloader/format.gif" alt="Setup page For" width="220"> |
 
 ## Downloads
 
