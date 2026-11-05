@@ -1,6 +1,6 @@
 # Hardware test checklist (first run on a meter)
 
-The image has only run in the emulator. These checks confirm on hardware what the emulator cannot.
+These checks confirm on hardware what the emulator cannot.
 
 ## Before flashing
 1. Dump the full data EEPROM over SWD: 0x08080000..0x08082FFF (12 KB). Keep it.
@@ -13,13 +13,16 @@ The image has only run in the emulator. These checks confirm on hardware what th
   (the only file name in the bootloader image; FAT short names ignore case, so the manual's "EEVblog.bin" is the same
   file).
 - Normal route: copy `EEVBlog.bin` to the SD card and use the manual's Firmware Update procedure (page 72: battery
-  not low, both buttons held at power-on, "IAP", confirm; the meter restarts itself). The bootloader
-  0x08000000..0x08005FFF is not changed; it writes the application from 0x08006000.
+  not low, both buttons held at power-on, "IAP", confirm; the meter restarts itself). EEVblog's bootloader
+  0x08000000..0x08005FFF is not changed by this route; it writes the application from 0x08006000. The card must be FAT
+  (FAT32) for EEVblog's bootloader; exFAT only once the two-part bootloader is installed (`bootloader/README.md` on the
+  branch `bootloader`), which also updates over Bluetooth through the 121GW Companion.
 - Alternatively over SWD to 0x08006000 (application area only).
 
 ## First boot
-1. Power on (batteries; a current-limited supply instead of the batteries is optional). Splash `V-2.05` on the sub
-   display, first reading within about 0.5 s.
+1. Power on (batteries; a current-limited supply instead of the batteries is optional). The version (`F-1.04` for the
+   fast build, `V-2.05` for the like-v2.05 build) shows on the sub display; the fast build shows nothing on the main display
+   until the first reading (IMP-35). First reading within about 0.5 s.
 2. Every dial position: reading and annunciators plausible; DCV/Ohm against a reference source.
 3. Dump the EEPROM again and compare with the dump from before: must be identical (no write at boot).
 
@@ -87,7 +90,7 @@ The image has only run in the emulator. These checks confirm on hardware what th
 19. MIN/MAX times (production build): DCV, MIN/MAX on; raise the input, wait for the clock minute to change, lower it;
    SETUP past `n` and `Sd`: `tHI` shows the hour-minute of the raise, `tLo` that of the drop (12-hour form with `CL`);
    SETUP again returns to the normal pages; long MIN/MAX ends it.
-20. Large SD card (both builds, OF-57): an SD card of 8 GB or more, formatted FAT32. On a PC copy files onto it until more
+20. Large SD card (both builds, OF-57): an SD card of 8 GB or more, formatted FAT32 (or exFAT with the two-part bootloader). On a PC copy files onto it until more
    than 4.5 GB are used, then log on the meter for two minutes. Afterwards the PC opens the card without a repair prompt,
    the copied files are unchanged and the log file is complete (its rows run without a gap and end with MAX and MIN).
 21. File dates (both builds, OF-58): the log file and a saved `cal.bin` show the meter's date and time as created and
@@ -107,6 +110,18 @@ The image has only run in the emulator. These checks confirm on hardware what th
    `emulator/tools/bt_upload.py EEVBlog.bin` on a computer: `Ld nn` counts up, then `Ld oK`. Card in a computer: `EEVBlog.bin`
    equals the file sent (compare the SHA-256). Then the usual update with HOLD + MEM at power-on and SETUP; the new version
    shows at power-on. Leave the page during a transfer: the sender reports no answer, the old `EEVBlog.bin` is unchanged.
+27. Format as exFAT (production build with the two-part bootloader, IMP-32; verified working on a meter 2026-11-04/05):
+   SETUP to `For`, long SETUP (`Fr no` blinks), REL for `Fr yE`, long SETUP: `Fr --` then `Fr oK`. Card in a computer: it is
+   exFAT and empty. Log on the meter and save `cal.bin`: both files are on the card. Without the two-part bootloader the
+   page `For` is not shown.
+28. SD card reliability (production build, IMP-33, IMP-34; verified working on a meter 2026-11-04/05: 5 Bluetooth transfers
+   to the card with 0 failed writes and 0 failed card start-ups in 220 start-ups): repeat the Bluetooth transfer of item 26
+   and power the meter on with the card in several times. Every transfer ends with `Ld oK`; the card starts every time (no
+   `SdEnn` message, `sd_init` error 0x25 never).
+29. Bootloader install and updates through the companion (verified working on a meter 2026-11-04/05: firmware update into
+   bootloader B-1.11 and bootloader update 1.1.0 to 1.1.1 over Bluetooth): follow `bootloader/README.md` (branch
+   `bootloader`): fresh batteries, install from the companion, then a firmware and a bootloader update. The data EEPROM
+   dump before and after must be identical.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

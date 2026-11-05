@@ -9,6 +9,13 @@ Each scenario runs the emulator headless (bootloader/tests/test_bootloader.py he
   bt_update.gif   firmware over Bluetooth: request from the firmware, "-IAP-", "Ld nn" with the bargraph, "Ld oK",
                   the new firmware starts
   card_update.gif MEM + HOLD at power-on, SETUP: "douun" with the bargraph, " Good", the firmware starts
+  bl_update.gif   the bootloader updates itself over Bluetooth: "-IAP-", "Ld nn", "Ld oK", restart, the starter installs
+                  it (display blank, about 1 s), the firmware starts
+  format.gif      setup page For: "Fr no", "Fr yE" (blinking), "Fr --", "Fr oK" (the card is now exFAT)
+  first_install.gif  the first install from EEVblog's bootloader through the firmware's page Ld ("Ld-bt", "Ld nn",
+                  "Ld oK"), restart, the firmware starts through the new bootloader; needs one of EEVblog's bootloader
+                  images (not in the repository: the default path of tests/test_first_install.py or a path given
+                  with --eevblog-bootloader FILE); without it this picture is not made and the script says so
 """
 import io
 import json
@@ -20,10 +27,12 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.normpath(os.path.join(HERE, '..', '..'))
 sys.dont_write_bytecode = True
-sys.path[:0] = [os.path.join(ROOT, 'bootloader', 'tests')]
+sys.path[:0] = [os.path.join(ROOT, 'bootloader', 'tests'), os.path.join(ROOT, 'bootloader', 'tools'),
+                os.path.join(ROOT, 'emulator', 'scripts')]
 import test_bootloader as X                          # noqa: E402
 
 ASSETS = os.path.join(ROOT, 'emulator', 'ui', 'assets')
+ADDR_ITEM = 0x20008037                               # setup page item (tests/test_exfat.py)
 PW, PH = 695, 1338
 LCD_BOX = (123, 188, 570, 444)
 
@@ -94,6 +103,79 @@ def card_update():
     return r.frames
 
 
+def bl_update():
+    e = X.meter(X.flash_image(), keys=('MEM', 'HOLD'))   # update mode (the firmware's request gives the same screen)
+    r = Recorder(e)
+    r.run(1.0, 0.1)
+    X.release(e)
+    r.run(1.0, 0.2)
+    h = X.Host(e)
+    orig = h.wait
+
+    def wait(n, timeout):
+        got = orig(n, timeout)
+        if X.T.now(e) - r.last >= 0.5:              # the image is short: one picture per 0.5 s
+            r.take()
+        return got
+    h.wait = wait
+    h.transfer(X.BOOT, X.KIND_BL, version=0x00010101)
+    r.run(5.0, 0.1)                                  # "Ld oK", restart, starter install, the firmware starts
+    return r.frames
+
+
+def format_card():
+    e = X.meter(X.flash_image(), card=X._card_with(b''))
+    r = Recorder(e)
+    r.run(2.0, 0.25)
+    e.command({'dial': 2})
+    r.run(3.0, 0.25)
+    e.m.uc.mem_write(ADDR_ITEM, bytes([39]))         # setup page Ld, then SETUP: page For (test_exfat.py X1)
+    X.T.press(e, 'SETUP', gap=0.6)
+    r.run(1.5, 0.1)
+    X.T.long_press(e, 'SETUP')                       # edit: "Fr no" blinks
+    r.run(1.5, 0.1)
+    X.T.press(e, 'REL')                              # "Fr yE"
+    r.run(2.0, 0.1)
+    X.T.long_press(e, 'SETUP')                       # confirm: format
+    for _ in range(100):
+        r.run(0.2, 0.1)
+        if X.T.sub_text(e).upper() == 'FR OK' or X.T.sub_text(e).upper().startswith('FRE'):
+            break
+    r.run(2.5, 0.1)
+    return r.frames
+
+
+def first_install(old_path):
+    import test_first_install as F                   # noqa: E402
+    import blimage as B                              # noqa: E402
+    import test_bt_upload as U                       # noqa: E402
+    old = open(old_path, 'rb').read()
+    X.T.Emulator.flash_allow_protected = True
+    X.T.Emulator.sdcard_path, X.T.Emulator.sdcard_mb = U.new_card(), 64
+    e = X.T.make(X.IMAGE_PATH, bootloader=F._tmpfile('old.bin', old))
+    r = Recorder(e)
+    r.run(1.0, 0.1)
+    e.command({'dial': 2})
+    r.run(2.0, 0.25)
+    X.T.long_press(e, 'PEAK')                        # Bluetooth on
+    r.run(1.0, 0.25)
+    e.m.uc.mem_write(U.ADDR_ITEM, bytes([21]))       # page Ld (test_first_install.py _open_page)
+    X.T.press(e, 'SETUP', gap=0.6)
+    r.run(1.5, 0.1)
+    link = U.Link(e)
+    orig = link.send
+
+    def send(pkt, timeout=10.0):
+        a = orig(pkt, timeout)
+        if X.T.now(e) - r.last >= 0.5:
+            r.take()
+        return a
+    link.send = send
+    F.send_install(link, B.install(F.STARTER, F.PASS, 0x00010101))
+    r.run(5.0, 0.1)                                  # restart, the starter installs the bootloader, the firmware starts
+    return r.frames
+
+
 def page(frames_json):
     bits = json.load(open(os.path.join(ASSETS, 'lcd_bits.json')))
     layers = sorted({n for v in bits.values() for n in v})
@@ -142,10 +224,25 @@ def render(frames, out, width=260):
 
 
 def main(argv):
+    opt = {}
+    if '--eevblog-bootloader' in argv:
+        i = argv.index('--eevblog-bootloader')
+        opt['--eevblog-bootloader'] = argv[i + 1]
+        argv = argv[:i] + argv[i + 2:]
     out = argv[0] if argv else os.path.join(ROOT, 'bootloader', 'docs')
     os.makedirs(out, exist_ok=True)
     render(bt_update(), os.path.join(out, 'bt_update.gif'))
     render(card_update(), os.path.join(out, 'card_update.gif'))
+    render(bl_update(), os.path.join(out, 'bl_update.gif'))
+    render(format_card(), os.path.join(out, 'format.gif'))
+    old = opt.get('--eevblog-bootloader')
+    if old is None:
+        import test_first_install as F               # noqa: E402
+        old = next((p for p in F.DEFAULT_BL if os.path.isfile(p)), None)
+    if old is None or not os.path.isfile(old):
+        print('first_install.gif not made: no EEVblog bootloader image (--eevblog-bootloader FILE)')
+    else:
+        render(first_install(old), os.path.join(out, 'first_install.gif'))
     return 0
 
 

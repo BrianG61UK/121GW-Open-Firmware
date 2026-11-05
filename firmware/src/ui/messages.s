@@ -738,8 +738,6 @@ FUNC fn_08019A98
 ENDFUNC fn_08019A98
     .ltorg
 
-    .ltorg
-
 @ -----------------------------------------------------------------------------
 @ ui_blank_draw - draw five spaces or five dashes on the main digits for a ui_blank_req request
 @ Replaces : nothing (new); the v2.05 blank branch 0x08016FE2..0x08017004 is the spaces case

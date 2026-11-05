@@ -2,7 +2,8 @@
 
 Everything on this page is in the **fast build** (`2_fast/EEVBlog.bin`). The `1_like_v2.05` build behaves like the
 original firmware apart from the defect fixes and has none of these features. At power-on the fast build shows its
-version, `F-1.00` (the release number, v1.0.0); the `1_like_v2.05` build shows `V-2.05` like the original.
+version, `F-1.04` (the release number, v1.0.4), on the small display; the main display stays blank until the first
+reading. The `1_like_v2.05` build shows `V-2.05` like the original.
 
 All settings are stored in bytes of the data EEPROM that the original firmware never uses. Calibration, serial number
 and the original settings are not touched, and a meter flashed back to v2.05 simply ignores the new bytes.
@@ -155,9 +156,27 @@ Tip: with `L4-20` a sensor's output reads directly in percent of its range, for 
   file, 4 the copy failed, 5 the copy reads back differently); start the transfer again or copy the file with a computer.
   After `LdE 4` or `LdE 5` the card holds either the old `EEVBlog.bin` untouched or none at all (a partly written one is
   deleted, so the update key sequence then leaves the installed firmware unchanged).
-- **Then update as usual:** switch off, hold HOLD and MEM while switching on, then press SETUP.
+- **Then update as usual:** switch off, hold HOLD and MEM while switching on, then press SETUP. With the two-part
+  bootloader installed (next section) the companion does this step itself: no keys.
 - Logging must be off. The meter keeps measuring during the transfer. Leaving the page stops it; the old `EEVBlog.bin`
   stays until a new file has arrived complete and checked.
+
+## Two-part bootloader (with the 121GW Companion)
+
+The two-part bootloader (`bootloader/README.md`, releases `bl-vA.B.C`) replaces EEVblog's. The fast build supports it in two
+ways, both used by the companion program (releases `companion-vA.B.C`):
+
+- **First install:** the companion sends the install file over the same page `Ld-bt` (start the transfer by pressing SETUP
+  until `Ld-bt`). The meter checks that its bootloader area is one of EEVblog's builds and that the battery is at least
+  4.80 V, writes the new bootloader, restarts, and the starter installs it. Extra `LdE` codes: `LdE 7` the bootloader area is
+  not one of EEVblog's builds (nothing written), `LdE 8` battery below 4.80 V (nothing written), `LdE 9` the install file or
+  a flash step failed.
+- **Update requests:** once the two-part bootloader is installed, the companion can ask the running firmware to restart into
+  the bootloader's update mode, and can ask for the bootloader version (`B-` and three digits, or `B-EEV` for EEVblog's).
+  The firmware and bootloader updates then run over Bluetooth with nothing to press on the meter. With EEVblog's bootloader
+  the restart request does nothing; the card and key sequence above is the way.
+
+The card update (HOLD + MEM at power-on, SETUP) keeps working with the two-part bootloader.
 
 ## Format the SD card (exFAT)
 

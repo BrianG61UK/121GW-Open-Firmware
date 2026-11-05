@@ -1114,7 +1114,7 @@ firmware/
             macros.inc           FUNC/ENDFUNC/LFUNC, CRIT_ENTER/EXIT, GPIO_SET/CLR, DELAY, TABLE_V205
             ram_v205.inc         v2.05 RAM symbols (generated once by tools/gen_ram_symbols.py, then maintained by review)
             config.inc           build switches (AR profiles, calibration switches, NVM keys, DEBUG), firmware version
-            ff16.inc             FatFs R0.16 constants and structure offsets (7A)
+            ff16x.inc            FatFs R0.16 (exFAT configuration) constants and structure offsets (7A, IMP-32)
   src/sys/  vectors.s reset.s clock.s isr_tim2.s main.s fault.s
   src/brd/  gpio.s board.s frontend.s adc.s delay.s exti.s stop.s
   src/pwr/  apo.s poweroff.s battery.s
@@ -1138,7 +1138,7 @@ firmware/
   src/nvm/  nvm.s nvm_allow.s flash.s
   src/log/  log.s csv.s files.s
   src/sd/   sdio.s sdcard.s diskio.s tables_v205.s   (FatFs: src/ff16/; R0.08a fat*.s on the branch like-v2.05)
-  src/ff16/ ff16_low.s ff16_dir.s ff16_vol.s ff16_file.s ff16_file2.s ff16_api.s     (FatFs R0.16, 7A)
+  src/ff16/ ff16_low.s ff16_dir1.s ff16_dir2.s ff16_dirapi.s ff16_file.s ff16_mkfs.s ff16_api.s     (FatFs R0.16 with exFAT, 7A, IMP-32)
   src/set/  setup.s settings.s rotmem.s statereset.s
   src/rtc/  nju6350.s datetime.s
   src/ble/  usart.s packet.s commands.s rate.s bft.s
@@ -1598,7 +1598,7 @@ driver (0x0801F9FC..0x0801FB60) from SYS (6.21); SD keeps `sdio_gpio_init`/`dein
 
 **LCD** (W3; 61 functions, 11844 bytes): 08017100 lcd_show_value_pos5_9, 0801717E, 080172A8 lcd_set_mode_annunciators, 08017700, 080177AC, 080177F2, 08017858, 08017F28 lcd_show_value_pos0_4, 08017FB4, 08018B14, 08018B80 lcd_update_bargraph, 08018F14, 08018FA8 bargraph_count_from_value, 0801912C, 08019268, 080192FC, 08019364, 08019408, 08019AE0 lcd_draw_5char, 08019B12, 08019B24, 08019B48, 08019C5C, 08019CBC, 08019CF0, 08019D2C, 08019D68, 08019E24, 08019F2E, 08019FA2, 0801A07C, 0801A110, 0801A17C, 0801A32A, 0801A370, 0801A3A4, 0801A440, 0801A6D8, 0801A760, 0801A81C, 0801A89C, 0801A950 lcd_draw_glyph, 0801AFFC, 0801B090, 0801B130, 0801B304 lcd_commit_shadow, 0801B396 lcd_commit_shadow_partial, 0801B450 lcd_init, 0801B4D6, 0801B708, 0801B77A, 080203B4, 080203FA, 08020402, 0802041E, 08020426, 0802043E, 08020456, 08020472, 0802048A, 08020492.
 
-**UI** (W3; 33 functions, 3132 bytes): 0800D664, 0800D6E0, 0800E848, 0800EA24, 080153AC, 08015934, 08016D34, 08016E08, 08017092, 080170AC, 080171FA, 08017222, 0801725E, 0801772E, 0801776E, 08019698, 08019738, 08019792, 080197B6, 080197E0, 08019808, 0801982C, 08019854, 08019880, 080198B0, 080198FC, 08019948, 080199B4, 08019A22, 08019A74, 08019A86, 08019A98, 0801A854.
+**UI** (W3; 33 functions, 3132 bytes): 0800D664, 0800D6E0, 0800E848, 0800EA24, 080153AC, 08015934, 08016D34, 08016E08, 08017092, 080170AC, 080171FA, 08017222, 0801725E, 0801772E, 0801776E, 08019698, 08019738, 08019792, 080197B6, 080197E0, 08019808, 0801982C, 08019854, 08019880, 080198B0, 080198FC, 08019948, 080199B4, 08019A22, 08019A74, 08019A86, 08019A98, 0801A854 (not ported, IMP-35).
 
 **KEY** (W4; 11 functions, 4046 bytes): 08014AE6, 08014C3C handle_pg8_15_short_press, 0801622C handle_pg8_15_long_press, 0801680C, 0801682C, 0801688C process_pg8_15_press_release, 08016A64, 08016B4C, 08016B7C, 08016BB8, 08016BCA sample_pg8_15.
 

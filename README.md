@@ -4,7 +4,7 @@
 
 | Folder | Content |
 |---|---|
-| `firmware/` | new firmware for the 121GW (STM32L152ZD) in hand-written Thumb-2 assembly, loaded by the meter's existing bootloader at 0x08006000 |
+| `firmware/` | new firmware for the 121GW (STM32L152ZD) in hand-written Thumb-2 assembly, loaded at 0x08006000 by the meter's existing bootloader or by the two-part bootloader (branch `bootloader`) |
 | `emulator/` | emulator of the 121GW with a front-panel UI, used to run and test firmware without hardware |
 
 This branch (`main`) is the fast build with the new features below, and the emulator. The build that behaves like the
@@ -12,7 +12,9 @@ original v2.05 with its defects fixed lives on the branch [`like-v2.05`](../../t
 (tags `like205-vA.B.C`). The two-part bootloader (firmware and bootloader updates over Bluetooth without card or keys,
 exFAT cards) lives on the branch [`bootloader`](../../tree/bootloader) in the folder `bootloader/` and has its own releases
 (tags `bl-vA.B.C`); the firmware's comments that name `bootloader/DESIGN.md`, `bootloader/README.md` or
-`bootloader/tools/blimage.py` mean the files of that branch.
+`bootloader/tools/blimage.py` mean the files of that branch. The program that shows the meter live and updates it over
+Bluetooth, the 121GW Companion, lives on the branch [`companion`](../../tree/companion) and has its own releases (tags
+`companion-vA.B.C`).
 
 ## New features of the fast build
 
@@ -31,12 +33,22 @@ exFAT cards) lives on the branch [`bootloader`](../../tree/bootloader) in the fo
 | PT100 / PT1000 | Ω, SETUP page `Pt` | a platinum RTD read as a temperature in °C or °F (IEC 60751) |
 | Battery trim | SETUP page `BAT` | match the battery reading to a reference meter (±10 %, 0.2 % steps) |
 | Firmware over Bluetooth | SETUP page `Ld`, `emulator/tools/bt_upload.py` | send a new `EEVBlog.bin` to the card without removing it |
+| exFAT cards, long file names, card format | SETUP page `For` | reads and writes FAT12 / FAT16 / FAT32 / exFAT cards with long file names; `For` formats the card as exFAT (shown only with the two-part bootloader) |
+| Two-part bootloader support | SETUP page `Ld`, the 121GW Companion | first install of the bootloader over Bluetooth; on request over Bluetooth the meter restarts into the bootloader's update mode (firmware and bootloader updates without card or keys) |
 | Limit test | SETUP pages `Lt`, `Lo`, `HI` | PASS / HI / Lo verdict against captured limits, with beeps |
 | Logging trigger | SETUP pages `tr`, `Ch` | SD records every interval, on a change, or on a limit verdict change |
 | MIN/MAX times | MIN/MAX, pages `tHI`, `tLo`; SD file | when the maximum and the minimum happened, on the meter and in the closing rows of the log file |
 
 How to set and use each one: [`firmware/USER_GUIDE.md`](firmware/USER_GUIDE.md). The like-v2.05 build (branch
 `like-v2.05`) has none of these and behaves like the original firmware apart from the defect fixes.
+
+## Two-part bootloader (updates over Bluetooth)
+
+Once installed (once per meter, from the 121GW Companion over Bluetooth, no SWD and no case opening), the firmware and the bootloader itself are updated from the companion without a card and without holding keys; the card route still works and also reads exFAT cards. How to install and use it, step by step: [`bootloader/README.md`](../../blob/bootloader/bootloader/README.md) (branch `bootloader`, releases `bl-vA.B.C`).
+
+| First install | Firmware update | Format the card as exFAT |
+|---|---|---|
+| <img src="https://github.com/zombu4/121GW-Open-Firmware/raw/bootloader/bootloader/docs/first_install.gif" alt="First install from page Ld-bt" width="220"> | <img src="https://github.com/zombu4/121GW-Open-Firmware/raw/bootloader/bootloader/docs/bt_update.gif" alt="Firmware update over Bluetooth" width="220"> | <img src="https://github.com/zombu4/121GW-Open-Firmware/raw/bootloader/bootloader/docs/format.gif" alt="Setup page For" width="220"> |
 
 ## Downloads
 
@@ -68,7 +80,7 @@ of any meter.
 - `DESIGN.md` design and deviation list, `EEPROM_MAP.md` every EEPROM byte, `ORIGINAL_FIRMWARE_ISSUES.md` the defects
   found in v2.05 (with evidence), `OPTIMIZATIONS.md`, `FEATURES.md` user-visible features (keys, display, storage; implemented in the production build: backlight
   auto-off timer with remembered on/off state, selectable dBm reference, Bluetooth frame rate 2/4/10/20 per second,
-  thermocouple type K/J/T/N/R/S, REL in percent, display level, 12-hour clock, statistics, continuity hold time, limit test, logging trigger, MIN/MAX times, 4–20 mA percent, PT100/PT1000, battery trim), `HARDWARE_TEST.md` checklist for the first run on a meter.
+  thermocouple type K/J/T/N/R/S, REL in percent, display level, 12-hour clock, statistics, continuity hold time, limit test, logging trigger, MIN/MAX times, 4–20 mA percent, PT100/PT1000, battery trim, exFAT cards with long file names and card format, bootloader install and update requests over Bluetooth), `HARDWARE_TEST.md` checklist for the first run on a meter.
 - Status: the fast build is compared with v2.05 in the emulator's test scenarios; its differences are documented deviations
   (`firmware/deviations.txt`) except three display differences still open (battery_low, mem_logging_sd, sd_insert_remove).
   Verified working on a meter.
@@ -78,9 +90,10 @@ Read `firmware/HARDWARE_TEST.md` first; it is the procedure and checklist.
 1. Before flashing: dump the data EEPROM over SWD and save `cal.bin` to an SD card with v2.05 (HARDWARE_TEST.md, "Before
    flashing"). Keep both: they hold the meter's calibration, serial number and settings.
 2. Unpack `firmware-<tag>.zip`. Copy `2_fast/EEVBlog.bin` (or `1_like_v2.05/EEVBlog.bin` of a like-v2.05
-   release), unchanged, to the root of a FAT32 SD card as `EEVBlog.bin`. The bootloader looks for exactly this file name (FAT short names ignore case).
-3. Run the manual's Firmware Update procedure (page 72, summarised in HARDWARE_TEST.md, "Flashing"). The bootloader
-   (0x08000000..0x08005FFF) is not changed; it writes the application from 0x08006000. The data EEPROM is not touched.
+   release), unchanged, to the root of a FAT32 SD card (exFAT once the two-part bootloader is installed) as `EEVBlog.bin`. The bootloader looks for exactly this file name (FAT short names ignore case).
+3. Run the manual's Firmware Update procedure (page 72, summarised in HARDWARE_TEST.md, "Flashing"). This route does not
+   change EEVblog's bootloader (0x08000000..0x08005FFF); it writes the application from 0x08006000. Only the first install
+   of the two-part bootloader (`bootloader/README.md` on the branch `bootloader`) replaces it. The data EEPROM is not touched.
 4. First boot and checks: HARDWARE_TEST.md. To return to v2.05, flash the original image the same way; settings and
    calibration stay readable (same EEPROM layout).
 
