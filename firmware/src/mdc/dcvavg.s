@@ -12,7 +12,10 @@
 @     after a step is the mean of 4 new samples and no straddled mean is shown; back within MDC_DCV_STEP of the last taken
 @     sample = the held one was a spike, it is left out and changes nothing; far from both = the input moves faster than
 @     MDC_DCV_STEP per sample (a steep ramp, no level to restart on), both samples are taken into the window as v2.05
-@     takes every sample.  So every sample is decided within one sample and the published mean never stalls.
+@     takes every sample.  So every sample is decided within one sample.  After a restart no further step is taken
+@     until a mean has been published (mdc_dcv_pub): a sample stream whose changes keep crossing MDC_DCV_STEP (a slope
+@     near the threshold, noise on it, a staircase input) cannot restart the window again and again, so a mean comes out at
+@     least every MDC_DCV_HALF samples and the settle count after a range change, which counts published means, runs out.
 @     (The first form compared a sample with the mean of the running half block, which lags a ramp by up to 4 samples of
 @     its slope: on a ramp steeper than about MDC_DCV_STEP / 2 per sample every block restarted before it published, and the
 @     display and the log held one value for seconds, GitHub issue 3, 0-4 V sine of 40 s period.)
@@ -51,6 +54,7 @@ mdc_dcv_last:       .space 4                @ the last sample taken into the win
 mdc_dcv_prev_n:     .space 1                @ samples of the previous half block, 0 = none (window just restarted)
 mdc_dcv_dev:        .space 1                @ 1 = mdc_dcv_pend holds a deviating sample
 mdc_dcv_lastv:      .space 1                @ 1 = mdc_dcv_last is valid (0 after a configuration change)
+mdc_dcv_pub:        .space 1                @ 1 = a mean was published since the last restart: a step may restart now
 
     .section .text.mdc.dcvavg, "ax", %progbits
 
@@ -69,6 +73,9 @@ FUNC mdc_dcv_accumulate
     ldr r0, =mdc_dcv_lastv
     ldrb r0, [r0]
     cbz r0, .Ldcv_take                      @ no reference yet (after a configuration change): take it
+    ldr r0, =mdc_dcv_pub
+    ldrb r0, [r0]
+    cbz r0, .Ldcv_take                      @ no mean since the last restart: no step test, the sample is taken
     ldr r1, =mdc_dcv_last
     ldr r1, [r1]
     subs r3, r4, r1
@@ -115,6 +122,8 @@ FUNC mdc_dcv_accumulate
     strb r0, [r2]                           @ no previous half block
     ldr r2, =mdc_dcv_last
     str r4, [r2]                            @ the reference is the new level
+    ldr r2, =mdc_dcv_pub
+    strb r0, [r2]                           @ r0 = 0: no further step until this window has published a mean
     movs r0, #1
     ldr r2, =mdc_first_mean
     strb r0, [r2]
@@ -176,6 +185,8 @@ LFUNC mdc_dcv_add
     movs r3, #0
     strb r3, [r0]                           @ the first value is out
     movs r0, #1
+    ldr r3, =mdc_dcv_pub
+    strb r0, [r3]                           @ a mean was published: a step may restart the window again
     pop {r4-r7, pc}
 .Ldcv_none:
     movs r0, #0
@@ -194,6 +205,9 @@ LFUNC mdc_dcv_add
 2:  sdiv r2, r2, r1
     ldr r3, =mdc_mean
     str r2, [r3]
+    movs r0, #1
+    ldr r3, =mdc_dcv_pub
+    strb r0, [r3]                           @ a mean was published (kept or discarded by the settle count)
     movs r0, #0
     strb r0, [r5]
     str r0, [r6]
@@ -224,6 +238,9 @@ FUNC mdc_dcv_reset
     strb r0, [r1]
     ldr r1, =mdc_dcv_lastv
     strb r0, [r1]                           @ no step reference: the first sample of the new configuration is taken
+    movs r0, #1
+    ldr r1, =mdc_dcv_pub
+    strb r0, [r1]                           @ steps may restart the window from the start
     bx lr
 ENDFUNC mdc_dcv_reset
 
