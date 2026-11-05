@@ -139,11 +139,13 @@ bft_reset_due:  .space 1                    @ 1: restart once the link has been 
 @ STATUS (type 5) values: 0 failed card sessions of the transfer, 1 last card failure (step << 8 | FatFs result),
 @ 2 failed disk_read / disk_write calls since power-on, 3 their op and reason, 4 SDIO_STA, 5 sd_transfer_error,
 @ 6 sd_wait_write result, 7 end flags (transfer end << 1 | DMA end), 8 DMA2 channel 4 flags, 9 CNDTR, 10 SDIO_DCOUNT,
-@ 11 SDIO_STA high half, 12 reads taken on the hardware counters (sd/diskio.s, sd_dg_*)
+@ 11 SDIO_STA high half, 12 reads taken on the hardware counters, 13 / 14 low / high half of the card status of the last
+@ CMD13 answer before the failure, 15 10 ms ticks of the failed status polling (sd/diskio.s, sd_dg_*)
 bft_diag_tab:   .word bft_fails, bft_diag, sd_dg_count, sd_dg_op, sd_dg_sta, sd_dg_terr, sd_dg_wait
                 .word sd_dg_flags, sd_dg_dmaisr, sd_dg_cndtr, sd_dg_dcount, sd_dg_stahi, sd_dg_recov
-bft_diag_wid:   .byte 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2
-    .equ BFT_DIAG_N, 13
+                .word sd_dg_r1, sd_dg_r1 + 2, sd_dg_ticks
+bft_diag_wid:   .byte 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2
+    .equ BFT_DIAG_N, 16
 bft_name_tmp:   .asciz "0:BTLOAD.TMP"
 bft_name_img:   .asciz "0:EEVBlog.bin"
 

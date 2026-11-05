@@ -37,6 +37,12 @@ sd_dg_dcount:   .space 2                    @ SDIO_DCOUNT (bytes still to receiv
 sd_dg_stahi:    .space 2                    @ SDIO_STA bits 31..16 (FIFO state)
 sd_dg_recov:    .space 2                    @ reads taken on the hardware counters after the end wait ran out
     .global sd_dg_flags, sd_dg_dmaisr, sd_dg_cndtr, sd_dg_dcount, sd_dg_stahi, sd_dg_recov
+    .balign 4
+sd_dg_r1:       .space 4                    @ card status of the last CMD13 answer before the failure (0xFFFFFFFF: no answer)
+sd_last_r1:     .space 4                    @ card status of the last CMD13 answer (sd_get_state)
+sd_dg_t0:       .space 2                    @ tick counter (v_20007FC6, 10 ms) when the status polling of the block began
+sd_dg_ticks:    .space 2                    @ ticks from that start to the failure
+    .global sd_dg_r1, sd_dg_ticks
     .previous
 
     .section .text.sd, "ax", %progbits
@@ -217,6 +223,9 @@ ENDFUNC sd_get_status
 @ -----------------------------------------------------------------------------
 FUNC sd_get_state
     push    {r7, lr}                        @ 080226AC push {r7, lr}
+    ldr     r1, =sd_last_r1                 @ diagnosis: no answer unless CMD13 answers below
+    mov     r2, #0xFFFFFFFF
+    str     r2, [r1]
     movs    r0, #0                          @ 080226AE r0 = 0
     str     r0, [sp]                        @ 080226B0 u32 [sp] = r0
     bl      sd_detect                       @ 080226B2 call sd_detect
@@ -230,6 +239,8 @@ FUNC sd_get_state
     b       .Lsd_get_state_26D4             @ 080226C6 goto 0x80226D4
 .Lsd_get_state_26C8:                    @ v2.05 0x080226C8, reached from 0x080226C2
     ldr     r0, [sp]                        @ 080226C8 r0 = u32 [sp]
+    ldr     r1, =sd_last_r1
+    str     r0, [r1]                        @ diagnosis: the card status of this answer
     lsrs    r0, r0, #9                      @ 080226CA r0 = r0 >> 9
     ands    r0, r0, #0xf                    @ 080226CC r0 = r0 & 0xf
     b       .Lsd_get_state_26D4             @ 080226D0 goto 0x80226D4
@@ -370,12 +381,32 @@ LFUNC sd_dg_note
     ldrb r2, [r1]
     ldr r1, =sd_dg_terr
     strb r2, [r1]
+    ldr r1, =sd_last_r1
+    ldr r2, [r1]
+    ldr r1, =sd_dg_r1
+    str r2, [r1]                            @ the card status the polling saw last
+    ldr r1, =v_20007FC6
+    ldrh r2, [r1]
+    ldr r1, =sd_dg_t0
+    ldrh r1, [r1]
+    subs r2, r2, r1
+    ldr r1, =sd_dg_ticks
+    strh r2, [r1]                           @ 10 ms ticks since the status polling of the block began
     ldr r1, =sd_dg_count
     ldrh r2, [r1]
     adds r2, r2, #1
     strh r2, [r1]
     bx lr
 ENDFUNC sd_dg_note
+
+@ sd_dg_start - diagnosis: the status polling of a block begins now (tick counter v_20007FC6); clobbers r0, r1
+LFUNC sd_dg_start
+    ldr r0, =v_20007FC6
+    ldrh r0, [r0]
+    ldr r1, =sd_dg_t0
+    strh r0, [r1]
+    bx lr
+ENDFUNC sd_dg_start
 
 @ -----------------------------------------------------------------------------
 @ sd_dg_end_state - record the transfer state after a read's end wait ran out, and tell whether the block is complete
@@ -453,6 +484,7 @@ FUNC disk_read
     mov     r0, r8
     mov     r1, r8                          @ v2.05 passes the buffer twice (0x08023F9A)
     bl      sd_read_block
+    bl      sd_dg_start                     @ diagnosis: the polling begins
 .Ldr_poll:
     bl      sd_get_status                   @ 0 = card in the transfer state
     cmp     r0, #0
@@ -582,6 +614,7 @@ FUNC disk_write
     orrs    r0, r0, r1
     str     r0, [sp, #8]                    @ OF-59: [sp+8] = non-zero when sd_wait_write failed or the SDIO reported an error
                                             @ (CRC status token negative, timeout, underrun); the card is still polled below
+    bl      sd_dg_start                     @ diagnosis: the polling begins
     movw    r0, #0x4e20                     @ 08024008
     mov     r9, r0                          @ 0802400C r9 = r0
     @ poll the card state with CMD13 up to 20000 times: transfer state = ready
