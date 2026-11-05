@@ -37,6 +37,16 @@ OF-23  assert        diode_range line == 15
 OF-12  sd_files      calbin_save  path == /CAL.BIN
 OF-12  sd_block      calbin_save  any
 OF-12  assert        calbin_save  line == 14
+# calbin_load copies the whole 1280-byte EEPROM image given to the harness onto the card as CAL.BIN.  v2.05 reads the
+# first 0x4B0 bytes of any file and restores them; the port accepts exactly 1200 or 1248 bytes (OF-12) and refuses this
+# file before any card block or EEPROM write ("-Err-").  The port's restore of a 1200-byte file, and the serial check of
+# IMP-38, are covered by emulator/scripts/test_calbin_ident.py.
+OF-12  sd_cmd        calbin_load  any
+OF-12  sd_block      calbin_load  any
+OF-12  eeprom        calbin_load  any
+OF-12  eeprom_final  calbin_load  offset == 0x10
+OF-12  lcd_final     calbin_load  any
+OF-12  assert        calbin_load  line == 15
 
 # OF-17: PEAK while the 1 kHz filter is on is refused (refusal beep, no state change); v2.05 accepts it and the main
 # display goes blank.  In peak_with_filter_of17 the PEAK press starts at 12.0 s (dial at 0; wait 3; MODE press 0.5 s;

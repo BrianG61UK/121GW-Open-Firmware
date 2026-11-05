@@ -105,7 +105,8 @@ Read `firmware/HARDWARE_TEST.md` first; it is the procedure and checklist.
   kept in a cache, so the internet is needed once) and loads any other `EEVBlog.bin` with **Load firmware
   file…** or by dropping the file on the window; it runs them without any original image (direct boot from the
   application's vector table) and starts with a SYNTHETIC EEPROM: made-up nominal calibration, not the calibration of any
-  meter, with no serial number. Never copy it, or a `cal.bin` written by the emulator, to a meter.
+  meter, with no serial number. Never copy it, or a `cal.bin` written by the emulator, to a meter (since v1.0.6 the
+  meter refuses a `cal.bin` whose serial number differs from its own: "-Err-", nothing written).
 - From the source tree: `sh firmware/tools/build_dist.sh /tmp/dist none && python3 emulator/tools/prepare_data.py --dist /tmp/dist`
   once (fills `emulator/data`), then `python3 emulator/app.py` and open http://127.0.0.1:8121. Needs Python 3 with
   `unicorn` and `capstone`. Own files: `--eeprom`, `--bootloader`, `--option-bytes`, `--v205-image`, `--app`, `--sdcard`;

@@ -9,12 +9,19 @@
 @ byte and compare (error 9).
 @ Port (OF-12, DESIGN.md 7.3): save writes 1248 bytes, EEPROM 0x000..0x4AF then 0x4D0..0x4FF (the six user-zero
 @ slots verbatim; 0x4B0..0x4CF is never accessed and is not saved), read-back verify over 1248 bytes.  Load takes
-@ the size from the file object after f_open (FIL + 0x0C: f_open 0x08021D40..0x08021D54 copies the directory
-@ entry size there; f_read 0x08021DB4..0x08021DBA reads remaining = [FIL + 0x0C] - [FIL + 8]) and accepts
+@ the size from the file object after f_open (v2.05 FatFs R0.08a: FIL + 0x0C, f_open 0x08021D40..0x08021D54 copies the
+@ directory entry size there; f_read 0x08021DB4..0x08021DBA reads remaining = [FIL + 0x0C] - [FIL + 8]; the production
+@ image's FatFs R0.16 keeps it as the 64-bit obj.objsize at FIL + OBJ_OBJSIZE = 16, ff16x.inc, IMP-32) and accepts
 @ exactly 1200 bytes (restores 0x000..0x4AF) or 1248 bytes (also bytes +0..+4 of each user-zero slot); any other
 @ size is refused before any read or write with error 8 ("-Err-").  The EEPROM writes go through the NVM class
 @ RESTORE (nvm_restore_begin / _next / _verify) and are compared with the EEPROM directly (OPT-07).
 @ Mount, open modes, retry counts, file name, file time and the error codes are v2.05's.
+@ IMP-38 (production): before the restore writes anything, the file's serial number (bytes 0x003..0x006, u32 big
+@ endian, EEPROM_MAP.md 4) must equal the meter's own serial (0x20007D14, loaded at power-on and 0 when the EEPROM
+@ holds none or an invalid one): a cal.bin of another meter, or the emulator's (serial 0), would otherwise overwrite this
+@ meter's calibration, serial and settings without a trace (v2.05 checks only the length).  A meter without a valid
+@ serial accepts any file, so a meter whose EEPROM was lost can still be restored from its backup.  Refused: error 10,
+@ shown as "-Err-" like every other error, nothing written.
 @ Structure (IMP-06): a state machine calbin_start / calbin_step; calbin_save and calbin_load run it to
 @ completion (v2.05 order and SD command sequence).  The SD part is one step, so SYSCLK is HSE only inside that
 @ step as in v2.05 (sys_clock_select(1) .. (0)); the EEPROM restore advances 16 bytes per step.
@@ -27,12 +34,15 @@
     .include "macros.inc"
     .include "ram_v205.inc"
     .include "config.inc"
+    .include "ff16x.inc"
 
     .equ CALBIN_BUF,        v_20001240      @ log / cal.bin buffer (v2.05 0x0801CD2C)
     .equ CALBIN_FS,         ff16_fatfs      @ FatFs file system object (f_mount argument 0x0801CD50; production: R0.16 exFAT FATFS in .bss_port, IMP-32)
     .equ CALBIN_FIL,        ff16_fil_a      @ FatFs file object production image: FatFs R0.16 objects (FIL 552 bytes, DIR 44: larger than the v2.05 areas) in .bss_port (ff16_api.s, IMP-29)
     .equ CALBIN_RDBUF,      v_20006EA8      @ read-back buffer, 0x200 bytes (0x0801CDC6)
-    .equ CALBIN_FIL_FSIZE,  0x0C            @ file size field of the file object (see header)
+    .equ CALBIN_FIL_FSIZE,  OBJ_OBJSIZE     @ file size field of the file object: R0.16 obj.objsize, 64 bits (see header).
+                                            @ F-1.04 and F-1.05 still read R0.08a's 0x0C here, which is not the size in
+                                            @ the R0.16 object: every cal.bin was refused with error 8 (OF-12 size check)
     .equ CALBIN_LEN_V205,   1200            @ v2.05 file length 0x4B0
     .equ CALBIN_LEN,        1248            @ port file length (OF-12)
     .equ CALBIN_UZ_EE,      0x4D0           @ first user-zero slot in the EEPROM
@@ -53,7 +63,7 @@
     .global calbin_state, calbin_result
 calbin_len:     .space 2                    @ accepted file length of a load (1200 or 1248)
 calbin_state:   .space 1                    @ CB_*
-calbin_result:  .space 1                    @ error code of the last operation (v2.05 codes 0, 1, 4, 7, 8, 9)
+calbin_result:  .space 1                    @ error code of the last operation (v2.05 codes 0, 1, 4, 7, 8, 9; 10 IMP-38)
 
     .section .text.cal, "ax", %progbits
 
@@ -168,7 +178,12 @@ FUNC calbin_step
     movne r0, #CB_DONE
     b .Lcbs_next
 .Lcbs_rbegin:
-    NVM_ARM RESTORE
+    bl calbin_ident_ok                      @ IMP-38: 0 this meter's file (or the meter has no serial), 10 refused
+    cbz r0, 2f
+    strb r0, [r4, #1]                       @ calbin_result = 10: nothing written
+    movs r0, #CB_DONE
+    b .Lcbs_next
+2:  NVM_ARM RESTORE
     ldr r0, =CALBIN_BUF
     ldr r1, =calbin_len
     ldrh r1, [r1]
@@ -238,6 +253,33 @@ LFUNC calbin_fill
     blo 2b
     pop {r4, r5, r6, pc}
 ENDFUNC calbin_fill
+
+@ -----------------------------------------------------------------------------
+@ calbin_ident_ok - is the cal.bin in CALBIN_BUF this meter's own? (IMP-38)
+@ In       : CALBIN_BUF holds the file (bytes 0x003..0x006: its serial, u32 big endian)
+@ Out      : r0 = 0 accepted (same serial, or the meter has no valid serial: 0x20007D14 = 0), 10 refused
+@ Clobbers : r0-r3, flags
+@ Context  : main only (calbin_step, before nvm_restore_begin)
+@ -----------------------------------------------------------------------------
+LFUNC calbin_ident_ok
+    ldr r0, =v_20007D14
+    ldr r0, [r0]                            @ r0 = the meter's serial (power-on load: 0 when none or >= 100000)
+    cbz r0, 1f                              @ no serial on this meter: nothing to protect it from, accepted
+    ldr r1, =CALBIN_BUF
+    ldrb r2, [r1, #3]                       @ the file's serial, most significant byte first (as the EEPROM holds it)
+    ldrb r3, [r1, #4]
+    orr r2, r3, r2, lsl #8
+    ldrb r3, [r1, #5]
+    orr r2, r3, r2, lsl #8
+    ldrb r3, [r1, #6]
+    orr r2, r3, r2, lsl #8
+    cmp r2, r0
+    bne 2f
+1:  movs r0, #0
+    bx lr
+2:  movs r0, #10                            @ another meter's file (or one without a serial): refused
+    bx lr
+ENDFUNC calbin_ident_ok
 
 @ -----------------------------------------------------------------------------
 @ calbin_read_chunk - read the next part of cal.bin into the read buffer 0x20006EA8
@@ -410,7 +452,7 @@ ENDFUNC calbin_sd_save
 @ Clobbers : r1-r3, r12, flags (AAPCS)
 @ Context  : main
 @ RAM      : 0x200080F4, 0x20007ED4, 0x20001240.., FatFs objects, calbin_len
-@ Deviation: OF-12 (size check from FIL + 0x0C; 1248-byte files read 0x200 + 0x200 + 0xE0)
+@ Deviation: OF-12 (size check from the file object's size; 1248-byte files read 0x200 + 0x200 + 0xE0)
 @ -----------------------------------------------------------------------------
 LFUNC calbin_sd_load
     push {r4, r5, r6, lr}
@@ -434,8 +476,11 @@ LFUNC calbin_sd_load
     movs r4, #4
 3:  cbnz r4, 5f
     ldr r0, =CALBIN_FIL
-    ldr r0, [r0, #CALBIN_FIL_FSIZE]         @ file size (OF-12)
-    movw r5, #CALBIN_LEN_V205
+    ldr r1, [r0, #(CALBIN_FIL_FSIZE + 4)]   @ high word of the 64-bit size: 0 for every accepted size
+    ldr r0, [r0, #CALBIN_FIL_FSIZE]         @ file size, low word (OF-12)
+    cbz r1, 6f
+    movs r0, #0                             @ 4 GiB or more: no accepted size
+6:  movw r5, #CALBIN_LEN_V205
     cmp r0, r5
     beq 4f
     movw r5, #CALBIN_LEN
