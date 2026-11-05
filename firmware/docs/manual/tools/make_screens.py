@@ -28,6 +28,7 @@ are written to firmware/docs/manual/img.
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -41,6 +42,13 @@ ASSETS = os.path.join(ROOT, 'emulator', 'ui', 'assets')
 IMAGE = os.path.join(FW, 'build', 'EEVBlog.bin')
 OUT = os.path.join(FW, 'docs', 'manual', 'img')
 BL_SRC = os.path.normpath(os.path.join(ROOT, '..', '121gw-work', 'bootloader-src'))
+
+def fw_version():
+    """The firmware version text the image shows at power-on, from firmware/src/inc/config.inc (FW_VER_C0..C4)."""
+    txt = open(os.path.join(ROOT, 'firmware', 'src', 'inc', 'config.inc')).read()
+    c = [re.search(r"\.equ FW_VER_C%d, '(.)'" % k, txt).group(1) for k in range(5)]
+    return '%s%s%s.%s%s' % tuple(c)
+
 GROUPS = ['dial', 'func', 'setup', 'setupm1', 'setupm2', 'setupm3', 'setupm4', 'special', 'limit', 'boot', 'bootfw', 'feat']
 TITLES = {'dial': 'Dial positions and functions', 'func': 'Function states', 'setup': 'SETUP pages common to all functions (DCV)',
           'setupm1': 'SETUP pages of Low Z, V and mV / Temp that differ from DCV', 'setupm2': 'SETUP pages of Hz and Ohm / beep / diode / cap that differ from DCV',
@@ -299,7 +307,7 @@ def write_index(out, group, rec):
         lines += ['', 'Not made:', ''] + ['- %s: %s' % m for m in rec.missed]
     secs[TITLES[group]] = '\n'.join(lines)
     head = ('# Display pictures for the user manual\n\nMade by `tools/make_screens.py` from the emulator running the production '
-            'firmware (`firmware/build/EEVBlog.bin`, F-1.06) with the synthetic EEPROM; every picture shows the display words '
+            'firmware (`firmware/build/EEVBlog.bin`, ' + fw_version() + ') with the synthetic EEPROM; every picture shows the display words '
             'the firmware wrote, drawn with the emulator page\'s glass layers.  Pictures that show the whole front panel '
             '(695 x 1338 px) include the dial position and the plugged jacks; the others are cut off below the keys (695 x %d px).  '
             '"main" and "sub" are the decoded text of the main and sub display (the font draws S like 5, b like B, I like 1).  '
@@ -529,7 +537,7 @@ def walk(e, r, how, prefix, base, known, capture=True):
 def g_setup(r):
     e = meter()
     how = 'dial 2 (V), DCV; input %s' % apply_stim(e, 'DCV')
-    e.advance(10.0)                                                # the version F-1.06 stays on the sub display for a few seconds
+    e.advance(10.0)                                                # the version (fw_version()) stays on the sub display for a few seconds
     known = set()
     walk(e, r, how, '', set(), known)
     T.press(e, 'MINMAX')                                           # the MIN/MAX statistics and time pages
@@ -585,11 +593,11 @@ def g_special(r):
     # power-on: the version on the sub display, the lamp test of the power-on window (RANGE)
     e = meter(card=new_card())
     e.command({'reset': True})
-    if until(e, lambda e: text(e)[1].strip() == 'F-1.06', 3.0):
+    if until(e, lambda e: text(e)[1].strip() == fw_version(), 3.0):
         r.add(e, 'special_version', 'Power-on: the firmware version on the sub display (the main display is still blank)',
               'dial 2 (V); power cycle, display after %.2f s' % (snap(e)['time_ms'] / 1000.0))
     else:
-        r.miss('special_version', 'no F-1.06 on the sub display within 3 s of the power-up')
+        r.miss('special_version', 'no %s on the sub display within 3 s of the power-up' % fw_version())
     e.command({'reset': True})
     e.advance(0.5)
     e.command({'key': 'RANGE', 'down': True})
