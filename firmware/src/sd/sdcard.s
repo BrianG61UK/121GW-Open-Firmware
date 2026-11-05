@@ -1840,8 +1840,16 @@ ENDFUNC sd_cmd_resp7_error
 @             LOCK_UNLOCK_FAILED 14, COM_CRC_FAILED 15, ILLEGAL_COMMAND 16, CARD_ECC_FAILED 17, CC_ERROR 18, GENERAL_UNKNOWN_ERROR 19,
 @             STREAM_READ_UNDERRUN 20, STREAM_WRITE_OVERRUN 21, CID_CSD_OVERWRITE 22, WP_ERASE_SKIP 23, CARD_ECC_DISABLED 24,
 @             ERASE_RESET 25, AKE_SEQ_ERROR 26.
+@ Deviation : IMP-34 (production): second entry sd_cmd_resp1_keep with r1 = the SDIO_STA flags to clear after a good answer;
+@             sd_cmd_resp1_error passes v2.05's 0x5FF (all static flags, data flags included).
 @ -----------------------------------------------------------------------------
 FUNC sd_cmd_resp1_error
+    movw    r1, #0x5ff                      @ IMP-34: v2.05's mask for the clear below
+@ sd_cmd_resp1_keep - as sd_cmd_resp1_error; In: r0 = command index, r1 = flags cleared after a good answer (sd_find_scr:
+@ the command flags only, so that the data flags of a block the card has already sent survive)
+    .global sd_cmd_resp1_keep
+    .thumb_func
+sd_cmd_resp1_keep:
     push.w  {r4, r5, r6, r7, r8, lr}        @ 0802361C push {r4, r5, r6, r7, r8, lr}
     movs    r4, r0                          @ 08023620 r4 = r0
     movs    r5, #0                          @ 08023622 r5 = 0
@@ -1890,6 +1898,7 @@ FUNC sd_cmd_resp1_error
     b       .Lsd_cmd_resp1_error_374E       @ 0802367C goto 0x802374E
     @ the command index of the answer (RESPCMD) must equal r0, else 0x10
 .Lsd_cmd_resp1_error_367E:              @ v2.05 0x0802367E, reached from 0x0802366C
+    mov     r8, r1                          @ IMP-34: the mask (r8, the poll counter, is free now; r1 is clobbered below)
     bl      sdio_get_command_response       @ 0802367E call sdio_get_command_response
     movs    r1, r4                          @ 08023682 r1 = r4
     uxtb    r1, r1                          @ 08023684 r1 = u8(r1)
@@ -1902,7 +1911,7 @@ FUNC sd_cmd_resp1_error
     b       .Lsd_cmd_resp1_error_374E       @ 08023692 goto 0x802374E
     @ clear the static flags, read the status word (RESP1)
 .Lsd_cmd_resp1_error_3694:              @ v2.05 0x08023694, reached from 0x08023688
-    movw    r0, #0x5ff                      @ 08023694
+    mov     r0, r8                          @ 08023694 (v2.05: movw r0, #0x5ff; IMP-34: the caller's mask)
     bl      sdio_clear_flag                 @ 08023698 call sdio_clear_flag
     movs    r0, #0                          @ 0802369C r0 = 0
     bl      sdio_get_response               @ 0802369E call sdio_get_response
@@ -2441,6 +2450,9 @@ ENDFUNC sd_enable_wide_bus
 @ Note      : CMD16 with 8, CMD55 with the RCA, a data path for 8 bytes card to host (DTIMER 0xFFFFFFFF), ACMD51 (command 0x33); the
 @             FIFO is read word by word while no error/end flag (mask 0x62A) is set, at most 20000 polls; the two words are byte
 @             swapped into the result.
+@ Deviation : IMP-34 (production): the answer of ACMD51 is checked without clearing the data flags (sd_cmd_resp1_keep with
+@             0xC5), and after the block end the words still in the receive FIFO are read (v2.05 returned zeros for them, and
+@             a zero SCR fails the start-up with 0x25); the reads are counted (sd_dg_scrs, sd_dg_scr0, sd_dg_scr1).
 @ -----------------------------------------------------------------------------
 FUNC sd_find_scr
     push.w  {r2, r3, r4, r5, r6, r7, r8, lr}@ 08023A8C push {r2, r3, r4, r5, r6, r7, r8, lr}
@@ -2550,7 +2562,11 @@ FUNC sd_find_scr
     @ ACMD51 (command 0x33, SEND_SCR)
     bl      sdio_send_command               @ 08023B68 call sdio_send_command
     movs    r0, #0x33                       @ 08023B6C r0 = 0x33
-    bl      sd_cmd_resp1_error              @ 08023B6E call sd_cmd_resp1_error
+    @ IMP-34: clear only the command flags CCRCFAIL, CTIMEOUT, CMDREND, CMDSENT (0xC5).  v2.05 cleared 0x5FF here, which
+    @ also wipes DBCKEND, DATAEND and the data error flags of an SCR block that is already in: the loop below then reads the
+    @ two words and polls 20000 times for a flag that never comes (error 4)
+    movs    r1, #0xc5
+    bl      sd_cmd_resp1_keep               @ 08023B6E call sd_cmd_resp1_error (v2.05)
     movs    r7, r0                          @ 08023B72 r7 = r0
     uxtb    r7, r7                          @ 08023B74 r7 = u8(r7)
     cmp     r7, #0                          @ 08023B76 compare r7 with 0
@@ -2638,7 +2654,35 @@ FUNC sd_find_scr
     b       .Lsd_find_scr_3C7C              @ 08023C2E goto 0x8023C7C
     @ success: static flags cleared, the two words byte swapped into the result
 .Lsd_find_scr_3C30:                     @ v2.05 0x08023C30, reached from 0x08023C1C
-    movw    r0, #0x5ff                      @ 08023C30
+    @ IMP-34: the loop above ends at DBCKEND, which the DPSM sets as soon as the 8 bytes and their CRC are in; words the loop
+    @ has not read yet are still in the receive FIFO (RXDAVL).  v2.05 left them there and returned the zeros of its buffer:
+    @ when the card sends the SCR before the loop runs (the block lasts 82 SDIO_CK clocks, about 10 us, one loop pass about
+    @ 10 us at 4 MHz, and an interrupt can delay the loop), the SCR reads 0 and sd_enable_wide_bus refuses with 0x25.
+    @ Read the remaining words, at most two in all.  Diagnosis: count the reads and how many words the loop had.
+    ldr     r1, =sd_dg_scrs
+    ldrh    r0, [r1]
+    adds    r0, r0, #1
+    strh    r0, [r1]
+    cmp     r6, #1
+    bhi     2f
+    ite     eq
+    ldreq   r1, =sd_dg_scr1
+    ldrne   r1, =sd_dg_scr0
+    ldrh    r0, [r1]
+    adds    r0, r0, #1
+    strh    r0, [r1]
+1:  cmp     r6, #2
+    bhs     2f
+    ldr     r0, =(SDIO_BASE + SDIO_STA)
+    ldr     r0, [r0]
+    tst     r0, #0x200000                   @ RXDAVL: a word in the receive FIFO
+    beq     2f
+    bl      sdio_read_data
+    mov     r1, sp
+    str.w   r0, [r1, r6, lsl #2]
+    adds    r6, r6, #1
+    b       1b
+2:  movw    r0, #0x5ff                      @ 08023C30
     bl      sdio_clear_flag                 @ 08023C34 call sdio_clear_flag
     ldr     r0, [sp]                        @ 08023C38 r0 = u32 [sp]
     ldr     r1, [sp]                        @ 08023C3A r1 = u32 [sp]

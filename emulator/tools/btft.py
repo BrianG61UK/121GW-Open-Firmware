@@ -47,7 +47,7 @@ def status_packet(index):
 
 
 def explain_diag(values):
-    """Readable text for the STATUS values 0..15 (ble/bft.s bft_diag_tab)."""
+    """Readable text for the STATUS values 0..20 (ble/bft.s bft_diag_tab)."""
     op, reason = values[3] & 0xFF, values[3] >> 8
     why = {(1, 1): 'read: card did not return to the transfer state', (1, 2): 'read: SDIO error flag',
            (1, 3): 'read: data end / DMA end not seen in time', (2, 1): 'write: card did not return to the transfer state',
@@ -78,6 +78,9 @@ def explain_diag(values):
         text += '; last CMD13 before the failure: %s; the polling lasted %d ticks of 10 ms' % (card, values[15])
     if len(values) >= 18:
         text += '; %d failed card start-ups since power-on, last sd_init error %d' % (values[16], values[17])
+    if len(values) >= 21:
+        text += ('; %d SCR reads since power-on, %d of them with no word and %d with one word read before the block end'
+                 % (values[18], values[19], values[20]))
     return text
 
 

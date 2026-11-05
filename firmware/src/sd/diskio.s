@@ -44,7 +44,10 @@ sd_dg_t0:       .space 2                    @ tick counter (v_20007FC6, 10 ms) w
 sd_dg_ticks:    .space 2                    @ ticks from that start to the failure
 sd_dg_icount:   .space 2                    @ failed card start-ups (disk_initialize: sd_init error) since power-on
 sd_dg_ierr:     .space 2                    @ the sd_init error code of the last failed start-up
-    .global sd_dg_r1, sd_dg_ticks, sd_dg_icount, sd_dg_ierr
+sd_dg_scrs:     .space 2                    @ SCR reads that ended without an error flag (sd_find_scr, IMP-34) since power-on
+sd_dg_scr0:     .space 2                    @ of these: the polling loop had read no word when the block end was seen
+sd_dg_scr1:     .space 2                    @ of these: the polling loop had read one word (the rest came from the FIFO afterwards)
+    .global sd_dg_r1, sd_dg_ticks, sd_dg_icount, sd_dg_ierr, sd_dg_scrs, sd_dg_scr0, sd_dg_scr1
     .previous
 
     .section .text.sd, "ax", %progbits
