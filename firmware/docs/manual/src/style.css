@@ -22,11 +22,16 @@ p, li { orphans: 3; widows: 3; }
 .lead { font-size: 11.5pt; color: var(--dim); }
 
 /* table of contents */
-ol.toc { list-style: none; padding: 0; columns: 1; }
-ol.toc li { margin: 0; padding: .6mm 0; }
-ol.toc li.toc2 { font-weight: 600; margin-top: 2.2mm; }
-ol.toc li.toc3 { padding-left: 6mm; color: var(--dim); font-size: 9.5pt; }
-ol.toc a { color: inherit; text-decoration: none; }
+ol.toc { list-style: none; padding: 0; margin: 0; column-count: 2; column-gap: 10mm; font-size: 9.5pt; }
+ol.toc li { margin: 0; padding: .35mm 0; break-inside: avoid; }
+ol.toc li.toc2 { font-weight: 600; margin-top: 2mm; font-size: 10pt; }
+ol.toc li.toc3 { padding-left: 4mm; color: var(--dim); }
+ol.toc a { color: inherit; text-decoration: none; display: flex; align-items: baseline; }
+ol.toc a .t { flex: 0 1 auto; }
+ol.toc a::after { content: ""; flex: 1 1 auto; border-bottom: 1px dotted #b9b6ac; margin: 0 1.5mm; order: 1; }
+ol.toc a .n { order: 2; font-variant-numeric: tabular-nums; }
+a.pg { color: var(--accent); text-decoration: none; white-space: nowrap; font-weight: 600; }
+a.go { color: inherit; }
 
 /* keys and display texts */
 kbd { font-family: inherit; font-size: 8.5pt; font-weight: 700; letter-spacing: .04em; border: 1px solid #9a988f;
@@ -54,6 +59,19 @@ figure.small img[src*="dial_"] { width: auto; max-height: 70mm; }   /* full fron
 .page-entry .facts { flex: 1; }
 .page-entry h4 { margin-top: 0; }
 
+/* a feature: text left, pictures right */
+.feat { display: flex; gap: 6mm; align-items: flex-start; page-break-inside: avoid; margin-bottom: 3mm; }
+.feat .txt { flex: 1; }
+.feat .pics { flex: 0 0 40mm; display: flex; flex-direction: column; gap: 2mm; }
+.feat .pics figure { margin: 0; }
+.feat .pics img { width: 40mm; }
+.where { font-size: 9pt; color: var(--dim); margin: 0 0 1.5mm; }
+.where b { color: var(--ink); }
+.grid3 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm 5mm; margin: 2mm 0 4mm; }
+.grid3 figure { margin: 0; }
+.grid3 img { width: 100%; }
+table.feats td:first-child { font-weight: 600; white-space: nowrap; }
+
 /* steps */
 ol.steps { padding-left: 6mm; }
 ol.steps > li { margin: 1.2mm 0; }
@@ -71,3 +89,4 @@ tr { page-break-inside: avoid; }
 .note b:first-child, .tip b:first-child, .warning b:first-child { text-transform: uppercase; letter-spacing: .06em;
                         font-size: 8.5pt; margin-right: 1.5mm; }
 .warning b:first-child { color: var(--warn); }
+h2.cont { page-break-before: auto; margin-top: 9mm; }   /* short chapter: may continue on the page before */
