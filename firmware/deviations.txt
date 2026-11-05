@@ -356,7 +356,8 @@ OPT-03  tolerance:lcd     calbin_load  6.476
 
 # IMP-02 (DESIGN 7.1, ARS 6): the main loop runs during the 2 s power-on window, the dial's mode is applied at once (front-end
 # pins at 0.135..0.140 s instead of 2.150 s, boot_a / boot_hz / boot_lowz), the reading is on the main display and the version
-# "V-2.05" on the secondary display.
+# "V-2.05" on the secondary display; IMP-35: from the start (no splash on the main display, its lcd events fall in the
+# window below as well).
 # The scenario assertion "expect lcd main U-2.05" (line 9 of boot_*, 7 of boot_lowz and sysreset_running, 10 of
 # powercycle_quick) describes v2.05.  Key actions in the window (buzzer, backlight) stay compared.
 IMP-02  assert  boot_[!l]*          build == production and line == 9

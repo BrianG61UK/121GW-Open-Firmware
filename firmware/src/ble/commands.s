@@ -34,6 +34,8 @@
 
     .equ BLE_VERSION_CODE,  0x90             @ key code of the version request (F4 39 30 39 30; v2.05 ignores it)
     .equ BLE_VERSION_LEN,   7
+    .equ BLE_BLUPD_CODE,    0x91             @ restart into update mode (F4 39 31 39 31; ble/blcmd.s)
+    .equ BLE_BLINFO_CODE,   0x92             @ bootloader version request (F4 39 32 39 32; ble/blcmd.s)
 
     .section .rodata.ble.version, "a", %progbits
 @ ble_version_frame - answer to the version request: F6, the five characters the meter shows at power-on (config.inc
@@ -83,7 +85,8 @@ ENDFUNC fn_0800C308
 @            is 0) and sets ble_clock_set; a failed
 @            checksum clears ble_clock_bad (never read).  0xF4 frame: pairs at offsets 1 and 3 must be equal; then
 @            echo, key_remote_req = 1 and key_remote_code = the code (decoded by fn_08014AE6 in KEY); code 0x90 is
-@            answered with ble_version_frame instead (FEATURES.md 2.11 stage 3).  Any other first byte is ignored.
+@            answered with ble_version_frame instead (FEATURES.md 2.11 stage 3), 0x91 and 0x92 by ble/blcmd.s
+@            (bootloader update mode, bootloader version).  Any other first byte is ignored.
 @ -----------------------------------------------------------------------------
 FUNC fn_0800C332
     push {r3, r4, r5, r6, r7, r8, r9, r10, r11, lr} @ 0800C332
@@ -193,7 +196,15 @@ FUNC fn_0800C332
     bne .L0800C46C                          @ 0800C454  if r0 != r1
     bl fn_0800C308                          @ 0800C456  echo the received command frame
     ldrb r0, [sp, #0x1]                     @ the key code
-    cmp r0, #BLE_VERSION_CODE
+    cmp r0, #BLE_BLINFO_CODE
+    bne 2f
+    bl blcmd_info                           @ 0x92: bootloader version frame F7 (ble/blcmd.s)
+    b .L0800C46C
+2:  cmp r0, #BLE_BLUPD_CODE
+    bne 3f
+    bl blcmd_update_mode                    @ 0x91: restart into the bootloader's update mode (returns only without it)
+    b .L0800C46C
+3:  cmp r0, #BLE_VERSION_CODE
     bne 1f
     @ FEATURES.md 2.11 stage 3: code 0x90 asks for the firmware version.  It is answered with ble_version_frame and is
     @ not handed to the key routine (a remote key restarts the backlight countdown and clears a pending message).

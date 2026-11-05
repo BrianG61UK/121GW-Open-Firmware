@@ -51,11 +51,11 @@ Appendix C: cross-module interface routines (C.1 replaced v2.05 functions, C.2 n
 | Calibration, serial number and option/settings locations in data EEPROM preserved exactly | Same offsets, widths, byte order, validation and triggers as v2.05; one NVM module holds the only EEPROM write path; write classes with an allowed-byte table generated from EMAP; caller-side arming token; range re-check at the store; instruction-level build checks; emulator EEPROM comparison | EMAP 9-10; 6.21; 9.3 |
 | No erase, no reformat, no new locations without approval | NVM sets only PELOCK and clears FTDW in FLASH_PECR, never ERASE/PROG/DATA/FPRG/OBL_LAUNCH; nothing outside 0x000..0x4FC is in any write class; the cal.bin extension (OF-12) adds no EEPROM location; the only new locations are the owner-approved port-only settings of EMAP 4.1 (production image only; so far 0x00F, IMP-10, 0x011, IMP-08, 0x015, IMP-09, 0x017, IMP-07, 0x020, IMP-11, 0x013, IMP-12, and 0x021, IMP-16) | EMAP 4.1, 9.1-9.2, 10 |
 | RAM copies of calibration, serial and options keep their v2.05 RAM addresses | every v2.05 RAM variable keeps its address; port-only variables live at 0x20008100 and above | 5 |
-| Never brick | program flash, the bootloader region 0x08000000..0x08005FFF, option bytes, RDP and WRP are never written (no instruction with a statically known address may address PRGKEYR, OPTKEYR, WRPR or 0x1FF8xxxx, and the FLASH
+| Never brick | option bytes, RDP and WRP are never written; program flash and the bootloader region 0x08000000..0x08005FFF are written only by `nvm/blinst.s` for the first install of the two-part bootloader (owner decision 2026-11-04, bootloader/DESIGN.md 6.4): slot A 0x08052000..0x08057FFF, control area 0x0805E000..0x0805FEFF, firmware mark 0x0805FF00..0x0805FFFF and the starter 0x08000000..0x080003FF, each write checked against these ranges and only while the bootloader area is one of EEVblog's builds; nothing else of program flash is written (no instruction with a statically known address may address PRGKEYR (except nvm/blinst.o), OPTKEYR, WRPR or 0x1FF8xxxx, and the FLASH
 block may only be addressed through its own literal with offset 0: coding rule 8.2 and build check 9.3); PELOCK set at reset (the bootloader leaves FLASH_PECR = 0x4, EMAP 2.5); the v2.05 option-byte BOR rewrite (EMAP 2.4) is not carried over; every hardware wait is bounded; the bootloader update path (MEM+HOLD at power-up, then SETUP) works whatever the application does | 2, 3, 9 |
 | Start-up tolerates any EEPROM content | v2.05 read-side validation kept byte for byte; no loop bound or table index taken from EEPROM without the v2.05 range check; float helpers are bit-exact copies, so the v2.05 divide-by-zero results are reproduced | EMAP 6, 9.4 |
 | Clock set-up never leaves the device unbootable | same clock sequence as v2.05 with bounded waits and an MSI fallback at every step; no change of BOR, option bytes or boot configuration | 3.2 |
-| Bootloader accepts the image as it accepts v2.05 | vector table at 0x08006000, initial SP 0x20001240 (passes the only check, `(SP & 0x2FFE0000) == 0x20000000` at bootloader 0x08004994), reset vector with bit 0 set, file size a multiple of 4 and at most 0x5A000 | 2.1 |
+| Bootloader accepts the image as it accepts v2.05 | vector table at 0x08006000, initial SP 0x20001240 (passes the only check, `(SP & 0x2FFE0000) == 0x20000000` at bootloader 0x08004994), reset vector with bit 0 set, file size a multiple of 4 and at most 0x4C000 (slots of the two-part bootloader above, bootloader/DESIGN.md 6.1) | 2.1 |
 | The firmware can never damage hardware | HY3131 configuration only from a table of the v2.05 rows and sequences, checked at build time; pins driven by external devices never become outputs; power and analog-control outputs only in v2.05 combinations and order, with the listed safety improvements | 4 |
 | Behaviour identical to v2.05 except documented deviations | port routines replace v2.05 functions one by one (Appendix A); a v2.05-equivalent run mode for strict differential testing; each deviation has an ID, a module, a scenario and an allowlist entry | 3.5, 9, 10 |
 
@@ -90,7 +90,7 @@ block may only be addressed through its own literal with offset 0: coding rule 8
 |---|---|
 | Load address | 0x08006000 (linker script `firmware/link/121gw.ld`) |
 | Vector table | 73 words at 0x08006000 (16 system + 57 IRQ, RM0038 Cat.4 table, same count as v2.05): word 0 = 0x20001240, word 1 = `sys_reset` with bit 0 set |
-| Output file | `firmware/build/EEVBlog.bin` (raw binary from objcopy), padded with 0x00 to a multiple of 4, at most 0x5A000 bytes; the build fails otherwise |
+| Output file | `firmware/build/EEVBlog.bin` (raw binary from objcopy), padded with 0x00 to a multiple of 4, at most 0x4C000 bytes; the build fails otherwise |
 | Header | none (the bootloader reads none) |
 | Flash use | 0x08006000..0x0805FFFF only; nothing at a fixed address except the vector table |
 
@@ -157,7 +157,7 @@ LSIRDY, RTCEN, RTCSEL = LSI (the LCD runs from RTCCLK).
    PWR flags, `nvm_clear_errors` = FLASH_SR <- 0x1F02 where v2.05 does it at 0x0801BEA4, VOS range 1, clock select,
    LSI/RTC, GPIO, analog pins, ADC, NVIC, TIM2, TIM3, AHBENR; every wait bounded at 0x5000 polls, the HSERDY-clear wait
    included, which replaces the endless loop at 0x0801BF58), `sample_pf8_at_boot`, `set_state_reset` (`FUN_08024DE0`),
-   `lcd_init(contrast, 1)`, `bootwin_start` (7.1; it calls `cal_cache_load` (6.20) just before the splash, whose wait
+   `lcd_init(contrast, 1)`, `bootwin_start` (7.1; it calls `cal_cache_load` (6.20) just before the version on the sub display (v2.05: the splash, IMP-35), whose wait
    for the end of lcd_init's display update absorbs the 1.78 ms copy, so the copy adds no time to the start-up), then
    the main loop (3.5).
 6. `cpsie i` after the NVIC set-up inside `sys_system_init`. v2.05 never masks interrupts (no `cpsid`/`cpsie` in the
@@ -477,7 +477,7 @@ clears the buzzer state first (HW-08).
 
 EMAP 9 and section 9.3: PELOCK at reset; NVM holds the only PEKEY values and EEPROM base; keys are written only when
 PELOCK reads 1 (as v2.05, 0x0801FA02), once per unlock, because a key write while unlocked or a third write gives a bus
-error (RM0038 FLASH_PECR bit 0); no instruction may address PRGKEYR, OPTKEYR, WRPR, OBR or the option bytes; no data
+error (RM0038 FLASH_PECR bit 0); no instruction may address PRGKEYR (except nvm/blinst.o), OPTKEYR, WRPR, OBR or the option bytes; no data
 EEPROM erase or fast-write bit is ever set.
 
 ### 4.7 Fault-safe state
@@ -502,8 +502,7 @@ A fault that recurs at every start therefore costs one STOP per key press, not a
 | 0x20000000..0x2000023D | `.data_v205` | the v2.05 initialised variables, 574 bytes, initial values = `analysis/decompile/ram_init.txt` (range counts at 0x20000000, CSV strings, counter preset 0x2000001C = 0x0000E000, errno 0x20000228, logging interval 0x2000022C, APO 0x20000230, contrast 0x20000237, ...) |
 | 0x2000023E..0x2000123F | `.stack` (NOLOAD) | main stack, 4098 bytes, initial SP 0x20001240 (as v2.05; v2.05 static worst-case estimate about 1820 bytes with nested ISR frames, UNPROVEN, deepest path through `calbin_load`, frame 0x4B0 bytes at 0x0801CF08) |
 | 0x20001240..0x200080FB | `.bss_v205` (zeroed) | every v2.05 zero-initialised variable and buffer at its v2.05 address (log/cal.bin buffer 0x20001240, FatFs objects 0x20006830 and 0x20006A60, HY3131 mirror 0x200077D0, LCD shadow 0x20007790, BLE frame 0x20007AE0, calibration words 0x20007E00.., meter_mode 0x2000803C, ...) |
-| 0x20008100..0x200097FF | `.bss_port` (zeroed) | port-only state, each item owned by one module (6): `cal_cache` 0x500 bytes (EEPROM 0x000..0x4FF image), NVM token and refusal counter, smoothing states (OF-28), BLE second frame buffer and queue (OF-10), `mtmp_temp_result` (OF-19), `rtc_blink_request` (NF-11), state-machine contexts (IMP-06), AR state (IMP-01) |
-| 0x20009800..0x2000BFFF | unused | not referenced |
+| 0x20008100..0x2000BFFF | `.bss_port` (zeroed; up to 0x200097FF until IMP-32) | port-only state, each item owned by one module (6): `cal_cache` 0x500 bytes (EEPROM 0x000..0x4FF image), NVM token and refusal counter, smoothing states (OF-28), BLE second frame buffer and queue (OF-10), `mtmp_temp_result` (OF-19), `rtc_blink_request` (NF-11), state-machine contexts (IMP-06), AR state (IMP-01) |
 
 Reason for keeping every v2.05 address: the owner's rule that the RAM locations of calibration data, serial number and
 options are preserved; the specifications cite these addresses; differential debugging can compare RAM directly. Every
@@ -1079,6 +1078,28 @@ comparison with v2.05 diverge only where the R0.08a image does, plus the clock-r
 written and complete; the production image sent over Bluetooth (172 s, 3 failed card writes repeated), checked, written
 as EEVBlog.bin and BTLOAD.TMP deleted; that image flashed and started.
 
+### 7A.1 exFAT, long names and format (IMP-32, owner decision 2026-11-04)
+
+Since F-1.04 the configuration is: FF_FS_EXFAT 1, FF_USE_LFN 1 (static working buffer, FF_MAX_LFN 255, FF_LFN_UNICODE 0),
+FF_CODE_PAGE 437 (the code page 932 tables of ffunicode.c are 48 KB; the meter's own names are ASCII), FF_USE_MKFS 1, the
+rest as above.  FSIZE_t is 64-bit; `fat_f_lseek` passes the R0.08a 32-bit offset as r2:r3, `fat_f_tell` returns the low
+word.  Structures: FATFS 572, FIL 592, DIR 80, FILINFO 288 bytes (`inc/ff16x.inc`, offsets measured with the ARM
+compiler; constants: every numeric #define of ff.c / ff.h for this configuration); all in `.bss_port` (FATFS and
+FILINFO leave the v2.05 areas 0x20006830 and 0x20007B38); globals LfnBuf (512 bytes) and DirBuf (608).  The bootloader
+assembles the same sources with FF_FS_READONLY 1 and FF_USE_MKFS 0 (bootloader/DESIGN.md G4).
+Translated: everything of ff.c that this configuration compiles (exFAT directory sets, allocation bitmap, contiguous
+files, long-name entries and numeric tails, f_mkfs and create_partition, f_truncate, f_mkdir, f_chmod), and the code page
+437 part of ffunicode.c.
+Verification (2026-11-04): differential harness (`fatfs16/harness_x`, outside the repository): ChaN's C (host) against
+the translation (Unicorn), 26 images (the 8 FAT images above, exFAT at several cluster sizes and offsets made by mkfs,
+FAT32 by mkfs, 9 damaged boot sectors, a blank volume) x 219 scripts of the full and 30 of the read-only configuration
+(long names, numeric tails, exFAT fragmented and contiguous files, truncate, directories, mkfs of every format, injected
+read and write errors): 6474 runs, every output line and image identical; r4-r11 and sp preserved; deepest stack use
+536 bytes (f_rename), f_open 400.  Per-group checks under QEMU (Cortex-M3) against the compiled C: low level 1000 trials
+per routine, files and volumes 631851 values, mkfs 6588 cases, all identical.  Emulator (`bootloader/tests/test_exfat.py`):
+the page For formats the card as exFAT, logging writes its CSV file on it, the Bluetooth transfer writes EEVBlog.bin on it,
+and the bootloader updates the firmware from it.
+
 ## 8. Conventions
 
 ### 8.1 File layout
@@ -1208,16 +1229,16 @@ comment states only what is true of the code below it; a comment about v2.05 cit
 
 ### 9.2 Linker script (`link/121gw.ld`)
 
-MEMORY: FLASH 0x08006000, length 0x5A000; RAM_V205 0x20000000, length 0x80FC; RAM_PORT 0x20008100, length 0x1700.
+MEMORY: FLASH 0x08006000, length 0x4C000; RAM_V205 0x20000000, length 0x80FC; RAM_PORT 0x20008100, length 0x3F00 (0x1700 until IMP-32).
 SECTIONS: `.vectors` (KEEP, at 0x08006000), `.text*`, `.rodata*`, `.v205tab` (not loaded), `.data_v205` at 0x20000000
 (AT> FLASH, exactly 0x23E bytes), `.stack` 0x2000023E..0x2000123F (NOLOAD), `.bss_v205` 0x20001240..0x200080FB (NOLOAD,
-zeroed by `sys_reset`), `.bss_port` in RAM_PORT. ASSERTs: image end <= 0x08060000; `.data_v205` size 574; `.bss_v205`
+zeroed by `sys_reset`), `.bss_port` in RAM_PORT. ASSERTs: image end <= 0x08052000; `.data_v205` size 574; `.bss_v205`
 start 0x20001240; `.bss_port` inside RAM_PORT.
 
 ### 9.3 Static checks (`make check`, every build)
 
 1. Image: word 0 = 0x20001240 and passes the bootloader test; word 1 odd and inside the image; size a multiple of 4 and
-   <= 0x5A000; 73 vectors.
+   <= 0x4C000; 73 vectors.
 2. Never-brick check at instruction level (`tools/check_image.py`, disassembles the linked ELF): for every load and
    store, the effective address is computed when the base register holds a known constant in the basic block (pool
    literal, `movw`/`movt`, `adr`, add of constants); rejected: any effective address 0x40023C10 (PRGKEYR), 0x40023C14 (OPTKEYR)
@@ -1404,6 +1425,10 @@ a build switch, default stated; required = forced by a non-negotiable requiremen
 | IMP-29 | FatFs R0.16 with patches 1 and 2 | FatFs R0.08a (2010) with the error-path fixes of OF-64; no f_unlink, f_rename, f_getfree | production only: the R0.16 functions used by the firmware translated by hand (`src/ff16/`, section 7A); the R0.08a entry points `fat_f_*` keep their arguments (`ff16/ff16_api.s`); FIL and DIR objects in `.bss_port`, the FATFS work area stays at 0x20006830; checked against ChaN's C by the differential harness (same results and images) | approved (owner, 2026-11-04) | SD, LOG, CAL, BLE |
 | IMP-30 | firmware version over Bluetooth | the status frame carries no version | production only: a key frame with the unused code 0x90 (`F4 39 30 39 30`) is echoed as every key frame and answered with `F6 c0 c1 c2 c3 c4 x` (FW_VER_C0..C4 of config.inc, x = XOR of the six bytes before it), queued after the echo; 0x90 is not handed to the key routine (`ble/commands.s` fn_0800C332, `ble_version_frame`); test `emulator/scripts/test_ble_version.py`; for the companion program (FEATURES.md 2.11 stage 3) | approved (owner, 2026-11-04) | BLE |
 | IMP-31 | set-clock frame applied every time | v2.05 applies only the first set-clock frame after the Bluetooth toggle (0x20008033 tested at 0x0800C3DC..0x0800C3E4) | production only: every `F8` frame with a valid checksum is echoed and written to the clock chip (`ble/commands.s` fn_0800C332; the flag is still written); test `emulator/scripts/test_ble_clock.py`; for the companion's time sync (FEATURES.md 2.11 stage 5) | approved (owner, 2026-11-04) | BLE |
+| IMP-32 | exFAT, long file names, card format | FatFs without exFAT and long names; no format function | production only: FatFs R0.16 w/patch 2 in its exFAT configuration (FF_FS_EXFAT 1, FF_USE_LFN 1, FF_CODE_PAGE 437 instead of 932: the 932 tables are 48 KB, the meter's own names are ASCII; FF_USE_MKFS 1) translated by hand (`src/ff16/ff16_low.s`, `ff16_dir1.s`, `ff16_dir2.s`, `ff16_file.s`, `ff16_dirapi.s`, `ff16_mkfs.s`; constants and offsets `inc/ff16x.inc`), checked against ChaN's C by the differential harness (exFAT and FAT images, long names, mkfs, faults); FATFS, FIL, DIR, FILINFO in `.bss_port`, which grows to 0x2000BFFF; the log scan reads the R0.16 FILINFO layout and takes only 12-character names; disk_ioctl reports the card's sector count; SETUP page For (item 40, after Ld, only with the two-part bootloader: EEVblog's cannot read exFAT) formats the card as exFAT after a confirmation (`set/fmt.s`); the bootloader assembles the same sources read-only (bootloader/DESIGN.md G4); test `bootloader/tests/test_exfat.py` | approved (owner, 2026-11-04) | SD, LOG, CAL, BLE, SET |
+| IMP-33 | SD write wait by time | v2.05 waits 1000 polls (about 7 ms) for the end of a written block (FUN_080232E0) and then returns without CMD12: a card still busy (the SD write timeout allows 250 ms, SDXC 500 ms) stays in the receive state and every CMD13 poll after it fails | production only: both waits of `sd_wait_write` last up to 600 ms (60 ticks of the 10 ms counter, a poll count as backstop) and a wait that runs out still sends CMD12 (`sd/sdcard.s`); found on a meter (2026-11-04: Bluetooth transfer, card status 0x00000D00 = receive state for 1.9 s after the wait ran out; the cause of the failed card writes of the transfers and of the failed format), Q8 answered; emulator: a card busy 30 ms per block formats (failed with the 7 ms wait), a card busy 1 s fails cleanly with the card back in the transfer state | approved (owner, 2026-11-04: root cause, no retry) | SD |
+| IMP-34 | SD card SCR read without the race | v2.05's SCR read at the card start-up (FUN_08023A8C) checks the ACMD51 answer with FUN_0802361C, which clears all static SDIO flags (0x5FF) including the block-end and data error flags of an SCR block the card has already sent; its polling loop then ends at DBCKEND without reading the words still in the receive FIFO: an early SCR gives error 4 (20000 polls), an SCR that ends between two polls reads 0 and sd_enable_wide_bus refuses with 0x25 | production only: the ACMD51 answer is checked by the second entry `sd_cmd_resp1_keep` clearing only the command flags (0xC5), and the FIFO words left after the block end are read (`sd/sdcard.s`); counters sd_dg_scrs / scr0 / scr1 (Bluetooth STATUS 18-20); found on a meter (2026-11-04: Bluetooth transfers, failed start-ups with sd_init error 0x25); emulator `emulator/scripts/test_sd_scr.py` (card read latency 0: v2.05 never starts the card, the port starts it, both SCR reads came from the FIFO) | approved (owner, 2026-11-04: root cause, no retry) | SD |
+| IMP-35 | no version splash on the main display | v2.05 draws "V-2.05" on the main digits at power-on (FUN_0801A854, called at 0x0800EA74); the production window already shows the version on the sub display (IMP-02), so the main-display splash only flashed for a moment | production only: `bootwin_start` clears the shadow and draws the version on the sub display (`ui_version_sub`) where v2.05 drew the splash, with the same commit and wait (the first HY3131 write keeps its time); the main display stays blank until the first reading; FUN_0801A854 is not ported | approved (owner, 2026-11-04: "not needed anymore since it shows in the small display segments") | CAL, UI |
 
 Each deviation gets entries in `firmware/deviations.txt` and at least one scenario showing v2.05 and port behaviour.
 
@@ -1446,7 +1471,7 @@ New optimisations are added here before they are implemented; anything that chan
 | Interface drift between workers | link errors, wrong arguments | Appendix C names and signatures; `--no-undefined`; routine tests at module boundaries |
 | ISR/main races | rare wrong state | ISR rules (3.4), NF-11 |
 | Stack overflow | silent RAM corruption | canary, per-scenario depth, 3072-byte limit |
-| Image size | must stay <= 0x5A000 | v2.05 is 144 616 bytes; build assertion |
+| Image size | must stay <= 0x4C000 | v2.05 is 144 616 bytes; build assertion |
 | Bootloader erases before reading the file | a bad file leaves no application (recovery: a correct file) | release procedure: `make check` passed and SHA-256 recorded before copying to a card |
 
 ### 12.2 Decisions (2026-10-31; owner policy: fix every defect, safety first, technical calls by the project)
@@ -1489,7 +1514,8 @@ New optimisations are added here before they are implemented; anything that chan
 - OF-32 scope (owner decision 2026-11-01), production: FREQ, PULSE and DUTY with no signal are blank only until the first
   counter result or the first no-signal timeout (300 TIM2 ticks, v2.05 0x0802442E); after a timeout 0.000 is shown as in
   v2.05 (`ar_result_seen`, `ar_apply`, counter `ar_freq_tmo_count` incremented by the TIM2 handler).
-- Hardware question for the EEVblog test (Q8): v2.05's SD write completion wait FUN_080232E0 (0x08023346: counter 1000,
+- Hardware question for the EEVblog test (Q8), answered 2026-11-04 on a meter (IMP-33: TXACT stays set while the card is busy; a
+  card busy longer than the 1000 polls was left in the receive state): v2.05's SD write completion wait FUN_080232E0 (0x08023346: counter 1000,
   polls SDIO_STA.TXACT) times out after about 7 ms at 4 MHz and then skips CMD12. Whether TXACT stays set while the card
   holds D0 busy after a block is not stated in RM0038 (DPSM Busy state text; TXACT "asserted when it transmits data").
   If it does, slow cards (busy up to 250 ms allowed, SD physical layer 4.6.2.2) make the write fail; the emulator's SDIO
@@ -2090,7 +2116,7 @@ Exceptions decided by this design:
 | 080199B4 | `fn_080199B4` | SET | r0 | - |
 | 08019A22 | `fn_08019A22` | SET | r0 | - |
 | 08019A86 | `fn_08019A86` | SET | r0 | - |
-| 0801A854 | `fn_0801A854` | CAL | - | - |
+| 0801A854 | not ported (IMP-35: no version splash on the main display; bootwin_start calls ui_version_sub) | CAL | - | - |
 
 ### C.2 New cross-module routines of the port
 

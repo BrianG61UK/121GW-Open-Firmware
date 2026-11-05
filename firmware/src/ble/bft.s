@@ -22,7 +22,7 @@
 @ CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF) covers type, seq, len and the payload.  One packet fits one Bluetooth
 @ write (244 bytes, MTU 247: measured on a meter, 2026-11-03).  The sender waits for the answer to every packet
 @ (stop and wait), so nothing is in flight while the card is written (the link is deaf then: usart.s, NF-04).
-@     type 0x01 START  payload size(4) crc32(4): size 0x124 .. 0x5A000 (vector table .. image limit of the linker
+@     type 0x01 START  payload size(4) crc32(4): size 0x124 .. 0x4C000 (vector table .. image limit of the linker
 @                      script); a new transfer, expected seq 0
 @     type 0x02 DATA   seq = packet number from 0, payload = the next bytes of the file
 @     type 0x03 END    all bytes sent: flush, check, copy, check the copy
@@ -34,9 +34,13 @@
 @     status 0 accepted; 1 CRC wrong (resend); 2 not the expected packet (send "next"); 3 not allowed in this state;
 @     4 START refused (size); 5 bytes beyond the announced size; 0x10 + n: END failed with error n (below)
 @ Errors (shown "LdE n"): 1 the card could not be written; 2 length or CRC-32 of the received file wrong; 3 not an
-@     application image (initial SP outside the RAM, reset vector outside 0x08006000..0x0805FFFF or not Thumb);
+@     application image (initial SP outside the RAM, reset vector outside 0x08006000..0x08051FFF or not Thumb);
 @     4 the copy to EEVBlog.bin failed; 5 the copy read back differs (after 4 or 5 no EEVBlog.bin is left once an
 @     open for writing was tried); 6 the received file could not be read back.
+@     Bootloader install (START kind 1, bft_install): 7 the bootloader area is not one of EEVblog's builds (nothing
+@     written); 8 battery low or below 4.80 V (nothing written); 9 the install file or a flash step failed.  After
+@     status 0 to END the meter restarts and the starter installs the bootloader (bootloader/DESIGN.md 6.4).
+@     START payload: size(4) crc32(4) [kind(1)]: kind 0 or absent = firmware file (EEVBlog.bin), 1 = install file.
 @ Buffers: the received bytes are collected in log_buf (8 KiB of its 10000 bytes, 0x20001240..0x2000394F; 0x20003950 is
 @ the BLE value ring, written all the time) and written to the card
 @ when the next packet might not fit; the card work uses the FIL objects of the log (log_fil, log_fil_new) and the
@@ -60,12 +64,27 @@
     .equ BFT_MAXPAY,        232             @ payload limit: 8 + 232 = 240 bytes, one Bluetooth write
     .equ BFT_STAGE_LEN,     8192            @ bytes collected before a card write (log_buf holds 10000)
     .equ BFT_MIN_SIZE,      0x124           @ the 73-word vector table
-    .equ BFT_MAX_SIZE,      0x5A000         @ image limit (link/121gw.ld: __image_end <= 0x08060000)
+    .equ BFT_MAX_SIZE,      0x4C000         @ image limit (link/121gw.ld: __image_end <= APP_LIMIT)
     .equ BFT_COPY_LEN,      4096            @ copy step
     .equ BFT_GAP_TICKS,     20              @ 200 ms without a byte ends a packet being assembled
     .equ BFT_COPY_TRIES,    3               @ attempts of the copy to EEVBlog.bin
     .equ BFT_FLUSH_TRIES,   10              @ card sessions for one collected write
     .equ BFT_READ_TRIES,    10              @ card sessions for reading the received file back
+    .equ BFT_RESET_TICKS,   50              @ 500 ms after the last received byte: the END answer has gone out
+    .equ BFT_BAT_MIN,       480             @ bootloader install only above 4.80 V (pwr_bat_cv, 0.01 V; DESIGN.md 6.4)
+    .equ BLI_FILE_MIN,      0x580           @ install file: starter 0x400 + slot header page 0x100 + one half-page
+    .equ BLI_FILE_MAX,      0x6000          @ starter 0x400 + slot header 0x100 + image 0x5B00 (bootloader/DESIGN.md 6.1)
+    .equ BLI_SLOT_A,        0x08052000      @ slot A (nvm/blinst.s)
+    .equ BLI_SLOT_END,      0x08058000
+    .equ BLI_CTL,           0x0805E000      @ control area
+    .equ BLI_CTL_END,       0x0805FF00
+    .equ BLI_FWMARK,        0x0805FF00      @ firmware mark page
+    .equ BLI_APP_BASE,      0x08006000
+    .equ BLI_HDR_MAGIC,     0x32484C42      @ "BLH2": bootloader header (bootloader/tools/blimage.py)
+    .equ BLI_FW_MAGIC,      0x32485746      @ "FWH2": firmware mark
+    .equ BLI_CTL_MAGIC,     0x4C525443      @ "CTRL": control record
+    .equ BLI_CMD_INSTALL,   1
+    .equ BLI_BL_MAX,        0x5B00          @ largest bootloader image
     .equ BFT_ST_WAIT,       0               @ waiting for START
     .equ BFT_ST_RECV,       1               @ receiving
     .equ BFT_ST_DONE,       2               @ EEVBlog.bin written and verified
@@ -75,7 +94,7 @@
     .equ FA_CREATE_ALWAYS,  0x08
 
     .equ bft_stage,         v_20001240      @ log_buf (log/files.s)
-    .equ bft_fatfs,         v_20006830      @ fat_fs_obj
+    .equ bft_fatfs,         ff16_fatfs      @ fat_fs_obj (production: R0.16 exFAT FATFS in .bss_port, ff16_api.s, IMP-32)
     .equ bft_fil_a,         ff16_fil_a      @ log_fil (FatFs R0.16 FIL in .bss_port, ff16_api.s, IMP-29)
     .equ bft_fil_b,         ff16_fil_b      @ log_fil_new
     .equ bft_vbuf,          v_20006EA8      @ log_verify_buf, 0x200 bytes
@@ -112,17 +131,23 @@ bft_err:        .space 1                    @ error code of BFT_ST_ERR
 bft_pct:        .space 1                    @ percent shown
 bft_created:    .space 1                    @ the temporary file exists for this transfer
 bft_idle:       .space 1                    @ 10 ms ticks since the last received byte (TIM2, saturates at 255)
+bft_kind:       .space 1                    @ START kind: 0 firmware (EEVBlog.bin), 1 bootloader install (nvm/blinst.s)
+bft_reset_due:  .space 1                    @ 1: restart once the link has been quiet for BFT_RESET_TICKS (install done)
 
     .section .rodata.bft, "a", %progbits
     .balign 4
 @ STATUS (type 5) values: 0 failed card sessions of the transfer, 1 last card failure (step << 8 | FatFs result),
 @ 2 failed disk_read / disk_write calls since power-on, 3 their op and reason, 4 SDIO_STA, 5 sd_transfer_error,
 @ 6 sd_wait_write result, 7 end flags (transfer end << 1 | DMA end), 8 DMA2 channel 4 flags, 9 CNDTR, 10 SDIO_DCOUNT,
-@ 11 SDIO_STA high half, 12 reads taken on the hardware counters (sd/diskio.s, sd_dg_*)
+@ 11 SDIO_STA high half, 12 reads taken on the hardware counters, 13 / 14 low / high half of the card status of the last
+@ CMD13 answer before the failure, 15 10 ms ticks of the failed status polling, 16 failed card start-ups since power-on,
+@ 17 the sd_init error code of the last one, 18 SCR reads since power-on, 19 / 20 of these the reads whose polling loop had
+@ read no word / one word when the block end was seen (IMP-34) (sd/diskio.s, sd_dg_*)
 bft_diag_tab:   .word bft_fails, bft_diag, sd_dg_count, sd_dg_op, sd_dg_sta, sd_dg_terr, sd_dg_wait
                 .word sd_dg_flags, sd_dg_dmaisr, sd_dg_cndtr, sd_dg_dcount, sd_dg_stahi, sd_dg_recov
-bft_diag_wid:   .byte 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2
-    .equ BFT_DIAG_N, 13
+                .word sd_dg_r1, sd_dg_r1 + 2, sd_dg_ticks, sd_dg_icount, sd_dg_ierr, sd_dg_scrs, sd_dg_scr0, sd_dg_scr1
+bft_diag_wid:   .byte 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
+    .equ BFT_DIAG_N, 21
 bft_name_tmp:   .asciz "0:BTLOAD.TMP"
 bft_name_img:   .asciz "0:EEVBlog.bin"
 
@@ -518,8 +543,25 @@ LFUNC bft_finish
     ldr r0, [r0]
     cmp r1, r0
     bne .Lfi_end
+    @ a bootloader install file is not copied: bft_install writes it to flash, then the meter restarts
+    ldr r0, =bft_kind
+    ldrb r0, [r0]
+    cbz r0, 21f
+    bl bft_install
+    movs r7, r0
+    bne .Lfi_end
+    ldr r0, =bft_name_tmp
+    bl fat_f_unlink
+    movs r0, #1
+    ldr r1, =bft_reset_due
+    strb r0, [r1]
+    movs r0, #0                             @ the 500 ms are counted from now: the END answer goes out first (the
+    ldr r1, =bft_idle                       @ ticks of the install itself must not count, on a meter the restart
+    strb r0, [r1]                           @ came before the answer, 2026-11-04)
+    b .Lfi_end
+21:
     @ 2. an application image: initial SP in the RAM (0x20000001 .. 0x20014000), reset vector Thumb and inside
-    @    0x08006000 .. 0x0805FFFF (the bootloader checks only the SP: FEATURES.md 2.10)
+    @    0x08006000 .. 0x08051FFF (the bootloader checks only the SP: FEATURES.md 2.10)
     movs r7, #3
     ldr r3, =bft_hdr
     ldr r0, [r3, #0]
@@ -535,7 +577,7 @@ LFUNC bft_finish
     ldr r1, =0x08006000
     cmp r0, r1
     blo .Lfi_end
-    ldr r1, =0x08060000
+    ldr r1, =APP_LIMIT
     cmp r0, r1
     bhs .Lfi_end
     @ 3. copy to EEVBlog.bin (create always: the old file is replaced only now), 4. read the copy back; a failed copy is
@@ -631,6 +673,311 @@ LFUNC bft_finish
 ENDFUNC bft_finish
 
 @ -----------------------------------------------------------------------------
+@ bft_install - END of a bootloader install transfer: write the two-part bootloader (bootloader/DESIGN.md 6.4)
+@ In       : BTLOAD.TMP complete, its length and CRC-32 as announced; inside a card session
+@ Out      : r0 = 0 installed (the meter restarts next, bft_poll), 7 the bootloader area is not one of EEVblog's builds
+@            (already replaced or unknown: nothing written), 8 battery below 4.80 V or low (nothing written), 9 the file
+@            or a flash step failed (bft_diag = 0x0700 | step: 1 open, 2 read, 3 starter, 4 header, 5 size, 6 slot,
+@            7 slot CRC, 8 control area, 9 firmware mark, 10 starter pages)
+@ Clobbers : r0-r3, r12, flags (r4-r8 saved)
+@ Install file: starter (0x400 bytes, written to 0x08000000..0x080003FF), then the slot contents: header page (0x100,
+@ header in its first 20 bytes) and the bootloader image in whole half-pages (bootloader/tools/blimage.py install).
+@ Order: slot A, control record INSTALL, firmware mark, then the starter pages 3, 2, 1 (the old bootloader still starts
+@ the firmware without them) and page 0 last: only a power cut during page 0 (about 10 ms) leaves no start.
+@ -----------------------------------------------------------------------------
+LFUNC bft_install
+    push {r4-r8, lr}
+    sub sp, sp, #8                          @ [sp] bytes read, [sp+4] step
+    @ battery: the low-battery flag clear and at least 4.80 V
+    movs r7, #8
+    ldr r0, =v_200080F9
+    ldrb r0, [r0]
+    cmp r0, #0
+    bne .Lin_ret
+    ldr r0, =pwr_bat_cv
+    ldrh r0, [r0]
+    cmp r0, #BFT_BAT_MIN
+    blo .Lin_ret
+    @ the file: starter and slot header into bft_stage (0x500 bytes)
+    movs r7, #9
+    movs r0, #1
+    str r0, [sp, #4]
+    ldr r0, =bft_fil_a
+    ldr r1, =bft_name_tmp
+    movs r2, #FA_READ
+    bl fat_f_open
+    cmp r0, #0
+    bne .Lin_fail
+    movs r0, #2
+    str r0, [sp, #4]
+    ldr r0, =bft_fil_a
+    ldr r1, =bft_stage
+    mov r2, #0x500
+    bl bft_read_exact
+    cmp r0, #0
+    bne .Lin_close
+    movs r0, #3                             @ starter: initial SP in the RAM, reset vector Thumb inside the starter
+    str r0, [sp, #4]
+    ldr r3, =bft_stage
+    ldr r0, [r3, #0]
+    ldr r1, =0x20000001
+    cmp r0, r1
+    blo .Lin_close
+    ldr r1, =0x2000C000
+    cmp r0, r1
+    bhi .Lin_close
+    ldr r0, [r3, #4]
+    tst r0, #1
+    beq .Lin_close
+    cmp r0, #0x08000000
+    blo .Lin_close
+    ldr r1, =0x08000400
+    cmp r0, r1
+    bhs .Lin_close
+    movs r0, #4                             @ slot header: magic, length 1..BLI_BL_MAX, CRC-32 of its first 16 bytes
+    str r0, [sp, #4]
+    add r4, r3, #0x400                      @ r4 = header in RAM
+    ldr r0, [r4, #0]
+    ldr r1, =BLI_HDR_MAGIC
+    cmp r0, r1
+    bne .Lin_close
+    ldr r5, [r4, #4]                        @ r5 = image length
+    subs r0, r5, #1
+    cmp r0, #BLI_BL_MAX
+    bhs .Lin_close
+    mov r0, #0xFFFFFFFF
+    mov r1, r4
+    movs r2, #16
+    bl blinst_crc32
+    mvns r0, r0
+    ldr r1, [r4, #16]
+    cmp r0, r1
+    bne .Lin_close
+    movs r0, #5                             @ the file holds exactly the image in whole half-pages
+    str r0, [sp, #4]
+    adds r6, r5, #127
+    lsrs r6, r6, #7                         @ r6 = image half-pages
+    add r0, r6, #10                         @ 0x500 / 128 = 10
+    ldr r1, =bft_size
+    ldr r1, [r1]
+    cmp r1, r0, lsl #7
+    bne .Lin_close
+    @ the bootloader area must be one of EEVblog's builds (pages 1..3 not checked): else nothing is written
+    bl blinst_open
+    cbz r0, 1f
+    movs r7, #7
+    b .Lin_close
+1:  movs r0, #6                             @ slot A: erase, header page, image
+    str r0, [sp, #4]
+    ldr r0, =BLI_SLOT_A
+    ldr r1, =BLI_SLOT_END
+    bl bft_erase_range
+    cmp r0, #0
+    bne .Lin_close
+    ldr r0, =BLI_SLOT_A
+    mov r1, r4
+    movs r2, #2
+    bl blinst_write_hp
+    cmp r0, #0
+    bne .Lin_close
+    ldr r8, =BLI_SLOT_A + 0x100             @ r8 = destination
+2:  cbz r6, 3f
+    cmp r6, #4                              @ up to 4 half-pages (512 bytes) per card read
+    ite hs
+    movhs r7, #4
+    movlo r7, r6
+    ldr r1, =bft_vbuf
+    lsls r2, r7, #7
+    ldr r0, =bft_fil_a
+    bl bft_read_exact
+    cbnz r0, 4f
+    mov r0, r8
+    ldr r1, =bft_vbuf
+    mov r2, r7
+    bl blinst_write_hp
+    cbnz r0, 4f
+    add r8, r8, r7, lsl #7
+    subs r6, r6, r7
+    b 2b
+4:  movs r7, #9
+    b .Lin_close
+3:  movs r7, #9
+    movs r0, #7                             @ the image in slot A has the CRC-32 of its header
+    str r0, [sp, #4]
+    mov r0, #0xFFFFFFFF
+    ldr r1, =BLI_SLOT_A + 0x100
+    mov r2, r5
+    bl blinst_crc32
+    mvns r0, r0
+    ldr r1, [r4, #8]
+    cmp r0, r1
+    bne .Lin_close
+    movs r0, #8                             @ control area: erased, one INSTALL record for slot A
+    str r0, [sp, #4]
+    ldr r0, =BLI_CTL
+    ldr r1, =BLI_CTL_END
+    bl bft_erase_range
+    cmp r0, #0
+    bne .Lin_close
+    ldr r6, =bft_stage + 0x500              @ r6 = record / mark under construction
+    ldr r0, =BLI_CTL_MAGIC
+    str r0, [r6, #0]
+    movs r0, #BLI_CMD_INSTALL
+    str r0, [r6, #4]
+    ldr r0, =BLI_SLOT_A
+    str r0, [r6, #8]
+    mov r0, #0xFFFFFFFF
+    mov r1, r6
+    movs r2, #12
+    bl blinst_crc32
+    mvns r0, r0
+    str r0, [r6, #12]
+    ldr r0, =BLI_CTL
+    movs r1, #4
+    bl bft_write_words
+    cmp r0, #0
+    bne .Lin_close
+    movs r0, #9                             @ firmware mark of the running firmware (the new bootloader starts only a
+    str r0, [sp, #4]                        @ firmware with a valid mark)
+    ldr r0, =BLI_FWMARK
+    add r1, r0, #0x100
+    bl bft_erase_range
+    cmp r0, #0
+    bne .Lin_close
+    ldr r0, =BLI_FW_MAGIC
+    str r0, [r6, #0]
+    ldr r1, =BLI_APP_BASE
+    ldr r2, =__image_end
+    subs r2, r2, r1                         @ image length
+    str r2, [r6, #4]
+    mov r0, #0xFFFFFFFF
+    bl blinst_crc32
+    mvns r0, r0
+    str r0, [r6, #8]
+    ldr r0, =((FW_VER_C2 - '0') << 16) | ((FW_VER_C3 - '0') << 8) | (FW_VER_C4 - '0')
+    str r0, [r6, #12]
+    mov r0, #0xFFFFFFFF
+    mov r1, r6
+    movs r2, #16
+    bl blinst_crc32
+    mvns r0, r0
+    str r0, [r6, #16]
+    ldr r0, =BLI_FWMARK
+    movs r1, #5
+    bl bft_write_words
+    cmp r0, #0
+    bne .Lin_close
+    movs r0, #10                            @ starter pages 3, 2, 1, then 0
+    str r0, [sp, #4]
+    movs r4, #3
+5:  lsls r6, r4, #8                         @ page offset
+    add r0, r6, #0x08000000
+    add r1, r0, #0x100
+    bl bft_erase_range
+    cbnz r0, 6f
+    add r0, r6, #0x08000000
+    ldr r1, =bft_stage
+    add r1, r1, r6
+    movs r2, #2
+    bl blinst_write_hp
+    cbnz r0, 6f
+    subs r4, r4, #1
+    bpl 5b
+    movs r7, #0                             @ installed
+    b .Lin_close
+6:  movs r7, #9
+.Lin_close:
+    bl blinst_close
+    ldr r0, =bft_fil_a
+    bl fat_f_close
+.Lin_fail:
+    cbz r7, .Lin_ret
+    cmp r7, #9
+    bne .Lin_ret
+    ldr r0, [sp, #4]
+    orr r0, r0, #0x700
+    ldr r1, =bft_diag
+    strh r0, [r1]
+.Lin_ret:
+    mov r0, r7
+    add sp, sp, #8
+    pop {r4-r8, pc}
+ENDFUNC bft_install
+
+@ -----------------------------------------------------------------------------
+@ bft_read_exact - read exactly r2 bytes from the open file r0 to r1
+@ Out      : r0 = 0, else non-zero (FatFs error or short read)
+@ Clobbers : r1-r3, r12, flags (r4 saved)
+@ -----------------------------------------------------------------------------
+LFUNC bft_read_exact
+    push {r4, lr}
+    sub sp, sp, #8
+    mov r4, r2
+    mov r3, sp
+    bl fat_f_read
+    cbnz r0, 1f
+    ldr r1, [sp]
+    subs r0, r1, r4                         @ 0 when all bytes came
+1:  add sp, sp, #8
+    pop {r4, pc}
+ENDFUNC bft_read_exact
+
+@ -----------------------------------------------------------------------------
+@ bft_erase_range - erase the pages r0 .. r1 (exclusive) through nvm/blinst.s
+@ Out      : r0 = 0, else the blinst result
+@ Clobbers : r1-r3, r12, flags (r4, r5 saved)
+@ -----------------------------------------------------------------------------
+LFUNC bft_erase_range
+    push {r4, r5, lr}
+    mov r4, r0
+    mov r5, r1
+1:  cmp r4, r5
+    bhs 2f
+    mov r0, r4
+    bl blinst_erase_page
+    cbnz r0, 3f
+    add r4, r4, #0x100
+    b 1b
+2:  movs r0, #0
+3:  pop {r4, r5, pc}
+ENDFUNC bft_erase_range
+
+@ -----------------------------------------------------------------------------
+@ bft_write_words - write r1 words from bft_stage + 0x500 to the erased flash at r0 through nvm/blinst.s
+@ Out      : r0 = 0, else the blinst result
+@ Clobbers : r1-r3, r12, flags (r4-r6 saved)
+@ -----------------------------------------------------------------------------
+LFUNC bft_write_words
+    push {r4-r6, lr}
+    mov r4, r0
+    mov r5, r1
+    ldr r6, =bft_stage + 0x500
+1:  ldr r1, [r6], #4
+    mov r0, r4
+    bl blinst_write_word
+    cbnz r0, 2f
+    adds r4, r4, #4
+    subs r5, r5, #1
+    bne 1b
+2:  pop {r4-r6, pc}
+ENDFUNC bft_write_words
+
+@ -----------------------------------------------------------------------------
+@ bft_sysreset - system reset (PM0056 4.4.5: SYSRESETREQ with the key, PRIGROUP kept); does not return
+@ -----------------------------------------------------------------------------
+LFUNC bft_sysreset
+    dsb
+    ldr r0, =SCB_AIRCR
+    ldr r1, [r0]
+    and r1, r1, #SCB_AIRCR_PRIGROUP_MASK
+    ldr r2, =(SCB_AIRCR_VECTKEY | SCB_AIRCR_SYSRESETREQ)
+    orr r1, r1, r2
+    str r1, [r0]
+    dsb
+1:  b 1b
+ENDFUNC bft_sysreset
+
+@ -----------------------------------------------------------------------------
 @ bft_alt - the coming answer carries r0 (u16) in its "next" field
 @ Clobbers : r1, r2
 @ -----------------------------------------------------------------------------
@@ -680,16 +1027,33 @@ LFUNC bft_packet
     movs r0, #3                             @ unknown type: not allowed
     b .Lpk_answer
 .Lpk_start:
-    ldrb r0, [r4, #5]
-    cmp r0, #8
+    ldrb r0, [r4, #5]                       @ payload 8 bytes (firmware) or 9 (+ kind)
+    movs r5, #0                             @ r5 = kind
+    cmp r0, #9
+    bne 1f
+    ldrb r5, [r4, #14]
+    cmp r5, #1
+    bhi .Lpk_refuse
+    b 2f
+1:  cmp r0, #8
     bne .Lpk_refuse
-    adds r0, r4, #6
+2:  adds r0, r4, #6
     bl bft_le32                             @ size
-    cmp r0, #BFT_MIN_SIZE
+    cbnz r5, 3f
+    cmp r0, #BFT_MIN_SIZE                   @ firmware: 0x124 .. BFT_MAX_SIZE
     blo .Lpk_refuse
     ldr r1, =BFT_MAX_SIZE
     cmp r0, r1
     bhi .Lpk_refuse
+    b 4f
+3:  cmp r0, #BLI_FILE_MIN                   @ bootloader install: BLI_FILE_MIN .. BLI_FILE_MAX, whole half-pages
+    blo .Lpk_refuse
+    cmp r0, #BLI_FILE_MAX
+    bhi .Lpk_refuse
+    tst r0, #0x7F
+    bne .Lpk_refuse
+4:  ldr r1, =bft_kind
+    strb r5, [r1]
     ldr r1, =bft_size
     str r0, [r1]
     adds r0, r4, #10
@@ -814,7 +1178,7 @@ LFUNC bft_packet
     b .Lpk_answer
 5:  @ percent for the page: recv * 100 / size, at most 99 until END has succeeded
     movs r0, #100
-    muls r0, r6, r0                         @ <= 0x5A000 * 100: fits
+    muls r0, r6, r0                         @ <= 0x4C000 * 100: fits
     ldr r1, =bft_size
     ldr r1, [r1]
     udiv r0, r0, r1
@@ -893,6 +1257,16 @@ ENDFUNC bft_packet
 @ -----------------------------------------------------------------------------
 FUNC bft_poll
     push {r4-r7, lr}
+    @ a finished bootloader install: restart once the END answer has gone out (the starter then installs, DESIGN.md 6.4)
+    ldr r0, =bft_reset_due
+    ldrb r0, [r0]
+    cbz r0, 0f
+    ldr r0, =bft_idle
+    ldrb r0, [r0]
+    cmp r0, #BFT_RESET_TICKS
+    blo 0f
+    bl bft_sysreset
+0:
     @ is the page Ld active?
     movs r4, #0
     ldr r0, =bft_set_item

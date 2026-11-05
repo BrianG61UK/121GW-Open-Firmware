@@ -21,15 +21,15 @@
     @ This is the production (fast) build: IMP-06 loop structure (no busy-wait, per-event reads, state machines, WFI at
     @ the end of each pass), DESIGN.md 3.5.  The build with the v2.05 loop structure lives on the branch like-v2.05.
 
-    @ Version shown at power-on (splash fn_0801A854 on the main display, ui_version_sub on the sub display during the
-    @ IMP-02 window), five characters with the decimal point after the third: "F-1.02" (F = fast build, release v1.0.2;
+    @ Version shown at power-on (ui_version_sub on the sub display from the start of the power-on window, IMP-02 /
+    @ IMP-35), five characters with the decimal point after the third: "F-1.02" (F = fast build, release v1.0.2;
     @ a release tag vA.B.C must match "F-A.BC", checked by .github/scripts/check_fw_version.py before anything is
     @ published).
     .equ FW_VER_C0, 'F'
     .equ FW_VER_C1, '-'
     .equ FW_VER_C2, '1'
     .equ FW_VER_C3, '0'
-    .equ FW_VER_C4, '2'
+    .equ FW_VER_C4, '4'
 
     @ DEBUG = 1 sets DBGMCU_CR DBG_SLEEP | DBG_STOP | DBG_STANDBY at every start as v2.05 does (0x0801BEF8).
     @ Production (0) leaves DBGMCU_CR alone so STOP is the true low-current STOP (NF-18, RM0038 30.16.3).

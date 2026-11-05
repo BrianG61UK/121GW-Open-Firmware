@@ -17,7 +17,7 @@ STATUS_TEXT = {0: 'accepted', 1: 'CRC wrong', 2: 'not the expected packet', 3: '
                5: 'beyond the announced size', 0x11: 'card could not be written', 0x12: 'length or CRC-32 wrong',
                0x13: 'not an application image', 0x14: 'copy to EEVBlog.bin failed', 0x15: 'EEVBlog.bin read back differs',
                0x16: 'the received file could not be read back'}
-MIN_SIZE, MAX_SIZE = 0x124, 0x5A000
+MIN_SIZE, MAX_SIZE = 0x124, 0x4C000     # firmware limit (firmware/link/121gw.ld)
 CARD_STEP = {1: 'open', 2: 'seek', 3: 'write', 4: 'short write (card full?)', 5: 'close', 6: 'read back'}
 
 
@@ -47,7 +47,7 @@ def status_packet(index):
 
 
 def explain_diag(values):
-    """Readable text for the STATUS values 0..6."""
+    """Readable text for the STATUS values 0..20 (ble/bft.s bft_diag_tab)."""
     op, reason = values[3] & 0xFF, values[3] >> 8
     why = {(1, 1): 'read: card did not return to the transfer state', (1, 2): 'read: SDIO error flag',
            (1, 3): 'read: data end / DMA end not seen in time', (2, 1): 'write: card did not return to the transfer state',
@@ -63,6 +63,24 @@ def explain_diag(values):
         text += ('; at the last end-wait timeout: data end flag %d, DMA end flag %d, DMA ch4 flags 0x%X, DMA words left %d,'
                  ' SDIO bytes left %d, SDIO_STA high 0x%04X; %d reads taken on the hardware counters'
                  % (f >> 1 & 1, f & 1, values[8], values[9], values[10], values[11], values[12]))
+    if len(values) >= 16:
+        r1 = values[13] | values[14] << 16
+        states = ('idle', 'ready', 'ident', 'stby', 'tran', 'data', 'rcv', 'prg', 'dis')
+        if r1 == 0xFFFFFFFF:
+            card = 'no CMD13 answer'
+        else:
+            st = r1 >> 9 & 0xF
+            errs = [n for b, n in ((31, 'OUT_OF_RANGE'), (30, 'ADDRESS_ERROR'), (29, 'BLOCK_LEN_ERROR'),
+                                   (28, 'ERASE_SEQ_ERROR'), (27, 'ERASE_PARAM'), (26, 'WP_VIOLATION'), (23, 'COM_CRC_ERROR'),
+                                   (22, 'ILLEGAL_COMMAND'), (21, 'CARD_ECC_FAILED'), (20, 'CC_ERROR'), (19, 'ERROR'),
+                                   (8, 'READY_FOR_DATA')) if r1 >> b & 1]
+            card = 'card status 0x%08X: state %s %s' % (r1, states[st] if st < len(states) else st, errs)
+        text += '; last CMD13 before the failure: %s; the polling lasted %d ticks of 10 ms' % (card, values[15])
+    if len(values) >= 18:
+        text += '; %d failed card start-ups since power-on, last sd_init error %d' % (values[16], values[17])
+    if len(values) >= 21:
+        text += ('; %d SCR reads since power-on, %d of them with no word and %d with one word read before the block end'
+                 % (values[18], values[19], values[20]))
     return text
 
 
@@ -81,8 +99,8 @@ def check_image(data):
     sp, reset = struct.unpack_from('<II', data, 0)
     if not 0x20000001 <= sp <= 0x20014000:
         return 'initial stack pointer 0x%08X is not in the RAM' % sp
-    if not (reset & 1) or not 0x08006000 <= reset < 0x08060000:
-        return 'reset vector 0x%08X is not a Thumb address in 0x08006000 .. 0x0805FFFF' % reset
+    if not (reset & 1) or not 0x08006000 <= reset < 0x08052000:
+        return 'reset vector 0x%08X is not a Thumb address in 0x08006000 .. 0x08051FFF' % reset
     return None
 
 

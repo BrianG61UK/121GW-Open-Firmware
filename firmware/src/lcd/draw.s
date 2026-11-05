@@ -1108,7 +1108,7 @@ ENDFUNC fn_0801AFFC
 @ Clobbers : r1, r2 (v2.05 regeffects)
 @ Context  : main only
 @ RAM      : writes 0x20007DB0, 0x20007DB4, 0x20007DB8, 0x20007DBC, 0x20007DC0
-@ Spec     : analysis/lcd_map.md 2 (callers lcd_show_value_pos5_9 / pos0_4, fn_0801A854)
+@ Spec     : analysis/lcd_map.md 2 (v2.05 callers lcd_show_value_pos5_9 / pos0_4, FUN_0801A854)
 @
 @ -----------------------------------------------------------------------------
 FUNC fn_0801B090

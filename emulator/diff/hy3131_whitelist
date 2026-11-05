@@ -357,3 +357,7 @@ power PF6 0 Z PE9=Z,PD1=Z   # pc 0x0801BD86
 power PF6 1 0 PE9=1,PD1=1   # pc 0x0800FD76
 power PF6 Z 0 PE9=1,PD1=1   # pc 0x0801BD86
 power PF6 Z 0 PE9=1,PD1=Z   # pc 0x08001D0E
+power PF15 Z 0 PE9=1,PD1=Z   # pc 0x08001D0E  owner's meter bootloader (SWD dump 2026-11-04, PF15 build)
+power PF15 0 1 PE9=1,PD1=Z   # pc 0x08004442  owner's meter bootloader (SWD dump 2026-11-04, PF15 build)
+power PD1 Z 1 PE9=1,PD1=Z   # pc 0x08009972  firmware after the owner's bootloader left PF15 high
+power PF15 1 0 PE9=1,PD1=Z   # pc 0x0800493C  owner's meter bootloader (SWD dump 2026-11-04, PF15 build): BLE supply off before the card update

@@ -1,9 +1,9 @@
 @ =============================================================================
-@ messages.s - UI: message screens, calibration step texts, overload and lead texts, V-2.05 splash (DESIGN.md 6.8)
+@ messages.s - UI: message screens, calibration step texts, overload and lead texts (DESIGN.md 6.8)
 @
 @ Replaces the message routines of v2.05: the power-off text fn_08017092, calibration step texts fn_08019698 /
 @ fn_08019738, SdCAL / SdSAv / SdSEt / SAvEd / -Err- / CAL1 / CAL, LoBAt, SdEnd, SdExx, OFL, OPEN, LEAD, -----,
-@ blank, and the V-2.05 splash fn_0801A854.  Every string is the v2.05 table in ui/tables_v205.s (TABLE_V205 copies of
+@ blank (v2.05's splash FUN_0801A854 is not ported: IMP-35).  Every string is the v2.05 table in ui/tables_v205.s (TABLE_V205 copies of
 @ 0x080291A8..0x08029288); the 5-character texts are drawn through lcd_draw_5char.
 @ Port-only: ui_blank_draw (both builds), which draws the spaces or dashes requested through ui_blank_req.
 @ Context: main only.
@@ -738,42 +738,6 @@ FUNC fn_08019A98
 ENDFUNC fn_08019A98
     .ltorg
 
-@ -----------------------------------------------------------------------------
-@ fn_0801A854 - version splash on the main display ("V-2.05" strict, "F-0.91" production, config.inc)
-@ Replaces : 0x0801A854 FUN_0801A854 (v2.05, 62 bytes)
-@ In       : -
-@ Out      : -   (sets the commit request 0x2000805B)
-@ Context  : main only; called by the power-on window (CAL)
-@ RAM      : clears the shadow (fn_0801A81C); writes digit words and the text buffer 0x20007C30
-@ Spec     : DESIGN.md 7.1; the digits of 205 are split (fn_0801B090), leading zeros blanked (fn_0801B130, point position 0),
-@            then characters 0 and 1 are overwritten with 'V' and '-', giving "V-205", and the decimal point 2 is set (fn_0801717E) = "V-2.05"
-@
-@ Clobbers : r0, r1, r2 (v2.05 regeffects.txt)
-@ -----------------------------------------------------------------------------
-FUNC fn_0801A854
-    push {r4, lr}                            @ 0801A854
-    @ production: the version text of config.inc ("F-0.91"), all five characters written, point 2 as v2.05
-    bl fn_0801A81C                           @ clear the shadow, as v2.05
-    ldr r1, =v_20007C30                      @ 5-char text buffer
-    movs r0, #FW_VER_C0
-    strb r0, [r1, #0]
-    movs r0, #FW_VER_C1
-    strb r0, [r1, #1]
-    movs r0, #FW_VER_C2
-    strb r0, [r1, #2]
-    movs r0, #FW_VER_C3
-    strb r0, [r1, #3]
-    movs r0, #FW_VER_C4
-    strb r0, [r1, #4]
-    movs r0, #0
-    bl lcd_draw_5char                        @ main display
-    movs r0, #2                              @ 0801A882
-    bl fn_0801717E                           @ 0801A884
-    movs r0, #1                              @ 0801A888
-    ldr r1, =v_2000805B                      @ 0801A88A &LCD commit request
-    strb r0, [r1, #0]                        @ 0801A88E
-    pop {r4, pc}                             @ 0801A890
-ENDFUNC fn_0801A854
     .ltorg
 
 @ -----------------------------------------------------------------------------

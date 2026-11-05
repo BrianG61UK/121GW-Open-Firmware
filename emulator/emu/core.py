@@ -24,7 +24,7 @@ import struct
 from bisect import bisect_left
 from fractions import Fraction
 from unicorn.arm_const import UC_CPU_ARM_CORTEX_M3
-from unicorn import Uc, UcError, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_BLOCK, UC_HOOK_INTR, UC_HOOK_CODE, UC_HOOK_MEM_INVALID, UC_PROT_READ, UC_PROT_EXEC, UC_PROT_ALL
+from unicorn import Uc, UcError, UC_ARCH_ARM, UC_MODE_THUMB, UC_MODE_MCLASS, UC_HOOK_BLOCK, UC_HOOK_INTR, UC_HOOK_CODE, UC_HOOK_MEM_INVALID, UC_PROT_READ, UC_PROT_EXEC, UC_PROT_ALL, UC_MEM_WRITE_PROT
 from unicorn.arm_const import *
 from capstone import Cs, CS_ARCH_ARM, CS_MODE_THUMB, CS_MODE_MCLASS
 from .cycles import CycleModel
@@ -249,6 +249,14 @@ class Machine:
     def _on_invalid(self, uc, access, addr, size, value, ud):
         if self.nvic is not None and self.nvic.fault_pending:   # the MPU model cancelled this access (scs.py)
             return False
+        if (access == UC_MEM_WRITE_PROT and self.flash_ctl is not None
+                and (FLASH_BASE <= addr < FLASH_BASE + FLASH_SIZE or INFO_BASE <= addr < INFO_BASE + INFO_SIZE
+                     or SYSMEM_BASE <= addr < SYSMEM_BASE + SYSMEM_SIZE)):
+            # a CPU store to program flash, the option bytes or system memory (read-only Unicorn memory): the FLASH
+            # model decides what it does (periph/flash.py cpu_store); the store itself is skipped by Unicorn
+            self._vis = self.cycles
+            self.flash_ctl.cpu_store(addr, value, size)
+            return True
         pc = uc.reg_read(UC_ARM_REG_PC)
         self.log.append((self.cycles, f"INVALID access type {access} at 0x{addr:08X} size {size} pc 0x{pc:08X}"))
         self._stop_reason = f"invalid memory access 0x{addr:08X} at pc 0x{pc:08X}"

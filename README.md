@@ -9,7 +9,10 @@
 
 This branch (`main`) is the fast build with the new features below, and the emulator. The build that behaves like the
 original v2.05 with its defects fixed lives on the branch [`like-v2.05`](../../tree/like-v2.05) and has its own releases
-(tags `like205-vA.B.C`).
+(tags `like205-vA.B.C`). The two-part bootloader (firmware and bootloader updates over Bluetooth without card or keys,
+exFAT cards) lives on the branch [`bootloader`](../../tree/bootloader) in the folder `bootloader/` and has its own releases
+(tags `bl-vA.B.C`); the firmware's comments that name `bootloader/DESIGN.md`, `bootloader/README.md` or
+`bootloader/tools/blimage.py` mean the files of that branch.
 
 ## New features of the fast build
 

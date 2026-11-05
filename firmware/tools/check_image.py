@@ -11,7 +11,7 @@ Needs Python 3 and Capstone (the same as the other tools of this directory).
 
 What is checked
   Item 1, image (DESIGN 2.1, 2.2): the raw image equals the loadable flash content of the ELF; its size is a multiple
-    of 4 and at most 0x5A000; vector 0 is 0x20001240 and passes the bootloader test (SP & 0x2FFE0000) == 0x20000000
+    of 4 and at most 0x4C000; vector 0 is 0x20001240 and passes the bootloader test (SP & 0x2FFE0000) == 0x20000000
     (bootloader 0x08004994); vector 1 is odd and inside the image; the table has 73 vectors, every one except the
     reserved slots 7..10 and 13 is odd, points at a decoded instruction and lies inside the code, the reserved slots
     are zero.
@@ -88,7 +88,7 @@ except ImportError:                                           # pragma: no cover
 
 # ---------------------------------------------------------------------------------------------------- constants
 APP_BASE = 0x08006000
-IMAGE_MAX = 0x5A000
+IMAGE_MAX = 0x4C000
 INITIAL_SP = 0x20001240
 N_VECTORS = 73
 RESERVED_VECTORS = (7, 8, 9, 10, 13)
@@ -102,6 +102,9 @@ FLASH_ALLOWED = {FLASH_ACR: ('FLASH_ACR', 'sysclock'), FLASH_PECR: ('FLASH_PECR'
 FLASH_NAMES = {0x40023C08: 'FLASH_PDKEYR', 0x40023C10: 'FLASH_PRGKEYR', 0x40023C14: 'FLASH_OPTKEYR',
                0x40023C1C: 'FLASH_OBR', 0x40023C20: 'FLASH_WRPR1', 0x40023C28: 'FLASH_WRPR2', 0x40023C2C: 'FLASH_WRPR3'}
 PECR_PELOCK, PECR_FTDW = 0x1, 0x100                         # RM0038 3.9.2
+FLASH_PRGKEYR = 0x40023C10                                  # RM0038 3.9.5: nvm/blinst.o only
+PRGKEYS = {0x8C9DAEBF, 0x13141516}                          # RM0038 3.9.5: nvm/blinst.o only, stored to FLASH_PRGKEYR
+BLINST_PECR_OK = {0x00000001, 0x00000000, 0x00000208}       # PELOCK; no mode bit; ERASE | PROG (page erase, 3.4.2)
 ACR_BITS = 0x7                                              # LATENCY 1, PRFTEN 2, ACC64 4 (RM0038 3.9.1)
 OPT_FIRST, OPT_LAST = 0x1FF80000, 0x1FF800FF
 BB_FLASH_FIRST = 0x42000000 + (FLASH_IF - 0x40000000) * 32  # bit-band alias of the FLASH block (RM0038 / PM0056)
@@ -216,8 +219,13 @@ def parse_map(path):
 
 
 def role_of_object(obj):
-    """Role of an object file path: nvm, sysclock, mpuguard or None."""
+    """Role of an object file path: blinst, nvm, sysclock, mpuguard or None.  blinst (nvm/blinst.o) is the program-flash
+    writer of the bootloader first install (owner decision 2026-11-04, bootloader/DESIGN.md 5 item 6, 6.4): it has the
+    FLASH register rights of nvm plus FLASH_PRGKEYR with the two PRGKEY words and FLASH_PECR stores of the constants
+    BLINST_PECR_OK; it has no data-EEPROM rights."""
     parts = obj.replace('\\', '/').split('/')
+    if parts[-2:] == ['nvm', 'blinst.o']:
+        return 'blinst'
     if 'nvm' in parts[:-1]:
         return 'nvm'
     if parts[-2:] == ['sys', 'clock.o']:
@@ -431,11 +439,13 @@ class Checker:
     def classify_const(self, value, role, tag=None):
         """None when the constant is acceptable for code of `role`, else the reason."""
         if FLASH_IF <= value < FLASH_IF_END:
+            if value == FLASH_PRGKEYR and role == 'blinst':
+                return None
             ent = FLASH_ALLOWED.get(value)
             nm = FLASH_NAMES.get(value, 'FLASH interface address 0x%08X' % value)
             if ent is None:
                 return '%s is not on the allowed FLASH register list (FLASH_ACR, FLASH_PECR, FLASH_PEKEYR, FLASH_SR)' % nm
-            if role != ent[1]:
+            if role != ent[1] and not (role == 'blinst' and ent[1] == 'nvm'):
                 return '%s outside its object (%s only)' % (ent[0], 'sys/clock.o' if ent[1] == 'sysclock' else 'objects under nvm/')
             return None
         if OPT_FIRST <= value <= OPT_LAST:
@@ -444,9 +454,11 @@ class Checker:
             return 'option-byte area address 0x%08X' % value
         if BB_FLASH_FIRST <= value <= BB_FLASH_LAST:
             return 'bit-band alias of the FLASH interface block'
+        if value in PRGKEYS and role == 'blinst':
+            return None
         if value in KEYS_FORBIDDEN:
             return 'FLASH key value %s 0x%08X' % (KEYS_FORBIDDEN[value], value)
-        if value in KEYS_NVM and role != 'nvm':
+        if value in KEYS_NVM and role not in ('nvm', 'blinst'):
             return 'data-EEPROM key value %s outside the NVM objects' % KEYS_NVM[value]
         if EEPROM_FIRST <= value <= EEPROM_LAST and role != 'nvm':
             return 'data EEPROM address 0x%08X outside the NVM objects' % value
@@ -886,7 +898,7 @@ class Checker:
             if base_in_block and (ins.wb or multi):
                 self.violation(addr, 'FLASHFORM', '%s of the FLASH interface block by %s' % (kind, ins.raw.mnemonic))
             if is_store:
-                self.check_flash_store(ins, ea, st, data_reg, op, multi)
+                self.check_flash_store(ins, ea, st, data_reg, op, multi, role)
         if self.observers and self.collect:
             dv = self.val_of(st, data_reg, ins) if data_reg is not None else None
             for f in self.observers:
@@ -904,14 +916,24 @@ class Checker:
                 if EEPROM_FIRST <= w <= EEPROM_LAST and role != 'nvm':
                     self.violation(addr, 'EEPROM', 'load of data EEPROM 0x%08X outside the NVM objects' % w)
 
-    def check_flash_store(self, ins, ea, st, data_reg, op, multi):
+    def check_flash_store(self, ins, ea, st, data_reg, op, multi, role=None):
         addr = ins.addr
         if op != 'str' or multi:
             self.violation(addr, 'FLASHVAL', 'store to FLASH register 0x%08X by %s (only a single `str` is allowed)'
                            % (ea, ins.raw.mnemonic))
             return
         v = self.val_of(st, data_reg, ins) if data_reg is not None else None
-        if ea == FLASH_PECR:
+        if ea == FLASH_PRGKEYR:
+            ok = role == 'blinst' and v is not None and v[0] == 'c' and v[1] in PRGKEYS
+            if not ok:
+                self.violation(addr, 'PRGKEYR', 'store to FLASH_PRGKEYR of %s: only nvm/blinst.o, only the two PRGKEY '
+                               'words' % self.describe(v))
+        elif ea == FLASH_PECR and role == 'blinst':
+            ok = v is not None and v[0] == 'c' and v[1] in BLINST_PECR_OK
+            if not ok:
+                self.violation(addr, 'PECR', 'store to FLASH_PECR of %s in nvm/blinst.o: only PELOCK, 0 or ERASE|PROG'
+                               % self.describe(v))
+        elif ea == FLASH_PECR:
             ok = v is not None and v[0] == 'l' and v[1] == FLASH_PECR and (v[2] & ~PECR_PELOCK) == 0 and (v[3] & ~PECR_FTDW) == 0
             if not ok:
                 self.violation(addr, 'PECR', 'store to FLASH_PECR of %s: only "the value just read, with PELOCK ORed in '

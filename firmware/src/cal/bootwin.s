@@ -11,7 +11,7 @@
 @ Port (DESIGN.md 7.1):
 @   fn_0800EA3A   the v2.05 loop, blocking: no caller in this build (the v2.05-structured build is on the branch
 @                 like-v2.05); left in place so that this image stays byte-identical to the one verified on a meter
-@   bootwin_start the prologue (same pins, splash, counter, HY3131 row)
+@   bootwin_start the prologue (same pins, counter, HY3131 row; the version on the sub display instead of the splash, IMP-35)
 @   bootwin_step  one non-blocking pass for the production loop (IMP-02): the main loop runs
 @                 the key processing in its step 4 and calls bootwin_step once per pass until it returns 1;
 @                 cal.bin runs as the calbin state machine, one step per pass
@@ -118,7 +118,9 @@ FUNC bootwin_start
                                             @ adds no time to the start-up (before lcd_init it delayed the LCD start and every
                                             @ later event; DESIGN.md 3.2 step 5).  Every reader before this point
                                             @ (set_state_reset, lcd_init) reads the EEPROM itself (cal_cache_valid = 0).
-    bl fn_0801A854                          @ splash "V-205" (0x0800EA74)
+    bl fn_0801A81C                          @ IMP-35: v2.05 calls the splash FUN_0801A854 here ("V-2.05" on the main display,
+    bl ui_version_sub                       @ 0x0800EA74); the port shows the version on the sub display only, as during the
+                                            @ rest of the window (IMP-02): shadow cleared, version drawn, commit request
     bl lcd_commit_shadow
     bl lcd_commit_flush                     @ production: wait as v2.05's commit does until the splash is written, so the
                                             @ first HY3131 write below is not earlier than in v2.05 (DESIGN.md 7.1)

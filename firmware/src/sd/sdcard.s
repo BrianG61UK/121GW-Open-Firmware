@@ -28,6 +28,9 @@
     .section .text.sd, "ax", %progbits
 
 @ names of the v2.05 variables used in this file (addresses unchanged, DESIGN.md 5.1)
+    .equ SD_WRITE_TICKS,          60                    @ IMP-33: write wait 600 ms (10 ms ticks): above the SD write timeout of
+                                                                @ 250 ms (SDSC/SDHC) / 500 ms (SDXC), Physical Layer 4.6.2.2
+    .equ SD_WRITE_POLLS,          100000                @ backstop when the tick counter does not run (about 0.8 s at 4 MHz)
     .equ sd_card_info,            v_20007698            @ 0x20007698 card information record (0x58 bytes, filled by sd_get_card_info): CSD fields from +0, CID fields from +0x2C, capacity (u64) +0x48, block size +0x50, RCA (u16) +0x54, card type +0x56
     .equ sdio_init_struct,        v_20007B50            @ 0x20007B50 SDIO host configuration being built (6 words: ClockEdge, ClockBypass, ClockPowerSave, BusWide, HardwareFlowControl, ClockDiv in the byte at +0x14)
     .equ sdio_data_struct,        v_20007B68            @ 0x20007B68 data path configuration (DataTimeOut, DataLength, DataBlockSize, TransferDir, TransferMode, DPSM)
@@ -1474,23 +1477,31 @@ ENDFUNC sd_write_blocks
 @ Context   : main only
 @ RAM       : reads sd_dma_end, sd_transfer_end, sd_transfer_error, SDIO_STA; uses sd_wait_count 0x20007EFC
 @ Spec      : v2.05 listing 0x080232E0..0x080233BD
-@ Note      : first wait: up to 1000 polls (0x3E8) until the DMA-complete flag, the transfer-end flag or an error is set.  Then
-@             sd_dma_end is cleared and the routine waits up to 1000 polls for the SDIO transmit-active bit (STA bit 12) to clear.
-@             When it is clear and sd_stop_condition is 1, CMD12 (STOP_TRANSMISSION) is sent; finally the static flags are cleared
-@             (ICR = 0x5FF).  When either wait uses up its 1000 polls the routine returns at once WITHOUT CMD12 and without clearing
-@             the flags: a card whose programming time exceeds about 1000 polls of the second loop (about 17 instructions each) is left
-@             in the receive state, and disk_write then polls CMD13 20000 times before it reports an error.
+@ Note      : first wait until the DMA-complete flag, the transfer-end flag or an error is set; then sd_dma_end is cleared and the
+@             routine waits for the SDIO transmit-active bit (STA bit 12) to clear (the DPSM holds it while the card signals busy
+@             after the block).  Then, when sd_stop_condition is 1, CMD12 (STOP_TRANSMISSION) is sent and the static flags are
+@             cleared (ICR = 0x5FF).
+@ Deviation : IMP-33 (production): each wait lasts up to SD_WRITE_TICKS (600 ms, above the SD write timeout) instead of v2.05's
+@             1000 polls (about 7 ms), and a wait that runs out still sends CMD12 and returns 4.  v2.05 returned at once without
+@             CMD12: a card still busy after 7 ms (allowed up to 250 / 500 ms) stayed in the receive state and every following
+@             CMD13 poll failed (measured on a meter, 2026-11-04: state 6, status 0x00000D00, 1.9 s of polling; the cause of the
+@             failed card writes of the Bluetooth transfers and of a failed format).
 @ -----------------------------------------------------------------------------
 FUNC sd_wait_write
     push    {r3, r4, r5, lr}                @ 080232E0 push {r3, r4, r5, lr}
     movs    r4, #0                          @ 080232E2 r4 = 0
-    @ r5 = 0xFFFFFFFF; wait counter = 1000
+    @ IMP-33: both waits are bounded by time, SD_WRITE_TICKS ticks of the 10 ms counter v_20007FC6 (the card may hold the
+    @ data line busy for the SD write timeout, Physical Layer 4.6.2.2), with SD_WRITE_POLLS polls as a backstop; v2.05
+    @ waited 1000 polls (about 7 ms) and then returned without CMD12, which left the card in the receive state (state 6:
+    @ on a meter, 2026-11-04, status 0x00000D00 polled for 1.9 s after the second wait ran out, DMA end seen).
     movs.w  r0, #-1                         @ 080232E4 r0 = -1
-    movs    r5, r0                          @ 080232E8 r5 = r0
-    mov.w   r0, #0x3e8                      @ 080232EA r0 = 0x3e8
+    movs    r5, r0                          @ 080232E8 r5 = r0 (0 = a wait ran out)
+    ldr     r0, =SD_WRITE_POLLS
     ldr.w   r1, =sd_wait_count              @ 080232EE r1 = &sd_wait_count
     str     r0, [r1]                        @ 080232F2 u32 [sd_wait_count] = r0
-    @ first loop: leave when sd_dma_end, sd_transfer_end or sd_transfer_error is set, or the counter is 0
+    ldr     r3, =v_20007FC6
+    ldrh    r3, [r3]                        @ r3 = tick at the start
+    @ first loop: leave when sd_dma_end, sd_transfer_end or sd_transfer_error is set, or the time is over
 .Lsd_wait_write_32F4:                   @ v2.05 0x080232F4, reached from 0x08023332
     ldr.w   r0, =sd_dma_end                 @ 080232F4 r0 = &sd_dma_end
     ldr     r0, [r0]                        @ 080232F8 r0 = u32 [sd_dma_end]
@@ -1504,52 +1515,31 @@ FUNC sd_wait_write
     ldrb    r0, [r0]                        @ 0802330C r0 = u8 [sd_transfer_error]
     cmp     r0, #0                          @ 0802330E compare r0 with 0
     bne     .Lsd_wait_write_3338            @ 08023310 if (r0 != 0) goto 0x8023338
-    ldr.w   r0, =sd_wait_count              @ 08023312 r0 = &sd_wait_count
-    ldr     r0, [r0]                        @ 08023316 r0 = u32 [sd_wait_count]
-    cmp     r0, #0                          @ 08023318 compare r0 with 0
-    beq     .Lsd_wait_write_3338            @ 0802331A if (r0 == 0) goto 0x8023338
-    ldr.w   r0, =sd_wait_count              @ 0802331C r0 = &sd_wait_count
-    ldr     r0, [r0]                        @ 08023320 r0 = u32 [sd_wait_count]
-    subs    r0, r0, #1                      @ 08023322 r0 = r0 - 1
-    ldr.w   r1, =sd_wait_count              @ 08023324 r1 = &sd_wait_count
-    str     r0, [r1]                        @ 08023328 u32 [sd_wait_count] = r0
-    ldr.w   r0, =sd_wait_count              @ 0802332A r0 = &sd_wait_count
-    ldr     r0, [r0]                        @ 0802332E r0 = u32 [sd_wait_count]
-    cmp     r0, #0                          @ 08023330 compare r0 with 0
-    bne     .Lsd_wait_write_32F4            @ 08023332 if (r0 != 0) goto 0x80232F4
-    movs    r0, #4                          @ 08023334 r0 = 4
-    b       .Lsd_wait_write_33BC            @ 08023336 goto 0x80233BC
-    @ sd_dma_end = 0, counter = 1000
+    bl      sd_write_wait_over              @ time or backstop over?
+    cmp     r0, #0
+    beq     .Lsd_wait_write_32F4
+    movs    r5, #0                          @ the first wait ran out: CMD12 all the same (below), result 4
+    b       .Lsd_wait_write_3380
+    @ sd_dma_end = 0, the second wait from now
 .Lsd_wait_write_3338:                   @ v2.05 0x08023338, reached from 0x080232FC, 0x08023306, 0x08023310, 0x0802331A
     movs    r0, #0                          @ 08023338 r0 = 0
     ldr.w   r1, =sd_dma_end                 @ 0802333A r1 = &sd_dma_end
     str     r0, [r1]                        @ 0802333E u32 [sd_dma_end] = r0
-    movs.w  r0, #-1                         @ 08023340 r0 = -1
-    movs    r5, r0                          @ 08023344 r5 = r0
-    mov.w   r0, #0x3e8                      @ 08023346 r0 = 0x3e8
+    ldr     r0, =SD_WRITE_POLLS
     ldr.w   r1, =sd_wait_count              @ 0802334A r1 = &sd_wait_count
     str     r0, [r1]                        @ 0802334E u32 [sd_wait_count] = r0
-    @ second loop: while SDIO_STA bit 12 (TXACT) is set and the counter is not 0
+    ldr     r3, =v_20007FC6
+    ldrh    r3, [r3]                        @ r3 = tick at the start of the second wait
+    @ second loop: while SDIO_STA bit 12 (TXACT) is set (the DPSM waits for the card's busy to end) and the time is not over
 .Lsd_wait_write_3350:                   @ v2.05 0x08023350, reached from 0x0802337A
     ldr.w   r0, =(SDIO_BASE + SDIO_STA)     @ 08023350 r0 = (SDIO_BASE + SDIO_STA)
     ldr     r0, [r0]                        @ 08023354 r0 = u32 [(SDIO_BASE + SDIO_STA)]
     lsls    r0, r0, #0x13                   @ 08023356 r0 = r0 << 0x13
     bpl     .Lsd_wait_write_3380            @ 08023358 if (r0 >=0 0) goto 0x8023380
-    ldr.w   r0, =sd_wait_count              @ 0802335A r0 = &sd_wait_count
-    ldr     r0, [r0]                        @ 0802335E r0 = u32 [sd_wait_count]
-    cmp     r0, #0                          @ 08023360 compare r0 with 0
-    beq     .Lsd_wait_write_3380            @ 08023362 if (r0 == 0) goto 0x8023380
-    ldr.w   r0, =sd_wait_count              @ 08023364 r0 = &sd_wait_count
-    ldr     r0, [r0]                        @ 08023368 r0 = u32 [sd_wait_count]
-    subs    r0, r0, #1                      @ 0802336A r0 = r0 - 1
-    ldr.w   r1, =sd_wait_count              @ 0802336C r1 = &sd_wait_count
-    str     r0, [r1]                        @ 08023370 u32 [sd_wait_count] = r0
-    ldr.w   r0, =sd_wait_count              @ 08023372 r0 = &sd_wait_count
-    ldr     r0, [r0]                        @ 08023376 r0 = u32 [sd_wait_count]
-    cmp     r0, #0                          @ 08023378 compare r0 with 0
-    bne     .Lsd_wait_write_3350            @ 0802337A if (r0 != 0) goto 0x8023350
-    movs    r0, #4                          @ 0802337C r0 = 4
-    b       .Lsd_wait_write_33BC            @ 0802337E goto 0x80233BC
+    bl      sd_write_wait_over
+    cmp     r0, #0
+    beq     .Lsd_wait_write_3350
+    movs    r5, #0                          @ the second wait ran out: CMD12 all the same, result 4
     @ stop condition: CMD12 (sd_stop_transfer)
 .Lsd_wait_write_3380:                   @ v2.05 0x08023380, reached from 0x08023358, 0x08023362
     ldr.w   r0, =sd_stop_condition          @ 08023380 r0 = &sd_stop_condition
@@ -1592,6 +1582,30 @@ FUNC sd_wait_write
 .Lsd_wait_write_33BC:                   @ v2.05 0x080233BC, reached from 0x08023336, 0x0802337E, 0x080233B6
     pop     {r1, r4, r5, pc}                @ 080233BC pop {r1, r4, r5, pc}
 ENDFUNC sd_wait_write
+
+@ -----------------------------------------------------------------------------
+@ sd_write_wait_over - one step of a write wait: the backstop count sd_wait_count down by one
+@ In       : r3 = tick (v_20007FC6) at the start of the wait
+@ Out      : r0 = 1 when SD_WRITE_TICKS ticks have passed or the backstop count reached 0, else 0
+@ Clobbers : r0, r1, flags
+@ -----------------------------------------------------------------------------
+LFUNC sd_write_wait_over
+    ldr     r1, =v_20007FC6
+    ldrh    r0, [r1]
+    subs    r0, r0, r3
+    uxth    r0, r0                          @ ticks since the start (the counter wraps at 16 bits)
+    cmp     r0, #SD_WRITE_TICKS
+    bhs     1f
+    ldr     r1, =sd_wait_count
+    ldr     r0, [r1]
+    subs    r0, r0, #1
+    str     r0, [r1]
+    beq     1f
+    movs    r0, #0
+    bx      lr
+1:  movs    r0, #1
+    bx      lr
+ENDFUNC sd_write_wait_over
     .ltorg
 
 @ -----------------------------------------------------------------------------
@@ -1826,8 +1840,16 @@ ENDFUNC sd_cmd_resp7_error
 @             LOCK_UNLOCK_FAILED 14, COM_CRC_FAILED 15, ILLEGAL_COMMAND 16, CARD_ECC_FAILED 17, CC_ERROR 18, GENERAL_UNKNOWN_ERROR 19,
 @             STREAM_READ_UNDERRUN 20, STREAM_WRITE_OVERRUN 21, CID_CSD_OVERWRITE 22, WP_ERASE_SKIP 23, CARD_ECC_DISABLED 24,
 @             ERASE_RESET 25, AKE_SEQ_ERROR 26.
+@ Deviation : IMP-34 (production): second entry sd_cmd_resp1_keep with r1 = the SDIO_STA flags to clear after a good answer;
+@             sd_cmd_resp1_error passes v2.05's 0x5FF (all static flags, data flags included).
 @ -----------------------------------------------------------------------------
 FUNC sd_cmd_resp1_error
+    movw    r1, #0x5ff                      @ IMP-34: v2.05's mask for the clear below
+@ sd_cmd_resp1_keep - as sd_cmd_resp1_error; In: r0 = command index, r1 = flags cleared after a good answer (sd_find_scr:
+@ the command flags only, so that the data flags of a block the card has already sent survive)
+    .global sd_cmd_resp1_keep
+    .thumb_func
+sd_cmd_resp1_keep:
     push.w  {r4, r5, r6, r7, r8, lr}        @ 0802361C push {r4, r5, r6, r7, r8, lr}
     movs    r4, r0                          @ 08023620 r4 = r0
     movs    r5, #0                          @ 08023622 r5 = 0
@@ -1876,6 +1898,7 @@ FUNC sd_cmd_resp1_error
     b       .Lsd_cmd_resp1_error_374E       @ 0802367C goto 0x802374E
     @ the command index of the answer (RESPCMD) must equal r0, else 0x10
 .Lsd_cmd_resp1_error_367E:              @ v2.05 0x0802367E, reached from 0x0802366C
+    mov     r8, r1                          @ IMP-34: the mask (r8, the poll counter, is free now; r1 is clobbered below)
     bl      sdio_get_command_response       @ 0802367E call sdio_get_command_response
     movs    r1, r4                          @ 08023682 r1 = r4
     uxtb    r1, r1                          @ 08023684 r1 = u8(r1)
@@ -1888,7 +1911,7 @@ FUNC sd_cmd_resp1_error
     b       .Lsd_cmd_resp1_error_374E       @ 08023692 goto 0x802374E
     @ clear the static flags, read the status word (RESP1)
 .Lsd_cmd_resp1_error_3694:              @ v2.05 0x08023694, reached from 0x08023688
-    movw    r0, #0x5ff                      @ 08023694
+    mov     r0, r8                          @ 08023694 (v2.05: movw r0, #0x5ff; IMP-34: the caller's mask)
     bl      sdio_clear_flag                 @ 08023698 call sdio_clear_flag
     movs    r0, #0                          @ 0802369C r0 = 0
     bl      sdio_get_response               @ 0802369E call sdio_get_response
@@ -2427,6 +2450,9 @@ ENDFUNC sd_enable_wide_bus
 @ Note      : CMD16 with 8, CMD55 with the RCA, a data path for 8 bytes card to host (DTIMER 0xFFFFFFFF), ACMD51 (command 0x33); the
 @             FIFO is read word by word while no error/end flag (mask 0x62A) is set, at most 20000 polls; the two words are byte
 @             swapped into the result.
+@ Deviation : IMP-34 (production): the answer of ACMD51 is checked without clearing the data flags (sd_cmd_resp1_keep with
+@             0xC5), and after the block end the words still in the receive FIFO are read (v2.05 returned zeros for them, and
+@             a zero SCR fails the start-up with 0x25); the reads are counted (sd_dg_scrs, sd_dg_scr0, sd_dg_scr1).
 @ -----------------------------------------------------------------------------
 FUNC sd_find_scr
     push.w  {r2, r3, r4, r5, r6, r7, r8, lr}@ 08023A8C push {r2, r3, r4, r5, r6, r7, r8, lr}
@@ -2536,7 +2562,11 @@ FUNC sd_find_scr
     @ ACMD51 (command 0x33, SEND_SCR)
     bl      sdio_send_command               @ 08023B68 call sdio_send_command
     movs    r0, #0x33                       @ 08023B6C r0 = 0x33
-    bl      sd_cmd_resp1_error              @ 08023B6E call sd_cmd_resp1_error
+    @ IMP-34: clear only the command flags CCRCFAIL, CTIMEOUT, CMDREND, CMDSENT (0xC5).  v2.05 cleared 0x5FF here, which
+    @ also wipes DBCKEND, DATAEND and the data error flags of an SCR block that is already in: the loop below then reads the
+    @ two words and polls 20000 times for a flag that never comes (error 4)
+    movs    r1, #0xc5
+    bl      sd_cmd_resp1_keep               @ 08023B6E call sd_cmd_resp1_error (v2.05)
     movs    r7, r0                          @ 08023B72 r7 = r0
     uxtb    r7, r7                          @ 08023B74 r7 = u8(r7)
     cmp     r7, #0                          @ 08023B76 compare r7 with 0
@@ -2624,7 +2654,35 @@ FUNC sd_find_scr
     b       .Lsd_find_scr_3C7C              @ 08023C2E goto 0x8023C7C
     @ success: static flags cleared, the two words byte swapped into the result
 .Lsd_find_scr_3C30:                     @ v2.05 0x08023C30, reached from 0x08023C1C
-    movw    r0, #0x5ff                      @ 08023C30
+    @ IMP-34: the loop above ends at DBCKEND, which the DPSM sets as soon as the 8 bytes and their CRC are in; words the loop
+    @ has not read yet are still in the receive FIFO (RXDAVL).  v2.05 left them there and returned the zeros of its buffer:
+    @ when the card sends the SCR before the loop runs (the block lasts 82 SDIO_CK clocks, about 10 us, one loop pass about
+    @ 10 us at 4 MHz, and an interrupt can delay the loop), the SCR reads 0 and sd_enable_wide_bus refuses with 0x25.
+    @ Read the remaining words, at most two in all.  Diagnosis: count the reads and how many words the loop had.
+    ldr     r1, =sd_dg_scrs
+    ldrh    r0, [r1]
+    adds    r0, r0, #1
+    strh    r0, [r1]
+    cmp     r6, #1
+    bhi     2f
+    ite     eq
+    ldreq   r1, =sd_dg_scr1
+    ldrne   r1, =sd_dg_scr0
+    ldrh    r0, [r1]
+    adds    r0, r0, #1
+    strh    r0, [r1]
+1:  cmp     r6, #2
+    bhs     2f
+    ldr     r0, =(SDIO_BASE + SDIO_STA)
+    ldr     r0, [r0]
+    tst     r0, #0x200000                   @ RXDAVL: a word in the receive FIFO
+    beq     2f
+    bl      sdio_read_data
+    mov     r1, sp
+    str.w   r0, [r1, r6, lsl #2]
+    adds    r6, r6, #1
+    b       1b
+2:  movw    r0, #0x5ff                      @ 08023C30
     bl      sdio_clear_flag                 @ 08023C34 call sdio_clear_flag
     ldr     r0, [sp]                        @ 08023C38 r0 = u32 [sp]
     ldr     r1, [sp]                        @ 08023C3A r1 = u32 [sp]

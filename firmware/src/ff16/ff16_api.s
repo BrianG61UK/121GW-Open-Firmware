@@ -15,16 +15,19 @@
     .include "macros.inc"
     .include "config.inc"
 
-    .include "ff16.inc"
+    .include "ff16x.inc"
 
     .section .bss_port.ff16obj, "aw", %nobits
     .balign 4
-@ The FatFs objects of the callers (owner LOG / CAL / BLE, one user at a time): R0.16's FIL (552 bytes) and DIR (44) do
-@ not fit the v2.05 areas 0x20006A60 / 0x20006C84 (548 each) and 0x20007B1C (28).
-    .global ff16_fil_a, ff16_fil_b, ff16_dir_a
+@ The FatFs objects of the callers (owner LOG / CAL / BLE, one user at a time): R0.16's exFAT/LFN FIL (592 bytes), DIR
+@ (80), FATFS (572) and FILINFO (288) do not fit the v2.05 areas 0x20006A60 / 0x20006C84 (548 each), 0x20007B1C (28),
+@ 0x20006830 (fat_fs_obj) and 0x20007B38 (22) (IMP-29, IMP-32).
+    .global ff16_fil_a, ff16_fil_b, ff16_dir_a, ff16_fatfs, ff16_finfo
+ff16_fatfs:     .space FATFS_SIZE           @ fat_fs_obj, CALBIN_FS, bft_fatfs
 ff16_fil_a:     .space FIL_SIZE             @ log_fil, CALBIN_FIL, bft_fil_a
 ff16_fil_b:     .space FIL_SIZE             @ log_fil_new, bft_fil_b
 ff16_dir_a:     .space DIR_SIZE             @ log_dir
+ff16_finfo:     .space FILINFO_SIZE         @ log_finfo
 
     .section .rodata.ff16.api, "a", %progbits
 ff16_empty_path: .byte 0
@@ -75,7 +78,10 @@ ENDFUNC fat_f_sync
 FUNC fat_f_close
     b ff16_f_close
 ENDFUNC fat_f_close
+@ fat_f_lseek - R0.08a form f_lseek(fp, DWORD ofs): r1 = offset; R0.16 with exFAT takes FSIZE_t = QWORD in r2:r3
 FUNC fat_f_lseek
+    mov r2, r1                              @ offset, low word
+    movs r3, #0                             @ high word (the callers' offsets are below 4 GiB)
     b ff16_f_lseek
 ENDFUNC fat_f_lseek
 FUNC fat_f_opendir
@@ -100,6 +106,9 @@ ENDFUNC fat_f_rename
 FUNC fat_f_getfree
     b ff16_f_getfree
 ENDFUNC fat_f_getfree
+FUNC fat_f_mkfs
+    b ff16_f_mkfs
+ENDFUNC fat_f_mkfs
 
 @ v2.05 addresses used as names by cal.bin (cal/calbin.s) and the log (as in src/sd/fat_file.s)
     .global fn_0801E010, fn_08021B80, fn_08021BCC, fn_08021D72, fn_08021F60, fn_0802224C, fn_08022268

@@ -37,12 +37,24 @@ sd_dg_dcount:   .space 2                    @ SDIO_DCOUNT (bytes still to receiv
 sd_dg_stahi:    .space 2                    @ SDIO_STA bits 31..16 (FIFO state)
 sd_dg_recov:    .space 2                    @ reads taken on the hardware counters after the end wait ran out
     .global sd_dg_flags, sd_dg_dmaisr, sd_dg_cndtr, sd_dg_dcount, sd_dg_stahi, sd_dg_recov
+    .balign 4
+sd_dg_r1:       .space 4                    @ card status of the last CMD13 answer before the failure (0xFFFFFFFF: no answer)
+sd_last_r1:     .space 4                    @ card status of the last CMD13 answer (sd_get_state)
+sd_dg_t0:       .space 2                    @ tick counter (v_20007FC6, 10 ms) when the status polling of the block began
+sd_dg_ticks:    .space 2                    @ ticks from that start to the failure
+sd_dg_icount:   .space 2                    @ failed card start-ups (disk_initialize: sd_init error) since power-on
+sd_dg_ierr:     .space 2                    @ the sd_init error code of the last failed start-up
+sd_dg_scrs:     .space 2                    @ SCR reads that ended without an error flag (sd_find_scr, IMP-34) since power-on
+sd_dg_scr0:     .space 2                    @ of these: the polling loop had read no word when the block end was seen
+sd_dg_scr1:     .space 2                    @ of these: the polling loop had read one word (the rest came from the FIFO afterwards)
+    .global sd_dg_r1, sd_dg_ticks, sd_dg_icount, sd_dg_ierr, sd_dg_scrs, sd_dg_scr0, sd_dg_scr1
     .previous
 
     .section .text.sd, "ax", %progbits
 
 @ names of the v2.05 variables used in this file (addresses unchanged, DESIGN.md 5.1)
-    .equ fat_fs_obj,              v_20006830            @ 0x20006830 FATFS work area of drive 0 (registered by f_mount)
+    .equ fat_fs_obj,              ff16_fatfs            @ FATFS work area of drive 0 (production: R0.16 exFAT FATFS, 572 bytes, in .bss_port, IMP-32; v2.05: 0x20006830)
+    .equ sd_card_info,            v_20007698            @ 0x20007698 card information record (sdcard.s): capacity u64 at +0x48
     .equ sd_stop_condition,       v_20007EF0            @ 0x20007EF0 1 = the running transfer is a multi-block write that needs CMD12; 0 = single block read
     .equ sd_transfer_end,         v_20007EF4            @ 0x20007EF4 set to 1 by the SDIO interrupt at the end of the data transfer
     .equ sd_dma_end,              v_20007EF8            @ 0x20007EF8 set to 1 by the DMA interrupt when the DMA transfer is complete
@@ -216,6 +228,9 @@ ENDFUNC sd_get_status
 @ -----------------------------------------------------------------------------
 FUNC sd_get_state
     push    {r7, lr}                        @ 080226AC push {r7, lr}
+    ldr     r1, =sd_last_r1                 @ diagnosis: no answer unless CMD13 answers below
+    mov     r2, #0xFFFFFFFF
+    str     r2, [r1]
     movs    r0, #0                          @ 080226AE r0 = 0
     str     r0, [sp]                        @ 080226B0 u32 [sp] = r0
     bl      sd_detect                       @ 080226B2 call sd_detect
@@ -229,6 +244,8 @@ FUNC sd_get_state
     b       .Lsd_get_state_26D4             @ 080226C6 goto 0x80226D4
 .Lsd_get_state_26C8:                    @ v2.05 0x080226C8, reached from 0x080226C2
     ldr     r0, [sp]                        @ 080226C8 r0 = u32 [sp]
+    ldr     r1, =sd_last_r1
+    str     r0, [r1]                        @ diagnosis: the card status of this answer
     lsrs    r0, r0, #9                      @ 080226CA r0 = r0 >> 9
     ands    r0, r0, #0xf                    @ 080226CC r0 = r0 & 0xf
     b       .Lsd_get_state_26D4             @ 080226D0 goto 0x80226D4
@@ -298,7 +315,14 @@ FUNC disk_initialize
     movs    r5, #0x29                       @ 08023F60 r5 = 0x29
     bl      sd_init                         @ 08023F62 call sd_init
     movs    r5, r0                          @ 08023F66 r5 = r0
-    cmp     r5, #0
+    cbz     r5, 1f
+    ldr     r1, =sd_dg_ierr                 @ diagnosis: the error code of this failed start-up
+    strh    r5, [r1]
+    ldr     r1, =sd_dg_icount
+    ldrh    r2, [r1]
+    adds    r2, r2, #1
+    strh    r2, [r1]
+1:  cmp     r5, #0
     ite     eq
     moveq   r0, #0                          @ sd_init ok: status 0 (ready)
     movne   r0, #1                          @ any SD error: STA_NOINIT (OF-59; v2.05 returns the error code itself, 0x08023F68,
@@ -369,12 +393,32 @@ LFUNC sd_dg_note
     ldrb r2, [r1]
     ldr r1, =sd_dg_terr
     strb r2, [r1]
+    ldr r1, =sd_last_r1
+    ldr r2, [r1]
+    ldr r1, =sd_dg_r1
+    str r2, [r1]                            @ the card status the polling saw last
+    ldr r1, =v_20007FC6
+    ldrh r2, [r1]
+    ldr r1, =sd_dg_t0
+    ldrh r1, [r1]
+    subs r2, r2, r1
+    ldr r1, =sd_dg_ticks
+    strh r2, [r1]                           @ 10 ms ticks since the status polling of the block began
     ldr r1, =sd_dg_count
     ldrh r2, [r1]
     adds r2, r2, #1
     strh r2, [r1]
     bx lr
 ENDFUNC sd_dg_note
+
+@ sd_dg_start - diagnosis: the status polling of a block begins now (tick counter v_20007FC6); clobbers r0, r1
+LFUNC sd_dg_start
+    ldr r0, =v_20007FC6
+    ldrh r0, [r0]
+    ldr r1, =sd_dg_t0
+    strh r0, [r1]
+    bx lr
+ENDFUNC sd_dg_start
 
 @ -----------------------------------------------------------------------------
 @ sd_dg_end_state - record the transfer state after a read's end wait ran out, and tell whether the block is complete
@@ -452,6 +496,7 @@ FUNC disk_read
     mov     r0, r8
     mov     r1, r8                          @ v2.05 passes the buffer twice (0x08023F9A)
     bl      sd_read_block
+    bl      sd_dg_start                     @ diagnosis: the polling begins
 .Ldr_poll:
     bl      sd_get_status                   @ 0 = card in the transfer state
     cmp     r0, #0
@@ -581,6 +626,7 @@ FUNC disk_write
     orrs    r0, r0, r1
     str     r0, [sp, #8]                    @ OF-59: [sp+8] = non-zero when sd_wait_write failed or the SDIO reported an error
                                             @ (CRC status token negative, timeout, underrun); the card is still polled below
+    bl      sd_dg_start                     @ diagnosis: the polling begins
     movw    r0, #0x4e20                     @ 08024008
     mov     r9, r0                          @ 0802400C r9 = r0
     @ poll the card state with CMD13 up to 20000 times: transfer state = ready
@@ -670,8 +716,8 @@ ENDFUNC get_fattime
 @ Clobbers  : r0-r1, r3, flags (v2.05 regeffects.txt; r4-r11 preserved)
 @ Context   : main only
 @ Spec      : v2.05 listing 0x08024038..0x08024073
-@ Note      : command 0 does nothing; command 1 stores the constant 0x20000 (131072 sectors) as a word, command 2 the halfword 0x200,
-@             command 3 the word 0x20.  The sector count does not describe the card; FatFs does not use it for the operations ported here.
+@ Note      : command 0 does nothing; command 1 stores the card's sector count (IMP-32; v2.05: the constant 0x20000), command 2
+@             the halfword 0x200, command 3 the word 0x20.
 @ -----------------------------------------------------------------------------
 FUNC disk_ioctl
     push    {r4}                            @ 08024038 push {r4}
@@ -686,8 +732,14 @@ FUNC disk_ioctl
     blo     .Ldisk_ioctl_405A               @ 0802404A if (r1 <u 3) goto 0x802405A
     b       .Ldisk_ioctl_406E               @ 0802404C goto 0x802406E
 .Ldisk_ioctl_404E:                      @ v2.05 0x0802404E, reached from 0x08024042
-    movs.w  r4, #0x20000                    @ 0802404E r4 = 0x20000
-    str     r4, [r2]                        @ 08024052 u32 [r2] = r4
+    @ IMP-32: the card's sector count (capacity / 512 from sd_card_info, filled by sd_get_card_info at every bring-up):
+    @ f_mkfs sizes the volume by it.  v2.05 stored the constant 0x20000 here (no caller of R0.08a used it).
+    ldr     r4, =sd_card_info
+    ldrd    r0, r4, [r4, #0x48]             @ capacity in bytes (u64)
+    lsrs    r0, r0, #9
+    orr     r4, r0, r4, lsl #23             @ sectors = capacity >> 9 (32 bits: up to 2 TiB, FF_LBA64 0)
+    movs    r0, #0
+    str     r4, [r2]                        @ u32 [r2] = sector count
     movs    r4, #0                          @ 08024054 r4 = 0
     movs    r0, r4                          @ 08024056 r0 = r4
     b       .Ldisk_ioctl_406E               @ 08024058 goto 0x802406E

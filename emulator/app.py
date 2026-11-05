@@ -129,6 +129,7 @@ class Emulator:
     # SD card image (emu/sdcard.py): path of the raw image or None for an empty socket, and its size when it is created
     sdcard_path = None
     sdcard_mb = 512
+    flash_allow_protected = False       # True only in tests of the bootloader install (FLASH brick guard off)
 
     def __init__(self, inputs=None, app=None, eeprom=None, speed=1.0, hw_cal=None, *, bootloader=None, option_bytes=None,
                  v205_image=None, tables=None, firmware=None):
@@ -183,7 +184,7 @@ class Emulator:
     def build(self):
         m = self.m = Machine()
         SCS(m)
-        self.rcc, self.pwr, self.flash = RCC(), PWR(), FLASH(allow_protected=False)
+        self.rcc, self.pwr, self.flash = RCC(), PWR(), FLASH(allow_protected=self.flash_allow_protected)
         m.add_periph(0x40023800, 0x400, self.rcc)
         m.add_periph(0x40007000, 0x400, self.pwr)
         m.add_periph(0x40023C00, 0x400, self.flash)

@@ -89,6 +89,7 @@
     .equ SET_ITEM_LP, 37                    @ IMP-24: current-loop percent page LP (DCmA only, between dSP and CL)
     .equ SET_ITEM_RTD, 38                   @ IMP-25: RTD temperature page Pt (OHM only, between dSP and CL)
     .equ SET_ITEM_BFT, 39                   @ IMP-28: Bluetooth file transfer page Ld (between bt and rEL)
+    .equ SET_ITEM_FMT, 40                   @ IMP-32: card format page For (between Ld and rEL, two-part bootloader only)
     .equ SET_ITEM_LT, 27                    @ IMP-20: limit test pages Lt (27), Lo (28), HI (29), verdict (36)
     .equ SET_ITEM_LO, 28
     .equ SET_ITEM_HI, 29
@@ -137,6 +138,8 @@ FUNC fn_08015410
     beq .Lsn_bt
     cmp r0, #SET_ITEM_BFT
     beq .Lsn_bft
+    cmp r0, #SET_ITEM_FMT
+    beq .Lsn_fmt
     cmp r0, #SET_ITEM_T_LO
     beq .Lsn_to0                            @ tLo: next is item 0
     cmp r0, #SET_ITEM_T_HI
@@ -238,7 +241,13 @@ FUNC fn_08015410
     movs r0, #SET_ITEM_BFT                  @ bt: next is Ld (IMP-28)
     b .Lsn_port_set
 .Lsn_bft:
-    movs r0, #SET_ITEM_RELP                 @ Ld: next is rEL
+    bl set_fmt_available                    @ IMP-32: Ld: next is For while the two-part bootloader is installed
+    cbz r0, .Lsn_fmt
+    bl set_fmt_enter                        @ the page starts at "Fr no"
+    movs r0, #SET_ITEM_FMT
+    b .Lsn_port_set
+.Lsn_fmt:
+    movs r0, #SET_ITEM_RELP                 @ Ld (or For): next is rEL
     b .Lsn_port_set
 .Lsn_to0:
     movs r0, #0x0
@@ -247,7 +256,7 @@ FUNC fn_08015410
     movs r0, #SET_ITEM_BT                   @ bL: next is bt
 .Lsn_port_set:
     ldr.w r1, =set_item
-    strb r0, [r1, #0x0]                     @ set_item = 21..39 or 0
+    strb r0, [r1, #0x0]                     @ set_item = 21..40 or 0
     movs r0, #0x0
     ldr.w r1, =set_edit
     strb r0, [r1, #0x0]                     @ set_edit = 0 (v2.05 clears it at 0x08015422 for every item but 8)
@@ -1535,6 +1544,20 @@ FUNC fn_080165F4
     bl set_dsp_edit                         @ switch or save of the display level
     b .L08016800
 .Lse_not_dsp:
+    cmp r0, #SET_ITEM_FMT                   @ IMP-32: the card format page For (item 40)
+    bne .Lse_not_fmt
+    uxtb r4, r4
+    cmp r4, #0x0                            @ query?
+    bne .Lse_fmt_act
+    movs r0, #0x1
+    movs r5, r0                             @ query result: editable
+    b .L08016800
+.Lse_fmt_act:
+    movs r0, r4
+    uxtb r0, r0
+    bl set_fmt_edit                         @ switch, or confirm (formats with "yes")
+    b .L08016800
+.Lse_not_fmt:
     cmp r0, #SET_ITEM_BH                    @ IMP-16: the continuity hold page bH (item 26)
     bne .Lse_not_bh
     uxtb r4, r4
@@ -2365,6 +2388,11 @@ FUNC fn_0801797C
     bl set_bft_draw
     b .L08017F26
 .Lsd_not_bft:
+    cmp r0, #SET_ITEM_FMT                   @ IMP-32: the card format page For (item 40)
+    bne .Lsd_not_fmt
+    bl set_fmt_draw
+    b .L08017F26
+.Lsd_not_fmt:
     cmp r0, #SET_ITEM_CLK                   @ IMP-13: the clock page CL (item 25)
     bne .Lsd_not_clk
     bl set_clk_draw                         @ draw "CL 24" or "CL 12"
