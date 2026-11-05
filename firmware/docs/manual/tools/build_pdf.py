@@ -90,6 +90,29 @@ def heading_pages(pdf):
     return pages, d.page_count
 
 
+def explicit_links(d):
+    """Chromium writes each link as a named destination (/Dest /name, resolved through the catalog's /Dests table).
+    Preview and several other viewers do not follow those, so every link gets the explicit target array instead
+    ([page /XYZ x y zoom], copied from the table); a link without a target stops the build."""
+    kind, val = d.xref_get_key(d.pdf_catalog(), 'Dests')
+    if kind != 'xref':
+        raise SystemExit('no /Dests table in the rendered PDF')
+    table = int(val.split()[0])
+    bad = 0
+    for p in d:
+        for ln in p.get_links():
+            k, name = d.xref_get_key(ln['xref'], 'Dest')
+            if k != 'name':
+                continue
+            tk, target = d.xref_get_key(table, name.lstrip('/'))
+            if tk != 'array':
+                bad += 1
+                continue
+            d.xref_set_key(ln['xref'], 'Dest', target)
+    if bad:
+        raise SystemExit('%d links without a target' % bad)
+
+
 def main():
     page_html = os.path.join(MAN, 'src', '_build.html')
     tmp = OUT + '.tmp.pdf'
@@ -104,6 +127,7 @@ def main():
         pages = found
     import pymupdf
     d = pymupdf.open(tmp)
+    explicit_links(d)
     d.set_toc([[lv - 1, t, pages.get(hid, 1)] for lv, hid, t in toc])      # bookmarks: chapters level 1, sections 2
     d.set_metadata({'title': '121GW Open Firmware - User Manual', 'subject': 'EEVblog 121GW with the open firmware ' +
                     fw_version()})
