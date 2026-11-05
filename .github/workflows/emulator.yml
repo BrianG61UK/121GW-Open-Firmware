@@ -49,6 +49,32 @@ jobs:
           path: dist
           if-no-files-found: error
 
+  tests:
+    # Emulator tests of the production image that need no original EEVblog image (direct boot, synthetic EEPROM, the
+    # table data of the build): one job per script, in parallel.  Not on release tags and no release job needs it, so a
+    # slow runner cannot hold up a release; a failure fails the push / pull request run.
+    name: Emulator test ${{ matrix.script }}
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      EMU_TEST_WALL_S: '2280'                # the tests' own wall-clock guard (default 1800 s), below the job timeout
+    strategy:
+      fail-fast: false
+      matrix:
+        script: [test_sd_scr.py, test_sd_errors.py, test_dcv_fast.py, test_bft_files.py, test_bft_settings.py,
+                 test_calbin_ident.py]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Production build (firmware/build/EEVBlog.bin and 121gw.map, the symbols the tests read; dist/v205_tables.json)
+        uses: ./.github/actions/build-firmware
+        with:
+          target: none
+      - name: Emulator data (v2.05 table data of the build, synthetic EEPROM)
+        run: python -I emulator/tools/prepare_data.py --dist dist
+      - name: Run ${{ matrix.script }}
+        run: python -I emulator/scripts/${{ matrix.script }}      # default image firmware/build/EEVBlog.bin and its map
+
   macos:
     name: macOS ${{ matrix.arch }}
     needs: firmware
