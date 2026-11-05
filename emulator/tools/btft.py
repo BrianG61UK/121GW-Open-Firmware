@@ -1,14 +1,27 @@
 """Bluetooth file transfer to the 121GW SD card: the packet format of the firmware (firmware/src/ble/bft.s, IMP-28).
 
-Used by bt_upload.py (a real meter over Bluetooth LE) and emulator/scripts/test_bt_upload.py (the emulated meter).
+Used by bt_upload.py (a real meter over Bluetooth LE), emulator/scripts/test_bt_upload.py, test_bft_files.py and
+test_bft_settings.py (the emulated meter).
 
 Packet to the meter: B5 5B type seq(2) len(1) payload crc16(2), little-endian, CRC-16/CCITT-FALSE over type..payload.
-Answer from the meter: B5 5B 81 seq(2) 03 status next(2) crc16(2).
+Answer to the firmware transfer (types 1 .. 5): B5 5B 81 seq(2) 03 status next(2) crc16(2).
+Answer to the SD file and settings requests (types 0x10 .. 0x17, firmware/src/ble/bftsd.s, bftset.s):
+    B5 5B 82 seq(2) len status field(2) data crc16(2), len = 3 + len(data), data <= 232 bytes.
+Requests (payload):
+    0x10 LIST   start(2)                           root directory entries from `start`
+    0x11 READ   namelen(1) name offset(4) len(2)   len 1 .. 8192, staged in the meter's RAM
+    0x12 CHUNK  idx(2)                             232-byte piece idx of the staged bytes (no card access)
+    0x13 DELETE namelen(1) name
+    0x14 INFO   -
+    0x16 GET    -                                  every setting: field = count, data = (id(2) value(1)) per setting
+    0x17 PUT    id(2) value(1)                     one setting; the meter applies it as its setup page does
 """
 import struct
 import zlib
+from collections import namedtuple
 
 T_START, T_DATA, T_END, T_ABORT, T_STATUS, T_ANSWER = 1, 2, 3, 4, 5, 0x81
+T_LIST, T_READ, T_CHUNK, T_DELETE, T_INFO, T_GET, T_PUT, T_ANSWER2 = 0x10, 0x11, 0x12, 0x13, 0x14, 0x16, 0x17, 0x82
 DIAG_NAMES = ['failed card sessions of the transfer', 'last card failure (step << 8 | FatFs result)',
               'failed disk_read / disk_write since power-on', 'their op | reason << 8', 'SDIO_STA', 'sd_transfer_error',
               'sd_wait_write result']
@@ -19,6 +32,19 @@ STATUS_TEXT = {0: 'accepted', 1: 'CRC wrong', 2: 'not the expected packet', 3: '
                0x16: 'the received file could not be read back'}
 MIN_SIZE, MAX_SIZE = 0x124, 0x4C000     # firmware limit (firmware/link/121gw.ld)
 CARD_STEP = {1: 'open', 2: 'seek', 3: 'write', 4: 'short write (card full?)', 5: 'close', 6: 'read back'}
+
+# 0x82 answers
+S_OK, S_NOT_ALLOWED, S_NOT_FOUND, S_NAME, S_ARG, S_PROTECTED, S_CARD = 0, 3, 0x20, 0x21, 0x22, 0x23, 0x24
+STATUS2_TEXT = {0: 'ok', 3: 'not allowed now', 0x20: 'not found', 0x21: 'name refused', 0x22: 'argument or value refused',
+                0x23: 'protected file', 0x24: 'card error'}
+CARD_STEP2 = {1: 'open', 2: 'seek', 3: 'read', 4: 'delete', 5: 'getfree / close'}
+CHUNK = 232                                     # data bytes of a CHUNK answer
+READ_MAX = 8192                                 # largest READ
+NAME_MAX = 63
+LIST_END = 0x8000                               # LIST field flag: end of the directory reached
+NAME_CUT = 0x80                                 # LIST attribute bit: a name above 63 bytes was cut
+Answer2 = namedtuple('Answer2', 'seq status field data')
+Entry = namedtuple('Entry', 'size fdate ftime attr name cut')
 
 
 def card_diag(nxt):
@@ -84,6 +110,74 @@ def explain_diag(values):
     return text
 
 
+def _name_payload(name):
+    raw = name.encode('latin-1') if isinstance(name, str) else bytes(name)
+    return bytes([len(raw)]) + raw
+
+
+def list_packet(seq, start=0):
+    return packet(T_LIST, seq, struct.pack('<H', start))
+
+
+def read_packet(seq, name, offset, length):
+    return packet(T_READ, seq, _name_payload(name) + struct.pack('<IH', offset, length))
+
+
+def chunk_packet(seq, idx):
+    return packet(T_CHUNK, seq, struct.pack('<H', idx))
+
+
+def delete_packet(seq, name):
+    return packet(T_DELETE, seq, _name_payload(name))
+
+
+def info_packet(seq):
+    return packet(T_INFO, seq)
+
+
+def get_packet(seq):
+    return packet(T_GET, seq)
+
+
+def put_packet(seq, setting_id, value):
+    return packet(T_PUT, seq, struct.pack('<HB', setting_id, value))
+
+
+def parse_list(a):
+    """(entries, end) of a LIST answer; entries are Entry(size, fdate, ftime, attr, name, cut)."""
+    count, end = a.field & 0x7FFF, bool(a.field & LIST_END)
+    out, pos = [], 0
+    for _ in range(count):
+        size, fdate, ftime, attr, nlen = struct.unpack_from('<IHHBB', a.data, pos)
+        pos += 10
+        out.append(Entry(size, fdate, ftime, attr & 0x7F, a.data[pos:pos + nlen].decode('latin-1'), bool(attr & NAME_CUT)))
+        pos += nlen
+    if pos != len(a.data):
+        raise ValueError('LIST answer: %d bytes of data, entries use %d' % (len(a.data), pos))
+    return out, end
+
+
+def parse_read(a):
+    """(bytes read, CRC-32 of them) of a READ answer."""
+    return a.field, struct.unpack('<I', a.data)[0]
+
+
+def parse_info(a):
+    """(sectors per cluster, free clusters, total clusters) of an INFO answer."""
+    free, total = struct.unpack('<II', a.data)
+    return a.field, free, total
+
+
+def parse_get(a):
+    """{setting id: value} of a GET answer."""
+    return {struct.unpack_from('<H', a.data, 3 * i)[0]: a.data[3 * i + 2] for i in range(a.field)}
+
+
+def card_diag2(field):
+    """The field of a status 0x24 answer: failed step << 8 | FatFs result."""
+    return 'step %s, FatFs result %d' % (CARD_STEP2.get(field >> 8, field >> 8), field & 0xFF)
+
+
 def start_packet(data):
     return packet(T_START, 0, struct.pack('<II', len(data), zlib.crc32(data) & 0xFFFFFFFF))
 
@@ -105,7 +199,8 @@ def check_image(data):
 
 
 class AnswerParser:
-    """Collects bytes from the meter and returns complete answers (status frames and other bytes are skipped)."""
+    """Collects bytes from the meter and returns complete answers (status frames and other bytes are skipped): a
+    tuple (seq, status, next) for a type 0x81 answer, an Answer2 (seq, status, field, data) for a type 0x82 answer."""
 
     def __init__(self):
         self.buf = bytearray()
@@ -114,17 +209,33 @@ class AnswerParser:
         self.buf.extend(data)
         out = []
         while True:
-            i = self.buf.find(b'\xB5\x5B\x81')
+            i = self.buf.find(b'\xB5\x5B')
+            while i >= 0 and (len(self.buf) < i + 3 or self.buf[i + 2] not in (0x81, 0x82)):
+                if len(self.buf) < i + 3:
+                    break
+                i = self.buf.find(b'\xB5\x5B', i + 1)
             if i < 0:
                 del self.buf[:max(0, len(self.buf) - 2)]
                 return out
-            if len(self.buf) < i + 11:
+            if len(self.buf) < i + 3:
                 del self.buf[:i]
                 return out
-            a = bytes(self.buf[i:i + 11])
-            if a[5] == 3 and crc16(a[2:9]) == struct.unpack_from('<H', a, 9)[0]:
-                seq, status, nxt = struct.unpack_from('<H', a, 3)[0], a[6], struct.unpack_from('<H', a, 7)[0]
-                out.append((seq, status, nxt))
-                del self.buf[:i + 11]
+            kind = self.buf[i + 2]
+            if len(self.buf) < i + 6:
+                del self.buf[:i]
+                return out
+            ln = self.buf[i + 5]
+            total = 8 + ln
+            if len(self.buf) < i + total:
+                del self.buf[:i]
+                return out
+            a = bytes(self.buf[i:i + total])
+            ok = crc16(a[2:6 + ln]) == struct.unpack_from('<H', a, 6 + ln)[0]
+            if ok and kind == 0x81 and ln == 3:
+                out.append((struct.unpack_from('<H', a, 3)[0], a[6], struct.unpack_from('<H', a, 7)[0]))
+            elif ok and kind == 0x82 and ln >= 3:
+                out.append(Answer2(struct.unpack_from('<H', a, 3)[0], a[6], struct.unpack_from('<H', a, 7)[0], a[9:6 + ln]))
             else:
                 del self.buf[:i + 1]
+                continue
+            del self.buf[:i + total]

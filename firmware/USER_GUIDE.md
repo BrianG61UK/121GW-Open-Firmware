@@ -2,7 +2,7 @@
 
 Everything on this page is in the **fast build** (`2_fast/EEVBlog.bin`). The `1_like_v2.05` build behaves like the
 original firmware apart from the defect fixes and has none of these features. At power-on the fast build shows its
-version, `F-1.04` (the release number, v1.0.4), on the small display; the main display stays blank until the first
+version, `F-1.05` (the release number, v1.0.5), on the small display; the main display stays blank until the first
 reading. The `1_like_v2.05` build shows `V-2.05` like the original.
 
 All settings are stored in bytes of the data EEPROM that the original firmware never uses. Calibration, serial number
@@ -160,6 +160,22 @@ Tip: with `L4-20` a sensor's output reads directly in percent of its range, for 
   bootloader installed (next section) the companion does this step itself: no keys.
 - Logging must be off. The meter keeps measuring during the transfer. Leaving the page stops it; the old `EEVBlog.bin`
   stays until a new file has arrived complete and checked.
+
+## Card files and settings from the companion (page `Ld-bt`)
+
+With the meter on the SETUP page `Ld-bt` (Bluetooth on, logging off, not in calibration mode), the 121GW Companion can:
+
+- **list the card's files** (root folder, long names), **download** them (about 1 KB/s, every piece checked with a CRC),
+  **delete** them (`cal.bin`, `EEVBlog.bin` and `BTLOAD.TMP` cannot be deleted), show the free space, and copy new or
+  changed files into a folder on the computer ("sync");
+- **read and change the settings** of the SETUP pages: thermocouple type, temperature unit, dBm reference, display level,
+  continuity threshold and hold, Bluetooth speed, auto power-off, backlight auto-off, contrast, VA burden, buzzer, REL
+  view, logging trigger and change threshold, 12-hour clock, current-loop and RTD views, battery trim.  A change is
+  stored exactly as the page itself stores it; calibration, serial number and the rotary memory cannot be reached.  The
+  logging interval is set on the meter only.
+
+Nothing is written to the card except the deletes you confirm.  While the companion uses the card the readings pause
+(the page `Ld` owns the link).
 
 ## Two-part bootloader (with the 121GW Companion)
 

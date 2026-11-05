@@ -50,6 +50,16 @@ sd_dg_scr1:     .space 2                    @ of these: the polling loop had rea
     .global sd_dg_r1, sd_dg_ticks, sd_dg_icount, sd_dg_ierr, sd_dg_scrs, sd_dg_scr0, sd_dg_scr1
     .previous
 
+@ OF-66: one sector for the DMA when the caller's buffer is not word aligned.  The SDIO DMA (DMA2 channel 4) moves words
+@ and RM0038 11.4.5 / 11.4.6 align every access down to the item size ("access is automatically aligned"), so a transfer
+@ to or from an address that is not a multiple of 4 lands 1..3 bytes off.  FatFs passes the caller's own buffer for
+@ whole sectors (f_read / f_write of a run that starts or ends inside a sector: the middle part goes straight to
+@ disk_read / disk_write), and nothing in FatFs or the API makes that buffer aligned.
+    .section .bss_port.sdbounce, "aw", %nobits
+    .balign 4
+sd_bounce:      .space 512
+    .previous
+
     .section .text.sd, "ax", %progbits
 
 @ names of the v2.05 variables used in this file (addresses unchanged, DESIGN.md 5.1)
@@ -474,13 +484,17 @@ ENDFUNC sd_dg_end_state
 FUNC disk_read
     push    {r4, r5, r6, r7, r8, lr}
     sub     sp, sp, #8                      @ [sp] = byte count argument of sd_read_block (8-byte aligned frame)
-    movs    r4, r0                          @ r4 = drive (unused, v2.05 keeps it in r4)
+    movs    r4, r0                          @ r4 = drive (unused; r4 is the DMA buffer of the block below)
     mov     r8, r1                          @ r8 = buffer
     movs    r5, r2                          @ r5 = first sector
     mov     r6, r3                          @ r6 = sectors left (FatFs R0.16 passes the count as UINT, IMP-29)
 .Ldr_next:
     cmp     r6, #0
     beq     .Ldr_done                       @ nothing left: success (the diagnosis code makes cbz too short)
+    tst     r8, #3                          @ OF-66: the DMA needs a word-aligned buffer
+    ite     eq
+    moveq   r4, r8                          @ aligned: the block goes straight to the caller's buffer
+    ldrne   r4, =sd_bounce                  @ not aligned: into sd_bounce, copied out below
     movw    r7, #0x4E20                     @ r7 = 20000 status polls (v2.05 0x08023F8C)
     movs    r0, #0x200
     str     r0, [sp]                        @ block length 0x200 (5th argument)
@@ -493,8 +507,8 @@ FUNC disk_read
     ldr     r1, =(SDIO_BASE + SDIO_ICR)
     str     r0, [r1]                        @ OF-59: data error flags of SDIO_STA cleared, so that the test after the block sees
                                             @ only this block's errors
-    mov     r0, r8
-    mov     r1, r8                          @ v2.05 passes the buffer twice (0x08023F9A)
+    mov     r0, r4
+    mov     r1, r4                          @ v2.05 passes the buffer twice (0x08023F9A); OF-66: the DMA buffer of this block
     bl      sd_read_block
     bl      sd_dg_start                     @ diagnosis: the polling begins
 .Ldr_poll:
@@ -553,7 +567,12 @@ FUNC disk_read
     movs    r0, #1                          @ RES_ERROR
     b       .Ldr_ret
 .Ldr_ok:
-    add     r8, r8, #0x200                  @ next 512 bytes of the buffer
+    cmp     r4, r8
+    beq     1f
+    mov     r0, r8                          @ OF-66: the block came into sd_bounce: copy it to the caller's buffer
+    mov     r1, r4
+    bl      sd_copy512
+1:  add     r8, r8, #0x200                  @ next 512 bytes of the buffer
     adds    r5, r5, #1                      @ next sector
     subs    r6, r6, #1
     b       .Ldr_next
@@ -604,6 +623,13 @@ FUNC disk_write
     mul     r0, r0, r7                      @ 08023FDC r0 = r0 * r7
     add     r0, r10                         @ 08023FE0 r0 += r10
     mov     r8, r0                          @ 08023FE2 r8 = r0
+    tst     r8, #3                          @ OF-66: the DMA needs a word-aligned buffer
+    beq     2f
+    ldr     r0, =sd_bounce                  @ not aligned: the sector is copied into sd_bounce and written from there
+    mov     r1, r8
+    bl      sd_copy512
+    ldr     r8, =sd_bounce
+2:
     adds    r1, r5, r7                      @ r1 = sector of this block (first sector + i)
     lsls    r4, r1, #9                      @ r4 = low word of the byte address sector * 512
     lsrs    r1, r1, #23                     @ r1 = upper word (OF-57: v2.05 computes (first << 9) + 512 * i in 32 bits,
@@ -660,6 +686,22 @@ FUNC disk_write
 .Ldisk_write_402A:                      @ v2.05 0x0802402A, reached from 0x08024022
     pop.w   {r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, pc}@ 0802402A pop {r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, pc}
 ENDFUNC disk_write
+
+@ -----------------------------------------------------------------------------
+@ sd_copy512 - copy one sector (512 bytes) between any two addresses, byte by byte (OF-66)
+@ In       : r0 = destination, r1 = source
+@ Out      : -
+@ Clobbers : r0-r3, flags
+@ Context  : main only (disk_read, disk_write)
+@ -----------------------------------------------------------------------------
+LFUNC sd_copy512
+    mov     r2, #512
+1:  ldrb    r3, [r1], #1
+    strb    r3, [r0], #1
+    subs    r2, r2, #1
+    bne     1b
+    bx      lr
+ENDFUNC sd_copy512
     .ltorg
 
 @ -----------------------------------------------------------------------------
