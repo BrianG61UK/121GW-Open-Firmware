@@ -78,6 +78,7 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-63 | Buzzer | The buzzer setting (SETUP "b-OFF") does not silence the diode short-circuit tone, the auto-hold capture beep, the auto power-off warning and the power-off beep | low | fixed |
 | OF-64 | SD card | FatFs R0.08a error paths fixed by ChaN in R0.10a..R0.10c: f_write stores the result of create_chain as the start cluster before checking it (a disk error writes 0xFFFFFFFF into the directory entry), create_chain links a new cluster behind an entry it could not read, move_window keeps the old sector number after a failed read, put_fat marks the window dirty after a failed load | medium | fixed |
 | OF-65 | BLE | The status frame's bar byte (14) carries the raw segment count, which exceeds the 25 segments of the display on an overload (45..55 seen); an application that masks the byte (the official one reads it & 0x1F) shows a wrong bar | low | fixed |
+| OF-66 | SD card | disk_read / disk_write give the caller's buffer to the SDIO DMA, which aligns every word access down: a sector read into or written from a buffer that is not a multiple of 4 lands 1..3 bytes off (FatFs passes the caller's buffer for whole sectors) | medium | fixed |
 
 ## Details
 
@@ -993,3 +994,14 @@ same; on an overload the count is larger: 45 in the emulator (v2.05 image, DCV m
 as `& 0x1F` (analysis/ble_packet.md 3), so 46 reads as 14 segments.
 Impact: a wrong bargraph in applications during an overload.
 Port (both builds): byte 14 = min(count, 25), the segments the display shows.
+
+### OF-66 — the SD DMA needs a word-aligned buffer
+disk_read (FUN_08023F78) and disk_write (FUN_08023FB8) pass the FatFs buffer address unchanged to the block read and write,
+which set it as the memory address of DMA2 channel 4 with 32-bit items.  RM0038 11.4.5 / 11.4.6: the DMA aligns each access
+to the item size ("access is automatically aligned"), so with a buffer at an address that is not a multiple of 4 the words go
+to or come from the aligned-down address: 1..3 bytes off, and the bytes before the buffer are overwritten on a read.  FatFs
+hands the caller's own buffer to disk_read / disk_write for every whole sector of an f_read / f_write, and nothing makes that
+buffer aligned.  Found with the SD file requests of IMP-36 (a READ at file offset 12345 into the aligned staging buffer puts
+the whole sectors at an odd address): the data differed from the file.
+Port (production): a sector whose buffer is not word aligned goes through a 512-byte aligned buffer (sd_bounce), copied byte
+by byte; aligned buffers keep the direct DMA.

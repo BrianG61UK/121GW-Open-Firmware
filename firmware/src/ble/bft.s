@@ -28,6 +28,8 @@
 @     type 0x03 END    all bytes sent: flush, check, copy, check the copy
 @     type 0x04 ABORT  back to waiting
 @     type 0x05 STATUS payload index(1): a diagnosis value in the answer's "next" field (bft_diag_tab)
+@     types 0x10 .. 0x14 SD card file requests (LIST, READ, CHUNK, DELETE, INFO; ble/bftsd.s, IMP-36) and 0x16 / 0x17
+@     settings (GET, PUT; ble/bftset.s, IMP-37), answered with the type 0x82 answer described in ble/bftsd.s
 @ Answer: B5 5B 81 seq(2) 03 status next(2) crc16(2), seq = the packet answered, next = the packet number expected
 @     (with status 0x11 instead: the failed step << 8 | its FatFs result, step 1 open, 2 seek, 3 write, 4 short write,
 @     5 close; with status 0 to END: the number of failed card sessions that were repeated successfully).
@@ -109,6 +111,7 @@
     .section .bss_port.bft, "aw", %nobits
     .balign 4
 bft_ring:       .space BFT_RING_LEN         @ received bytes (USART2 handler writes, main reads)
+    .global bft_pkt
 bft_pkt:        .space 8 + BFT_MAXPAY       @ packet being assembled
 bft_ack:        .space 12                   @ answer being built
 bft_size:       .space 4                    @ announced file size
@@ -126,12 +129,14 @@ bft_fails:      .space 2                    @ failed card write sessions of this
 bft_alt_next:   .space 3                    @ u16 for the "next" field of the coming answer, and at +2 the flag 1 = use it
     .global bft_active
 bft_active:     .space 1                    @ 1 = the page Ld owns the link (read by usart.s)
+    .global bft_state
 bft_state:      .space 1                    @ BFT_ST_*
 bft_err:        .space 1                    @ error code of BFT_ST_ERR
 bft_pct:        .space 1                    @ percent shown
 bft_created:    .space 1                    @ the temporary file exists for this transfer
 bft_idle:       .space 1                    @ 10 ms ticks since the last received byte (TIM2, saturates at 255)
 bft_kind:       .space 1                    @ START kind: 0 firmware (EEVBlog.bin), 1 bootloader install (nvm/blinst.s)
+    .global bft_reset_due
 bft_reset_due:  .space 1                    @ 1: restart once the link has been quiet for BFT_RESET_TICKS (install done)
 
     .section .rodata.bft, "a", %progbits
@@ -159,7 +164,7 @@ bft_name_img:   .asciz "0:EEVBlog.bin"
 @ Out      : r0 = value
 @ Clobbers : r1, r2
 @ -----------------------------------------------------------------------------
-LFUNC bft_le32
+FUNC bft_le32
     ldrb r1, [r0, #3]
     ldrb r2, [r0, #2]
     orr r1, r2, r1, lsl #8
@@ -216,7 +221,7 @@ ENDFUNC bft_tick
 @ Out      : r0 = CRC (init 0xFFFF, poly 0x1021, no reflection, no final XOR)
 @ Clobbers : r1-r3, r12, flags
 @ -----------------------------------------------------------------------------
-LFUNC bft_crc16
+FUNC bft_crc16
     movw r2, #0xFFFF
     movw r12, #0x1021
 1:  cbz r1, 4f
@@ -242,7 +247,7 @@ ENDFUNC bft_crc16
 @ Out      : r0 = running value
 @ Clobbers : r1-r3, r12, flags
 @ -----------------------------------------------------------------------------
-LFUNC bft_crc32
+FUNC bft_crc32
     ldr r12, =0xEDB88320
 1:  cbz r2, 4f
     ldrb r3, [r1], #1
@@ -308,7 +313,7 @@ ENDFUNC bft_answer
 @ power the SDIO block off, run clock again
 @ Clobbers : r0-r3, r12, flags
 @ -----------------------------------------------------------------------------
-LFUNC bft_card_begin
+FUNC bft_card_begin
     push {r4, lr}
     movs r0, #1
     bl sys_clock_select                     @ HSE for the card
@@ -320,7 +325,7 @@ LFUNC bft_card_begin
     pop {r4, pc}
 ENDFUNC bft_card_begin
 
-LFUNC bft_card_end
+FUNC bft_card_end
     push {r4, lr}
     bl sd_power_off
     movs r0, #0
@@ -1024,7 +1029,13 @@ LFUNC bft_packet
     beq .Lpk_abort
     cmp r0, #5
     beq .Lpk_status
-    movs r0, #3                             @ unknown type: not allowed
+    cmp r0, #0x10
+    blo 1f
+    cmp r0, #0x17
+    bhi 1f
+    bl bfx_request                          @ 0x10 .. 0x17: SD card files and settings, answered with type 0x82
+    pop {r4-r7, pc}                         @ (ble/bftsd.s, ble/bftset.s; r0 = type)
+1:  movs r0, #3                             @ unknown type: not allowed
     b .Lpk_answer
 .Lpk_start:
     ldrb r0, [r4, #5]                       @ payload 8 bytes (firmware) or 9 (+ kind)
@@ -1075,6 +1086,8 @@ LFUNC bft_packet
     strh r0, [r1]
     ldr r1, =bft_created
     strb r0, [r1]
+    ldr r1, =bfx_staged
+    strh r0, [r1]                           @ the received bytes overwrite the data a READ staged (bftsd.s)
     ldr r1, =bft_pct
     strb r0, [r1]
     movs r0, #BFT_ST_RECV

@@ -33,7 +33,10 @@
     .equ ble_tx_idx,            v_20008031   @ index of the byte of the status frame sent last
 
     .equ BLE_FRAME_LEN, 19              @ status frame length (analysis/ble_packet.md 3)
-    .equ BLE_TXQ_LEN,   64              @ echo queue size, power of two (two 15-byte echoes fit)
+    .equ BLE_TXQ_LEN,   256             @ echo / answer queue size, power of two, at most 256 (the indices ble_txq_head and
+                                        @ ble_txq_tail are bytes: ldrb / strb, masked with BLE_TXQ_LEN - 1 = 255).  The 0x82 answers of
+                                        @ ble/bftsd.s are up to 243 bytes (IMP-36); with 64 bytes they could never be queued.  One
+                                        @ slot always stays free (full = head + 1 == tail), so 255 bytes fit.
     .equ BLE_TX_IDLE,   0               @ nothing in transmission
     .equ BLE_TX_FRAME,  1               @ status frame being transmitted
     .equ BLE_TX_ECHO,   2               @ queued echo bytes being transmitted

@@ -11,6 +11,11 @@ Checks on DCV (dial V), each also run on --ref (for example the previous release
      than 10 % (the 16-sample window keeps v2.05's noise; an 8-sample window would show about 1.4 x).
   T4 range change: 1 V -> 40 V (range 0 -> 1): the first value in the new range and every later one are within 0.2 % of
      40 V, and the first comes no earlier than on the reference minus 5 ms (the settle time after a range change is v2.05's).
+  T5 steep ramps (GitHub issue 3): 0.5 -> 4.5 V at 0.6 V/s and at 1.2 V/s (about 75 and 150 counts per 80 sps sample, below
+     and above MDC_DCV_STEP = about 98 counts), the input set from the emulated time every 5 ms (noise off): the display
+     never shows one value for longer than 0.3 s while the input moves, and every shown value is within 0.25 s of the slope
+     of the input (LAG_S: the 16-sample window of 0.2 s at 80 sps plus one display refresh).  The first form of the step
+     test held one value for seconds here.
 The helpers are those of test_backlight_timer.py.
 """
 import os
@@ -112,6 +117,30 @@ def t4(image):
     return (first or (None, None)) + (off,)
 
 
+LAG_S = 0.25          # T5 tolerance in seconds of the slope: the 16-sample window (0.2 s at 80 sps) plus one display refresh
+
+
+def t5(image, rate):
+    """(longest time one value is shown, largest distance of a shown value from the input) on a ramp of `rate` V/s."""
+    e = meter(image, 0.5)
+    t0 = T.now(e)
+    last, since, hold, dist = shown(e), t0, 0.0, 0.0
+    while True:
+        t = T.now(e)
+        u = 0.5 + rate * (t - t0)
+        if u >= 4.5:
+            break
+        volts(e, u)
+        e.advance(0.005)
+        v = shown(e)
+        if v != last:
+            last, since = v, T.now(e)
+        hold = max(hold, T.now(e) - since)
+        if v is not None and T.now(e) - t0 > 0.5:
+            dist = max(dist, abs(v - u))
+    return hold, dist
+
+
 def main(argv):
     ref = None
     if '--ref' in argv:
@@ -126,10 +155,17 @@ def main(argv):
         res[name]['bad'] = t2(img)
         res[name]['noise'] = t3(img)
         res[name]['range'] = t4(img)
+        res[name]['ramp'] = [t5(img, 0.6), t5(img, 1.2)]
         print('%-4s rate %.1f/s, straddled values %d %s, noise %.2f counts, range change first value %r'
               % (name, res[name]['rate'], len(res[name]['bad']), res[name]['bad'][:3], res[name]['noise'], res[name]['range']),
               flush=True)
+        print('     ramps: 0.6 V/s longest hold %.2f s, largest distance %.3f V; 1.2 V/s %.2f s, %.3f V'
+              % (res[name]['ramp'][0] + res[name]['ramp'][1]), flush=True)
     r = res['test']
+    for rate, (hold, dist) in zip((0.6, 1.2), r['ramp']):
+        T.check('T5 ramp %.1f V/s: no value shown longer than 0.3 s' % rate, hold <= 0.3, '%.2f s' % hold)
+        T.check('T5 ramp %.1f V/s: every value within %.2f V of the input' % (rate, LAG_S * rate), dist <= LAG_S * rate,
+                '%.3f V' % dist)
     T.check('T2 no straddled value after a step', not r['bad'], repr(r['bad'][:4]))
     t, v, off = r['range']
     T.check('T4 first value after the range change within 0.2 %% of 40 V', v is not None and abs(v - 40.0) <= 0.08, 'value %r' % v)
