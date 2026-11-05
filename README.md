@@ -14,7 +14,8 @@ program lives here.  The firmware and the emulator are on `main`, the build that
 | Trend | the last 10 minutes on a scope-style grid; the trace breaks where the meter had no value (overload, range change) |
 | Recording | every reading with its time to a CSV file (`Documents/121GW` by default) |
 | Firmware version | the fast firmware from F-1.02 on reports its version; the header shows it |
-| Firmware update | when a newer fast release exists, a notice offers "Update now" or "Later" (checked at every connection and every 30 minutes); Update now downloads and checks the release, waits until the meter shows the SETUP page `Ld-bt`, sends the file with a progress bar, and shows the key sequence that installs it |
+| Firmware and bootloader updates | when a newer firmware or bootloader release exists, a notice offers "Update both", "Firmware only", "Bootloader only" or "Later" (checked at every connection and every 30 minutes).  With the two-part bootloader (releases `bl-vA.B.C`) the meter restarts into its update mode and receives the file over Bluetooth, nothing to press, then restarts into it.  With EEVblog's bootloader the firmware goes to the card on the page `Ld-bt` and the key sequence installs it; the first install of the two-part bootloader also goes through `Ld-bt` (firmware F-1.03 or newer, fresh batteries) |
+| Bootloader | the meter's bootloader is shown next to the firmware version (EEVblog original, or B-A.BC) |
 | Meter clock | "Sync time" sets the meter's clock from an NTP server (pool.ntp.org, or your own) to the second |
 
 The meter accepts one Bluetooth connection at a time: close the phone application before connecting.  Turn Bluetooth

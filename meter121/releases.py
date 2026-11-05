@@ -7,7 +7,7 @@ SHA-256 in firmware-<tag>.zip.sha256.  The meter shows the version as F-A.BC (th
 cache folder so a second update of another meter needs no download.  Standard library only.
 
 Releases of the bootloader (branch bootloader) are tagged bl-vA.B.C and carry bootloader-<tag>.zip with install.bin
-(starter and bootloader, for the first install through the firmware) and bootloader.bin (the bootloader image, for an
+(starter and bootloader, for the first install through the firmware) and blimage.bin (the bootloader image, for an
 update through the bootloader), and the zip's SHA-256 in bootloader-<tag>.zip.sha256.  The meter reports the version as
 B-A.BC (firmware ble/blcmd.s, key code 0x92); its bootloader header carries A << 16 | B << 8 | C.
 """
@@ -144,9 +144,9 @@ def check_install(data):
 
 
 def bootloader_files(tag):
-    """(install.bin, bootloader.bin) of bootloader release `tag`, from the cache or downloaded and checked."""
+    """(install.bin, blimage.bin) of bootloader release `tag`, from the cache or downloaded and checked."""
     folder = os.path.join(cache_dir(), tag)
-    paths_ = [os.path.join(folder, n) for n in ('install.bin', 'bootloader.bin')]
+    paths_ = [os.path.join(folder, n) for n in ('install.bin', 'blimage.bin')]
     if all(os.path.isfile(p) for p in paths_):
         inst, boot = (open(p, 'rb').read() for p in paths_)
         if check_install(inst) is None and boot:
@@ -154,14 +154,14 @@ def bootloader_files(tag):
     zname = 'bootloader-%s.zip' % tag
     with _zip_checked(tag, zname) as z:
         names = z.namelist()
-        if 'install.bin' not in names or 'bootloader.bin' not in names:
-            raise ReleaseError('%s lacks install.bin or bootloader.bin' % zname)
-        inst, boot = z.read('install.bin'), z.read('bootloader.bin')
+        if 'install.bin' not in names or 'blimage.bin' not in names:
+            raise ReleaseError('%s lacks install.bin or blimage.bin' % zname)
+        inst, boot = z.read('install.bin'), z.read('blimage.bin')
     bad = check_install(inst)
     if bad:
         raise ReleaseError('%s: %s' % (zname, bad))
     if inst[0x500:0x500 + len(boot)] != boot:
-        raise ReleaseError('%s: install.bin and bootloader.bin hold different bootloaders' % zname)
+        raise ReleaseError('%s: install.bin and blimage.bin hold different bootloaders' % zname)
     os.makedirs(folder, exist_ok=True)
     for p, d in zip(paths_, (inst, boot)):
         with open(p + '.part', 'wb') as f:
