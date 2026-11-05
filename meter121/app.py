@@ -9,12 +9,15 @@ otherwise.
 import argparse
 import json
 import os
+import queue
 import sys
 import threading
 import time
 import webbrowser
+from contextlib import contextmanager
 
-from . import clock, display, frames, paths, record, releases, transfer
+from . import card, clock, derived, diag, display, frames, keys, paths, record, releases, transfer
+from . import settings as meter_settings
 from .link import MeterLink
 from .server import serve
 
@@ -43,6 +46,12 @@ def save_settings(d):
     os.replace(p + '.part', p)
 
 
+DESK_STALE = 4.0                                 # seconds without a status frame before the meter is asked for page Ld
+DESK_PERIOD = 1.0                                # seconds between looks of the desk watcher
+DESK_PROBE_TIMEOUT = 1.5                         # seconds the page Ld has to answer a status request
+KEY_ECHO_WAIT = 1.0                              # seconds to wait for the echo of a key frame
+LINK_WAIT = 2.5                                  # seconds a command waits for the link while the desk watcher's page check has it
+UPDATE_ACTIVE = ('downloading', 'waiting_ld', 'restarting', 'sending')      # update states that own the link
 RELEASE_RECHECK = 1800.0                         # seconds between release checks while connected
 VERSION_WAIT = 2.0                               # seconds to wait for the answer to a version request
 VERSION_RETRY = 10.0                             # seconds between requests while the link is not ready
@@ -70,27 +79,64 @@ class Companion:
                        'total': 0, 'message': ''}
         self._sender = None
         self._cancel = False
+        # desk mode: the meter shows the SETUP page Ld (status frames stop, the page answers transfer requests); the
+        # exclusive use of the link by one operation (probe, diagnosis, card, settings) is the lock
+        self.desk = False
+        self._frame_t = 0.0                              # time of the last status frame
+        self._key_echo = None
+        self._bft_lock = threading.Lock()
+        self._bft_what = ''
+        self._ops_sender = None
+        self._ext_answers = queue.Queue(maxsize=64)      # answer frames of type 0x82 (card.py, settings.py)
+        self._card_client = None
+        self._card_gate = threading.Lock()               # makes "no operation running" and "start one" one step
+        # derived values (derived.py); options survive restarts in settings.json under 'derived'
+        try:
+            self.derived = derived.Derived(self.settings.get('derived'))
+        except ValueError:
+            self.derived = derived.Derived()
+        self.diag = {'values': [], 'text': ''}
+        self.card_st = {'files': [], 'free_bytes': None, 'total_bytes': None, 'busy': False, 'op': '', 'progress': 0.0,
+                        'sync': {'folder': self.settings.get('card_sync_folder'), 'last': None, 'copied': 0},
+                        'error': None, 'result': ''}
+        self.settings_st = {'items': [], 'error': None}
         self.link = MeterLink(self._frame, self._state)
         threading.Thread(target=self._ask_version, name='version', daemon=True).start()
+        threading.Thread(target=self._watch_desk, name='desk', daemon=True).start()
         threading.Thread(target=self._recheck_releases, name='releases', daemon=True).start()
 
     def _frame(self, kind, frame, t):
         if kind == frames.STATUS:
-            self.session.add(display.decode(frame, t))
+            r = display.decode(frame, t)
+            self.session.add(r)
+            self.derived.feed(r)
+            self._frame_t, self.desk = t, False          # status frames are sent only while page Ld is not shown
         elif kind == frames.VERSION:
             self._ver = frames.version_text(frame)
         elif kind == frames.BL_VERSION:
             self._blver = frames.bl_version_text(frame)
-        elif kind == frames.KEY_ECHO and frame == frames.VERSION_REQUEST:
-            self._echo = t
+        elif kind == frames.KEY_ECHO:
+            self._key_echo = frame
+            if frame == frames.VERSION_REQUEST:
+                self._echo = t
         elif kind == frames.CLOCK_ECHO:
             self._clock_echo = frame
-        elif kind == frames.BFT and self._sender is not None:
+        elif kind == frames.BFT:
+            if frame[2] == card.T_ANSWER:                # answers of the card and settings requests
+                try:
+                    self._ext_answers.put_nowait(frame)
+                except queue.Full:
+                    pass
+                return
             a = transfer.answer(frame)
             if a is not None:
-                self._sender.answers.put(a)
+                for sender in (self._sender, self._ops_sender):
+                    if sender is not None:
+                        sender.answers.put(a)
 
     def _state(self, state, detail):
+        self.desk = False                                # a new connection or none: the page is not known any more
+        self._frame_t = 0.0
         if state == 'connected':
             self.fw_kind, self.version, self.mode = 'unknown', None, 'unknown'
             if self.update['state'] in ('none', 'available', 'done', 'error'):
@@ -143,6 +189,8 @@ class Companion:
 
     def _boot_probe(self):
         """(A, B, C) when the bootloader's update mode answers its status request, else None."""
+        if not self._bft_lock.acquire(blocking=False):  # a card or settings operation has the link: ask again later
+            return None
         own = self._sender is None
         if own:
             self._sender = transfer.Sender(self.link.send)
@@ -153,6 +201,7 @@ class Companion:
         finally:
             if own:
                 self._sender = None
+            self._bft_lock.release()
 
     def _recheck_releases(self):
         """Look for newer releases again every RELEASE_RECHECK seconds while a meter is connected."""
@@ -311,6 +360,216 @@ class Companion:
         except (OSError, RuntimeError, transfer.TransferError) as e:
             return e
 
+    # ------------------------------------------------------------------ link use outside the update: keys, desk, card
+    def _update_active(self):
+        return self.update['state'] in UPDATE_ACTIVE
+
+    def _lock_reason(self):
+        """Why the file-transfer operations (diagnosis, card, settings) cannot run now, or None."""
+        if self.link.state != 'connected':
+            return 'not connected to a meter'
+        if self._update_active():
+            return 'a firmware or bootloader update is running'
+        if self.card_st['busy']:
+            return 'a card operation is running: %s' % self.card_st['op']
+        if not self.desk:
+            return 'show the SETUP page Ld on the meter (Bluetooth on, logging off)'
+        return None
+
+    @contextmanager
+    def _ops(self, what, need_desk=True, wait=0.0):
+        """Exclusive use of the link for one operation of the file-transfer protocol (the meter takes one request at a
+        time): yields (Sender for the 0x81 answers, card.Client for the 0x82 answers).  RuntimeError when the link is
+        not connected, an update has it, another operation still runs after `wait` seconds, or (need_desk) the page Ld
+        is not shown.  Commands of the user wait LINK_WAIT, because the desk watcher's page check holds the link for
+        up to DESK_PROBE_TIMEOUT every DESK_PERIOD while no status frames come; the watcher itself does not wait."""
+        if self.link.state != 'connected':
+            raise RuntimeError('not connected to a meter')
+        if self._update_active():
+            raise RuntimeError('a firmware or bootloader update is running')
+        if need_desk and not self.desk:
+            raise RuntimeError('show the SETUP page Ld on the meter first (Bluetooth on, logging off)')
+        if not self._bft_lock.acquire(timeout=wait):
+            raise RuntimeError('the link is busy: %s' % (self._bft_what or 'another operation'))
+        if need_desk and not self.desk:                  # the page was left while this command waited for the link
+            self._bft_lock.release()
+            raise RuntimeError('show the SETUP page Ld on the meter first (Bluetooth on, logging off)')
+        self._bft_what = what
+        sender = self._ops_sender = transfer.Sender(self.link.send)
+        client = card.Client(self.link.send, self._ext_answers)
+        self._card_client = client
+        while not self._ext_answers.empty():
+            self._ext_answers.get_nowait()
+        try:
+            yield sender, client
+        finally:
+            self._ops_sender = self._card_client = None
+            self._bft_what = ''
+            self._bft_lock.release()
+
+    def _watch_desk(self):
+        """Desk mode: while the meter shows page Ld it sends no status frames and answers the transfer's status request
+        (transfer.Sender.probe).  So: no status frame for DESK_STALE seconds on a connected meter that has the transfer
+        (the fast firmware, or one not asked yet) -> ask; an answer means desk.  Any status frame ends desk (_frame).
+        Not asked while an update or another operation uses the link, nor for v2.05 firmware (no transfer there) or
+        the bootloader's update mode."""
+        while True:
+            time.sleep(DESK_PERIOD)
+            if (self.link.state != 'connected' or self._update_active() or self.mode == 'bootloader'
+                    or self.fw_kind == 'other' or time.time() - self._frame_t < DESK_STALE):
+                continue
+            try:
+                with self._ops('page check', need_desk=False) as (sender, _):
+                    self.desk = sender.probe(DESK_PROBE_TIMEOUT)
+            except RuntimeError:
+                continue                                 # the link is in use: desk stays as it is
+            except (OSError, TimeoutError):
+                self.desk = False
+
+    def press_key(self, name, long=False):
+        """Send the F4 key frame of a key of the meter (keys.py) and wait for its echo.  Refused while page Ld owns the
+        link (no key arrives there), while an update or a card operation uses it, and in the bootloader's update mode."""
+        frame = keys.frame(name, long)                   # ValueError for an unknown name
+        if self.link.state != 'connected':
+            raise RuntimeError('not connected to a meter')
+        if self.mode == 'bootloader':
+            raise RuntimeError('the meter is in its update mode: no keys')
+        if self.desk:
+            raise RuntimeError('page Ld owns the link: leave it on the meter before using the keys')
+        if self.card_st['busy']:
+            raise RuntimeError('a card operation is running: %s' % self.card_st['op'])
+        with self._ops('key', need_desk=False, wait=LINK_WAIT):
+            if self.desk:                                # found while the command waited for the link
+                raise RuntimeError('page Ld owns the link: leave it on the meter before using the keys')
+            self._key_echo = None
+            self.link.send(frame)
+            end = time.time() + KEY_ECHO_WAIT
+            while time.time() < end and self._key_echo != frame:
+                time.sleep(0.02)
+        if self._key_echo != frame:
+            raise RuntimeError('the meter did not confirm the key (page Ld shown, an SD access running, or the link '
+                               'is not ready); try again')
+        return {'ok': True, 'key': str(name).upper(), 'long': bool(long)}
+
+    def diag_read(self):
+        """STATUS values 0..20 of the file transfer with their readable text (diag.py); needs page Ld."""
+        try:
+            with self._ops('diagnosis', wait=LINK_WAIT) as (sender, _):
+                values = [sender.status_value(i) for i in range(diag.COUNT)]
+        except transfer.TransferError as e:
+            raise RuntimeError(str(e)) from e
+        self.diag = {'values': values, 'text': diag.explain(values)}
+        return {'ok': True, 'diag': self.diag}
+
+    # ------------------------------------------------------------------ settings of the meter (settings.py)
+    def settings_get(self):
+        return self._settings_op(lambda m: m.get_all())
+
+    def settings_put(self, setting_id, value):
+        meter_settings.check(setting_id, value)          # range check before the link is touched
+        return self._settings_op(lambda m: m.put(setting_id, value))
+
+    def _settings_op(self, job):
+        try:
+            with self._ops('settings', wait=LINK_WAIT) as (_, client):
+                items = job(meter_settings.Settings(client))
+        except (RuntimeError, ValueError, OSError) as e:
+            self.settings_st['error'] = str(e)
+            raise
+        self.settings_st.update(items=items, error=None)
+        return {'ok': True, 'items': items}
+
+    # ------------------------------------------------------------------ SD card (card.py); one operation at a time, in a thread
+    def _card_start(self, op, job, check=None):
+        """Run job(card.Card, progress) in a thread; the page follows state.card.  `check` runs first (ValueError and
+        RuntimeError reach the caller).  Returns at once."""
+        st = self.card_st
+        with self._card_gate:
+            reason = self._lock_reason()
+            if reason:
+                raise RuntimeError(reason)
+            if check:
+                check()
+            st.update(busy=True, op=op, progress=0.0, error=None, result='')
+
+        def progress(done, total):
+            st['progress'] = done / total if total else 1.0
+
+        def run():
+            try:
+                with self._ops(op, wait=LINK_WAIT) as (_, client):
+                    st['result'] = job(card.Card(client), progress)
+                st['progress'] = 1.0
+            except (RuntimeError, ValueError, OSError, transfer.TransferError) as e:
+                st['error'] = str(e)
+            except Exception as e:                       # noqa: BLE001 - a bug must reach the page, not die in the thread
+                st['error'] = 'internal error: %r' % (e,)
+            finally:
+                st['busy'], st['op'] = False, ''
+
+        # the lock is taken by run() itself; busy is set above so no second operation starts between the two
+        threading.Thread(target=run, name='card', daemon=True).start()
+        return {'ok': True}
+
+    @staticmethod
+    def _folder_arg(value, default):
+        """Absolute folder path from a command parameter (text, ~ allowed); `default` when none was given."""
+        if value is not None and not isinstance(value, str):
+            raise ValueError('the folder must be text')
+        return os.path.abspath(os.path.expanduser(value or default))
+
+    def card_cancel(self):
+        """Stop the running card operation at its next packet (a started local file is removed)."""
+        if self._card_client is not None:
+            self._card_client.cancelled = True
+        return {'ok': True}
+
+    def card_list(self):
+        def job(c, progress):
+            self.card_st['files'] = c.list()
+            return '%d files' % len(self.card_st['files'])
+        return self._card_start('list', job)
+
+    def card_info(self):
+        def job(c, progress):
+            self.card_st.update(c.info())
+            return 'card information'
+        return self._card_start('info', job)
+
+    def card_download(self, name, dest):
+        card.check_local_name(name)
+        folder = self._folder_arg(dest, os.path.join(self.folder, 'card'))
+
+        def job(c, progress):
+            size = next((f['size'] for f in self.card_st['files'] if f['name'] == name), None)
+            return c.download(name, folder, size, progress)
+        return self._card_start('download', job)
+
+    def card_delete(self, name):
+        def check():
+            card.check_name(name)
+            if card.is_protected(name):
+                raise card.CardError('%s is protected: the meter needs it' % name, card.ST_PROTECTED)
+
+        def job(c, progress):
+            c.delete(name)
+            self.card_st['files'] = c.list()             # the page shows the folder as it is now
+            return 'deleted %s' % name
+        return self._card_start('delete', job, check)
+
+    def card_sync(self, folder):
+        folder = self._folder_arg(folder, self.card_st['sync']['folder'] or os.path.join(self.folder, 'card'))
+
+        def job(c, progress):
+            r = c.sync(folder, progress)
+            self.card_st['sync'] = {'folder': folder, 'last': time.strftime('%Y-%m-%d %H:%M:%S'), 'copied': r['copied']}
+            if self.settings.get('card_sync_folder') != folder:
+                self.settings['card_sync_folder'] = folder
+                save_settings(self.settings)
+            return '%d copied, %d unchanged%s' % (r['copied'], r['unchanged'],
+                                                  (', skipped: ' + ', '.join(r['skipped'])) if r['skipped'] else '')
+        return self._card_start('sync', job)
+
     def sync_time(self, server):
         """Set the meter's clock from NTP: query, wait for the next whole second, send the frame for that second,
         wait for the meter's echo.  Returns a summary for the page."""
@@ -347,7 +606,12 @@ class Companion:
                 'update': dict(self.update),
                 'clock': self.clock,
                 'session': self.session.snapshot(since),
-                'folder': self.folder}
+                'folder': self.folder,
+                'derived': self.derived.snapshot(),
+                'desk': self.desk,
+                'diag': dict(self.diag),
+                'card': dict(self.card_st, files=list(self.card_st['files']), locked_reason=self._lock_reason()),
+                'settings': dict(self.settings_st, locked_reason=self._lock_reason())}
 
     def command(self, c):
         if 'connect' in c:
@@ -378,16 +642,57 @@ class Companion:
                 raise ValueError('no update to install')
             if self.link.state != 'connected':
                 raise RuntimeError('not connected to a meter')
-            self._cancel = False
-            u['later'] = False
-            threading.Thread(target=self._run_update, args=(what,), name='update', daemon=True).start()
+            if self.card_st['busy']:
+                raise RuntimeError('a card operation is running: %s' % self.card_st['op'])
+            if not self._bft_lock.acquire(timeout=3.0):         # a page check or settings operation has the link
+                raise RuntimeError('the link is busy: %s; try again' % self._bft_what)
+            try:
+                self._cancel = False
+                u['later'] = False
+                u['state'] = 'downloading'                        # the update owns the link from here (_update_active)
+                threading.Thread(target=self._run_update, args=(what,), name='update', daemon=True).start()
+            finally:
+                self._bft_lock.release()
             return {'ok': True}
         if 'update_cancel' in c:
             self._cancel = True
             if self._sender is not None:
                 self._sender.cancelled = True
             return {'ok': True}
+        if 'key' in c:
+            return self.press_key(c['key'], bool(c.get('long')))
+        if 'card_cancel' in c:
+            return self.card_cancel()
+        if 'card_list' in c:
+            return self.card_list()
+        if 'card_info' in c:
+            return self.card_info()
+        if 'card_download' in c:
+            return self.card_download(self._arg(c, 'card_download', 'name'), self._arg(c, 'card_download', 'dest'))
+        if 'card_delete' in c:
+            return self.card_delete(self._arg(c, 'card_delete', 'name'))
+        if 'card_sync' in c:
+            return self.card_sync(self._arg(c, 'card_sync', 'folder'))
+        if 'settings_get' in c:
+            return self.settings_get()
+        if 'settings_put' in c:
+            return self.settings_put(self._arg(c, 'settings_put', 'id'), self._arg(c, 'settings_put', 'value'))
+        if 'diag_read' in c:
+            return self.diag_read()
+        if 'set_derived' in c:
+            opts = c['set_derived'] if isinstance(c['set_derived'], dict) else \
+                {k: c[k] for k in ('loop_range', 'pt_type', 'limit') if k in c}
+            self.derived.set_options(opts)
+            self.settings['derived'] = self.derived.options()
+            save_settings(self.settings)
+            return {'ok': True, 'derived': self.derived.snapshot()}
         raise ValueError('unknown command')
+
+    @staticmethod
+    def _arg(c, command, name):
+        """Parameter `name` of a command given either inside the command's object or beside it."""
+        v = c[command]
+        return v.get(name) if isinstance(v, dict) else c.get(name)
 
 
 def documents_folder():

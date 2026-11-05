@@ -57,6 +57,13 @@ then `packaging/make_dmg.sh` (macOS), `packaging/windows/121gw_companion.iss` (I
 | `meter121/transfer.py` | the file transfer to the meter's SD card (packets with CRC-16, stop and wait, retries) |
 | `meter121/clock.py` | NTP query and the meter's set-clock frame |
 | `meter121/paths.py` | the user's settings, cache and documents folders |
+| `meter121/derived.py` | values computed on the computer: REL percent, 4-20 / 0-20 mA loop percent, Pt100 / Pt1000 temperature (IEC 60751), limit test |
+| `meter121/keys.py` | remote keys (short and long codes of the firmware's key routine) |
+| `meter121/card.py` | SD card file manager over the transfer link (list, download, delete, info) and the sync to a folder |
+| `meter121/settings.py` | the meter's settings over the transfer link (read all, change one, range checked) |
+| `meter121/diag.py` | the transfer's diagnosis values and their readable text |
+| `meter121/STATE.md` | the state and command contract between the program and the page |
+| `tests/` | unit tests, `python3 -I -m unittest discover -s tests` (no meter, no Bluetooth) |
 | `meter121/app.py` | the program: link, version request, update, clock, window |
 | `ui/index.html` | the window |
 

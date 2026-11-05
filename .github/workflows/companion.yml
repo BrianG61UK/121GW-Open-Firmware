@@ -1,6 +1,7 @@
 # Companion: PyInstaller one-folder program with everything it needs (Python, bleak with the system's backend, pywebview,
 # the page), packaged as macOS .dmg (Apple Silicon), Windows installer .exe (Inno Setup), Linux AppImage and .deb (x86_64).
-# Every package is started (or installed and started) and must answer on its local server, page and protections included
+# The unit tests (tests/, no meter and no Bluetooth needed) run in every job before the packaging.  Every package is
+# started (or installed and started) and must answer on its local server, page and protections included
 # (.github/scripts/smoke.py), before it is uploaded.  On a tag companion-vA.B.C the packages are attached to that release,
 # created without the "latest" mark so the fast firmware release stays the default download of the repository.
 name: Companion
@@ -43,6 +44,8 @@ jobs:
         run: echo "VER=${REF_TAG#companion-v}" >> "$GITHUB_ENV"
       - name: Build tools and libraries
         run: python -m pip install $PIP_PKGS
+      - name: Unit tests (frames, card, settings, derived values; no meter, no Bluetooth)
+        run: python -I -m unittest discover -s tests
       - name: Icons and third-party licences
         run: |
           python -I packaging/make_icons.py build/icons
@@ -94,6 +97,8 @@ jobs:
         run: echo "VER=${REF_TAG#companion-v}" >> "$GITHUB_ENV"
       - name: Build tools and libraries
         run: python -m pip install $PIP_PKGS
+      - name: Unit tests (frames, card, settings, derived values; no meter, no Bluetooth)
+        run: python -I -m unittest discover -s tests
       - name: Icons and third-party licences
         run: |
           python -I packaging/make_icons.py build/icons
@@ -152,6 +157,8 @@ jobs:
         run: echo "VER=${REF_TAG#companion-v}" >> "$GITHUB_ENV"
       - name: Build tools and libraries
         run: python -m pip install $PIP_PKGS
+      - name: Unit tests (frames, card, settings, derived values; no meter, no Bluetooth)
+        run: python -I -m unittest discover -s tests
       - name: Icons and third-party licences
         run: |
           python -I packaging/make_icons.py build/icons

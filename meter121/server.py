@@ -2,7 +2,8 @@
 
     GET  /                 the page (ui/index.html)
     GET  /assets/<file>    files of ui/assets
-    GET  /state?since=T    JSON: link, meter, session (statistics, trend points newer than T), update notice
+    GET  /state?since=T    JSON: link, meter, session (statistics, trend points newer than T), update notice, and the
+                           derived values, desk mode, diagnosis, SD card and settings of the meter (STATE.md)
     POST /api              JSON command; needs the request header "X-121GW-Companion: 1"
 
 Protection: the server binds 127.0.0.1, answers only requests whose Host header names 127.0.0.1 or localhost (a web
@@ -84,7 +85,7 @@ def make_handler(app):
             try:
                 cmd = json.loads(self.rfile.read(n) or b'{}')
                 return self._json(200, app.command(cmd))
-            except (ValueError, RuntimeError, OSError) as e:
+            except (ValueError, TypeError, KeyError, RuntimeError, OSError) as e:
                 return self._json(400, {'error': str(e)})
 
     return Handler

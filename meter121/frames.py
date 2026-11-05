@@ -10,7 +10,9 @@ FEATURES.md 2.10 and 2.11):
     F8     15      echo of a set-clock frame              7th hex pair = XOR of the first six
     F6     7       version answer of the fast build       XOR of all 7 bytes = 0
     F7     7       bootloader version answer (F-1.03 on)  XOR of all 7 bytes = 0
-    B5 5B  8+n     answer of the file transfer (2.10)     CRC-16/CCITT-FALSE
+    B5 5B  8+n     answer of the file transfer (2.10)     CRC-16/CCITT-FALSE; type 0x81 = transfer / status answer
+                   (transfer.py), type 0x82 = answer of the card and settings requests (card.py, settings.py); the
+                   length byte [5] gives n, so both are taken the same way
 
 Bytes inside a binary frame can equal a start byte, so a frame is taken only when its whole length is present and its
 check passes; otherwise the first byte is dropped and the search goes on from the next one (resynchronisation, also

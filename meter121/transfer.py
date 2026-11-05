@@ -91,6 +91,14 @@ class Sender:
         except queue.Empty:
             return False
 
+    def status_value(self, index, timeout=2.0):
+        """Diagnosis value `index` (STATUS request, type 5; ble/bft.s .Lpk_status, indices 0..20): the "next" field of the
+        answer.  The request's seq is the index, which the answer echoes."""
+        status, nxt = self._ask(packet(T_STATUS, index, bytes([index])), index, timeout)
+        if status:
+            raise TransferError('STATUS %d: %s' % (index, STATUS_TEXT.get(status, status)))
+        return nxt
+
     def run(self, data, kind=None):
         """Send `data` as EEVBlog.bin, or with kind 1 as the first-install file of the two-part bootloader (firmware
         F-1.03 on: the meter writes it to flash and restarts); returns the number of card sessions the meter had to

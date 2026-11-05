@@ -1,0 +1,183 @@
+"""Settings of the meter: the table, the range checks, get / put over the fake meter (read-modify-write of shared bytes)."""
+import unittest
+from unittest import mock
+
+from support import RANGES, FakeMeter, card, make_client, settings
+
+
+def meter(**eeprom):
+    e = {s.wire: 0 for s in settings.TABLE}
+    e[0x01A] = 14
+    e[0x022] = 1
+    e[0x02A] = 100
+    e.update({int(k[1:], 16): v for k, v in eeprom.items()})
+    return FakeMeter(eeprom=e)
+
+
+class Table(unittest.TestCase):
+    def test_ids_codes_and_ranges(self):
+        self.assertEqual(len({s.id for s in settings.TABLE}), len(settings.TABLE))
+        codes = [s.code for s in settings.TABLE]
+        for c in ('bL', 'bt', 'rEL', 'tc', 'dSP', 'bH', 'LP', 'Pt', 'CL', 'BAT', 'tr', 'Ch'):
+            self.assertIn(c, codes)
+        for s in settings.TABLE:
+            self.assertLessEqual(s.min, s.max)
+            if s.choices:
+                self.assertEqual((s.min, s.max), (0, len(s.choices) - 1), s.code)
+            self.assertLessEqual((s.mask << s.shift), 0xFF, s.code)
+        # bftset.s: 17 ids; 0x020 is one id shown as three rows (ids 0x120, 0x220, 0x320); 0x018 is not offered
+        self.assertEqual(sorted(s.wire for s in settings.TABLE),
+                         sorted([0x00F, 0x010, 0x011, 0x013, 0x014, 0x015, 0x016, 0x017, 0x01A, 0x01B, 0x01E, 0x020, 0x020,
+                                 0x020, 0x021, 0x022, 0x028, 0x029, 0x02A]))
+        self.assertEqual({s.id for s in settings.TABLE if s.wire == 0x020}, {0x120, 0x220, 0x320})
+        self.assertEqual({r: (s.min, s.max) for r, s in ((s.wire, s) for s in settings.TABLE if s.wire != 0x020)},
+                         {r: v for r, v in RANGES.items() if r != 0x020})
+
+    def test_values_of_the_documented_ranges(self):
+        by = {s.code: s for s in settings.TABLE}
+        self.assertEqual((by['tc'].min, by['tc'].max), (0, 5))             # K J T N R S
+        self.assertEqual((by['bL'].min, by['bL'].max), (0, 100))           # off, 30 s, 1..99 min
+        self.assertEqual((by['Ch'].min, by['Ch'].max), (1, 255))
+        self.assertEqual((by['BAT'].min, by['BAT'].max), (50, 150))
+        self.assertEqual((by['tr'].min, by['tr'].max), (0, 2))             # 3 is refused by the meter: not offered
+        self.assertEqual((by['item 4'].min, by['item 4'].max), (10, 17))   # LCD contrast
+
+    def test_range_checks(self):
+        for code, ok, bad in (('tc', (0, 5), (-1, 6, 255)), ('bL', (0, 1, 100), (101, -1)), ('Ch', (1, 255), (0, 256)),
+                              ('BAT', (50, 100, 150), (49, 151, 0)), ('Pt', (0, 2), (3,)), ('tr', (0, 2), (3,)),
+                              ('CL', (0, 1), (2,)), ('rEL', (0, 1), (2,)), ('item 4', (10, 17), (9, 18)),
+                              ('item 10', (0, 15), (16,))):
+            sid = next(s.id for s in settings.TABLE if s.code == code)
+            for v in ok:
+                self.assertEqual(settings.check(sid, v)[1], v)
+            for v in bad:
+                with self.assertRaises(ValueError, msg='%s %d' % (code, v)):
+                    settings.check(sid, v)
+
+    def test_unknown_ids_and_types_are_refused(self):
+        for sid in (0x018, 0x008, 0x003, 0x030, 0x020, 0x2E0, -1, None, 'tc', [1], 1.5, True):
+            with self.assertRaises(ValueError, msg=repr(sid)):
+                settings.check(sid, 0)
+        for v in (None, '1', 1.0, True, [1]):
+            with self.assertRaises(ValueError, msg=repr(v)):
+                settings.check(0x00F, v)
+
+    def test_texts(self):
+        by = {s.code: s for s in settings.TABLE}
+        self.assertEqual(settings.text(by['bL'], 0), 'off')
+        self.assertEqual(settings.text(by['bL'], 1), '30 s')
+        self.assertEqual(settings.text(by['bL'], 2), '1 min')
+        self.assertEqual(settings.text(by['bL'], 100), '99 min')
+        self.assertEqual(settings.text(by['BAT'], 100), '+0.0 %')
+        self.assertEqual(settings.text(by['BAT'], 150), '+10.0 %')
+        self.assertEqual(settings.text(by['tc'], 3), 'N')
+        self.assertEqual(settings.text(by['tc'], 255), 'invalid (255)')
+
+
+class OverTheLink(unittest.TestCase):
+    def setUp(self):
+        p = mock.patch.dict(card.TIMEOUTS, {k: 0.05 for k in card.TIMEOUTS})
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_get_all_lists_known_ids_only(self):
+        m = meter()
+        m.eeprom[0x030] = 7                             # a byte the table does not have: dropped
+        items = settings.Settings(make_client(m)).get_all()
+        self.assertEqual([i['code'] for i in items], [s.code for s in settings.TABLE])
+        tc = next(i for i in items if i['code'] == 'tc')
+        self.assertEqual(tc, {'id': 0x00F, 'code': 'tc', 'name': 'Thermocouple type (TEMP)', 'value': 0, 'min': 0, 'max': 5,
+                              'choices': ['K', 'J', 'T', 'N', 'R', 'S'], 'text': 'K'})
+        self.assertIsNone(next(i for i in items if i['code'] == 'bL')['choices'])
+
+    def test_put_changes_one_value_and_reads_it_back(self):
+        m = meter()
+        items = settings.Settings(make_client(m)).put(0x00F, 4)
+        self.assertEqual(m.eeprom[0x00F], 4)
+        self.assertEqual(next(i for i in items if i['code'] == 'tc')['text'], 'R')
+        self.assertEqual([t for t, _ in m.sent].count(settings.T_PUT), 1)
+
+    def test_out_of_range_never_reaches_the_meter(self):
+        m = meter()
+        with self.assertRaises(ValueError):
+            settings.Settings(make_client(m)).put(0x00F, 6)
+        self.assertEqual(m.sent, [])
+
+    def test_shared_byte_keeps_the_other_fields(self):
+        m = meter(b020=0b0100)                          # tr = 2 (bits 2..1), CL 0, rEL 0
+        s = settings.Settings(make_client(m))
+        s.put(0x320, 1)                                 # CL 12-hour: bit 3
+        self.assertEqual(m.eeprom[0x020], 0b1100)
+        s.put(0x120, 1)                                 # rEL percent: bit 0
+        self.assertEqual(m.eeprom[0x020], 0b1101)
+        s.put(0x220, 1)                                 # tr = 1: bits 2..1 = 01
+        self.assertEqual(m.eeprom[0x020], 0b1011)
+        s.put(0x320, 0)
+        self.assertEqual(m.eeprom[0x020], 0b0011)
+        puts = [p for t, p in m.sent if t == settings.T_PUT]
+        self.assertEqual(puts, [b'\x20\x00\x0c', b'\x20\x00\x0d', b'\x20\x00\x0b', b'\x20\x00\x03'])   # id 0x020, whole value
+
+    def test_invalid_trigger_must_be_set_first(self):
+        m = meter(b020=0b0110)                          # tr = 3: the meter would refuse a PUT carrying it
+        s = settings.Settings(make_client(m))
+        with self.assertRaises(card.CardError):
+            s.put(0x320, 1)
+        self.assertEqual([t for t, _ in m.sent].count(settings.T_PUT), 0)
+        s.put(0x220, 0)
+        self.assertEqual(m.eeprom[0x020], 0)
+        self.assertEqual(next(i for i in s.get_all() if i['code'] == 'tr')['text'], 'interval')
+
+    def test_backlight_state_bit_is_kept(self):
+        m = meter(b017=5)                               # the value of the page (the meter keeps the remembered state)
+        s = settings.Settings(make_client(m))
+        items = s.get_all()
+        self.assertEqual(next(i for i in items if i['code'] == 'bL')['value'], 5)
+        s.put(0x017, 30)
+        self.assertEqual(m.eeprom[0x017], 30)
+        self.assertEqual([p for t, p in m.sent if t == settings.T_PUT], [b'\x17\x00\x1e'])
+
+    def test_meter_refusals_are_reported(self):
+        m = meter()
+        m.refuse_put = card.ST_NOT_NOW
+        with self.assertRaises(card.CardError) as e:
+            settings.Settings(make_client(m)).put(0x015, 2)
+        self.assertEqual(e.exception.status, card.ST_NOT_NOW)
+        m.logging = True
+        m.refuse_put = None
+        with self.assertRaises(card.CardError):
+            settings.Settings(make_client(m)).put(0x015, 2)
+
+    def test_a_value_the_meter_does_not_keep_is_an_error(self):
+        m = meter()
+        real = m._handle
+        m._handle = lambda t, p: (card.ST_OK, 0x00F, bytes([0])) if t == settings.T_PUT else real(t, p)   # says 0, stores nothing
+        with self.assertRaises(card.CardError) as e:
+            settings.Settings(make_client(m)).put(0x00F, 3)
+        self.assertIn('applied 0 instead of 3', str(e.exception))
+        m._handle = lambda t, p: (card.ST_OK, 0x00F, bytes([3])) if t == settings.T_PUT else real(t, p)   # says 3, stores nothing
+        with self.assertRaises(card.CardError) as e:
+            settings.Settings(make_client(m)).put(0x00F, 3)
+        self.assertIn('did not keep', str(e.exception))
+
+    def test_id_the_meter_does_not_report(self):
+        m = meter()
+        del m.eeprom[0x00F]
+        with self.assertRaises(card.CardError):
+            settings.Settings(make_client(m)).put(0x00F, 1)
+
+    def test_layout_helpers(self):
+        pairs = [(0x15, 2), (0x28, 1), (0x2A, 100)]
+        field, data = settings.get_answer(pairs)
+        self.assertEqual((field, data), (3, b'\x15\x00\x02\x28\x00\x01\x2a\x00\x64'))
+        self.assertEqual(settings.parse_get(field, data), pairs)
+        self.assertEqual(settings.put_request(0x0120, 7), b'\x20\x01\x07')
+        self.assertEqual(settings.parse_put(0x17, 0x17, b'\x05'), 5)
+        for bad in ((0x17, b''), (0x18, b'\x05'), (0x17, b'\x05\x06')):
+            with self.assertRaises(card.CardError):
+                settings.parse_put(0x17, *bad)
+        with self.assertRaises(card.CardError):
+            settings.parse_get(2, b'\x01\x00\x00')
+
+
+if __name__ == '__main__':
+    unittest.main()

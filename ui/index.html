@@ -5,158 +5,421 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>121GW Companion</title>
 <style>
-/* Bench instrument: matte black panel, one accent (the 121GW's yellow), hairlines instead of boxes, tabular figures.
-   System fonts only, so the program works offline and looks native on each system. */
+/* Bench instrument: matte black front panel, hairlines instead of boxes, one accent (the 121GW's yellow).
+   Lit lamps, the active tab and the inverted warning blocks (black on yellow, always with a word) are the only
+   places the accent is filled.  System fonts only: the program works offline and looks native on each system.
+   Spacing is on a 4 px grid; every number is mono with tabular figures and right-aligned in a fixed-width cell. */
 :root {
-  --bg: #0c0c0b; --panel: #121211; --rule: #262622; --rule-hi: #3a3a34;
-  --ink: #e9e7df; --dim: #8b887e; --faint: #55534c;
-  --acc: #f2c200; --acc-dim: #7a6200; --warn: #ff5a36;
+  --bg: #0c0c0b; --rule: #262622; --rule-hi: #3a3a34; --ink: #e9e7df; --dim: #8d8a80; --faint: #55534c;
+  --acc: #f2c200; --acc-dim: #7a6200;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
   --sans: -apple-system, "Segoe UI", "Helvetica Neue", Cantarell, "DejaVu Sans", sans-serif;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.35 var(--sans); }
-body { display: grid; grid-template-rows: auto auto 1fr auto; -webkit-font-smoothing: antialiased; user-select: none; }
-.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.cap { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/20px var(--sans); }
+body { display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; user-select: none; overflow: hidden; }
+.num, input, .code { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.cap { font: 600 10px/16px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); white-space: nowrap; }
+.yel { color: var(--acc); }
+.dim { color: var(--dim); }
+.r { text-align: right; }
+[hidden] { display: none !important; }
+
+/* controls: rectangular outlines; the accent shows on hover, focus and for the active choice */
 button {
-  font: 600 11px/1 var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink);
-  background: transparent; border: 1px solid var(--rule-hi); padding: 8px 12px; border-radius: 0; cursor: pointer;
+  font: 600 11px/16px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink);
+  background: transparent; border: 1px solid var(--rule-hi); padding: 7px 12px; border-radius: 0; cursor: pointer; position: relative;
 }
-button:hover { border-color: var(--acc); color: var(--acc); }
-button:focus-visible { outline: 1px solid var(--acc); outline-offset: 2px; }
-button.primary { background: var(--acc); color: #111; border-color: var(--acc); }
-button.primary:hover { background: #ffd51f; color: #111; }
-button:disabled { opacity: .35; cursor: default; border-color: var(--rule-hi); color: var(--ink); }
+button:hover:not(:disabled) { border-color: var(--acc); color: var(--acc); }
+button:focus-visible, input:focus-visible { outline: 1px solid var(--acc); outline-offset: 2px; }
+button.pri { border-color: var(--acc); color: var(--acc); }
+button.pri:hover:not(:disabled) { background: var(--acc); color: var(--bg); }
+button.on { border-color: var(--acc); color: var(--acc); }
+button:disabled { opacity: .3; cursor: default; }
+button.sm { padding: 3px 8px; font-size: 10px; }
+input {
+  min-width: 0; background: transparent; border: 1px solid var(--rule-hi); color: var(--ink);
+  font-size: 12px; line-height: 16px; padding: 3px 8px; border-radius: 0; outline: none; user-select: text;
+}
+input:focus { border-color: var(--acc); }
+input:disabled { opacity: .3; }
+.seg { display: inline-flex; }
+.seg button { margin-left: -1px; padding: 3px 8px; font-size: 10px; color: var(--dim); }
+.seg button.on { z-index: 1; }
+/* inverted warning block: black on yellow, always a word */
+.warn { display: inline-block; background: var(--acc); color: var(--bg); font: 700 10px/16px var(--mono); letter-spacing: .14em;
+        padding: 0 8px; text-transform: uppercase; white-space: nowrap; }
+.eng { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; font: 600 10px/16px var(--sans); letter-spacing: .14em;
+       text-transform: uppercase; color: var(--dim); white-space: nowrap; }
+.eng::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
+.eng .warn, .eng .num { letter-spacing: .08em; }
 
-/* top bar */
-header { display: flex; align-items: center; gap: 22px; padding: 12px 22px; border-bottom: 1px solid var(--rule); }
-.mark { font: 700 15px/1 var(--mono); letter-spacing: .32em; }
+/* header strip: identity and lamps */
+header { display: flex; align-items: center; gap: 24px; padding: 0 20px; height: 44px; flex: none; border-bottom: 1px solid var(--rule); }
+.mark { font: 700 15px/16px var(--mono); letter-spacing: .32em; }
 .mark b { color: var(--acc); font-weight: 700; }
-.link { display: flex; align-items: center; gap: 9px; }
-.dot { width: 7px; height: 7px; background: var(--faint); }
-.dot.on { background: var(--acc); }
-.dot.busy { background: var(--acc-dim); animation: blink 1s steps(2) infinite; }
-.dot.off { background: var(--warn); }
-@keyframes blink { 50% { opacity: .25; } }
+.ident { display: flex; gap: 20px; font-size: 12px; }
+.ident .num { display: inline-block; min-width: 88px; }
+.lamps { display: flex; gap: 16px; }
+.lamp { display: flex; align-items: center; gap: 8px; font: 600 10px/16px var(--sans); letter-spacing: .14em; color: var(--dim); }
+.lamp i { width: 8px; height: 8px; border: 1px solid var(--rule-hi); display: block; }
+.lamp.on { color: var(--ink); }
+.lamp.on i { background: var(--acc); border-color: var(--acc); }
+.lamp.busy i { border-color: var(--acc); animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .2; } }
 .spacer { flex: 1; }
-.fwv { color: var(--ink); letter-spacing: .04em; margin-left: 6px; }
-/* update notice: one hairline band under the header, the accent only where the user acts */
-.notice { display: none; align-items: center; gap: 16px; padding: 11px 22px; border-bottom: 1px solid var(--acc-dim);
-          background: var(--panel); }
-.notice.show { display: flex; }
-.notice .num { color: var(--acc); }
-.notice .text { flex: 1; }
-.notice .text.bad { color: var(--warn); }
-.prog { width: 220px; height: 4px; background: var(--rule); }
-.prog i { display: block; height: 100%; width: 0; background: var(--acc); }
 
-/* main area */
-main { display: grid; grid-template-columns: minmax(0, 1fr) 260px; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
-.readout { padding: 26px 28px 18px; border-bottom: 1px solid var(--rule); }
-.flags { display: flex; gap: 16px; min-height: 16px; }
-.flags span { font: 600 11px/1 var(--mono); letter-spacing: .1em; color: var(--faint); }
+nav { display: flex; gap: 0; padding: 0 20px; height: 32px; flex: none; border-bottom: 1px solid var(--rule); }
+nav button { border: 0; border-bottom: 2px solid transparent; padding: 0 16px 0 0; margin-right: 8px; color: var(--dim); height: 32px; letter-spacing: .14em; }
+nav button b { font: 400 10px/16px var(--mono); color: var(--faint); margin-right: 6px; letter-spacing: 0; }
+nav button:hover:not(:disabled) { color: var(--ink); border-bottom-color: transparent; }
+nav button.on { color: var(--ink); border-bottom-color: var(--acc); }
+nav button.on b { color: var(--acc); }
+
+.band { display: none; align-items: center; gap: 16px; padding: 8px 20px; flex: none; border-bottom: 1px solid var(--rule); min-height: 44px; }
+.band.show { display: flex; }
+.band .text { flex: 1; min-width: 0; }
+.band .text .num { color: var(--acc); }
+.devs { display: flex; gap: 8px; flex-wrap: wrap; }
+.devs button { text-transform: none; letter-spacing: 0; font: 12px/16px var(--mono); }
+
+/* segmented bar, as the meter's bargraph */
+.sbar { display: grid; gap: 2px; height: 12px; }
+.sbar i { background: var(--rule); display: block; }
+.sbar i.on { background: var(--acc); }
+.band .sbar { width: 240px; grid-template-columns: repeat(30, 1fr); }
+
+main { flex: 1; min-height: 0; position: relative; }
+.view { display: none; position: absolute; inset: 0; overflow: auto; }
+.view.on { display: block; }
+.pad { padding: 16px 20px; }
+
+/* LIVE */
+#v-live.on { display: grid; grid-template-columns: minmax(0, 1fr) 248px; }
+.col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.readout { padding: 16px 20px 12px; }
+.flags { display: flex; gap: 12px; align-items: center; min-height: 16px; }
+.flags span[data-f] { font: 600 10px/16px var(--mono); letter-spacing: .08em; color: var(--faint); }
 .flags span.on { color: var(--acc); }
-.value { display: flex; align-items: baseline; gap: 14px; margin: 10px 0 4px; }
-.digits { font: 300 clamp(64px, 11vw, 132px)/1 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
-.digits.ol { color: var(--warn); }
+.flags .warn { margin-left: 8px; }
+.flags .age { margin-left: auto; font: 600 10px/16px var(--mono); letter-spacing: .1em; color: var(--acc); }
+.value { display: flex; align-items: baseline; gap: 16px; margin: 4px 0; min-height: 1em; }
+.digits { font: 200 clamp(64px, min(11vw, 18vh), 148px)/1.05 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: .04em;
+          min-width: 7ch; white-space: nowrap; }
 .digits.blank { color: var(--faint); }
-.unit { font: 400 clamp(22px, 3vw, 34px)/1 var(--mono); color: var(--dim); }
-.sub { display: flex; gap: 12px; align-items: baseline; color: var(--dim); min-height: 22px; }
-.sub .num { font-size: 18px; color: var(--ink); }
-.bar { display: grid; grid-template-columns: 14px repeat(26, 1fr); gap: 3px; height: 14px; margin-top: 18px; max-width: 760px; }
+.digits.ol { color: var(--dim); }
+.unit { font: 300 clamp(20px, 3vw, 32px)/1 var(--mono); color: var(--dim); min-width: 4ch; }
+.sub { display: flex; gap: 12px; align-items: baseline; min-height: 24px; }
+.sub .cap { min-width: 40px; }
+.sub .num { font-size: 18px; min-width: 9ch; text-align: right; }
+.sub .unit2 { font: 12px/20px var(--mono); color: var(--dim); }
+.bar { display: grid; grid-template-columns: 16px repeat(26, 1fr); gap: 3px; height: 12px; margin-top: 12px; max-width: 760px; }
 .bar i { background: var(--rule); }
 .bar i.on { background: var(--acc); }
-.bar .sign { font: 600 13px/14px var(--mono); color: var(--dim); background: none; text-align: center; }
-.scale { max-width: 760px; margin-top: 5px; text-align: right; font: 10px/1 var(--mono); color: var(--faint); }
-.stale .digits, .stale .unit, .stale .sub { opacity: .35; }
-.age { color: var(--warn); font: 600 10.5px/1 var(--mono); letter-spacing: .1em; margin-left: auto; }
+.bar .sign { font: 600 13px/12px var(--mono); color: var(--dim); background: none; text-align: center; }
+.scale { max-width: 760px; margin-top: 4px; text-align: right; font: 10px/12px var(--mono); color: var(--faint); min-height: 12px; }
+.stale .digits, .stale .unit, .stale .sub { opacity: .3; }
 
-aside { grid-row: 1 / span 2; grid-column: 2; border-left: 1px solid var(--rule); display: flex; flex-direction: column; }
-.section { padding: 18px 20px; border-bottom: 1px solid var(--rule); }
-.stats { display: grid; grid-template-columns: auto 1fr; row-gap: 9px; column-gap: 14px; margin-top: 12px; }
-.stats .v { text-align: right; font-size: 15px; }
-.row { display: flex; gap: 8px; margin-top: 14px; }
-.rec { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
-.recdot { width: 9px; height: 9px; border: 1px solid var(--dim); }
-.recdot.on { background: var(--warn); border-color: var(--warn); animation: blink 1.2s steps(2) infinite; }
-.path { color: var(--dim); font-size: 11px; word-break: break-all; margin-top: 8px; }
-.devices { margin-top: 10px; display: grid; gap: 6px; }
-input { flex: 1; min-width: 0; background: transparent; border: 1px solid var(--rule-hi); color: var(--ink);
-        font: 12px/1 var(--mono); padding: 7px 8px; border-radius: 0; outline: none; }
-input:focus { border-color: var(--acc); }
-.devices button { text-align: left; text-transform: none; letter-spacing: 0; font: 12px/1.2 var(--mono); }
+.derived { display: grid; grid-template-columns: 1fr 1fr 1fr 1.5fr; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); flex: none; }
+.cell { padding: 8px 16px 8px 20px; border-left: 1px solid var(--rule); min-width: 0; }
+.cell:first-child { border-left: 0; }
+.cell .big { font: 300 22px/32px var(--mono); text-align: right; min-width: 8ch; display: block; }
+.cell .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; }
+.cell input { width: 7ch; text-align: right; padding: 3px 4px; }
+.verdict { display: inline-flex; align-items: center; gap: 8px; font: 700 11px/16px var(--mono); letter-spacing: .14em; min-width: 7ch; }
+.verdict i { width: 8px; height: 8px; border: 1px solid var(--rule-hi); display: block; }
+.verdict.pass { color: var(--ink); }
+.verdict.pass i { background: var(--acc); border-color: var(--acc); }
+.verdict .warn { padding: 0 8px; }
 
-.trendwrap { position: relative; min-height: 180px; }
+.keys { display: flex; gap: 8px; align-items: center; padding: 12px 20px; flex: none; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
+.keys button { width: 92px; height: 40px; padding: 0; }
+.keys button small { display: block; font: 400 9px/10px var(--mono); letter-spacing: .1em; color: var(--faint); }
+.keys button::after { content: ""; position: absolute; left: -1px; bottom: -1px; height: 2px; width: 0; background: var(--acc); }
+.keys button.arming::after { width: calc(100% + 2px); transition: width 1s linear; }
+.keys .note { margin-left: 8px; display: flex; gap: 8px; align-items: center; }
+
+.mini { position: relative; flex: 1; min-height: 120px; }
+.mini .cap { position: absolute; left: 20px; top: 8px; z-index: 1; }
 canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.trendlabel { position: absolute; left: 22px; top: 12px; }
 
-/* notices */
-footer { display: flex; align-items: center; gap: 16px; padding: 9px 22px; border-top: 1px solid var(--rule); min-height: 40px; }
-.msg { color: var(--dim); }
-.msg.bad { color: var(--warn); }
+aside { border-left: 1px solid var(--rule); overflow: auto; }
+aside .sec { padding: 16px 20px; border-bottom: 1px solid var(--rule); }
+.kv { display: grid; grid-template-columns: auto 1fr; row-gap: 8px; column-gap: 12px; align-items: baseline; }
+.kv .v { text-align: right; font-size: 14px; min-width: 9ch; }
+.kv.wide { grid-template-columns: 160px 1fr; }
+.kv.wide .v { text-align: left; font-size: 12px; }
+.btns { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.rec { display: flex; align-items: center; gap: 12px; }
+.recdot { width: 8px; height: 8px; border: 1px solid var(--rule-hi); display: block; flex: none; }
+.recdot.on { background: var(--acc); border-color: var(--acc); animation: blink 1.2s steps(2) infinite; }
+.path { color: var(--dim); font-size: 11px; word-break: break-all; margin-top: 8px; min-height: 16px; }
+
+/* SCOPE */
+#v-scope.on { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.tools { display: flex; gap: 16px; align-items: center; padding: 8px 20px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
+.tools .grp { display: flex; gap: 8px; align-items: center; }
+.tools input { width: 9ch; text-align: right; }
+.plot { position: relative; min-height: 120px; }
+.plot canvas { cursor: crosshair; touch-action: none; }
+.cur { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-top: 1px solid var(--rule); }
+.cur > div { padding: 8px 16px 8px 20px; border-left: 1px solid var(--rule); }
+.cur > div:first-child { border-left: 0; }
+.cur .num { display: block; font-size: 15px; text-align: right; }
+
+/* tables */
+table { border-collapse: collapse; width: 100%; }
+th { font: 600 10px/16px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); text-align: left;
+     padding: 4px 8px; border-bottom: 1px solid var(--rule-hi); white-space: nowrap; }
+th.r, td.r { text-align: right; }
+th.sort { cursor: pointer; }
+th.sort:hover, th.sorted { color: var(--acc); }
+td { padding: 4px 8px; border-bottom: 1px solid var(--rule); font: 12px/16px var(--mono); font-variant-numeric: tabular-nums; vertical-align: middle; }
+td.act { text-align: right; white-space: nowrap; width: 1%; }
+tr.empty td { color: var(--faint); }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; }
+.two > div { padding: 16px 20px; min-width: 0; }
+.two > div + div { border-left: 1px solid var(--rule); }
+.bigtime { font: 200 48px/56px var(--mono); letter-spacing: .04em; }
+
+/* CARD */
+.desk { max-width: 640px; margin: 48px auto; padding: 0 20px; }
+.desk .page { font: 200 72px/80px var(--mono); color: var(--acc); letter-spacing: .08em; margin: 16px 0; }
+.desk p { margin: 8px 0; color: var(--dim); }
+.desk ol { margin: 8px 0; padding-left: 24px; color: var(--dim); }
+.space { display: grid; grid-template-columns: repeat(60, 1fr); }
+.space i { height: 16px; }
+.cardbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+.cardbar input { width: 340px; max-width: 100%; }
+.stat { display: flex; justify-content: space-between; font-size: 12px; margin-top: 8px; }
+.confirm { position: fixed; inset: 0; background: rgba(12, 12, 11, .86); display: none; align-items: center; justify-content: center; z-index: 5; }
+.confirm.show { display: flex; }
+.confirm .box { background: var(--bg); border: 1px solid var(--acc); padding: 20px; width: 480px; max-width: 92vw; }
+.confirm .box p { margin: 8px 0 12px; }
+.confirm input { width: 100%; margin-bottom: 16px; }
+
+/* SETTINGS */
+.srow { display: grid; grid-template-columns: 8px 56px minmax(0, 1fr) 176px 64px; gap: 12px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--rule); min-height: 40px; }
+.srow .mk { width: 8px; height: 8px; border: 1px solid var(--rule); }
+.srow.pend .mk { background: var(--acc); border-color: var(--acc); }
+.srow .code { color: var(--acc); font-size: 14px; font-weight: 600; }
+.srow .name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srow .ctl { display: flex; align-items: center; gap: 0; }
+.srow .ctl button { padding: 3px 0; width: 28px; text-align: center; font-size: 13px; letter-spacing: 0; }
+.srow .ctl input, .srow .ctl .choice { width: 88px; text-align: center; margin: 0 -1px; height: 26px; padding: 3px 4px; }
+.srow .ctl .choice { border: 1px solid var(--rule-hi); font: 12px/18px var(--mono); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.srow .ctl .choice.off { opacity: .3; }
+.srow.pend .ctl input, .srow.pend .ctl .choice { border-color: var(--acc); color: var(--acc); }
+.diag { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 16px; }
+.diag div { display: flex; justify-content: space-between; border-bottom: 1px solid var(--rule); padding: 2px 0; font: 12px/16px var(--mono); }
+.diag div span:first-child { color: var(--faint); }
+pre { margin: 12px 0 0; font: 11px/16px var(--mono); color: var(--dim); white-space: pre-wrap; max-height: 160px; overflow: auto; user-select: text; }
+
+/* status line */
+footer { display: flex; align-items: center; gap: 16px; padding: 0 20px; height: 28px; flex: none; border-top: 1px solid var(--rule); font: 12px/16px var(--mono); }
+#msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
+#msg::before { content: "> "; color: var(--faint); }
+#msg.bad { color: var(--ink); }
+#msg .warn { margin-right: 8px; }
+footer .r { color: var(--faint); min-width: 160px; }
+@media (max-width: 1000px) {
+  header { gap: 12px; padding: 0 12px; }
+  .ident { gap: 8px; } .ident .num { min-width: 64px; } .lamps { gap: 10px; } .mark { letter-spacing: .2em; }
+  .two { grid-template-columns: minmax(0, 1fr); } .two > div + div { border-left: 0; border-top: 1px solid var(--rule); }
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--rule-hi); }
+::-webkit-scrollbar-track { background: transparent; }
 </style>
 </head>
 <body>
 <header>
   <div class="mark">121<b>GW</b></div>
-  <div class="link"><i class="dot" id="dot"></i><span class="cap" id="linktext">not connected</span></div>
+  <div class="ident"><div><span class="cap">firmware&nbsp;</span><span class="num" id="fw">F-—</span></div>
+    <div><span class="cap">boot&nbsp;</span><span class="num" id="bl">B-—</span></div></div>
+  <div class="lamps" id="lamps">
+    <span class="lamp" id="l-link"><i></i>LINK</span><span class="lamp" id="l-live"><i></i>LIVE</span>
+    <span class="lamp" id="l-desk"><i></i>DESK</span><span class="lamp" id="l-log"><i></i>LOG</span>
+    <span class="lamp" id="l-sd"><i></i>SD</span>
+  </div>
   <div class="spacer"></div>
-  <div class="cap">firmware <span class="fwv num" id="fw">—</span></div>
-  <div class="cap">bootloader <span class="fwv num" id="bl">—</span></div>
-  <button id="connect" class="primary">Connect</button>
+  <button id="connect" class="pri">Connect</button>
 </header>
-
-<div class="notice" id="notice"><span class="cap">update</span><span class="text" id="ntext"></span>
-  <div class="prog" id="nprog" hidden><i id="nbar"></i></div>
+<nav id="tabs">
+  <button data-v="live"><b>1</b>LIVE</button><button data-v="scope"><b>2</b>SCOPE</button><button data-v="log"><b>3</b>LOG</button>
+  <button data-v="card"><b>4</b>CARD</button><button data-v="meter"><b>5</b>METER</button>
+</nav>
+<div class="band" id="devband"><span class="cap">meters found</span><div class="devs" id="devs"></div></div>
+<div class="band" id="notice"><span class="cap">update</span><span class="text" id="ntext"></span>
+  <div class="sbar" id="nprog" hidden></div>
   <button id="nfw" hidden>Firmware only</button><button id="nbl" hidden>Bootloader only</button>
-  <button id="nprimary" class="primary"></button><button id="nsecondary"></button></div>
+  <button id="nprimary" class="pri"></button><button id="nsecondary"></button></div>
+
 <main>
-  <div>
-    <section class="readout">
-      <div class="flags" id="flags"><span class="age" id="age"></span></div>
+<!-- LIVE -->
+<section class="view" id="v-live">
+  <div class="col">
+    <div class="readout" id="readout">
+      <div class="eng">Reading <span class="num dim" id="modename"></span></div>
+      <div class="flags" id="flags"><span class="age" id="age"></span><span class="warn" id="olwarn" hidden>Overload</span></div>
       <div class="value"><span class="digits blank" id="digits">-----</span><span class="unit" id="unit"></span></div>
-      <div class="sub"><span class="cap" id="sublabel"></span><span class="num" id="subval"></span><span id="subunit"></span></div>
+      <div class="sub"><span class="cap" id="sublabel"></span><span class="num" id="subval"></span><span class="unit2" id="subunit"></span></div>
       <div class="bar" id="bar"></div>
       <div class="scale" id="scale"></div>
-    </section>
+    </div>
+    <div class="derived">
+      <div class="cell"><div class="eng">Rel %</div><span class="big num" id="d-rel">—</span><div class="row"><span class="cap">of reference</span></div></div>
+      <div class="cell"><div class="eng">Loop %</div><span class="big num" id="d-loop">—</span>
+        <div class="row"><span class="seg" id="s-loop"><button data-v="4-20">4-20</button><button data-v="0-20">0-20</button></span></div></div>
+      <div class="cell"><div class="eng">Pt °C</div><span class="big num" id="d-pt">—</span>
+        <div class="row"><span class="seg" id="s-pt"><button data-v="Pt100">Pt100</button><button data-v="Pt1000">Pt1000</button></span></div></div>
+      <div class="cell"><div class="eng">Limit</div>
+        <div class="row"><span class="verdict" id="d-verdict"><i></i><span>—</span></span>
+          <span class="row"><input id="lim-lo" class="num" placeholder="lo" aria-label="limit low" spellcheck="false"><input id="lim-hi" class="num" placeholder="hi" aria-label="limit high" spellcheck="false"></span></div>
+        <div class="row"><span class="cap">verdict</span><span class="cap" id="lim-unit">lo · hi</span></div></div>
+    </div>
+    <div class="keys" id="keys">
+      <button data-k="RANGE">Range</button><button data-k="HOLD">Hold</button><button data-k="REL">Rel</button>
+      <button data-k="PEAK">Peak</button><button data-k="MODE">Mode</button><button data-k="MIN/MAX">Min/Max</button>
+      <button data-k="MEM" data-long="1">Mem<small>LONG</small></button>
+      <span class="note" id="keynote"></span>
+    </div>
+    <div class="mini" id="minitrend"><div class="cap" id="trendlabel">trend</div><canvas id="trend"></canvas></div>
   </div>
   <aside>
-    <div class="section">
-      <div class="cap">statistics</div>
-      <div class="stats">
+    <div class="sec"><div class="eng">Statistics</div>
+      <div class="kv">
         <span class="cap">min</span><span class="v num" id="smin">—</span>
         <span class="cap">max</span><span class="v num" id="smax">—</span>
         <span class="cap">mean</span><span class="v num" id="smean">—</span>
-        <span class="cap">std dev</span><span class="v num" id="ssd">—</span>
         <span class="cap">count</span><span class="v num" id="sn">0</span>
+        <span class="cap">std dev</span><span class="v num" id="ssd">—</span>
       </div>
-      <div class="row"><button id="sreset">Reset</button></div>
+      <div class="btns"><button id="sreset">Reset</button></div>
     </div>
-    <div class="section">
-      <div class="cap">recording</div>
-      <div class="rec"><i class="recdot" id="recdot"></i><span class="num" id="rectime">00:00:00</span><span class="msg num" id="recrows"></span></div>
-      <div class="row"><button id="rec">Record</button></div>
-      <div class="path" id="recpath"></div>
-    </div>
-    <div class="section">
-      <div class="cap">meter clock</div>
-      <div class="row"><input id="ntp" class="num" spellcheck="false" aria-label="NTP server"><button id="sync">Sync time</button></div>
-      <div class="path num" id="clockres"></div>
-    </div>
-    <div class="section" id="devsec">
-      <div class="cap">meter</div>
-      <div class="devices" id="devices"><span class="msg">press Connect: the first 121GW found is used</span></div>
+    <div class="sec"><div class="eng">Recording</div>
+      <div class="rec"><i class="recdot" id="recdot"></i><span class="num" id="rectime">00:00:00</span><span class="dim num" id="recrows"></span></div>
+      <div class="btns"><button id="rec2">Record</button></div>
     </div>
   </aside>
-  <div class="trendwrap" id="trendwrap"><canvas id="trend"></canvas><div class="trendlabel cap" id="trendlabel">trend</div></div>
+</section>
+
+<!-- SCOPE -->
+<section class="view" id="v-scope">
+  <div class="tools">
+    <div class="grp"><span class="cap">time</span><span class="seg" id="s-win"></span></div>
+    <div class="grp"><span class="cap">vertical</span><span class="seg" id="s-auto"><button data-v="auto">Auto</button><button data-v="fixed">Fixed</button></span>
+      <input id="sc-lo" class="num" aria-label="scale low" spellcheck="false"><input id="sc-hi" class="num" aria-label="scale high" spellcheck="false"></div>
+    <div class="grp"><button id="sc-cur">Cursors</button><button id="sc-frz">Freeze <span class="dim">space</span></button><span class="warn" id="sc-frzmark" hidden>Frozen</span></div>
+    <div class="spacer"></div>
+    <div class="num dim" id="sc-div"></div>
+  </div>
+  <div class="plot" id="plot"><canvas id="scope"></canvas></div>
+  <div class="cur">
+    <div><span class="cap">A  t</span><span class="num" id="c-ta">—</span></div>
+    <div><span class="cap">B  t</span><span class="num" id="c-tb">—</span></div>
+    <div><span class="cap">Δt</span><span class="num" id="c-dt">—</span></div>
+    <div><span class="cap">ΔV</span><span class="num" id="c-dv">—</span></div>
+    <div><span class="cap">1/Δt</span><span class="num" id="c-hz">—</span></div>
+    <div><span class="cap">A · B</span><span class="num" id="c-v">—</span></div>
+  </div>
+</section>
+
+<!-- LOG -->
+<section class="view" id="v-log">
+  <div class="two">
+    <div><div class="eng">Recording</div>
+      <div class="rec"><i class="recdot" id="recdot2"></i><span class="bigtime num" id="rectime2">00:00:00</span></div>
+      <div class="kv" style="margin-top:8px"><span class="cap">rows</span><span class="v num" id="recrows2" style="text-align:left">—</span>
+        <span class="cap">file</span><span class="v num" id="recpath" style="text-align:left;word-break:break-all">—</span>
+        <span class="cap">folder</span><span class="v num" id="recfolder" style="text-align:left;word-break:break-all">—</span></div>
+      <div class="btns"><button id="rec" class="pri">Record</button><button id="export">Export trend CSV</button></div>
+    </div>
+    <div><div class="eng">Recordings in the computer folder</div>
+      <table><thead><tr><th>Name</th><th class="r">Size</th><th>Date</th></tr></thead><tbody id="reclist"></tbody></table></div>
+  </div>
+</section>
+
+<!-- CARD -->
+<section class="view" id="v-card">
+  <div class="desk" id="deskinfo">
+    <div class="eng">Card <span class="warn">Locked</span></div>
+    <p>The memory card is reached only while the meter is in desk mode.</p>
+    <div class="page num">Ld-bt</div>
+    <p><b style="color:var(--ink)">On the meter: SETUP to page Ld-bt.</b></p>
+    <ol><li>Meter on and connected to this program.</li><li>Press SETUP until the display shows Ld-bt.</li><li>The DESK lamp lights; this view then lists the card.</li></ol>
+  </div>
+  <div class="pad" id="cardmain" hidden>
+    <div class="cardbar"><button id="c-refresh">Refresh</button>
+      <input id="c-folder" class="num" spellcheck="false" aria-label="folder on this computer" placeholder="folder on this computer">
+      <button id="c-sync" class="pri">Sync to folder</button><span class="warn" id="c-err" hidden>Fault</span><span class="dim" id="c-errtext"></span></div>
+    <div class="eng">Space</div>
+    <div class="space sbar" id="spacebar"></div>
+    <div class="stat num"><span id="sp-used">—</span><span id="sp-free">—</span><span id="sp-total">—</span></div>
+    <div class="eng" style="margin-top:20px">Transfer <span class="num" id="c-op">idle</span></div>
+    <div class="sbar" id="progbar" style="grid-template-columns:repeat(60,1fr)"></div>
+    <div class="stat num"><span id="pg-bytes">—</span><span id="pg-rate">—</span></div>
+    <div class="stat num dim" style="margin-bottom:20px"><span id="sy-info">Sync: —</span><span id="sy-last"></span></div>
+    <div class="eng">Files <span class="num" id="c-count"></span></div>
+    <table><thead><tr><th class="sort" data-s="name">Name</th><th class="sort r" data-s="size">Size B</th><th class="sort" data-s="when">Date / time</th><th></th></tr></thead>
+      <tbody id="files"></tbody></table>
+  </div>
+</section>
+
+<!-- METER -->
+<section class="view" id="v-meter">
+  <div class="two">
+    <div>
+      <div class="eng">Meter</div>
+      <div class="kv wide">
+        <span class="cap">firmware</span><span class="v num" id="m-fw">—</span>
+        <span class="cap">bootloader</span><span class="v num" id="m-bl">—</span>
+        <span class="cap">device</span><span class="v num" id="m-dev">—</span>
+        <span class="cap">link</span><span class="v num" id="m-link">—</span>
+        <span class="cap">update check</span><span class="v num" id="m-upd">—</span>
+        <span class="cap">available</span><span class="v num" id="m-avail">—</span>
+      </div>
+      <div class="sbar" id="m-prog" style="grid-template-columns:repeat(40,1fr);margin-top:12px"></div>
+      <div class="eng" style="margin-top:24px">Clock</div>
+      <div class="cardbar" style="margin-bottom:8px"><input id="ntp" class="num" spellcheck="false" aria-label="NTP server"><button id="sync">Sync time</button></div>
+      <div class="path num" id="clockres"></div>
+      <div class="eng" style="margin-top:24px">Diagnostics <button class="sm" id="diag-read" style="margin-left:8px">Read</button></div>
+      <div class="diag" id="diagvals"></div>
+      <pre id="diagtext">—</pre>
+    </div>
+    <div>
+      <div class="eng">Settings <span id="set-lock" class="warn" hidden>Locked</span><button class="sm" id="set-read" style="margin-left:8px">Read</button></div>
+      <div class="path" id="set-reason" style="margin:0 0 8px;color:var(--ink);min-height:0"></div>
+      <div id="setlist"></div>
+    </div>
+  </div>
+</section>
 </main>
 
-<footer><span class="msg" id="msg">Meter on, Bluetooth on (hold PEAK), phone app closed.</span></footer>
+<div class="confirm" id="confirm"><div class="box">
+  <div class="eng">Delete file</div>
+  <p>Delete <b class="num yel" id="cf-name"></b> from the meter's card? This cannot be undone. Type the name to confirm.</p>
+  <input id="cf-input" class="num" spellcheck="false" autocomplete="off" aria-label="type the file name">
+  <div class="btns" style="margin-top:0"><button id="cf-ok" disabled>Delete</button><button id="cf-cancel">Cancel</button></div>
+</div></div>
+
+<footer><span id="msg">Meter on, Bluetooth on (hold PEAK), phone app closed.</span><span class="r num" id="sline"></span></footer>
 
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
+const h = (tag, a, ...kids) => {
+  const e = document.createElement(tag);
+  for (const k in (a || {})) {
+    if (k === 'class') e.className = a[k]; else if (k.startsWith('on')) e[k] = a[k];
+    else if (a[k] !== undefined && a[k] !== false && a[k] !== null) e.setAttribute(k, a[k] === true ? '' : a[k]);
+  }
+  for (const c of kids.flat()) if (c !== null && c !== undefined && c !== false) e.append(c.nodeType ? c : String(c));
+  return e;
+};
+const num = x => h('span', {class: 'num'}, x);
+
+// every command goes through here: POST /api with the custom header the server demands
 const api = async cmd => {
   const r = await fetch('/api', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-121GW-Companion': '1'},
                                  body: JSON.stringify(cmd)});
@@ -164,34 +427,79 @@ const api = async cmd => {
   if (!r.ok) throw new Error(j.error || r.status);
   return j;
 };
-const say = (text, bad) => { $('msg').textContent = text; $('msg').className = 'msg' + (bad ? ' bad' : ''); };
+// commands of the state contract: one place that decides how a name and its parameters are put on the wire
+const send = (name, params, nested) => api(nested ? {[name]: params} : Object.assign({[name]: true}, params || {}));
+const say = (text, bad) => {
+  const m = $('msg'); m.className = bad ? 'bad' : '';
+  m.replaceChildren(...(bad ? [h('span', {class: 'warn'}, 'Fault')] : []), String(text));
+};
+const fail = e => say(e && e.message ? e.message : e, true);
 const fmt = v => {
-  if (v === null || v === undefined) return '—';
+  if (v === null || v === undefined || typeof v !== 'number' || !isFinite(v)) return '—';
   const a = Math.abs(v);
   if (a !== 0 && (a >= 1e6 || a < 1e-6)) return v.toExponential(3);
   return (+v.toPrecision(6)).toString();
 };
+const nz = v => v === null || v === undefined || (typeof v === 'number' && !isFinite(v)) ? '—' : String(v);
+const grp = n => typeof n === 'number' ? Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ') : '—';
+const bytesH = n => {
+  if (typeof n !== 'number') return '—';
+  const u = ['B', 'KB', 'MB', 'GB', 'TB']; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (i ? n.toFixed(n < 10 ? 2 : 1) : n.toFixed(0)) + ' ' + u[i];
+};
+const hms = s => { s = Math.max(0, Math.floor(s)); return [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(x => String(x).padStart(2, '0')).join(':'); };
+const fmtT = s => { const a = Math.abs(s); return a < 1 ? (s * 1000).toFixed(0) + ' ms' : a < 100 ? s.toFixed(2) + ' s' : s.toFixed(1) + ' s'; };
+const pct = v => typeof v === 'number' && isFinite(v) ? v.toFixed(2) : '—';
+function segs(el, n) { el.style.gridTemplateColumns = 'repeat(' + n + ', 1fr)'; el.replaceChildren(...Array.from({length: n}, () => h('i'))); }
+function lit(el, frac) { const k = [...el.children], on = Math.round(Math.max(0, Math.min(1, frac || 0)) * k.length); k.forEach((e, i) => e.classList.toggle('on', i < on)); }
+function seg(el, value) { [...el.querySelectorAll('button')].forEach(b => b.classList.toggle('on', b.dataset.v === value)); }
 
-// bargraph: sign cell + 26 segments, scale labels from the reading
+let prevDesk = false, state = null, view = 'live', since = null, trend = [], trendKey = null;
+const connected = () => !!state && state.link && state.link.state === 'connected';
+const desk = () => !!state && state.desk === true;
+
+// ---------------------------------------------------------------- views and keyboard
+const VIEWS = ['live', 'scope', 'log', 'card', 'meter'];
+function setView(v) {
+  view = v;
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
+  if (v === 'card' && desk()) { cardSig = ''; send('card_list').catch(fail); send('card_info').catch(fail); }
+  if (v === 'meter') readSettings();
+  render();
+}
+$('tabs').onclick = e => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); };
+const typing = () => /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement && document.activeElement.tagName);
+document.addEventListener('keydown', e => {
+  if (typing() || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key >= '1' && e.key <= '5') setView(VIEWS[+e.key - 1]);
+  else if (e.key === ' ' && view === 'scope') { e.preventDefault(); toggleFreeze(); }
+});
+
+// ---------------------------------------------------------------- LIVE: reading, sub display, bargraph
 const bar = $('bar');
 bar.innerHTML = '<i class="sign" id="barsign"></i>' + '<i></i>'.repeat(26);
-const segs = [...bar.querySelectorAll('i:not(.sign)')];
-
+const barSegs = [...bar.querySelectorAll('i:not(.sign)')];
 const FLAGS = ['AC', 'DC', 'AUTO', 'HOLD', 'A-HOLD', 'REL', 'MIN', 'MAX', 'AVG', 'PEAK', 'MEM', '1kHz', 'HV', 'APO', 'BAT'];
 $('flags').insertAdjacentHTML('afterbegin', FLAGS.map(f => `<span data-f="${f}">${f}</span>`).join(''));
 const flagEls = [...$('flags').querySelectorAll('span[data-f]')];
 
-let since = null, trend = [], state = null, trendKey = null;
-
 function drawReading(r, now) {
-  const d = $('digits'), ro = document.querySelector('.readout');
-  if (!r) { d.textContent = '-----'; d.className = 'digits blank'; $('unit').textContent = ''; $('age').textContent = '';
-            ro.classList.remove('stale'); return; }
+  const d = $('digits'), ro = $('readout');
+  if (!r) {
+    d.textContent = '-----'; d.className = 'digits blank'; $('unit').textContent = ''; $('age').textContent = '';
+    $('olwarn').hidden = true; $('modename').textContent = ''; $('sublabel').textContent = $('subval').textContent = $('subunit').textContent = '';
+    flagEls.forEach(e => e.classList.remove('on')); barSegs.forEach(e => e.classList.remove('on'));
+    bar.style.visibility = 'hidden'; $('scale').textContent = ''; ro.classList.remove('stale'); return;
+  }
   const age = now - r.t;                               // the meter sends nothing while its digits are blank (OF-34)
   ro.classList.toggle('stale', age > 3);
   $('age').textContent = age > 3 ? 'NO NEW READING · ' + Math.round(age) + ' S' : '';
-  d.textContent = r.text;
-  d.className = 'digits' + (r.overload ? ' ol' : r.value === null ? ' blank' : '');
+  d.textContent = r.text === undefined ? '-----' : r.text;
+  d.className = 'digits' + (r.overload ? ' ol' : r.value === null || r.value === undefined ? ' blank' : '');
+  $('olwarn').hidden = !r.overload;
+  $('modename').textContent = r.mode_name || '';
   $('unit').textContent = r.unit || '';
   $('sublabel').textContent = r.sub_label || '';
   $('subval').textContent = r.sub_text || '';
@@ -199,34 +507,142 @@ function drawReading(r, now) {
   const on = new Set(r.symbols || []);
   flagEls.forEach(e => e.classList.toggle('on', on.has(e.dataset.f)));
   const b = r.bar || {shown: false, lit: 0};
-  segs.forEach((e, i) => e.classList.toggle('on', i < b.lit));
+  barSegs.forEach((e, i) => e.classList.toggle('on', i < b.lit));
   $('barsign').textContent = b.shown ? (b.negative ? '−' : '+') : '';
   bar.style.visibility = b.shown ? 'visible' : 'hidden';
-  $('scale').textContent = b.shown ? b.label : '';
+  $('scale').textContent = b.shown ? b.label || '' : '';
 }
 
-function drawTrend() {
-  const c = $('trend'), w = c.clientWidth, h = c.clientHeight, dpr = window.devicePixelRatio || 1;
-  if (c.width !== w * dpr || c.height !== h * dpr) { c.width = w * dpr; c.height = h * dpr; }
+// ---------------------------------------------------------------- LIVE: derived values and limit test
+// the choice made here goes to the program (set_derived); the shown values come back in state.derived
+const setDerived = patch => send('set_derived', patch, true).catch(fail);
+$('s-loop').onclick = e => { const b = e.target.closest('button'); if (b) setDerived({loop_range: b.dataset.v}); };
+$('s-pt').onclick = e => { const b = e.target.closest('button'); if (b) setDerived({pt_type: b.dataset.v}); };
+for (const id of ['lim-lo', 'lim-hi']) {
+  const el = $(id);
+  el.oninput = () => { el.dataset.edited = '1'; };
+  el.onchange = el.onblur = () => {
+    if (!el.dataset.edited) return;
+    const lo = $('lim-lo').value.trim(), hi = $('lim-hi').value.trim();
+    const p = s => s === '' ? null : Number(s);
+    if ((p(lo) !== null && !isFinite(p(lo))) || (p(hi) !== null && !isFinite(p(hi)))) return say('limit: a number is needed', true);
+    $('lim-lo').dataset.edited = $('lim-hi').dataset.edited = '';
+    const unit = state && ((state.derived && state.derived.limit && state.derived.limit.unit) || (state.session && state.session.stats_unit)) || undefined;
+    setDerived({limit: p(lo) === null && p(hi) === null ? null : {lo: p(lo), hi: p(hi), unit}});
+  };
+  el.onkeydown = e => { if (e.key === 'Enter') el.blur(); };
+}
+function drawDerived(D) {
+  D = D || {};
+  $('d-rel').textContent = pct(D.rel_pct);
+  $('d-loop').textContent = pct(D.loop_pct);
+  $('d-pt').textContent = typeof D.pt_c === 'number' && isFinite(D.pt_c) ? D.pt_c.toFixed(2) : '—';
+  seg($('s-loop'), D.loop_range); seg($('s-pt'), D.pt_type);
+  const L = D.limit || {};
+  for (const [id, v] of [['lim-lo', L.lo], ['lim-hi', L.hi]]) {
+    const el = $(id); if (document.activeElement !== el && !el.dataset.edited) el.value = v === null || v === undefined ? '' : v;
+  }
+  $('lim-unit').textContent = L.unit ? 'lo · hi  ' + L.unit : 'lo · hi';
+  const vd = $('d-verdict'), vv = L.verdict;
+  vd.className = 'verdict' + (vv === 'PASS' ? ' pass' : '');
+  vd.replaceChildren(h('i'), vv === 'HI' || vv === 'LO' ? h('span', {class: 'warn'}, vv) : h('span', {}, vv === 'PASS' ? 'PASS' : '—'));
+}
+
+// ---------------------------------------------------------------- LIVE: meter keys with long press
+const LONG_MS = 1000;
+function wireKeys() {
+  for (const b of document.querySelectorAll('#keys button')) {
+    let timer = null, fired = false;
+    const stop = () => { clearTimeout(timer); timer = null; b.classList.remove('arming'); };
+    const press = long => {
+      say('key ' + b.dataset.k + (long ? ' (long)' : ''));
+      api({key: b.dataset.k, long}).catch(fail);
+    };
+    b.onpointerdown = e => {
+      if (b.disabled || e.button !== 0) return;
+      fired = false; b.classList.add('arming');
+      timer = setTimeout(() => { fired = true; stop(); press(true); }, LONG_MS);
+    };
+    b.onpointerup = () => { if (timer !== null) { stop(); press(!!b.dataset.long); } };
+    b.onpointerleave = b.onpointercancel = stop;
+    b.onclick = e => { if (e.detail === 0 && !b.disabled) press(!!b.dataset.long); };   // keyboard activation
+  }
+}
+wireKeys();
+
+// ---------------------------------------------------------------- trend drawing (LIVE strip and SCOPE share it)
+const niceStep = x => { const e = Math.pow(10, Math.floor(Math.log10(x))), f = x / e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e; };
+function autoRange(lo, hi) {
+  if (!(hi > lo)) { const m = Math.abs(hi) * .05 || 1e-3; lo -= m; hi += m; }
+  let step = niceStep((hi - lo) / 8);
+  for (let k = 0; k < 6; k++) {
+    const l = Math.floor(lo / step + 1e-9) * step;
+    if (l + 8 * step >= hi - step * 1e-9) return [l, l + 8 * step];
+    step = niceStep(step * 1.01);
+  }
+  return [lo, hi];
+}
+const axisNum = v => { const s = (+v.toPrecision(6)).toString(); return s === '-0' ? '0' : s; };
+function lowerBound(a, t) { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m][0] < t) lo = m + 1; else hi = m; } return lo; }
+function valueAt(a, t) {                               // interpolated, null across a gap
+  const i = lowerBound(a, t);
+  const p = a[i - 1], q = a[i];
+  if (p && q && p[1] !== null && q[1] !== null && q[0] - p[0] < 1.5) return q[0] === p[0] ? q[1] : p[1] + (q[1] - p[1]) * (t - p[0]) / (q[0] - p[0]);
+  const n = [p, q].filter(x => x && x[1] !== null && Math.abs(x[0] - t) < .25).sort((x, y) => Math.abs(x[0] - t) - Math.abs(y[0] - t))[0];
+  return n ? n[1] : null;
+}
+
+/* o: {data, t1, win, auto, lo, hi, mini, cursors:[tA,tB]|null, unit}; returns the geometry for cursor mapping */
+function drawTrace(c, o) {
+  const w = c.clientWidth, hgt = c.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (!w || !hgt) return null;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(hgt * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(hgt * dpr); }
   const g = c.getContext('2d');
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.clearRect(0, 0, w, h);
-  const L = 22, R = w - 22, T = 34, B = h - 26;
-  // graticule: 10 x 8 divisions, dotted minor lines, solid centre lines, as on a scope
-  g.fillStyle = '#3a3a34';
-  for (let i = 0; i <= 10; i++) for (let j = 0; j <= 40; j++) g.fillRect(L + (R - L) * i / 10, T + (B - T) * j / 40, 1, 1);
-  for (let j = 0; j <= 8; j++) for (let i = 0; i <= 50; i++) g.fillRect(L + (R - L) * i / 50, T + (B - T) * j / 8, 1, 1);
-  g.strokeStyle = '#262622'; g.strokeRect(L + .5, T + .5, R - L, B - T);
-  if (trend.length < 2) return;
-  const t1 = trend[trend.length - 1][0], t0 = Math.max(trend[0][0], t1 - 600);
-  const pts = trend.filter(p => p[0] >= t0), vals = pts.filter(p => p[1] !== null).map(p => p[1]);
-  if (!vals.length) return;
-  let lo = Math.min(...vals), hi = Math.max(...vals);
-  if (hi - lo < 1e-12) { const m = Math.abs(hi) * 1e-4 || 1e-6; lo -= m; hi += m; }
-  const pad = (hi - lo) * .08; lo -= pad; hi += pad;
-  const X = t => L + (R - L) * (t - t0) / Math.max(1, t1 - t0), Y = v => B - (B - T) * (v - lo) / (hi - lo);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, hgt);
+  const L = o.mini ? 20 : 68, R = w - 20, T = o.mini ? 28 : 20, B = hgt - (o.mini ? 20 : 28);
+  if (R - L < 40 || B - T < 40) return null;
+  const mono = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+  const t1 = o.t1, t0 = t1 - o.win;
+  const i0 = lowerBound(o.data, t0), pts = o.data.slice(i0);
+  const vals = pts.filter(p => p[1] !== null).map(p => p[1]);
+  let lo = o.lo, hi = o.hi;
+  if (o.auto) {
+    if (vals.length) { let a = vals[0], b = vals[0]; for (const v of vals) { if (v < a) a = v; if (v > b) b = v; } [lo, hi] = autoRange(a, b); }
+    else { lo = -1; hi = 7; }
+  }
+  const X = t => L + (R - L) * (t - t0) / o.win, Y = v => B - (B - T) * (v - lo) / (hi - lo);
+  // graticule: 10 x 8 major divisions, minor ticks (5 per division) on the centre lines and the frame
+  g.strokeStyle = '#262622'; g.lineWidth = 1; g.beginPath();
+  for (let i = 0; i <= 10; i++) { const x = Math.round(L + (R - L) * i / 10) + .5; g.moveTo(x, T); g.lineTo(x, B); }
+  for (let j = 0; j <= 8; j++) { const y = Math.round(T + (B - T) * j / 8) + .5; g.moveTo(L, y); g.lineTo(R, y); }
+  g.stroke();
+  g.strokeStyle = '#3a3a34'; g.beginPath();
+  const cx = Math.round((L + R) / 2) + .5, cy = Math.round((T + B) / 2) + .5;
+  g.moveTo(cx, T); g.lineTo(cx, B); g.moveTo(L, cy); g.lineTo(R, cy); g.stroke();
+  g.beginPath();
+  for (let i = 0; i <= 50; i++) { const x = Math.round(L + (R - L) * i / 50) + .5, k = i % 5 ? 3 : 0;
+    if (k) { g.moveTo(x, cy - k); g.lineTo(x, cy + k); g.moveTo(x, B); g.lineTo(x, B - k); g.moveTo(x, T); g.lineTo(x, T + k); } }
+  for (let j = 0; j <= 40; j++) { const y = Math.round(T + (B - T) * j / 40) + .5, k = j % 5 ? 3 : 0;
+    if (k) { g.moveTo(cx - k, y); g.lineTo(cx + k, y); g.moveTo(L, y); g.lineTo(L + k, y); g.moveTo(R, y); g.lineTo(R - k, y); } }
+  g.stroke();
+  // one-pixel scanlines over the plot, barely visible
+  g.fillStyle = 'rgba(233,231,223,.025)';
+  for (let y = T; y < B; y += 4) g.fillRect(L, y, R - L, 1);
+  g.save(); g.beginPath(); g.rect(L, T, R - L, B - T); g.clip();
+  const n = Math.floor(R - L) + 1;
+  if (n > 1 && pts.length) {                           // min / max envelope per pixel column
+    const mn = new Array(n).fill(null), mx = new Array(n).fill(null);
+    for (const p of pts) {
+      if (p[1] === null) continue;
+      const k = Math.max(0, Math.min(n - 1, Math.floor((p[0] - t0) / o.win * (n - 1))));
+      if (mn[k] === null || p[1] < mn[k]) mn[k] = p[1];
+      if (mx[k] === null || p[1] > mx[k]) mx[k] = p[1];
+    }
+    g.fillStyle = 'rgba(242,194,0,.28)';
+    for (let k = 0; k < n; k++) if (mn[k] !== null) { const y1 = Y(mx[k]), y2 = Y(mn[k]); g.fillRect(L + k, y1, 1, Math.max(1, y2 - y1)); }
+  }
   // the trace breaks where there was no value (overload, another mode / unit / range, a pause of the frames)
-  g.strokeStyle = '#f2c200'; g.lineWidth = 1.25; g.beginPath();
+  g.strokeStyle = '#f2c200'; g.lineWidth = 1.25; g.lineJoin = 'round'; g.beginPath();
   let pen = false, tp = null;
   for (const p of pts) {
     if (p[1] === null || (tp !== null && p[0] - tp > 1.5)) pen = false;
@@ -234,134 +650,420 @@ function drawTrend() {
     tp = p[0];
   }
   g.stroke();
-  g.fillStyle = '#8b887e'; g.font = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
-  g.textAlign = 'right'; g.fillText(fmt(hi), R, T - 6); g.fillText(fmt(lo), R, B + 16);
-  g.textAlign = 'left'; g.fillText(Math.round(t1 - t0) + ' s', L, B + 16);
+  g.restore();
+  g.strokeStyle = '#3a3a34'; g.strokeRect(L + .5, T + .5, R - L, B - T);
+  g.fillStyle = '#8d8a80'; g.font = mono;
+  if (o.mini) {
+    g.textAlign = 'right'; g.fillText(axisNum(hi), R, T - 8); g.fillText(axisNum(lo), R, B + 14);
+    g.textAlign = 'left'; g.fillText('−' + o.win + ' s', L, B + 14); g.textAlign = 'right'; g.fillText('0', R, B + 14);
+  } else {
+    g.textAlign = 'right';
+    for (let j = 0; j <= 8; j++) g.fillText(axisNum(hi - (hi - lo) * j / 8), L - 8, T + (B - T) * j / 8 + 3);
+    g.textAlign = 'center';
+    for (let i = 0; i <= 10; i++) { const s = -o.win * (10 - i) / 10; g.fillText(i === 10 ? '0' : (Math.abs(s) >= 60 ? (s / 60).toFixed(s % 60 ? 1 : 0) + 'm' : s.toFixed(s % 1 ? 1 : 0) + 's'), L + (R - L) * i / 10, B + 16); }
+  }
+  if (o.cursors) o.cursors.forEach((t, i) => {
+    if (t === null || t < t0 || t > t1) return;
+    const x = Math.round(X(t)) + .5;
+    g.strokeStyle = '#e9e7df'; g.lineWidth = 1; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x, T); g.lineTo(x, B); g.stroke(); g.setLineDash([]);
+    g.fillStyle = '#e9e7df'; g.fillRect(x - 7, T, 14, 14);
+    g.fillStyle = '#0c0c0b'; g.textAlign = 'center'; g.font = 'bold 10px ' + getComputedStyle(document.body).getPropertyValue('--mono'); g.fillText('AB'[i], x, T + 11);
+  });
+  return {L, R, T, B, t0, t1, lo, hi};
 }
 
-let syncing = false;
+// ---------------------------------------------------------------- SCOPE
+const WINS = [[10, '10 s'], [30, '30 s'], [60, '1 min'], [300, '5 min'], [600, '10 min']];
+$('s-win').replaceChildren(...WINS.map(([s, l]) => h('button', {'data-v': s}, l)));
+const sc = {win: 60, auto: true, lo: 0, hi: 1, frozen: null, cur: null, geom: null, drag: null};
+function toggleFreeze() { sc.frozen = sc.frozen ? null : {data: trend.slice(), t1: state ? state.now : Date.now() / 1000}; drawScopeView(); }
+$('sc-frz').onclick = toggleFreeze;
+$('s-win').onclick = e => { const b = e.target.closest('button'); if (b) { sc.win = +b.dataset.v; drawScopeView(); } };
+$('s-auto').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.v === 'fixed' && sc.auto && sc.geom) { sc.lo = sc.geom.lo; sc.hi = sc.geom.hi; }
+  sc.auto = b.dataset.v === 'auto'; drawScopeView();
+};
+for (const id of ['sc-lo', 'sc-hi']) {
+  $(id).oninput = () => $(id).dataset.edited = '1';
+  $(id).onchange = $(id).onblur = () => {
+    if (!$(id).dataset.edited) return; $(id).dataset.edited = '';
+    const lo = Number($('sc-lo').value), hi = Number($('sc-hi').value);
+    if (!isFinite(lo) || !isFinite(hi) || hi <= lo || $('sc-lo').value.trim() === '' || $('sc-hi').value.trim() === '') return say('scale: low must be below high', true);
+    sc.lo = lo; sc.hi = hi; sc.auto = false; drawScopeView();
+  };
+  $(id).onkeydown = e => { if (e.key === 'Enter') $(id).blur(); };
+}
+$('sc-cur').onclick = () => {
+  if (sc.cur) sc.cur = null;
+  else { const t1 = sc.frozen ? sc.frozen.t1 : state ? state.now : 0; sc.cur = [t1 - sc.win * .66, t1 - sc.win * .33]; }
+  drawScopeView();
+};
+const scopeCanvas = $('scope');
+const curX = i => sc.geom ? sc.geom.L + (sc.geom.R - sc.geom.L) * (sc.cur[i] - sc.geom.t0) / (sc.geom.t1 - sc.geom.t0) : -1e9;
+scopeCanvas.onpointerdown = e => {
+  if (!sc.cur || !sc.geom) return;
+  const x = e.clientX - scopeCanvas.getBoundingClientRect().left;
+  const d = [0, 1].map(i => Math.abs(curX(i) - x));
+  const i = d[0] <= d[1] ? 0 : 1;
+  if (d[i] > 12) return;
+  sc.drag = i; scopeCanvas.setPointerCapture(e.pointerId);
+};
+scopeCanvas.onpointermove = e => {
+  if (sc.drag === null || !sc.geom) return;
+  const x = e.clientX - scopeCanvas.getBoundingClientRect().left, G = sc.geom;
+  sc.cur[sc.drag] = G.t0 + (G.t1 - G.t0) * Math.max(0, Math.min(1, (x - G.L) / (G.R - G.L)));
+  drawScopeView();
+};
+scopeCanvas.onpointerup = scopeCanvas.onpointercancel = () => { sc.drag = null; };
+function drawScopeView() {
+  if (!state) return;
+  const fr = sc.frozen, data = fr ? fr.data : trend, t1 = fr ? fr.t1 : state.now;
+  const unit = state.session && state.session.stats_unit || '';
+  sc.geom = drawTrace(scopeCanvas, {data, t1, win: sc.win, auto: sc.auto, lo: sc.lo, hi: sc.hi, cursors: sc.cur, unit});
+  seg($('s-win'), String(sc.win)); seg($('s-auto'), sc.auto ? 'auto' : 'fixed');
+  $('sc-cur').classList.toggle('on', !!sc.cur); $('sc-frz').classList.toggle('on', !!fr); $('sc-frzmark').hidden = !fr;
+  for (const [id, v] of [['sc-lo', sc.geom ? sc.geom.lo : sc.lo], ['sc-hi', sc.geom ? sc.geom.hi : sc.hi]])
+    if (document.activeElement !== $(id) && !$(id).dataset.edited) $(id).value = axisNum(sc.auto && !sc.geom ? 0 : v);
+  if (sc.geom) $('sc-div').textContent = `${fmtT(sc.win / 10)}/div · ${fmt((sc.geom.hi - sc.geom.lo) / 8)} ${unit}/div`;
+  const set = (id, s) => $(id).textContent = s;
+  if (!sc.cur) { for (const id of ['c-ta', 'c-tb', 'c-dt', 'c-dv', 'c-hz', 'c-v']) set(id, '—'); return; }
+  const [a, b] = sc.cur, va = valueAt(data, a), vb = valueAt(data, b), dt = Math.abs(b - a);
+  set('c-ta', fmtT(a - t1)); set('c-tb', fmtT(b - t1)); set('c-dt', fmtT(dt));
+  set('c-dv', va === null || vb === null ? '—' : fmt(vb - va) + ' ' + unit);
+  set('c-hz', dt > 0 ? fmt(1 / dt) + ' Hz' : '—');
+  set('c-v', `${va === null ? '—' : fmt(va)} · ${vb === null ? '—' : fmt(vb)}`);
+}
+
+// ---------------------------------------------------------------- LOG
+function csvOfTrend() {
+  const unit = state && state.session && state.session.stats_unit || '';
+  return 'time_unix_s,value' + (unit ? '_' + unit : '') + '\n' + trend.map(p => p[0].toFixed(3) + ',' + (p[1] === null ? '' : p[1])).join('\n') + '\n';
+}
+$('export').onclick = () => {
+  if (!trend.length) return say('nothing to export yet', true);
+  const name = '121gw-trend-' + new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19) + '.csv';
+  const a = h('a', {href: URL.createObjectURL(new Blob([csvOfTrend()], {type: 'text/csv'})), download: name});
+  document.body.append(a); a.click(); a.remove(); say('exported ' + trend.length + ' points as ' + name);
+};
+const recToggle = async () => {
+  try { const j = await api({record: !(state && state.session.recording)}); if (j.path) say('recording to ' + j.path); }
+  catch (e) { fail(e); }
+};
+$('rec').onclick = $('rec2').onclick = recToggle;
+$('sreset').onclick = async () => { trend = []; since = null; try { await api({reset_stats: true}); } catch (e) { fail(e); } };
+
+// ---------------------------------------------------------------- CARD
+// the files the meter needs and the program refuses to delete (card.py PROTECTED); a flag in the file entry also counts
+const PROTECTED = ['cal.bin', 'eevblog.bin', 'btload.tmp'];
+let cardSig = '', sortKey = 'name', sortDir = 1, lastProg = null, rateSm = null;
+segs($('spacebar'), 60); segs($('progbar'), 60);
+document.querySelectorAll('th.sort').forEach(th => th.onclick = () => {
+  sortDir = sortKey === th.dataset.s ? -sortDir : 1; sortKey = th.dataset.s; cardSig = ''; render();
+});
+$('c-refresh').onclick = () => { cardSig = ''; send('card_list').catch(fail); send('card_info').catch(fail); };
+$('c-folder').oninput = () => $('c-folder').dataset.edited = '1';
+$('c-sync').onclick = () => {
+  const folder = $('c-folder').value.trim();
+  if (!folder) return say('Sync: type the folder on this computer first', true);
+  send('card_sync', {folder}).catch(fail);
+};
+const askDelete = name => {
+  $('cf-name').textContent = name; $('cf-input').value = ''; $('cf-ok').disabled = true; $('confirm').classList.add('show'); $('cf-input').focus();
+};
+$('cf-input').oninput = () => { $('cf-ok').disabled = $('cf-input').value !== $('cf-name').textContent; };
+$('cf-cancel').onclick = () => $('confirm').classList.remove('show');
+$('cf-input').onkeydown = e => { if (e.key === 'Escape') $('cf-cancel').click(); else if (e.key === 'Enter' && !$('cf-ok').disabled) $('cf-ok').click(); };
+$('cf-ok').onclick = async () => {
+  const name = $('cf-name').textContent; $('confirm').classList.remove('show');
+  try { await send('card_delete', {name}); say('deleted ' + name); cardSig = ''; send('card_list').catch(fail); } catch (e) { fail(e); }
+};
+// progress: the program gives a fraction 0..1 (state.card.progress); bytes are known for a download (size from the file
+// list), the rate is measured here from the change of the byte count over time
+let dlName = null;
+function progressOf(C, now) {
+  const P = C.progress, f = typeof P === 'number' && isFinite(P) ? Math.max(0, Math.min(1, P)) : 0;
+  const size = C.op === 'download' ? ((C.files || []).find(x => x.name === dlName) || {}).size : undefined;
+  const total = typeof size === 'number' ? size : null, done = total === null ? null : f * total;
+  if (done === null) { lastProg = null; rateSm = null; return {f, done, total, rate: null}; }
+  if (!lastProg || done < lastProg.done) { lastProg = {t: now, done}; rateSm = null; }
+  else if (now - lastProg.t >= .4) {
+    const r = (done - lastProg.done) / (now - lastProg.t);
+    rateSm = rateSm === null ? r : rateSm * .6 + r * .4; lastProg = {t: now, done};
+  }
+  return {f, done, total, rate: rateSm};
+}
+function drawCard(C, now) {
+  const on = desk();
+  $('deskinfo').hidden = on; $('cardmain').hidden = !on;
+  if (!on) return;
+  C = C || {};
+  const free = C.free_bytes, total = C.total_bytes;
+  lit($('spacebar'), typeof total === 'number' && total > 0 && typeof free === 'number' ? (total - free) / total : 0);
+  $('sp-used').textContent = 'USED ' + (typeof total === 'number' && typeof free === 'number' ? bytesH(total - free) : '—');
+  $('sp-free').textContent = 'FREE ' + bytesH(free);
+  $('sp-total').textContent = 'TOTAL ' + bytesH(total);
+  const pr = C.busy ? progressOf(C, now) : {f: 0, done: null, total: null, rate: null};
+  if (!C.busy) { lastProg = null; rateSm = null; }
+  lit($('progbar'), pr.f);
+  $('c-op').textContent = C.busy ? (C.op || 'busy') : 'idle';
+  $('pg-bytes').textContent = C.busy ? (pr.done !== null && pr.total ? `${grp(pr.done)} / ${grp(pr.total)} B  ·  ${(pr.f * 100).toFixed(0)} %` : (pr.f * 100).toFixed(0) + ' %') : '—';
+  $('pg-rate').textContent = C.busy && pr.rate !== null ? bytesH(pr.rate) + '/s' : '—';
+  const sy = C.sync || {};
+  $('sy-info').textContent = 'SYNC FOLDER ' + (sy.folder || '—');
+  $('sy-last').textContent = 'LAST ' + nz(sy.last) + '  ·  COPIED ' + nz(sy.copied);
+  const ef = $('c-folder'); if (document.activeElement !== ef && !ef.dataset.edited) ef.value = sy.folder || (state && state.folder) || '';
+  const note = C.error ? ['Fault', C.error] : C.locked_reason && !C.busy ? ['Locked', C.locked_reason] : [null, C.result && !C.busy ? C.result : ''];
+  $('c-err').hidden = !note[0]; $('c-err').textContent = note[0] || ''; $('c-errtext').textContent = note[1];
+  for (const id of ['c-refresh', 'c-sync']) $(id).disabled = !!C.busy;
+  const files = (C.files || []).map(f => Object.assign({when: (f.date || '') + ' ' + (f.time || '')}, f));
+  files.sort((a, b) => { const x = a[sortKey], y = b[sortKey]; return (typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y))) * sortDir; });
+  const sig = JSON.stringify([files, sortKey, sortDir, !!C.busy]);
+  document.querySelectorAll('th.sort').forEach(th => { th.classList.toggle('sorted', th.dataset.s === sortKey); th.dataset.dir = th.dataset.s === sortKey ? (sortDir > 0 ? ' ▲' : ' ▼') : ''; th.textContent = th.textContent.replace(/ [▲▼]$/, '') + th.dataset.dir; });
+  $('c-count').textContent = files.length ? files.length + ' files' : '';
+  if (sig === cardSig) return;
+  cardSig = sig;
+  const tb = $('files');
+  if (!files.length) { tb.replaceChildren(h('tr', {class: 'empty'}, h('td', {colspan: 4}, C.files ? 'no files on the card' : '—'))); return; }
+  tb.replaceChildren(...files.map(f => {
+    const prot = !!(f.protected || f.locked || f.readonly) || PROTECTED.includes(String(f.name).toLowerCase());
+    return h('tr', {}, h('td', {}, f.name), h('td', {class: 'r'}, grp(f.size)), h('td', {}, nz(f.date) + '  ' + nz(f.time)),
+      h('td', {class: 'act'},
+        h('button', {class: 'sm', disabled: !!C.busy, onclick: () => { dlName = f.name; send('card_download', {name: f.name, dest: $('c-folder').value.trim()}).catch(fail); }}, 'Download'), ' ',
+        prot ? h('span', {class: 'warn'}, 'Locked') : h('button', {class: 'sm', disabled: !!C.busy, onclick: () => askDelete(f.name)}, 'Delete')));
+  }));
+}
+
+// ---------------------------------------------------------------- LOG: folder list
+function drawLog(S) {
+  const rec = S.recording;
+  $('recdot2').className = 'recdot' + (rec ? ' on' : ''); $('rectime2').textContent = rec ? hms(state.now - S.rec_start) : '00:00:00';
+  $('recrows2').textContent = rec ? String(S.rec_rows) : S.rec_path ? String(S.rec_rows) : '—';
+  $('recpath').textContent = S.rec_path || '—'; $('recfolder').textContent = state.folder || '—';
+  $('rec').textContent = rec ? 'Stop' : 'Record';
+  const list = Array.isArray(state.recordings) ? state.recordings : S.rec_path ? [{name: S.rec_path.split(/[\\/]/).pop(), size: null, date: null}] : [];
+  $('reclist').replaceChildren(...(list.length ? list.map(f => h('tr', {}, h('td', {}, f.name), h('td', {class: 'r'}, f.size === null || f.size === undefined ? '—' : grp(f.size)),
+    h('td', {}, nz(f.date) + (f.time ? '  ' + f.time : '')))) : [h('tr', {class: 'empty'}, h('td', {colspan: 3}, 'no recordings yet'))]));
+}
+
+// ---------------------------------------------------------------- METER: info, clock, update
+let syncing = false, upStart = null;
 $('ntp').oninput = () => { $('ntp').dataset.edited = '1'; };
 $('sync').onclick = async () => {
   syncing = true; $('clockres').textContent = 'asking ' + $('ntp').value + ' …';
   try { const j = await api({sync_time: true, server: $('ntp').value}); $('ntp').dataset.edited = ''; say('meter clock set to ' + j.set_to); }
-  catch (e) { $('clockres').textContent = e.message; say(e.message, true); }
+  catch (e) { $('clockres').textContent = e.message; fail(e); }
   syncing = false;
 };
-let upStart = null;
+segs($('nprog'), 30); segs($('m-prog'), 40);
 function drawUpdate(u, M) {
-  const n = $('notice'), t = $('ntext'), p = $('nprimary'), q = $('nsecondary'), pr = $('nprog');
-  const fwb = $('nfw'), blb = $('nbl');
-  const show = (text, prim, sec, bad, both) => {
-    n.classList.add('show'); t.innerHTML = text; t.className = 'text' + (bad ? ' bad' : '');
-    p.hidden = !prim; p.textContent = prim || ''; q.hidden = !sec; q.textContent = sec || ''; pr.hidden = true;
-    fwb.hidden = blb.hidden = !both;
+  u = u || {state: 'none'}; M = M || {};
+  const n = $('notice'), t = $('ntext'), p = $('nprimary'), q = $('nsecondary'), pr = $('nprog'), fwb = $('nfw'), blb = $('nbl');
+  const show = (kids, prim, sec, bad, both) => {
+    n.classList.add('show'); t.replaceChildren(...(bad ? [h('span', {class: 'warn'}, 'Fault'), ' '] : []), ...kids);
+    p.hidden = !prim; p.textContent = prim || ''; q.hidden = !sec; q.textContent = sec || ''; pr.hidden = true; fwb.hidden = blb.hidden = !both;
   };
-  const num = x => `<span class="num">${x}</span>`;
   const st = u.state;
+  let frac = 0;
   if (st === 'available' && !u.later) {
     const parts = [];
-    if (u.fw) parts.push('firmware ' + num(u.fw[0]) + (M.version ? ' (meter: ' + num(M.version) + ')' : ''));
-    if (u.bl) parts.push('bootloader ' + num(u.bl[0]) + (M.bootloader === 'EEV' ? ' (meter: EEVblog original)'
-                                                       : M.bootloader ? ' (meter: ' + num(M.bootloader) + ')' : ''));
+    if (u.fw) parts.push('firmware ', num(u.fw[0]), M.version ? [' (meter: ', num(M.version), ')'] : '');
+    if (u.fw && u.bl) parts.push(' · ');
+    if (u.bl) parts.push('bootloader ', num(u.bl[0]), M.bootloader === 'EEV' ? ' (meter: EEVblog original)' : M.bootloader ? [' (meter: ', num(M.bootloader), ')'] : '');
     const both = !!(u.fw && u.bl);
-    show(parts.join(' · ') + ' available', both ? 'Update both' : 'Update now', 'Later', false, both);
+    show([...parts.flat(), ' available'], both ? 'Update both' : 'Update now', 'Later', false, both);
   }
-  else if (st === 'downloading') show(`getting ${num(u.step)} …`);
-  else if (st === 'waiting_ld') show('On the meter: press <b>SETUP</b> until the page shows ' + num('Ld-bt') + '. The transfer starts by itself.', null, 'Cancel');
-  else if (st === 'restarting') show('the meter restarts' + (u.message ? ': ' + u.message : '') + ' …', null, 'Cancel');
+  else if (st === 'downloading') show(['getting ', num(u.step), ' …']);
+  else if (st === 'waiting_ld') show(['On the meter: press ', h('b', {}, 'SETUP'), ' until the page shows ', num('Ld-bt'), '. The transfer starts by itself.'], null, 'Cancel');
+  else if (st === 'restarting') show(['the meter restarts' + (u.message ? ': ' + u.message : '') + ' …'], null, 'Cancel');
   else if (st === 'sending') {
     if (upStart === null) upStart = state.now;
-    const f = u.total ? u.done / u.total : 0, el = state.now - upStart, left = f > .02 ? el / f - el : null;
-    show(`sending ${num(u.step)} · ${num(Math.round(u.done / 1024) + ' / ' + Math.round(u.total / 1024) + ' KB')}` +
-         (left !== null ? ` · about ${num(Math.ceil(left / 60) + ' min')} left` : ''), null, 'Cancel');
-    pr.hidden = false; $('nbar').style.width = (f * 100).toFixed(1) + '%';
+    frac = u.total ? u.done / u.total : 0;
+    const el = state.now - upStart, left = frac > .02 ? el / frac - el : null;
+    show(['sending ', num(u.step), ' · ', num(Math.round(u.done / 1024) + ' / ' + Math.round(u.total / 1024) + ' KB'),
+          left !== null ? [' · about ', num(Math.ceil(left / 60) + ' min'), ' left'] : ''].flat(), null, 'Cancel');
+    pr.hidden = false; lit(pr, frac);
   }
-  else if (st === 'done' && !u.later) show(u.message ? u.message : 'update finished', 'OK');
-  else if (st === 'error' && !u.later) show('update stopped: ' + u.message, 'Try again', 'Close', true);
+  else if (st === 'done' && !u.later) show([u.message ? u.message : 'update finished'], 'OK');
+  else if (st === 'error' && !u.later) show(['update stopped: ' + u.message], 'Try again', 'Close', true);
   else n.classList.remove('show');
   if (st !== 'sending') upStart = null;
+  lit($('m-prog'), frac);
 }
-async function startUpdate(what) {
-  try { await api({update_now: what}); } catch (e) { say(e.message, true); }
-}
+async function startUpdate(what) { try { await api({update_now: what}); } catch (e) { fail(e); } }
 $('nprimary').onclick = async () => {
   const st = state && state.update.state;
   if (st === 'available' || st === 'error') return startUpdate('both');
-  try { if (st === 'done') await api({update_later: true}); } catch (e) { say(e.message, true); }
+  try { if (st === 'done') await api({update_later: true}); } catch (e) { fail(e); }
 };
 $('nfw').onclick = () => startUpdate('firmware');
 $('nbl').onclick = () => startUpdate('bootloader');
 $('nsecondary').onclick = async () => {
   const st = state && state.update.state;
-  try { await api(['waiting_ld', 'sending', 'restarting'].includes(st) ? {update_cancel: true} : {update_later: true}); }
-  catch (e) { say(e.message, true); }
+  try { await api(['waiting_ld', 'sending', 'restarting'].includes(st) ? {update_cancel: true} : {update_later: true}); } catch (e) { fail(e); }
 };
+const UPTXT = {none: 'no information yet', available: 'update available', downloading: 'downloading', waiting_ld: 'waiting for Ld-bt', restarting: 'restarting',
+               sending: 'sending', done: 'finished', error: 'stopped'};
+function drawMeter(L, M, u, C) {
+  $('m-fw').textContent = $('fw').textContent; $('m-bl').textContent = $('bl').textContent;
+  $('m-dev').textContent = L.device ? L.device[1] + '  ' + L.device[0] : '—';
+  $('m-link').textContent = L.state === 'connected' ? 'connected · ' + (L.detail || '') : L.state;
+  $('m-upd').textContent = UPTXT[u.state] || nz(u.state);
+  const av = [u.fw ? 'firmware ' + u.fw[0] : null, u.bl ? 'bootloader ' + u.bl[0] : null].filter(Boolean);
+  $('m-avail').textContent = av.length ? av.join(' · ') : u.state === 'none' ? '—' : 'nothing newer';
+  const ntp = $('ntp');
+  if (C && document.activeElement !== ntp && !ntp.dataset.edited) ntp.value = C.server || '';
+  $('sync').disabled = L.state !== 'connected';
+  if (C && C.last && !syncing) $('clockres').textContent = `set to ${C.last.time} from ${C.server} · offset ${(C.last.offset * 1000).toFixed(0)} ms` + (C.last.note || '');
+}
 
-function hms(s) { s = Math.max(0, Math.floor(s)); return [s / 3600 | 0, (s / 60 | 0) % 60, s % 60].map(x => String(x).padStart(2, '0')).join(':'); }
+// ---------------------------------------------------------------- METER: settings
+const pending = {};
+let setSig = '';
+const setDisabled = () => !connected() || !!(state.settings && state.settings.locked_reason);
+function choicesOf(it) {
+  return (it.choices || []).map((c, i) => c !== null && typeof c === 'object' ? {v: c.value, l: String(c.label !== undefined ? c.label : c.value)}
+    : typeof c === 'number' ? {v: c, l: String(c)} : {v: typeof it.value === 'string' ? c : i, l: String(c)});
+}
+function readSettings() {                              // only when the program says the link can do it (page Ld shown)
+  const S = state && state.settings;
+  if (S && !S.locked_reason && !(S.items || []).length) send('settings_get').catch(fail);
+}
+function setRow(it) {
+  const choices = choicesOf(it), isChoice = choices.length > 0;
+  const cur = () => pending[it.id] !== undefined ? pending[it.id] : it.value;
+  const idx = () => choices.findIndex(c => c.v === cur() || c.l === String(cur()));
+  const row = h('div', {class: 'srow', 'data-id': it.id});
+  const val = isChoice ? h('span', {class: 'choice'}) : h('input', {class: 'num', spellcheck: 'false', 'aria-label': it.name});
+  const apply = h('button', {class: 'sm'}, 'Apply');
+  const change = v => { if (v === it.value) delete pending[it.id]; else pending[it.id] = v; refresh(); };
+  const step = d => {
+    if (isChoice) { const i = idx(), n = choices.length; change(choices[((i < 0 ? 0 : i) + d + n) % n].v); }
+    else { let v = Number(cur()) + d; if (typeof it.min === 'number') v = Math.max(it.min, v); if (typeof it.max === 'number') v = Math.min(it.max, v); change(v); }
+  };
+  const refresh = () => {
+    const c = cur(), pend = pending[it.id] !== undefined && pending[it.id] !== it.value;
+    row.classList.toggle('pend', pend);
+    if (isChoice) val.textContent = idx() >= 0 ? choices[idx()].l : nz(c); else if (document.activeElement !== val) val.value = nz(c);
+    apply.disabled = !pend || setDisabled();
+    for (const b of row.querySelectorAll('.ctl button')) b.disabled = setDisabled();
+    if (!isChoice) val.disabled = setDisabled(); else val.classList.toggle('off', setDisabled());
+  };
+  if (!isChoice) {
+    val.onchange = () => { const v = Number(val.value); if (val.value.trim() === '' || !isFinite(v)) return refresh(); change(Math.min(typeof it.max === 'number' ? it.max : v, Math.max(typeof it.min === 'number' ? it.min : v, v))); };
+    val.onkeydown = e => { if (e.key === 'Enter') { val.blur(); } };
+  }
+  apply.onclick = async () => {
+    const v = pending[it.id]; if (v === undefined) return;
+    apply.disabled = true;
+    try { await send('settings_put', {id: it.id, value: v}); delete pending[it.id]; say(`${it.code} ${it.name}: ${v} written`); send('settings_get').catch(fail); }
+    catch (e) { fail(e); }
+    refresh();
+  };
+  row.append(h('i', {class: 'mk'}), h('span', {class: 'code'}, it.code), h('span', {class: 'name', title: it.name}, it.name),
+    h('span', {class: 'ctl'}, h('button', {onclick: () => step(-1), 'aria-label': 'less'}, '−'), val, h('button', {onclick: () => step(1), 'aria-label': 'more'}, '+')), apply);
+  row.update = it2 => { it = it2; if (pending[it.id] === it.value) delete pending[it.id]; refresh(); };
+  refresh();
+  return row;
+}
+$('set-read').onclick = () => send('settings_get').catch(fail);
+$('diag-read').onclick = () => send('diag_read').catch(fail);
+function drawSettings(S) {
+  S = S || {};
+  const items = S.items || [], lock = S.locked_reason;
+  $('set-lock').hidden = !lock; $('set-reason').textContent = lock || S.error || '';
+  $('set-read').disabled = !!lock; $('diag-read').disabled = !!lock;
+  const sig = JSON.stringify([items.map(i => [i.id, i.code, i.name, i.min, i.max, i.choices]), !!lock, connected()]);
+  const list = $('setlist');
+  if (sig !== setSig) {
+    setSig = sig;
+    list.replaceChildren(...(items.length ? items.map(setRow) : [h('div', {class: 'path'}, connected() ? '—' : 'not connected')]));
+  }
+  [...list.children].forEach(r => { const it = items.find(i => String(i.id) === r.dataset.id); if (it && r.update) r.update(it); });
+}
+function drawDiag(D) {
+  D = D || {};
+  const v = D.values || [];
+  $('diagvals').replaceChildren(...Array.from({length: 21}, (_, i) => h('div', {}, h('span', {}, String(i + 1).padStart(2, '0')), h('span', {}, v[i] === undefined || v[i] === null ? '—' : String(v[i])))));
+  $('diagtext').textContent = D.text || '—';
+}
+
+// ---------------------------------------------------------------- header, lamps, devices
+function drawHeader(L, M, S, now) {
+  const fwTxt = L.state !== 'connected' ? 'F-—' : M.mode === 'bootloader' ? 'UPDATE MODE'
+    : M.firmware === 'fast' ? 'F-' + String(M.version).replace(/^v/i, '') : M.firmware === 'other' ? 'F-2.05 / LIKE' : 'F-…';
+  $('fw').textContent = fwTxt;
+  $('bl').textContent = L.state !== 'connected' || !M.bootloader ? 'B-—' : M.bootloader === 'EEV' ? 'EEV' : 'B-' + String(M.bootloader).replace(/^v/i, '');
+  const lamp = (id, on, busy) => { const e = $(id); e.classList.toggle('on', !!on); e.classList.toggle('busy', !!busy && !on); };
+  lamp('l-link', L.state === 'connected', L.state === 'scanning' || L.state === 'connecting');
+  lamp('l-live', L.state === 'connected' && S.last && now - S.last.t <= 3);
+  lamp('l-desk', desk()); lamp('l-log', S.recording);
+  lamp('l-sd', state.card && typeof state.card.total_bytes === 'number' && state.card.total_bytes > 0);
+  $('connect').textContent = L.state === 'idle' ? 'Connect' : 'Disconnect';
+  $('connect').className = L.state === 'idle' ? 'pri' : '';
+  const found = L.state !== 'connected' && L.found && L.found.length;
+  $('devband').classList.toggle('show', !!found);
+  if (found) $('devs').replaceChildren(...L.found.map(f => h('button', {'data-a': f[0]}, `${f[1]}  ·  ${f[2]} dBm`)));
+  $('sline').textContent = 'RX ' + grp(L.rx_bytes) + ' B';
+}
+$('connect').onclick = async () => {
+  try { await api(state && state.link.state !== 'idle' ? {disconnect: true} : {connect: null}); } catch (e) { fail(e); }
+};
+$('devs').onclick = async e => { const a = e.target.closest('button'); if (!a) return; try { await api({connect: a.dataset.a}); } catch (err) { fail(err); } };
+
+// ---------------------------------------------------------------- the render pass and the poll loop
+function render() {
+  if (!state) return;
+  const L = state.link || {state: 'idle'}, S = state.session || {stats: {}, trend: []}, M = state.meter || {};
+  const U = state.update || {state: 'none'};
+  drawHeader(L, M, S, state.now);
+  drawUpdate(U, M);
+  const keysOff = !connected() || desk();
+  document.querySelectorAll('#keys button').forEach(b => b.disabled = keysOff);
+  $('keynote').replaceChildren(...(desk() ? [h('span', {class: 'warn'}, 'Locked'), h('span', {class: 'cap'}, 'keys off in desk mode')] : !connected() ? [h('span', {class: 'cap'}, 'connect a meter to use the keys')] : []));
+  if (view === 'live') {
+    drawReading(L.state === 'connected' ? S.last : null, state.now);
+    drawDerived(state.derived);
+    const st = S.stats || {};
+    const dp = S.stats_dp !== null && S.stats_dp !== undefined ? S.stats_dp : null;
+    const fx = (v, extra) => v === null || v === undefined ? '—' : dp === null ? fmt(v) : v.toFixed(dp + extra);
+    $('smin').textContent = fx(st.min, 0); $('smax').textContent = fx(st.max, 0);
+    $('smean').textContent = fx(st.mean, 1); $('ssd').textContent = fx(st.sd, 1); $('sn').textContent = nz(st.n === undefined ? 0 : st.n);
+    $('trendlabel').textContent = 'trend · last 10 min' + (S.stats_unit ? ' · ' + S.stats_unit : '');
+    $('recdot').className = 'recdot' + (S.recording ? ' on' : '');
+    $('rectime').textContent = S.recording ? hms(state.now - S.rec_start) : '00:00:00';
+    $('recrows').textContent = S.recording ? S.rec_rows + ' rows' : '';
+    $('rec2').textContent = S.recording ? 'Stop' : 'Record';
+    drawTrace($('trend'), {data: trend, t1: state.now, win: 600, auto: true, mini: true});
+  }
+  else if (view === 'scope') drawScopeView();
+  else if (view === 'log') drawLog(S);
+  else if (view === 'card') drawCard(state.card, state.now);
+  else if (view === 'meter') { drawMeter(L, M, U, state.clock); drawSettings(state.settings); drawDiag(state.diag); }
+}
 
 async function poll() {
   try {
     const r = await fetch('/state' + (since ? '?since=' + since : ''));
     state = await r.json();
   } catch (e) { say('the program does not answer', true); return setTimeout(poll, 1000); }
-  const L = state.link, S = state.session;
-  const dot = $('dot');
-  dot.className = 'dot ' + ({connected: 'on', scanning: 'busy', connecting: 'busy', lost: 'off'}[L.state] || '');
-  $('linktext').textContent = L.state === 'connected' ? 'connected · ' + L.detail : L.state === 'idle' ? 'not connected' : L.state;
-  const M = state.meter;
-  $('fw').textContent = L.state !== 'connected' ? '—' : M.mode === 'bootloader' ? 'update mode'
-                      : M.firmware === 'fast' ? M.version : M.firmware === 'other' ? 'v2.05 / like-v2.05' : 'asking…';
-  $('bl').textContent = L.state !== 'connected' || !M.bootloader ? '—'
-                      : M.bootloader === 'EEV' ? 'EEVblog original' : M.bootloader;
-  $('connect').textContent = L.state === 'idle' ? 'Connect' : 'Disconnect';
-  $('connect').className = L.state === 'idle' ? 'primary' : '';
+  const L = state.link || {state: 'idle'}, S = state.session || {trend: []};
   if (L.detail && L.state !== 'connected') say(L.detail, L.state === 'lost');
-  drawReading(L.state === 'connected' ? S.last : null, state.now);
-  const st = S.stats;
-  const dp = S.stats_dp !== null && S.stats_dp !== undefined ? S.stats_dp : null;
-  const fx = (v, extra) => v === null || v === undefined ? '—' : dp === null ? fmt(v) : v.toFixed(dp + extra);
-  $('smin').textContent = fx(st.min, 0); $('smax').textContent = fx(st.max, 0);
-  $('smean').textContent = fx(st.mean, 1); $('ssd').textContent = fx(st.sd, 1); $('sn').textContent = st.n;
-  const unit = S.stats_unit ? ' · ' + S.stats_unit : '';
-  $('trendlabel').textContent = 'trend · last 10 min' + unit;
   if (S.stats_key !== trendKey) {                      // other mode, unit or range: the trend starts over
     trendKey = S.stats_key; trend = []; since = null; setTimeout(poll, 0); return;
   }
-  for (const p of S.trend) trend.push(p);
-  if (S.trend.length) since = S.trend[S.trend.length - 1][0];
+  for (const p of S.trend || []) trend.push(p);
+  if ((S.trend || []).length) since = S.trend[S.trend.length - 1][0];
   if (trend.length > 6000) trend = trend.slice(-6000);
-  $('recdot').className = 'recdot' + (S.recording ? ' on' : '');
-  $('rec').textContent = S.recording ? 'Stop' : 'Record';
-  $('rectime').textContent = S.recording ? hms(state.now - S.rec_start) : '00:00:00';
-  $('recrows').textContent = S.recording ? S.rec_rows + ' rows' : '';
-  $('recpath').textContent = S.rec_path || '';
-  drawUpdate(state.update, M);
-  const C = state.clock, ntp = $('ntp');
-  if (document.activeElement !== ntp && !ntp.dataset.edited) ntp.value = C.server;
-  $('sync').disabled = L.state !== 'connected';
-  if (C.last && !syncing) $('clockres').textContent = `set to ${C.last.time} from ${C.server} · offset ${(C.last.offset * 1000).toFixed(0)} ms` + (C.last.note || '');
-  const dev = $('devices');
-  if (L.state === 'connected' && L.device) dev.innerHTML = `<span class="num">${L.device[1]}</span><span class="msg num">${L.device[0]}</span>`;
-  else if (L.found && L.found.length)
-    dev.innerHTML = L.found.map(f => `<button data-a="${f[0]}">${f[1]}  ·  ${f[2]} dBm</button>`).join('');
-  else if (L.state === 'idle') dev.innerHTML = '<span class="msg">press Connect: the first 121GW found is used</span>';
-  drawTrend();
+  const dk = desk();
+  if (dk && !prevDesk && view === 'card') { cardSig = ''; send('card_list').catch(fail); send('card_info').catch(fail); }
+  if (dk && !prevDesk && view === 'meter') readSettings();
+  prevDesk = dk;
+  render();
   setTimeout(poll, 150);
 }
-
-$('connect').onclick = async () => {
-  try { await api(state && state.link.state !== 'idle' ? {disconnect: true} : {connect: null}); } catch (e) { say(e.message, true); }
-};
-$('devices').onclick = async e => {
-  const a = e.target.closest('button'); if (!a) return;
-  try { await api({connect: a.dataset.a}); } catch (err) { say(err.message, true); }
-};
-$('sreset').onclick = async () => { trend = []; since = null; try { await api({reset_stats: true}); } catch (e) { say(e.message, true); } };
-$('rec').onclick = async () => {
-  try { const j = await api({record: !(state && state.session.recording)}); if (j.path) say('recording to ' + j.path); }
-  catch (e) { say(e.message, true); }
-};
-window.addEventListener('resize', drawTrend);
+window.addEventListener('resize', render);
+setView('live');
 poll();
 </script>
 </body>
