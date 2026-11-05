@@ -16,6 +16,11 @@ Checks on DCV (dial V), each also run on --ref (for example the previous release
      never shows one value for longer than 0.3 s while the input moves, and every shown value is within 0.25 s of the slope
      of the input (LAG_S: the 16-sample window of 0.2 s at 80 sps plus one display refresh).  The first form of the step
      test held one value for seconds here.
+  T6 a steep sine across a range change: 0 -> 40 V (cosine, 16 s period) for 7 s, the input set every 5 ms, so the
+     change per sample alternates around MDC_DCV_STEP in the 50 V range (2 or 3 input steps per 12.5 ms sample): the main
+     display is never without a value for longer than 0.6 s (the settle time after the range change).  Without the rule
+     "no second restart before a mean was published" every few samples restarted the window, no mean was published, the
+     settle count of the range change never ran out and the display stayed blank for 4.5 s.
 The helpers are those of test_backlight_timer.py.
 """
 import os
@@ -141,6 +146,24 @@ def t5(image, rate):
     return hold, dist
 
 
+def t6(image):
+    """Longest time without a numeric value on the main display during a 0 -> 40 V cosine across the range change."""
+    import math
+    e = meter(image, 0.0)
+    t0 = T.now(e)
+    blank_since, longest = None, 0.0
+    while T.now(e) - t0 < 7.0:
+        t = T.now(e) - t0
+        volts(e, 20.0 * (1 - math.cos(2 * math.pi * t / 16.0)))
+        e.advance(0.005)
+        if shown(e) is None:
+            blank_since = T.now(e) if blank_since is None else blank_since
+            longest = max(longest, T.now(e) - blank_since)
+        else:
+            blank_since = None
+    return longest
+
+
 def main(argv):
     ref = None
     if '--ref' in argv:
@@ -156,12 +179,16 @@ def main(argv):
         res[name]['noise'] = t3(img)
         res[name]['range'] = t4(img)
         res[name]['ramp'] = [t5(img, 0.6), t5(img, 1.2)]
+        res[name]['blank'] = t6(img)
         print('%-4s rate %.1f/s, straddled values %d %s, noise %.2f counts, range change first value %r'
               % (name, res[name]['rate'], len(res[name]['bad']), res[name]['bad'][:3], res[name]['noise'], res[name]['range']),
               flush=True)
         print('     ramps: 0.6 V/s longest hold %.2f s, largest distance %.3f V; 1.2 V/s %.2f s, %.3f V'
               % (res[name]['ramp'][0] + res[name]['ramp'][1]), flush=True)
+        print('     0 -> 40 V across the range change: longest blank %.2f s' % res[name]['blank'], flush=True)
     r = res['test']
+    T.check('T6 0 -> 40 V across the range change: never blank longer than 0.6 s', r['blank'] <= 0.6,
+            '%.2f s' % r['blank'])
     for rate, (hold, dist) in zip((0.6, 1.2), r['ramp']):
         T.check('T5 ramp %.1f V/s: no value shown longer than 0.3 s' % rate, hold <= 0.3, '%.2f s' % hold)
         T.check('T5 ramp %.1f V/s: every value within %.2f V of the input' % (rate, LAG_S * rate), dist <= LAG_S * rate,
