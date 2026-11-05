@@ -78,3 +78,17 @@ jobs:
               || gh release view "$TAG" >/dev/null
           fi
           gh release upload "$TAG" "firmware-$TAG.zip" "firmware-$TAG.zip.sha256" --clobber
+      - name: Attach the user manual and the newest 121GW Companion
+        run: |
+          set -euo pipefail
+          # every firmware release carries the manual and the companion, so all downloads are on one page
+          cp firmware/docs/manual/manual.pdf "121GW-User-Manual-$TAG.pdf"
+          python3 -I .github/scripts/sha256sum.py "121GW-User-Manual-$TAG.pdf" > "121GW-User-Manual-$TAG.pdf.sha256"
+          gh release upload "$TAG" "121GW-User-Manual-$TAG.pdf" "121GW-User-Manual-$TAG.pdf.sha256" --clobber
+          comp=$(gh release list --limit 100 --json tagName,publishedAt \
+                 -q '[.[] | select(.tagName | startswith("companion-v"))] | sort_by(.publishedAt) | last | .tagName')
+          test -n "$comp"
+          mkdir companion
+          gh release download "$comp" --dir companion --pattern '121GW-Companion-*'
+          ls companion
+          gh release upload "$TAG" companion/* --clobber
