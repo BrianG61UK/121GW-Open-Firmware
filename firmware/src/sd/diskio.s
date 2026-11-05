@@ -42,7 +42,9 @@ sd_dg_r1:       .space 4                    @ card status of the last CMD13 answ
 sd_last_r1:     .space 4                    @ card status of the last CMD13 answer (sd_get_state)
 sd_dg_t0:       .space 2                    @ tick counter (v_20007FC6, 10 ms) when the status polling of the block began
 sd_dg_ticks:    .space 2                    @ ticks from that start to the failure
-    .global sd_dg_r1, sd_dg_ticks
+sd_dg_icount:   .space 2                    @ failed card start-ups (disk_initialize: sd_init error) since power-on
+sd_dg_ierr:     .space 2                    @ the sd_init error code of the last failed start-up
+    .global sd_dg_r1, sd_dg_ticks, sd_dg_icount, sd_dg_ierr
     .previous
 
     .section .text.sd, "ax", %progbits
@@ -310,7 +312,14 @@ FUNC disk_initialize
     movs    r5, #0x29                       @ 08023F60 r5 = 0x29
     bl      sd_init                         @ 08023F62 call sd_init
     movs    r5, r0                          @ 08023F66 r5 = r0
-    cmp     r5, #0
+    cbz     r5, 1f
+    ldr     r1, =sd_dg_ierr                 @ diagnosis: the error code of this failed start-up
+    strh    r5, [r1]
+    ldr     r1, =sd_dg_icount
+    ldrh    r2, [r1]
+    adds    r2, r2, #1
+    strh    r2, [r1]
+1:  cmp     r5, #0
     ite     eq
     moveq   r0, #0                          @ sd_init ok: status 0 (ready)
     movne   r0, #1                          @ any SD error: STA_NOINIT (OF-59; v2.05 returns the error code itself, 0x08023F68,

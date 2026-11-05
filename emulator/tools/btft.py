@@ -76,6 +76,8 @@ def explain_diag(values):
                                    (8, 'READY_FOR_DATA')) if r1 >> b & 1]
             card = 'card status 0x%08X: state %s %s' % (r1, states[st] if st < len(states) else st, errs)
         text += '; last CMD13 before the failure: %s; the polling lasted %d ticks of 10 ms' % (card, values[15])
+    if len(values) >= 18:
+        text += '; %d failed card start-ups since power-on, last sd_init error %d' % (values[16], values[17])
     return text
 
 
