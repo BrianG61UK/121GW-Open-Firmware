@@ -17,7 +17,7 @@ contents, HY3131 configuration sequence) is identical to v2.05; each is verified
 
 | ID | Improvement | Effect |
 |---|---|---|
-| IMP-01 | Auto-ranging decides on two out-of-range samples and jumps straight to the target range | range changes about 2x faster (e.g. DCV 0 -> 500 V 0.60 s against 1.15 s); settled values, thresholds and OL behaviour as v2.05 |
+| IMP-01 | Auto-ranging decides on two out-of-range samples and jumps straight to the target range | range changes about 2x faster (e.g. DCV 0 -> 500 V 0.60 s against 1.15 s); OHM: a saturated sample jumps to the top range, whose reading gives the target, and that one step down is not held by v2.05's 1 s direction guard (emulator: open -> 10 ohm 0.2 s against 1.5 s, 10 ohm -> 40 Mohm 0.4 s against 1.6 s, 1 k -> 100 k 0.5 s against 0.6 s); the main digits blank at every OHM range change; settled values, thresholds and OL behaviour as v2.05 |
 | IMP-02 | Measuring starts during the power-on window | first reading 0.11..0.56 s after power-on instead of 2.2..2.8 s; every power-on key combination still works |
 | IMP-03/04 | Faster Ohm readings and continuity/diode response (decided per sample) | continuity beep 1.0..4.3 ms after contact (median 2.3 ms) instead of 6.3..22.5 ms (median 13.4 ms), measured in the emulator over 20 contacts at 10 and 25 ohm; diode short tone about 20 ms instead of 0.38 s |
 | IMP-05 | Extended continuity thresholds (EEPROM byte 0x14, codes 4..15: 1, 5, 10, 50, 100, 200 ohm, both directions) | same setting byte; codes 0..3 keep v2.05's meaning |

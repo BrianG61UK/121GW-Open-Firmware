@@ -83,10 +83,11 @@ path of the bootloader (SD card file `EEVBlog.bin`) exists only with a bootloade
 ### 2.3 The synthetic EEPROM
 
 `synthetic_eeprom.bin` (1280 bytes, EEPROM offsets 0x000..0x4FF) is **synthetic: it is not the calibration of any meter**.
-It is made from documented nominal values by `emulator/tools/gen_synthetic_eeprom.py` (the header of that file lists every
-field): settings at the values the firmware's own readers fall back to, no serial number, no date code, no calibration
-markers, offset 0 and one nominal gain per calibration record (`2^22 / 50000` raw LSB per display count for the
-voltage-code records, a counter gain for the CAP records; design choices, not measured). The emulator's calibrated front end
+It is made by `emulator/tools/gen_synthetic_eeprom.py` (the header of that file lists every field): settings at the values
+the firmware's own readers fall back to, no serial number, no date code, no calibration markers, offset 0, and per
+calibration record a typical gain (the voltage-code records: the mean of two real meters, rounded to 3 digits, so the
+raw codes and the over-range point are those of a typical unit; the CAP records: a counter gain chosen by design, as the
+two meters differ widely there). The emulator's calibrated front end
 derives the signal from the calibration it finds in the EEPROM, so the display reads the stimulus. The image carries the
 text `SYNTHETIC EEPROM - NOT A METER CALIBRATION` at offset 0x480. Never copy it to a meter, and never copy a `cal.bin`
 that the emulator wrote to a meter's SD card.
