@@ -1,0 +1,508 @@
+<section class="cover">
+  <div>
+    <div class="brand">121GW Open Firmware</div>
+    <div class="bar"></div>
+    <h1 data-notoc>User Manual</h1>
+    <div class="sub">EEVblog 121GW multimeter with the open firmware {{FW_VERSION}}</div>
+  </div>
+  <img src="../img/dial_DCV.png" alt="The 121GW display">
+  <div class="meta">This manual describes the open firmware for the EEVblog 121GW. It explains every key, every
+  measuring function, every page of the SETUP menu and every message the meter can show. The pictures of the display
+  were made with the firmware itself, so they show exactly what your meter shows.<br><br>
+  The open firmware is not made or supported by EEVblog. Installing it is at your own risk (see the licence).</div>
+</section>
+
+<h2 data-notoc id="contents">Contents</h2>
+{{TOC}}
+
+<!-- ============================================================ -->
+<h2>Safety first</h2>
+<p class="lead">A multimeter is connected to things that can hurt you. Read this chapter before you use the meter.</p>
+<div class="warning"><b>Warning</b>The meter is rated <b>600 V CAT III</b>. Never measure above that, and use only test
+leads and accessories rated at least as high as the meter.</div>
+<ul>
+  <li><b>Before you turn the dial</b> to another function, take the test leads off the circuit.</li>
+  <li><b>Before you measure</b>, check that the leads are in the right sockets for what you want to measure.</li>
+  <li><b>Check your leads</b> before every use. Replace damaged leads or probes.</li>
+  <li><b>Indoors and dry only.</b> The meter is not made for rain, moisture or dust.</li>
+  <li><b>Current measurements</b> go through fuses: the <b>A</b> socket takes up to 10 A (fuse 11 A / 1000 V, 10×38 mm),
+  the <b>mA/µA</b> socket up to 400 mA (fuse 400 mA / 600 V, 6×32 mm). If a lead is in a current socket while the dial is on another function, the meter shows
+  <span class="lcd">LEAd</span> and beeps. Move the lead before you measure.</li>
+  <li><b>High voltage</b>: from about 30 V the lightning symbol lights up as a reminder.</li>
+  <li><b>Capacitors</b>: discharge a capacitor before you measure it.</li>
+  <li><b>Opening the meter</b> (batteries, fuses): take the leads off and switch the meter off first. Replace fuses only
+  with the same type and rating.</li>
+  <li><b>Fuse test</b>: turn the dial to a voltage function and connect a lead between V Ω and the A (or mA) socket. A
+  beep means the fuse is good.</li>
+  <li><b>Calibration mode</b> (MODE then REL while switching on) can ruin the meter's calibration and voids the factory
+  calibration. Do not use it without calibration equipment.</li>
+  <li><b>AC voltage with a large DC part</b>: automatic ranging can pick the wrong range. Use manual range (RANGE key).</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>Getting to know your meter</h2>
+<figure class="panel"><img src="../img/dial_DCV.png" alt="Front of the meter"><figcaption>The front of the meter: display,
+keys and dial.</figcaption></figure>
+
+<h3>The dial</h3>
+<p>The dial switches the meter on and chooses what you measure. Both ends of the dial are <b>OFF</b>. From left to
+right:</p>
+<table>
+<tr><th>Dial position</th><th>What it measures</th><th>Press <kbd>MODE</kbd> to switch to</th></tr>
+<tr><td>Low Z</td><td>Voltage with a low-impedance input (stops "ghost" voltages)</td><td>-</td></tr>
+<tr><td>V</td><td>Voltage</td><td>DC → AC → AC+DC</td></tr>
+<tr><td>mV / Temp</td><td>Small voltages, temperature</td><td>DC mV → AC mV → temperature</td></tr>
+<tr><td>Hz ms %</td><td>Frequency, pulse width, duty cycle</td><td>Hz → ms → %</td></tr>
+<tr><td>Ω</td><td>Resistance, continuity, diode, capacitance</td><td>Ω → continuity → diode → capacitance</td></tr>
+<tr><td>mVA / VA</td><td>Power (voltage × current)</td><td>between the two power modes; the socket you use picks mVA or VA</td></tr>
+<tr><td>µA / µVA</td><td>Small currents and power</td><td>DC µA → AC µA → two µVA power modes</td></tr>
+<tr><td>A / mA</td><td>Currents</td><td>AC ↔ DC</td></tr>
+</table>
+<p>Each dial position <b>remembers</b> the mode you chose with MODE, also after switching off.</p>
+
+<h3>The keys</h3>
+<p>Every key does one thing when you <b>press</b> it briefly and often another when you <b>hold</b> it for half a second
+(this manual writes <kbd class="long">MODE</kbd> for "hold MODE"). A short beep means "done", two short beeps mean "not
+possible now".</p>
+<table>
+<tr><th>Key</th><th>Press</th><th>Hold</th></tr>
+<tr><td><kbd>MODE</kbd></td><td>Next measuring mode of the dial position</td><td>Backlight on/off</td></tr>
+<tr><td><kbd>RANGE</kbd></td><td>Manual range; each press: next range. In diode mode: 3 V / 15 V</td><td>Back to automatic range</td></tr>
+<tr><td><kbd>HOLD</kbd></td><td>Hold the reading, then auto-hold, then off</td><td>-</td></tr>
+<tr><td><kbd>REL</kbd></td><td>Relative reading on/off (zero the display)</td><td>AC: 1 kHz filter on/off. Current: store a zero offset</td></tr>
+<tr><td><kbd>PEAK</kbd></td><td>AC: 1 ms peak capture on/off</td><td>Bluetooth on/off</td></tr>
+<tr><td><kbd>MIN/MAX</kbd></td><td>Start recording minimum/maximum, then step MAX → MIN → AVG → all</td><td>Leave MIN/MAX</td></tr>
+<tr><td><kbd>MEM</kbd></td><td>Look at the last stored readings</td><td>Start/stop logging to the SD card</td></tr>
+<tr><td><kbd>SETUP</kbd></td><td>Next page of the SETUP menu (small display)</td><td>Change the page shown (it blinks); hold again to save</td></tr>
+</table>
+
+<h3>The display</h3>
+<p>The <b>large display</b> shows the reading. The <b>small display</b> above it shows a page of the SETUP menu: the
+temperature inside the meter, the battery, the date and time, or extra information for the mode you use (for example
+the frequency of an AC voltage). The <b>bar graph</b> under the reading follows quick changes. Symbols show what is
+active: AUTO (automatic range), HOLD, REL, PEAK, MIN MAX AVG, MEM, BT (Bluetooth), 1kHz, Apo (auto power-off), the
+battery and the lightning symbol for high voltage.</p>
+
+<!-- ============================================================ -->
+<h2>First steps</h2>
+<h3>Batteries</h3>
+<p>The meter uses four AA batteries (1.5 V alkaline). The battery symbol shows when they get low (below about 4.1 V);
+replace them then. Lithium AA cells start at a higher voltage than alkaline cells. Remove the batteries if you will not
+use the meter for more than about 50 days. A small CR1220 battery inside keeps the clock running.</p>
+
+<h3>Switching on</h3>
+<p>Turn the dial from OFF to a function. The small display shows the firmware version for a moment, then the meter
+measures.</p>
+<figure class="small"><img src="../img/special_version.png" alt="Version at power-on"><figcaption>At power-on the small
+display shows the firmware version, <span class="lcd">F-1.06</span>.</figcaption></figure>
+<p>The meter switches itself off after 30 minutes without a key press (auto power-off). One minute before, it beeps five
+times; press any key to keep it on. You can turn auto power-off off in the SETUP menu (page <span class="lcd">APOoF</span>).</p>
+
+<h3>Your first measurement</h3>
+<ol class="steps">
+  <li>Black lead into <b>COM</b>, red lead into <b>V Ω</b>.</li>
+  <li>Turn the dial to <b>V</b>. The meter starts in DC volts (or the mode you used last).</li>
+  <li>Touch the probes to the circuit. The reading appears; <b>AUTO</b> means the meter picks the range itself.</li>
+</ol>
+<figure class="small"><img src="../img/dial_DCV.png" alt="DC voltage"><figcaption>Measuring DC volts.</figcaption></figure>
+
+<!-- ============================================================ -->
+<h2>Measuring</h2>
+<p>For every measurement: choose the function with the dial, the mode with <kbd>MODE</kbd>, then connect the leads.</p>
+
+<h3>Voltage (V, mV, Low Z)</h3>
+<p><b>V</b> measures up to 600 V. <kbd>MODE</kbd> switches DC, AC and AC+DC. In AC the small display can show the
+frequency of the signal and its level in dBm (see the SETUP menu). <b>mV</b> is for small voltages up to 500 mV.
+<b>Low Z</b> loads the circuit a little, so voltages picked up from nearby wires ("ghost voltages") disappear; it chooses
+AC or DC by itself and shows dashes while it decides. Do not use Low Z below about 12 V.</p>
+<div class="pair">
+<figure><img src="../img/dial_ACV.png" alt="AC voltage"><figcaption>AC volts; the small display shows the frequency.</figcaption></figure>
+<figure><img src="../img/dial_LowZ.png" alt="Low Z"><figcaption>Low Z.</figcaption></figure>
+</div>
+
+<h3>Temperature</h3>
+<p>Dial to <b>mV / Temp</b>, press <kbd>MODE</kbd> twice and connect the thermocouple. The meter
+is set for a K-type thermocouple; for J, T, N, R or S types choose the type in SETUP (page <span class="lcd">tc</span>).
+°C or °F is chosen on the first SETUP page.</p>
+<figure class="small"><img src="../img/dial_TEMP.png" alt="Temperature"><figcaption>Temperature with a thermocouple.</figcaption></figure>
+
+<h3>Frequency, pulse width and duty cycle</h3>
+<p>Dial to <b>Hz ms %</b>. <kbd>MODE</kbd> steps through frequency (Hz), pulse width (ms) and duty cycle (%).</p>
+<figure class="small"><img src="../img/dial_FREQ.png" alt="Frequency"><figcaption>Frequency.</figcaption></figure>
+
+<h3>Resistance, continuity, diode, capacitance</h3>
+<p>Dial to <b>Ω</b>. <kbd>MODE</kbd> steps through:</p>
+<ul>
+  <li><b>Resistance</b> up to 50 MΩ. Short the probes and press <kbd>REL</kbd> to remove the resistance of the leads.</li>
+  <li><b>Continuity</b>: the meter beeps below a threshold (normally 30 Ω). The threshold and a "beep when open" mode
+  are on the small display: hold <kbd>SETUP</kbd> and choose with <kbd>REL</kbd> / <kbd>PEAK</kbd>
+  (<span class="lcd">DN 30</span> = beep below 30 Ω, <span class="lcd">UP 30</span> = beep above 30 Ω, from 1 to 300 Ω).</li>
+  <li><b>Diode</b>: shows the forward voltage. <kbd>RANGE</kbd> switches between a 3 V and a 15 V test voltage (for LEDs
+  and Zener diodes). The meter starts with 3 V again after a mode change.</li>
+  <li><b>Capacitance</b> up to 10 000 µF. Discharge the capacitor first; <kbd>REL</kbd> removes the capacitance of the leads.</li>
+</ul>
+<div class="pair">
+<figure><img src="../img/dial_OHM.png" alt="Resistance"><figcaption>Resistance.</figcaption></figure>
+<figure><img src="../img/dial_BEEP.png" alt="Continuity"><figcaption>Continuity.</figcaption></figure>
+</div>
+
+<h3>Current (µA, mA, A)</h3>
+<p>Move the red lead to the right socket first: <b>µA/mA</b> for small currents, <b>A</b> for up to 10 A. On the
+<b>A / mA</b> position the meter sees which socket you use and shows mA or A by itself. <kbd>MODE</kbd> switches AC and DC.</p>
+<div class="note"><b>Note</b>In DC mA the small display can show the reading as a 4–20 mA loop percentage (SETUP page
+<span class="lcd">LP</span>).</div>
+<p><b>Burden voltage</b>: in the current and power modes the small display has a page <span class="lcd">bdOFF</span>.
+Turn it on (<span class="lcd">bdOn</span>) to see the voltage the meter itself drops. For that, connect a lead from the
+current socket in use to the V Ω socket.</p>
+<figure class="small"><img src="../img/dial_DCmA.png" alt="Current"><figcaption>DC current in mA.</figcaption></figure>
+
+<h3>Power (µVA, mVA, VA)</h3>
+<p>The power positions measure voltage and current at the same time and show their product (VA). Connect the circuit
+so that the COM socket is common to both the voltage and the current measurement. <kbd>MODE</kbd> switches between the
+two power modes of the position. After a change the display shows dashes until the first result.</p>
+
+<h3>Ranges</h3>
+<p>Normally the meter picks the range (<b>AUTO</b>). Press <kbd>RANGE</kbd> to keep the present range; each further
+press steps to the next range. Hold <kbd>RANGE</kbd> to go back to automatic. When the input is too large for the
+range, the display shows <span class="lcd">OFL</span>.</p>
+
+<!-- ============================================================ -->
+<h2>Functions</h2>
+<h3>HOLD and auto-hold</h3>
+<p>Press <kbd>HOLD</kbd> once: the reading freezes (HOLD). Press again: <b>auto-hold</b> (A-HOLD) waits until the
+reading is stable, keeps it with a beep and updates when you measure something new. It ignores readings near zero, so
+it waits while the probes are in the air. Press again: off. In Hz/ms/%, capacitance and during MIN/MAX the second press
+switches HOLD off (no auto-hold). HOLD does not work while logging.</p>
+<figure class="small"><img src="../img/func_hold.png" alt="HOLD"><figcaption>HOLD keeps the reading.</figcaption></figure>
+
+<h3>REL: relative reading</h3>
+<p>Press <kbd>REL</kbd>: the present reading becomes the zero point and the meter shows the difference. Press again to
+switch off. With SETUP page <span class="lcd">rEL-P</span> the difference is shown in <b>percent</b> instead, handy for
+checking parts against a reference.</p>
+<figure class="small"><img src="../img/func_rel.png" alt="REL"><figcaption>REL shows the difference to the reference.</figcaption></figure>
+
+<h3>MIN / MAX and statistics</h3>
+<p>Press <kbd>MIN/MAX</kbd> to start recording. Each further press shows the maximum, the minimum, the average, and all
+three symbols. Hold <kbd>MIN/MAX</kbd> to stop. While MIN/MAX runs, the SETUP menu has four extra pages:
+<span class="lcd">n</span> (number of readings), <span class="lcd">Sd</span> (standard deviation, shown on the large
+display), <span class="lcd">tHI</span> and <span class="lcd">tLo</span> (the time of the maximum and the minimum).</p>
+<figure class="small"><img src="../img/func_max.png" alt="MAX"><figcaption>The maximum while MIN/MAX runs.</figcaption></figure>
+
+<h3>PEAK</h3>
+<p>In AC volts and AC mV, <kbd>PEAK</kbd> captures fast peaks (1 ms). Press again to switch off.</p>
+
+<h3>1 kHz filter</h3>
+<p>In AC volts and AC mV, hold <kbd>REL</kbd> to switch a 1 kHz low-pass filter on or off (1kHz symbol). It
+reduces high-frequency noise on the reading.</p>
+
+<h3>Backlight</h3>
+<p>Hold <kbd>MODE</kbd> to switch the light on or off. The meter remembers your choice. On SETUP page
+<span class="lcd">bL</span> you can let the light switch off by itself after 30 seconds or 1 to 99 minutes; any key or
+dial turn switches it on again (that first key press only wakes the light).</p>
+
+<h3>Zero offset for currents</h3>
+<p>In a current mode on its lowest range, hold <kbd>REL</kbd> with nothing connected to store the present small reading
+as a zero offset. It is kept also after switching off. Each time you do this the new offset is added to the old one, and
+there is no key to clear it, so use it only when the meter really shows a small current with nothing connected.</p>
+
+<!-- ============================================================ -->
+<h2>The SETUP menu</h2>
+<p class="lead">The SETUP menu lives on the small display. You can use it while you measure, but not during logging or
+while you look at stored readings.</p>
+<h3>How to use it</h3>
+<ol class="steps">
+  <li>Press <kbd>SETUP</kbd> to go to the next page. The pages go round in a circle.</li>
+  <li>To change a page, hold <kbd>SETUP</kbd> until it blinks.</li>
+  <li>Change the value with <kbd>REL</kbd> (up / next) and <kbd>PEAK</kbd> (down / previous).</li>
+  <li>Hold <kbd>SETUP</kbd> again to <b>save</b> (long beep). A short <kbd>SETUP</kbd> instead leaves without saving.</li>
+</ol>
+<p>Saved settings stay after switching off. If you leave a page blinking for about two minutes, the change is undone.
+Some pages only appear in certain modes (they are marked below).</p>
+
+<h3>Pages for every mode</h3>
+<div class="page-entry"><figure><img src="../img/setup_00_25_0c.png" alt=""></figure><div class="facts">
+<h4>Temperature inside the meter (°C / °F)</h4>Shows the meter's own temperature. Hold SETUP and press REL to switch
+between °C (<span class="lcd">c</span>) and °F (<span class="lcd">F</span>). This also sets the unit of the temperature
+mode.</div></div>
+<div class="page-entry"><figure><img src="../img/setup_01_BAT6_0.png" alt=""></figure><div class="facts">
+<h4>Battery <span class="lcd">BAT</span></h4>Shows the battery voltage. To correct a meter that reads the battery a
+little high or low, hold SETUP: <span class="lcd">bA</span> and the voltage blink; REL / PEAK change it in 0.2 % steps
+(up to ±10 %); hold SETUP to save.</div></div>
+<div class="page-entry"><figure><img src="../img/setup_02_AP0_oN.png" alt=""></figure><div class="facts">
+<h4>Auto power-off <span class="lcd">APOoN</span> / <span class="lcd">APOoF</span></h4>On: the meter switches off after
+30 minutes without a key press. Off: it stays on until you turn the dial. It never switches off during logging or
+MIN/MAX.</div></div>
+<div class="page-entry"><figure><img src="../img/setup_03_B_0n.png" alt=""></figure><div class="facts">
+<h4>Buzzer <span class="lcd">b-On</span> / <span class="lcd">b-OFF</span></h4>Off silences key beeps and the other
+beeps. The continuity beep and the warnings (wrong socket, high voltage) always sound.</div></div>
+<div class="page-entry"><figure><img src="../img/setup_04_LcD_4.png" alt=""></figure><div class="facts">
+<h4>Contrast <span class="lcd">Lcd-4</span></h4>Display contrast from 0 to 7. Turn it down if you see faint "ghost"
+segments, up if the display is too pale.</div></div>
+<div class="page-entry"><figure><img src="../img/setup_05_2026.png" alt=""></figure><div class="facts">
+<h4>Date and time</h4>Three pages: the year (<span class="lcd">2026</span>), month and day, hour and minute. Month and
+day are set in two steps: hold SETUP to save the month, then the day blinks; hold SETUP again. Hour and minute work the
+same way. The clock is used for log files. The companion app can also set it from the internet.</div></div>
+<div class="page-entry"><figure><img src="../img/setup_08_00000.png" alt=""></figure><div class="facts">
+<h4>Serial number (5 digits)</h4>The meter's ID, written into log files. Hold SETUP; the left digit blinks. REL / PEAK
+change the blinking digit, a short SETUP moves to the next digit. Hold SETUP to save.
+<div class="warning"><b>Warning</b>A calibration backup (cal.bin) can only be restored to the serial number it was made
+with. If you change the serial number, make a new backup afterwards.</div></div></div>
+<div class="page-entry"><figure><img src="../img/setup_09_1n__0.png" alt=""></figure><div class="facts">
+<h4>Logging interval <span class="lcd">In</span></h4>How often a reading is logged, 0 to 999 seconds. 0 = about five
+readings per second.</div></div>
+<div class="page-entry"><figure><img src="../img/setup_20_BL0FF.png" alt=""></figure><div class="facts">
+<h4>Backlight timer <span class="lcd">bL</span></h4><span class="lcd">bLOFF</span> = no timer (the light stays as you
+switch it with MODE hold),
+<span class="lcd">bL30S</span> = 30 seconds, <span class="lcd">bL 1</span> to <span class="lcd">bL 99</span> = minutes.</div></div>
+<div class="page-entry"><figure><img src="../img/setup_21_BT__2.png" alt=""></figure><div class="facts">
+<h4>Bluetooth speed <span class="lcd">bt</span></h4>How many readings per second go out over Bluetooth: 2 (as the
+original), 4, 10 or 20. Use 10 or 20 for live graphs, 2 to save battery.</div></div>
+<div class="page-entry"><figure><img src="../img/setup_39_LD_BT.png" alt=""></figure><div class="facts">
+<h4>Bluetooth transfer <span class="lcd">Ld-bt</span></h4>The page for the companion app: firmware updates, the SD card
+files and the settings over Bluetooth. Readings pause while this page is shown. See the Bluetooth chapter.</div></div>
+<div class="page-entry"><figure><img src="../img/for_page.png" alt=""></figure><div class="facts">
+<h4>Format the card <span class="lcd">Fr no</span></h4>Only with the two-part bootloader. Erases the SD card and
+formats it as exFAT. See the SD card chapter.</div></div>
+<div class="page-entry"><figure><img src="../img/setup_22_rEL_D.png" alt=""></figure><div class="facts">
+<h4>REL display <span class="lcd">rEL-d</span> / <span class="lcd">rEL-P</span></h4>d = REL shows the difference,
+P = REL shows the difference in percent of the reference.</div></div>
+<div class="page-entry"><figure><img src="../img/setup_24_D5P_1.png" alt=""></figure><div class="facts">
+<h4>Display level <span class="lcd">dSP 1</span> / <span class="lcd">dSP 2</span></h4>1 = calm, steady digits (as the
+original). 2 = the digits follow changes about four times faster, with a little more flicker.</div></div>
+<div class="page-entry"><figure><img src="../img/setup_25_CL_24.png" alt=""></figure><div class="facts">
+<h4>Clock display <span class="lcd">CL 24</span> / <span class="lcd">CL 12</span></h4>24-hour or 12-hour time on the
+meter. Log files always use 24-hour time.</div></div>
+<div class="page-entry"><figure><img src="../img/limit_verdict_pass.png" alt=""></figure><div class="facts">
+<h4>Limit test <span class="lcd">Lt</span>, <span class="lcd">Lo</span>, <span class="lcd">HI</span></h4>
+Sorts parts into PASS, too high or too low:
+<ol class="steps">
+<li>Put a part with the lowest allowed value on the probes, go to <span class="lcd">Lo</span>, hold SETUP, press REL
+(the reading is taken), hold SETUP.</li>
+<li>Do the same with the highest allowed value on page <span class="lcd">HI</span>.</li>
+<li>On page <span class="lcd">Lt</span> hold SETUP, REL to <span class="lcd">LtOn</span>, hold SETUP.</li>
+</ol>
+The small display now shows <span class="lcd">PASS</span>, <span class="lcd">HI</span> or <span class="lcd">Lo</span>
+for each part, with a beep when it leaves PASS. Both limits must be taken in the same mode and range; the test cannot be
+switched on before. While it runs the range stays fixed. Turning the dial or changing the mode ends the test. The
+limits are forgotten at power-off.</div></div>
+<div class="page-entry"><figure><img src="../img/trig_tr_page.png" alt=""></figure><div class="facts">
+<h4>Logging trigger <span class="lcd">tr</span></h4><span class="lcd">tr-In</span> = log every interval.
+<span class="lcd">tr-Ch</span> = log when the reading changes by at least the amount on the next page
+<span class="lcd">Ch</span> (1 to 255 steps of the last digit). <span class="lcd">tr-Lt</span> = log when the limit test
+result changes. With an interval of 0 the meter logs only on the trigger; with a larger interval it also logs at every
+interval.</div></div>
+
+<h3>Pages for certain modes</h3>
+<table>
+<tr><th>Page</th><th>Mode</th><th>What it does</th></tr>
+<tr><td>Frequency, then dBm</td><td>AC volts</td><td>Two pages: the frequency of the signal, then its level in dBm.
+Hold SETUP on the dBm page to choose the reference (<span class="lcd">r 600</span>, 50 Ω, 75 Ω or dBV).</td></tr>
+<tr><td><span class="lcd">tc-K</span></td><td>Temperature</td><td>Thermocouple type K, J, T, N, R or S.</td></tr>
+<tr><td><span class="lcd">DN 30</span></td><td>Continuity</td><td>Beep threshold 1–300 Ω; DN = beep below, UP = beep above.</td></tr>
+<tr><td><span class="lcd">bH100</span></td><td>Continuity</td><td>How long the beep holds after a short contact:
+100, 50 or 25 ms, or <span class="lcd">bHOFF</span> = shortest (about 15 ms).</td></tr>
+<tr><td><span class="lcd">3</span> / <span class="lcd">15</span></td><td>Diode</td><td>The test voltage (change it with RANGE).</td></tr>
+<tr><td><span class="lcd">LPOFF</span>, <span class="lcd">L4-20</span>, <span class="lcd">L0-20</span></td><td>DC mA</td>
+<td>Show the current as a loop percentage: 4 mA = 0 %, 20 mA = 100 % (or 0–20 mA).</td></tr>
+<tr><td><span class="lcd">PtOFF</span>, <span class="lcd">Pt100</span>, <span class="lcd">P1000</span></td><td>Resistance</td>
+<td>Show a PT100 or PT1000 sensor as a temperature. For best accuracy short the leads, press REL, then connect the sensor.</td></tr>
+<tr><td><span class="lcd">bdOFF</span> / <span class="lcd">bdOn</span></td><td>Current and power</td><td>Show the burden voltage.</td></tr>
+<tr><td><span class="lcd">n</span>, <span class="lcd">Sd</span>, <span class="lcd">tHI</span>, <span class="lcd">tLo</span></td>
+<td>While MIN/MAX runs</td><td>Number of readings, standard deviation, time of the maximum and the minimum.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>Logging and the SD card</h2>
+<h3>Logging readings</h3>
+<ol class="steps">
+  <li>Put a micro SD card into the slot under the battery cover.</li>
+  <li>Choose the interval (SETUP page <span class="lcd">In</span>) and, if you like, a trigger (page <span class="lcd">tr</span>).</li>
+  <li>Hold <kbd>MEM</kbd>: logging starts, MEM blinks and the small display counts the readings.</li>
+  <li>Hold <kbd>MEM</kbd> again to stop.</li>
+</ol>
+<figure class="small"><img src="../img/func_logging.png" alt="Logging"><figcaption>Logging: the small display counts the
+readings.</figcaption></figure>
+<p>While logging, most keys are locked so nothing changes by accident; only backlight and Bluetooth still work.
+Auto power-off waits until logging stops. With low batteries logging does not start (<span class="lcd">LoBAt</span>).</p>
+<p>Each session is a file named after the date, for example <b>26110500.CSV</b> (2026-11-05, file 00). It is a plain
+text table that opens in any spreadsheet: date, time, function, value and unit per line, and the maximum and minimum
+with their times at the end.</p>
+<div class="tip"><b>Tip</b>Readings are written to the card in blocks. Stop logging before you switch off or take the
+card out, so the last readings are saved.</div>
+
+<h3>Looking at stored readings</h3>
+<p>Press <kbd>MEM</kbd> to see the last readings (up to 60). <kbd>REL</kbd> = next, <kbd>PEAK</kbd> = previous,
+<kbd>MEM</kbd> = back. The view closes by itself after about 10 seconds. If nothing has been logged yet, MEM gives two
+short beeps.</p>
+
+<h3>Cards</h3>
+<p>Any normal micro SD card works. Cards up to 32 GB usually come formatted as FAT32, larger ones as exFAT; the meter
+uses both.</p>
+<div class="note"><b>Note</b>EEVblog's original bootloader can only read FAT32 cards for firmware updates. With the
+two-part bootloader exFAT works too.</div>
+
+<h3>Formatting a card on the meter</h3>
+<p>Only with the two-part bootloader. <b>Everything on the card is erased.</b></p>
+<ol class="steps">
+  <li>SETUP to page <span class="lcd">Fr no</span> (after <span class="lcd">Ld-bt</span>).</li>
+  <li>Hold SETUP (<span class="lcd">Fr no</span> blinks), press REL for <span class="lcd">Fr yE</span>, hold SETUP.</li>
+  <li><span class="lcd">Fr --</span> while it works, then <span class="lcd">Fr oK</span>.</li>
+</ol>
+
+<!-- ============================================================ -->
+<h2>Bluetooth and the Companion app</h2>
+<p>Hold <kbd>PEAK</kbd> to switch Bluetooth on (BT symbol); hold it again to switch off. The meter keeps measuring and
+sends its readings. Only one device can connect at a time: close the phone app before you use the computer app.</p>
+<p>The <b>121GW Companion</b> is an app for Windows, macOS and Linux (see the project's releases; free for individuals,
+schools and non-profits, companies need written permission). It shows the meter
+live with a graph, records to your computer, sets the meter's clock, updates the firmware and the bootloader, and can
+show readings as percent, PT100 temperature or pass/fail. With the meter on SETUP page <span class="lcd">Ld-bt</span> it
+can also:</p>
+<ul>
+  <li>list, download and delete the files on the SD card, and copy new files into a folder on your computer;</li>
+  <li>read and change most settings of the SETUP menu (not the logging interval, the serial number or the
+  calibration).</li>
+</ul>
+<p>Readings pause while <span class="lcd">Ld-bt</span> is shown. A download runs at about 1 KB per second.</p>
+
+<!-- ============================================================ -->
+<h2>Backup of the calibration</h2>
+<p class="lead">Your meter's calibration, serial number and settings are stored inside the meter. Make a backup on the
+SD card, so you can restore them if something ever goes wrong.</p>
+<h3>Make a backup (cal.bin)</h3>
+<ol class="steps">
+  <li>Card in the meter, dial to OFF.</li>
+  <li>Hold <kbd>MEM</kbd> and switch the meter on. Release MEM. The display shows <span class="lcd">SdCAL</span>.</li>
+  <li>Within 5 seconds press <kbd>REL</kbd>: <span class="lcd">SdSAv</span>.</li>
+  <li>Within 5 seconds press <kbd>MODE</kbd>. After a moment: <span class="lcd">SAvEd</span>. Switch off.</li>
+</ol>
+<p>If you wait too long, the meter simply starts normally; switch off and try again. <span class="lcd">-Err-</span>
+means the backup did not work (no card, card problem).</p>
+<div class="pair">
+<figure><img src="../img/msg_SdCAL.png" alt=""><figcaption><span class="lcd">SdCAL</span></figcaption></figure>
+<figure><img src="../img/msg_SAvEd.png" alt=""><figcaption><span class="lcd">SAvEd</span></figcaption></figure>
+</div>
+<p>The card now holds <b>cal.bin</b>. Copy it to your computer and keep it safe.</p>
+
+<h3>Restore the backup</h3>
+<p>Same as above, but press <kbd>PEAK</kbd> instead of REL (<span class="lcd">SdSEt</span>), then <kbd>MODE</kbd>,
+each within 5 seconds.
+The meter only accepts the backup of <b>its own</b> serial number; another meter's file shows
+<span class="lcd">-Err-</span> and nothing is changed.</p>
+<div class="warning"><b>Warning</b>Restoring replaces the calibration, the serial number and all settings with those in
+the file. Use only your own meter's backup.</div>
+
+<h3>Serial number and date code</h3>
+<p>Log files start with an ID made of a four-digit date code and the five-digit serial number. The serial number is a
+page of the SETUP menu. The date code can only be stored when you hold <kbd>SETUP</kbd> while switching on: the year and
+month pages then also store it. Those pages also set the clock, so set the clock again afterwards. Normally you never
+need this.</p>
+
+<h3>Keys while switching on</h3>
+<table>
+<tr><th>Hold or press while switching on</th><th>What happens</th></tr>
+<tr><td><kbd>MEM</kbd></td><td>Backup / restore menu (<span class="lcd">SdCAL</span>), see above</td></tr>
+<tr><td><kbd>MEM</kbd> + <kbd>HOLD</kbd></td><td>Firmware update from the card (bootloader)</td></tr>
+<tr><td><kbd>SETUP</kbd></td><td>The year and month pages also store the date code</td></tr>
+<tr><td><kbd>RANGE</kbd></td><td>All display segments on (display test)</td></tr>
+<tr><td><kbd>MODE</kbd></td><td><span class="lcd">CAL1</span> appears. Do <b>not</b> press REL then; switch off. REL would
+start calibration mode.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>Updating the firmware</h2>
+<p class="lead">Your calibration, serial number and settings are kept through every firmware update. Make a backup
+(cal.bin) first anyway, and use fresh batteries.</p>
+<p>Which bootloader do you have? If your SETUP menu has the page <span class="lcd">Fr no</span> after
+<span class="lcd">Ld-bt</span>, your meter has the two-part bootloader. Otherwise it has EEVblog's original one.</p>
+<h3>With the Companion app (two-part bootloader)</h3>
+<p>When an update is available, the app offers it. Click <b>Update</b>: the meter restarts, shows
+<span class="lcd">-IAP-</span> and the progress, then <span class="lcd">Ld oK</span>, and restarts into the new
+firmware. Nothing to press on the meter.</p>
+
+<h3>With an SD card</h3>
+<ol class="steps">
+  <li>Use fresh batteries.</li>
+  <li>Copy the firmware file to the card's top folder, named <b>EEVBlog.bin</b>. (EEVblog's bootloader needs a FAT32 card.)</li>
+  <li>Dial to OFF, hold <kbd>MEM</kbd> and <kbd>HOLD</kbd> and switch on.</li>
+  <li>The meter shows IAP (<span class="lcd">-IAP-</span> with the two-part bootloader). Press <kbd>SETUP</kbd>: within
+  about 8 seconds with EEVblog's bootloader, within 30 seconds with the two-part bootloader.</li>
+  <li>Wait until the meter restarts by itself. Do not take the card or the batteries out until then. The two-part
+  bootloader shows <span class="lcd">douun</span> with the bar graph, then <span class="lcd">Good</span>;
+  <span class="lcd">FAIL</span> means the file was refused and nothing was changed.</li>
+</ol>
+<p>You can also send the firmware file to the card over Bluetooth: Bluetooth on (hold PEAK), SETUP page
+<span class="lcd">Ld-bt</span>, then send it with the companion app. The meter shows <span class="lcd">Ld</span> and the
+percent, then <span class="lcd">Ld oK</span>: the file is now on the card. With EEVblog's bootloader you then do the
+update from the card (steps 3 to 5 above); with the two-part bootloader the app does that for you.</p>
+
+<h3>The two-part bootloader</h3>
+<p>The two-part bootloader is an optional replacement for EEVblog's bootloader (the small program that installs
+firmware). With it, updates go over Bluetooth without a card or keys, cards may be exFAT, and an interrupted update is
+simply repeated. It never touches the calibration. The companion app installs it once; you need fresh batteries for
+that. Details: the bootloader guide on the project page.</p>
+<p>Your calibration, serial number and settings are kept through every firmware update.</p>
+
+<!-- ============================================================ -->
+<h2>Messages</h2>
+<table>
+<tr><th>Display</th><th>Meaning</th><th>What to do</th></tr>
+<tr><td><span class="lcd">OFL</span></td><td>Input too large for the range (or outside the sensor range)</td><td>Choose a higher range or reduce the input</td></tr>
+<tr><td><span class="lcd">LEAd</span> + beeping</td><td>A lead is in a current socket while the dial is on another function</td><td>Move the lead to V Ω, or turn the dial to the current function</td></tr>
+<tr><td><span class="lcd">-----</span></td><td>No value yet (power after a change, percent without reference, statistics with too few readings)</td><td>Wait or measure</td></tr>
+<tr><td><span class="lcd">-oFF-</span></td><td>Auto power-off is switching the meter off</td><td>To use the meter again, press a key (release it and press again)</td></tr>
+<tr><td><span class="lcd">LoBAt</span></td><td>Batteries too low for logging</td><td>Replace the batteries</td></tr>
+<tr><td><span class="lcd">SdEnd</span></td><td>The log file is full</td><td>Start a new log</td></tr>
+<tr><td><span class="lcd">SdE01</span> … </td><td>SD card problem while logging (no card, cannot write)</td><td>Check the card, its free space and that it sits correctly</td></tr>
+<tr><td><span class="lcd">SdCAL</span>, <span class="lcd">SdSAv</span>, <span class="lcd">SdSEt</span></td><td>Backup menu at power-on</td><td>See "Backup of the calibration"</td></tr>
+<tr><td><span class="lcd">SAvEd</span></td><td>Backup or restore done</td><td>Switch off</td></tr>
+<tr><td><span class="lcd">-Err-</span></td><td>Backup or restore failed (no card, wrong file, another meter's file)</td><td>Check the card and the file</td></tr>
+<tr><td><span class="lcd">Ld nn</span>, <span class="lcd">Ld oK</span></td><td>Bluetooth transfer running / finished</td><td>-</td></tr>
+<tr><td><span class="lcd">LdE 1</span> … <span class="lcd">LdE 6</span></td><td>Transfer failed (card error or damaged file)</td><td>Send again</td></tr>
+<tr><td><span class="lcd">LdE 7</span></td><td>The bootloader cannot be installed on this meter</td><td>Nothing was changed</td></tr>
+<tr><td><span class="lcd">LdE 8</span></td><td>Batteries too low to install the bootloader</td><td>Fresh batteries</td></tr>
+<tr><td><span class="lcd">LdE 9</span></td><td>Installing the bootloader failed</td><td>Send it again</td></tr>
+<tr><td><span class="lcd">Fr oK</span>, <span class="lcd">FrE n</span>, <span class="lcd">FrE L</span></td><td>Format done / failed / not possible while logging</td><td>Try another card / stop logging</td></tr>
+<tr><td><span class="lcd">-IAP-</span></td><td>Update mode of the two-part bootloader</td><td>Send the firmware with the app, or use a card</td></tr>
+<tr><td><span class="lcd">douun</span>, <span class="lcd">Good</span>, <span class="lcd">FAIL</span></td><td>Card update by the two-part bootloader: running / done / file refused (nothing changed)</td><td>For FAIL: check the file EEVBlog.bin</td></tr>
+<tr><td><span class="lcd">CAL1</span></td><td>MODE was pressed while switching on</td><td>Switch off. Do not press REL</td></tr>
+<tr><td><span class="lcd">CAL</span></td><td>Calibration mode (you pressed MODE then REL at power-on)</td><td>Switch off and on. Do not use it unless you have calibration equipment</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>Troubleshooting</h2>
+<table>
+<tr><th>Problem</th><th>Solution</th></tr>
+<tr><td>The meter does not react to a key</td><td>Two short beeps mean "not possible now", for example during logging. Stop logging first.</td></tr>
+<tr><td><span class="lcd">SdCAL</span> does not appear, or MODE does nothing after <span class="lcd">SdSAv</span></td><td>Hold MEM while switching on, then press the next keys within 5 seconds each.</td></tr>
+<tr><td>Bluetooth does not connect</td><td>Hold PEAK until BT shows. Close the phone app; only one device can connect.</td></tr>
+<tr><td>The reading jumps between ranges</td><td>Press RANGE to keep one range.</td></tr>
+<tr><td>The display looks faint or shows ghost segments</td><td>Change the contrast on SETUP page <span class="lcd">Lcd</span>.</td></tr>
+<tr><td>The light goes off by itself</td><td>SETUP page <span class="lcd">bL</span>: set <span class="lcd">bLOFF</span>.</td></tr>
+<tr><td>The meter switches off</td><td>Auto power-off: SETUP page <span class="lcd">APOoF</span>.</td></tr>
+<tr><td>A card update with EEVblog's bootloader does nothing</td><td>The card must be FAT32 and the file named EEVBlog.bin in the top folder.</td></tr>
+<tr><td>After an interrupted update the meter shows <span class="lcd">-IAP-</span></td><td>Send the firmware again with the app or use a card; the meter stays in update mode until it has a good firmware.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>Measuring ranges</h2>
+<table>
+<tr><th>Function</th><th>Ranges</th></tr>
+<tr><td>DC and AC volts</td><td>5 V, 50 V, 500 V, 600 V</td></tr>
+<tr><td>DC and AC millivolts</td><td>50 mV, 500 mV</td></tr>
+<tr><td>Low Z</td><td>600 V</td></tr>
+<tr><td>Resistance</td><td>50 Ω, 500 Ω, 5 kΩ, 50 kΩ, 500 kΩ, 5 MΩ, 50 MΩ</td></tr>
+<tr><td>Continuity</td><td>500 Ω, beep threshold 1–300 Ω</td></tr>
+<tr><td>Diode</td><td>3 V or 15 V test voltage</td></tr>
+<tr><td>Capacitance</td><td>10 nF, 100 nF, 1 µF, 10 µF, 100 µF, 10 000 µF</td></tr>
+<tr><td>Frequency</td><td>99.999 Hz to 999.99 kHz</td></tr>
+<tr><td>Pulse width</td><td>10 ms, 100 ms, 1000 ms</td></tr>
+<tr><td>Duty cycle</td><td>to 99.0 %</td></tr>
+<tr><td>DC and AC µA</td><td>50 µA, 500 µA</td></tr>
+<tr><td>DC and AC mA</td><td>5 mA, 50 mA</td></tr>
+<tr><td>DC and AC A</td><td>500 mA, 5 A, 10 A</td></tr>
+<tr><td>Temperature (K)</td><td>−200 to 1350 °C; other thermocouple types have their own limits</td></tr>
+<tr><td>Power</td><td>250 µVA to 500 VA</td></tr>
+</table>
+<p>For the accuracy of each range see the specifications in EEVblog's original 121GW manual; the firmware does not
+change the meter's hardware.</p>

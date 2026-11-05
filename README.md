@@ -2,6 +2,9 @@
 
 <p align="center"><img src="emulator/ui/assets/logo_anim.gif" alt="121GW running this firmware in the emulator" width="300"></p>
 
+**User manual:** [**manual.pdf**](firmware/docs/manual/manual.pdf): how to use the meter with this firmware, every key,
+every measuring function, every SETUP page and every message, with pictures of the display.
+
 | Folder | Content |
 |---|---|
 | `firmware/` | new firmware for the 121GW (STM32L152ZD) in hand-written Thumb-2 assembly, loaded at 0x08006000 by the meter's existing bootloader or by the two-part bootloader (branch `bootloader`) |
