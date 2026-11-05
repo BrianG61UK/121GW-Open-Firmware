@@ -77,31 +77,55 @@ class MeterLink:
         return list(self.found)
 
     async def _start(self):
-        if self._task and not self._task.done():
-            return
+        """Start the connection task; a task that is still running (also one that is being cancelled by a Disconnect
+        a moment ago) is ended first, so a Connect right after a Disconnect always starts a fresh search."""
+        await self._end_task()
         self._task = asyncio.ensure_future(self._keep())
 
     async def _stop(self):
-        if self._task:
-            self._task.cancel()
-        if self._client is not None:
-            try:
-                await self._client.disconnect()
-            except Exception:
-                pass
-        self._client = None
+        await self._end_task()
         self._set('idle')
 
+    async def _end_task(self):
+        """Cancel the connection task and wait until it has ended; it closes its own client (_keep's finally), so no
+        half-open connection is left behind that would keep the meter from advertising."""
+        task, self._task = self._task, None
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        if self._client is not None:                      # defensive: the task's finally clears it
+            await self._close(self._client)
+            self._client = None
+
+    @staticmethod
+    async def _close(client):
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+
     async def _keep(self):
-        """Connect and stay connected while `want` is set."""
+        """Connect and stay connected while `want` is set.  The state is never 'idle' while this runs: it is 'scanning'
+        (also while the computer's Bluetooth is off and the search is repeated), 'connecting', 'connected' or 'lost'."""
+        try:
+            await self._keep_loop()
+        finally:
+            if self._client is not None:
+                await self._close(self._client)
+                self._client = None
+
+    async def _keep_loop(self):
         from bleak import BleakClient
         lost = False
         while self.want:
             self._set('scanning', 'looking for the meter' + (' again' if lost else ''))
             try:
                 found = await self._scan()
-            except Exception as e:                       # Bluetooth off, no permission, no adapter
-                self._set('lost' if lost else 'idle', 'Bluetooth: %s' % e)
+            except Exception as e:                       # Bluetooth off, no permission, no adapter: searched again
+                self._set('lost' if lost else 'scanning', 'Bluetooth of the computer: %s (searching again)' % e)
                 await asyncio.sleep(RETRY_SECONDS)
                 continue
             pick = [f for f in found if self.address is None or f[0] == self.address]
@@ -123,15 +147,18 @@ class MeterLink:
                 for kind, frame in got:
                     self.on_frame(kind, frame, t)
 
+            client = BleakClient(address, disconnected_callback=lambda _c: self._loop.call_soon_threadsafe(gone.set))
+            self._client = client                         # known from here on, so a cancel closes it (_keep's finally)
             try:
-                client = BleakClient(address, disconnected_callback=lambda _c: self._loop.call_soon_threadsafe(gone.set))
                 await client.connect()
                 await client.start_notify(CHAR, on_notify)
             except Exception as e:
+                await self._close(client)
+                self._client = None
                 self._set('lost' if lost else 'scanning', 'connecting failed: %s' % e)
                 await asyncio.sleep(RETRY_SECONDS)
                 continue
-            self._client, self.device = client, (address, name)
+            self.device = (address, name)
             self._set('connected', name)
             await gone.wait()
             self._client = None
