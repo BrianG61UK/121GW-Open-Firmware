@@ -1,5 +1,7 @@
 121GW Companion: live view, recording and firmware information for the EEVblog 121GW over Bluetooth LE.
 
+New in 1.2.5: the METER view's diagnosis shows the write-timeout values of firmware F-1.11 (which part of a card write timed out, for how long, what the card answered); older firmware shows the values it has.
+
 Fixed in 1.2.4: a format refused by a meter whose firmware is older than F-1.09 says so (it said "not allowed now"); formatting a large card works with firmware F-1.10 (a slow card write stopped the format).
 
 New in 1.2.3: "Format card" in the CARD view (meter on the page Ld-bt, firmware F-1.09 or newer with the two-part bootloader): type FORMAT to confirm, a window stays open until the meter has formatted the card.
