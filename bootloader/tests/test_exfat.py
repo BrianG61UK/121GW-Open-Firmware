@@ -13,6 +13,8 @@ The meter: starter, bootloader and this project's firmware (flash image as tests
   X5 without the two-part bootloader (EEVblog's bootloader area empty of a mark) the page For is not offered
   X6 FORMAT over Bluetooth (request 0x15 on the page Ld, ble/bftsd.s): a FAT32 card with a file is formatted: status 0,
      an empty exFAT volume, LIST over Bluetooth answers no entries
+  X7 X6 with one block of the format programmed for 0.9 s, longer than the write wait (firmware IMP-40: the block is
+     confirmed with ACMD22); the format completes (--x6 runs X6 and X7 alone)
 The data EEPROM is unchanged.
 """
 import os
@@ -70,8 +72,8 @@ def vbr_of(card):
         return f.read(512)
 
 
-def x6():
-    print('X6 FORMAT over Bluetooth')
+def x6(slow=False):
+    print('X7 FORMAT over Bluetooth with one slow block (0.9 s busy, IMP-40)' if slow else 'X6 FORMAT over Bluetooth')
     card6 = X._card_with(b'')                          # FAT32 card with EEVBlog.bin on it
     e = X.meter(X.flash_image(), card=card6)
     e.advance(2.0)
@@ -85,6 +87,8 @@ def x6():
     first, names = listing(card6)
     T.check('before: a card with files', names != [], '%r %r' % (first, names))
     link = U.Link(e)
+    if slow:
+        e.sdcard.faults['write_slow'] = 1             # one block of f_mkfs keeps the card busy longer than the write wait
     t0 = T.now(e)
     a = link.send(btft.format_packet(1), timeout=120.0)
     took = T.now(e) - t0
@@ -98,6 +102,8 @@ def x6():
     ents, end = btft.parse_list(a) if isinstance(a, btft.Answer2) and a.status == 0 else (None, None)
     T.check('LIST over Bluetooth after the format: no entries, end flag', ents == [] and end is True, repr(a))
     T.check('data EEPROM unchanged', bytes(e.m.eeprom) == ee6)
+    if slow:
+        T.check('the slow block was met', e.sdcard.faults['write_slow'] == 0)
 
 
 def main(argv):
@@ -108,6 +114,7 @@ def main(argv):
         REF = argv[0]
     if only6:
         x6()
+        x6(slow=True)
         print('RESULT', ('FAIL: ' + ', '.join(T.fails)) if T.fails else 'ALL PASS', flush=True)
         return 1 if T.fails else 0
     card = X._card_with(b'')                           # FAT32 card (an empty EEVBlog.bin on it)
@@ -202,6 +209,7 @@ def main(argv):
     T.check('Ld -> rEL (item 22)', T.rd(e, ADDR_ITEM) == 22, 'item %d' % T.rd(e, ADDR_ITEM))
 
     x6()
+    x6(slow=True)
 
     if T.fails:
         print('FAILED: %d checks' % len(T.fails))

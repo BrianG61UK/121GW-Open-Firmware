@@ -20,3 +20,5 @@ Fixed in v1.0.7: resistance auto-range: a step up over several ranges (e.g. 1 ko
 Fixed in v1.0.8: SD cards above 4 GiB: the card size no longer wraps (a 32 GB card read as 1.72 GB, a v2.05 defect, OF-68); a card formatted on the meter (page Fr) with v1.0.4 to v1.0.7 got only that small volume: format it again to get the full card. Windows installers of the emulator and the companion ask for administrator rights and install into Program Files for all users; releases carry the user manual and the 121GW Companion.
 
 New in v1.0.9: the SD card can be formatted from the 121GW Companion (CARD view, "Format card", meter on the page Ld-bt, two-part bootloader): the same exFAT format as the SETUP page Fr, after the word FORMAT is typed.
+
+Fixed in v1.1.0: a card that stays busy after a write longer than the meter waits (600 ms) no longer makes the write fail: the meter asks the card whether the block was written (ACMD22) and goes on.  On a meter a 32 GB card did this during a format, which then stopped and left the card without a file system (format it again with v1.1.0).

@@ -63,7 +63,7 @@ jobs:
       fail-fast: false
       matrix:
         script: [test_sd_scr.py, test_sd_errors.py, test_dcv_fast.py, test_bft_files.py, test_bft_settings.py,
-                 test_calbin_ident.py, test_sd_capacity.py]
+                 test_calbin_ident.py, test_sd_capacity.py, test_sd_slow.py]
     steps:
       - uses: actions/checkout@v7
       - name: Production build (firmware/build/EEVBlog.bin and 121gw.map, the symbols the tests read; dist/v205_tables.json)
