@@ -79,6 +79,7 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-64 | SD card | FatFs R0.08a error paths fixed by ChaN in R0.10a..R0.10c: f_write stores the result of create_chain as the start cluster before checking it (a disk error writes 0xFFFFFFFF into the directory entry), create_chain links a new cluster behind an entry it could not read, move_window keeps the old sector number after a failed read, put_fat marks the window dirty after a failed load | medium | fixed |
 | OF-65 | BLE | The status frame's bar byte (14) carries the raw segment count, which exceeds the 25 segments of the display on an overload (45..55 seen); an application that masks the byte (the official one reads it & 0x1F) shows a wrong bar | low | fixed |
 | OF-66 | SD card | disk_read / disk_write give the caller's buffer to the SDIO DMA, which aligns every word access down: a sector read into or written from a buffer that is not a multiple of 4 lands 1..3 bytes off (FatFs passes the caller's buffer for whole sectors) | medium | fixed |
+| OF-67 | Keys | Holding MEM while switching on (the cal.bin backup / restore entry) for longer than the long-press time also starts logging; the following MODE then does not confirm the backup or restore | medium | fixed |
 
 ## Details
 
@@ -1005,3 +1006,12 @@ buffer aligned.  Found with the SD file requests of IMP-36 (a READ at file offse
 the whole sectors at an odd address): the data differed from the file.
 Port (production): a sector whose buffer is not word aligned goes through a 512-byte aligned buffer (sd_bounce), copied byte
 by byte; aligned buffers keep the direct DMA.
+
+### OF-67 — a long MEM at power-on starts logging and breaks the cal.bin sequence
+The cal.bin backup and restore start with MEM pressed inside the power-on window: the short-press handler fires on the
+press (key_win_b = 1, "SdCAL", window 5000 ticks).  Held on past the long-press time, the same press is also handled as a
+long MEM: logging is toggled (fn_0801657C).  REL / PEAK still show "SdSAv" / "SdSEt", but the MODE that should confirm does
+nothing useful, and the card gets a log file instead of cal.bin.  Measured in the emulator with the comparison harness on
+v2.05 and the port: MEM held 1.5 s at power-on, then REL and MODE: both images wrote 26010100.CSV and no CAL.BIN; MEM held
+0.4 s: both saved.  Found on a meter (2026-11-05): holding MEM while turning the dial on is the natural way to do it.
+Port: while the sequence is under way (key_win_b 1..3) the long MEM is ignored.

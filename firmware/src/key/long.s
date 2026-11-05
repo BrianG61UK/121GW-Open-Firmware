@@ -8,6 +8,9 @@
 @ Deviations: OF-17 (the 1 kHz filter cannot be switched on while PEAK is on), OF-09 (REL long stores the
 @ accumulated user zero).
 @ Source of truth: analysis/keys_setup.md 2.2, checked against the v2.05 listing.
+@ OF-67: MEM held at power-on opens the cal.bin menu ("SdCAL", key_win_b = 1) on its press; held on past the long-press
+@ time it also toggled logging in v2.05 (emulator, both images: a CSV file instead of cal.bin), after which MODE could not
+@ confirm the save or the restore.  While the cal.bin sequence is under way (key_win_b 1..3) the long MEM is ignored.
 @ =============================================================================
 
     .syntax unified
@@ -397,7 +400,13 @@ FUNC handle_pg8_15_long_press
 @ capture flag 0x20008096
 @ reached from 08016244 beq (equal / zero) after cmp r0, #8
 .Llp_key_mem:
-    ldr r0, =key_cal_mode               @ 080164CE
+    ldr r0, =key_win_b                  @ OF-67: cal.bin sequence under way (SdCAL / SdSAv / SdSEt / running)
+    ldrb r0, [r0]
+    cmp r0, #0
+    beq 1f
+    cmp r0, #4                          @ 4 = finished (result shown): the sequence no longer owns MEM
+    blo .Llp_end                        @ 1..3: the long press of the MEM held at power-on does nothing
+1:  ldr r0, =key_cal_mode               @ 080164CE
     ldrb r0, [r0]                       @ 080164D2
     cmp r0, #0                          @ 080164D4
     beq .Llp_0801650C                   @ 080164D6
