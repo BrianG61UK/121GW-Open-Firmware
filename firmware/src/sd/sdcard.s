@@ -1521,6 +1521,8 @@ FUNC sd_wait_write
     cmp     r0, #0
     beq     .Lsd_wait_write_32F4
     movs    r5, #0                          @ the first wait ran out: CMD12 all the same (below), result 4
+    movs    r0, #1
+    bl      sd_dg_wtimeout                  @ diagnosis: wait 1 (DMA / transfer end), its length, the transfer state
     b       .Lsd_wait_write_3380
     @ sd_dma_end = 0, the second wait from now
 .Lsd_wait_write_3338:                   @ v2.05 0x08023338, reached from 0x080232FC, 0x08023306, 0x08023310, 0x0802331A
@@ -1542,6 +1544,8 @@ FUNC sd_wait_write
     cmp     r0, #0
     beq     .Lsd_wait_write_3350
     movs    r5, #0                          @ the second wait ran out: CMD12 all the same, result 4
+    movs    r0, #2
+    bl      sd_dg_wtimeout                  @ diagnosis: wait 2 (TXACT: the card's busy), its length, the transfer state
     @ stop condition: CMD12 (sd_stop_transfer)
 .Lsd_wait_write_3380:                   @ v2.05 0x08023380, reached from 0x08023358, 0x08023362
     ldr.w   r0, =sd_stop_condition          @ 08023380 r0 = &sd_stop_condition

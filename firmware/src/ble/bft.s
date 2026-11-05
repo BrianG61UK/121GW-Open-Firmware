@@ -147,12 +147,16 @@ bft_reset_due:  .space 1                    @ 1: restart once the link has been 
 @ 11 SDIO_STA high half, 12 reads taken on the hardware counters, 13 / 14 low / high half of the card status of the last
 @ CMD13 answer before the failure, 15 10 ms ticks of the failed status polling, 16 failed card start-ups since power-on,
 @ 17 the sd_init error code of the last one, 18 SCR reads since power-on, 19 / 20 of these the reads whose polling loop had
-@ read no word / one word when the block end was seen (IMP-34) (sd/diskio.s, sd_dg_*)
+@ read no word / one word when the block end was seen (IMP-34), 21 the write wait that last ran out (1 DMA / transfer end,
+@ 2 the card's busy; values 7 .. 11 then hold the transfer state at that moment), 22 its length in 10 ms ticks, 23 the last
+@ ACMD22 answer (0x8000 | SD error << 8 | count, 0 none yet), 24 blocks ACMD22 confirmed, 25 blocks written again (IMP-40)
+@ (sd/diskio.s, sd_dg_*)
 bft_diag_tab:   .word bft_fails, bft_diag, sd_dg_count, sd_dg_op, sd_dg_sta, sd_dg_terr, sd_dg_wait
                 .word sd_dg_flags, sd_dg_dmaisr, sd_dg_cndtr, sd_dg_dcount, sd_dg_stahi, sd_dg_recov
                 .word sd_dg_r1, sd_dg_r1 + 2, sd_dg_ticks, sd_dg_icount, sd_dg_ierr, sd_dg_scrs, sd_dg_scr0, sd_dg_scr1
-bft_diag_wid:   .byte 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
-    .equ BFT_DIAG_N, 21
+                .word sd_dg_wphase, sd_dg_wticks, sd_dg_a22, sd_dg_late, sd_dg_retry
+bft_diag_wid:   .byte 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2
+    .equ BFT_DIAG_N, 26
 bft_name_tmp:   .asciz "0:BTLOAD.TMP"
 bft_name_img:   .asciz "0:EEVBlog.bin"
 

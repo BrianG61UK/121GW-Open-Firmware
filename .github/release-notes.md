@@ -22,3 +22,5 @@ Fixed in v1.0.8: SD cards above 4 GiB: the card size no longer wraps (a 32 GB ca
 New in v1.0.9: the SD card can be formatted from the 121GW Companion (CARD view, "Format card", meter on the page Ld-bt, two-part bootloader): the same exFAT format as the SETUP page Fr, after the word FORMAT is typed.
 
 Fixed in v1.1.0: a card that stays busy after a write longer than the meter waits (600 ms) no longer makes the write fail: the meter asks the card whether the block was written (ACMD22) and goes on.  On a meter a 32 GB card did this during a format, which then stopped and left the card without a file system (format it again with v1.1.0).
+
+Fixed in v1.1.1: a card write that times out and is not confirmed by the card is written again (up to 3 attempts); the Bluetooth diagnosis tells which part of a write timed out, for how long, and what the card answered (the 121GW Companion 1.2.5 shows it). With v1.1.0 a 32 GB card still stopped a format on a meter.

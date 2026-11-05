@@ -85,7 +85,7 @@ async def main(path):
         print('checking and writing EEVBlog.bin on the card ...')
         status, info = await send(btft.packet(btft.T_END, len(pkts)), len(pkts), TIMEOUT_END)
         vals = []
-        for i in range(21):
+        for i in range(26):
             st, v = await send(btft.status_packet(i), 0, TIMEOUT_DATA)
             vals.append(v if st == 0 else 0)
         print('diagnosis: ' + btft.explain_diag(vals))
