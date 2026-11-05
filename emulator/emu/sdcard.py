@@ -223,7 +223,8 @@ class SDCard:
         # test faults (scripts only, never set by the UI): the next n data blocks are disturbed on the bus as by line noise:
         # 'write_crc' the card sees a CRC error in a block it receives (negative CRC status token, nothing written),
         # 'read_crc' the CRC16 the host receives after a block the card sends does not match (DCRCFAIL at the host)
-        self.faults = {'write_crc': 0, 'read_crc': 0}
+        self.faults = {'write_crc': 0, 'read_crc': 0, 'write_slow': 0}
+        self.write_slow_us = 900000.0   # test fault 'write_slow': busy time of such a block (longer than the firmware's 600 ms wait)
         self.b_bits = 0                 # status bits of type B (COM_CRC_ERROR, ILLEGAL_COMMAND): reported once
         self.c_bits = 0                 # status bits of type C (cleared by read)
         self.rd_addr = 0
@@ -617,6 +618,9 @@ class SDCard:
         if not self.multi:                                           # single block: rcv -> prg -> tran when done
             self.state = PRG
             self.data_dir = None
+        if self.faults.get('write_slow', 0) > 0:                     # test fault: the card programs this block slowly (cards
+            self.faults['write_slow'] -= 1                           # can exceed the 250 / 500 ms of PLS 4.6.2.2 in practice)
+            return TOKEN_OK, self.write_slow_us
         return TOKEN_OK, self.write_busy_us
 
     def snapshot(self):

@@ -36,6 +36,8 @@ sd_dg_cndtr:    .space 2                    @ DMA2 channel 4 CNDTR (words still 
 sd_dg_dcount:   .space 2                    @ SDIO_DCOUNT (bytes still to receive, low 16 bits)
 sd_dg_stahi:    .space 2                    @ SDIO_STA bits 31..16 (FIFO state)
 sd_dg_recov:    .space 2                    @ reads taken on the hardware counters after the end wait ran out
+    .global sd_dg_late
+sd_dg_late:     .space 2                    @ writes whose busy wait ran out but which ACMD22 confirmed as written (IMP-40)
     .global sd_dg_flags, sd_dg_dmaisr, sd_dg_cndtr, sd_dg_dcount, sd_dg_stahi, sd_dg_recov
     .balign 4
 sd_dg_r1:       .space 4                    @ card status of the last CMD13 answer before the failure (0xFFFFFFFF: no answer)
@@ -670,7 +672,27 @@ FUNC disk_write
 .Ldisk_write_4024:                      @ v2.05 0x08024024, reached from 0x08024014
     ldr     r0, [sp, #8]
     cbz     r0, 1f
+    @ IMP-40: the busy wait only ran out of time (sd_wait_write 4: no SDIO error, CMD12 answered) and the card is back in
+    @ the transfer state: a card may stay busy longer than the 600 ms wait (on a meter, 2026-11-05, a 32 GB card during
+    @ f_mkfs: wait 4, then status 0x00000900 tran, READY_FOR_DATA; the format stopped and left the card without a file
+    @ system).  ACMD22 tells whether the block was written; only 1 block written counts as done.
     ldr     r0, =sd_dg_wait
+    ldrb    r0, [r0]
+    cmp     r0, #4
+    bne     3f
+    ldr     r0, =sd_transfer_error
+    ldrb    r0, [r0]
+    cbnz    r0, 3f
+    bl      sd_num_wr_blocks
+    cbnz    r0, 3f
+    cmp     r1, #1
+    bne     3f
+    ldr     r1, =sd_dg_late
+    ldrh    r0, [r1]
+    adds    r0, r0, #1
+    strh    r0, [r1]                        @ diagnosis: a late block confirmed by the card
+    b       1f
+3:  ldr     r0, =sd_dg_wait
     ldrb    r0, [r0]
     cmp     r0, #0
     ite     ne
