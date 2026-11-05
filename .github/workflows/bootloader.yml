@@ -1,0 +1,81 @@
+# Bootloader (branch bootloader): build the firmware objects the bootloader links (fast build, GNU binutils 2.46.0), then
+# the starter, the bootloader and the first-install file; on a tag bl-vA.B.C publish bootloader-<tag>.zip.
+name: Bootloader
+
+on:
+  push:
+    branches: ['bootloader']
+    tags: ['bl-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bootloader-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  build:
+    name: Build the starter, the bootloader and the install file
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Firmware (its SD driver, FatFs, GPIO, clock and font objects are linked into the bootloader)
+        uses: ./.github/actions/build-firmware
+        with:
+          target: none
+      - name: Bootloader
+        run: |
+          set -euo pipefail
+          make -C bootloader PYTHON=python3
+          mkdir -p bdist
+          cp bootloader/build/starter.bin bootloader/build/install.bin bdist/
+          cp bootloader/build/bootloader.bin bdist/blimage.bin    # not bootloader.bin: that name is EEVblog's (check_no_originals)
+          cp bootloader/README.md bdist/
+      - name: Nothing from an original image may be published
+        run: python3 -I .github/scripts/check_no_originals.py bdist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bootloader-dist
+          path: bdist
+          if-no-files-found: error
+
+  release:
+    name: Publish bootloader-${{ github.ref_name }}.zip
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'bl-v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: The tag matches the bootloader version (bootloader/src/bl.inc BL_VERSION)
+        run: |
+          set -euo pipefail
+          v=$(sed -n 's/^ *\.equ BL_VERSION, *0x\([0-9A-Fa-f]*\).*/\1/p' bootloader/src/bl.inc)
+          want=$(printf 'bl-v%d.%d.%d' $((16#${v:2:2})) $((16#${v:4:2})) $((16#${v:6:2})))
+          test "$TAG" = "$want" || { echo "tag $TAG, bootloader version $want"; exit 1; }
+      - uses: actions/download-artifact@v8
+        with:
+          name: bootloader-dist
+          path: bdist
+      - name: Assemble bootloader-<tag>.zip
+        run: |
+          set -euo pipefail
+          cp LICENSE bdist/
+          (cd bdist && sha256sum install.bin blimage.bin starter.bin README.md LICENSE > SHA256SUMS)
+          (cd bdist && zip -r -X "../bootloader-$TAG.zip" install.bin blimage.bin starter.bin README.md LICENSE SHA256SUMS)
+          unzip -l "bootloader-$TAG.zip"
+          python3 -I .github/scripts/check_no_originals.py "bootloader-$TAG.zip"
+          python3 -I .github/scripts/sha256sum.py "bootloader-$TAG.zip" > "bootloader-$TAG.zip.sha256"
+      - name: Create the release and attach the files
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag \
+            --title "121GW two-part bootloader $TAG" --notes-file .github/release-notes-bootloader.md
+          gh release upload "$TAG" "bootloader-$TAG.zip" "bootloader-$TAG.zip.sha256" --clobber
