@@ -82,6 +82,23 @@ class State(AppCase):
         self.assertEqual(st['settings']['locked_reason'], 'not connected to a meter')
         json.dumps(st)
 
+    def test_recordings_list_the_folder_newest_first(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            self.app.folder, self.app._rec_cache = d, None
+            self.assertEqual(self.app.state()['recordings'], [])
+            for i, n in enumerate(('121GW_a.csv', '121GW_b.csv', 'notes.txt')):
+                with open(os.path.join(d, n), 'w') as f:
+                    f.write('x' * (10 + i))
+                os.utime(os.path.join(d, n), (1000000000 + i, 1000000000 + i))
+            self.app._rec_cache = None
+            rec = self.app.state()['recordings']
+            self.assertEqual([r['name'] for r in rec], ['121GW_b.csv', '121GW_a.csv'])        # newest first, CSV only
+            self.assertEqual([r['size'] for r in rec], [11, 10])
+            self.assertEqual(rec[0]['date'], time.strftime('%Y-%m-%d', time.localtime(1000000001)))
+        self.app.folder, self.app._rec_cache = os.path.join(d, 'gone'), None
+        self.assertEqual(self.app.state()['recordings'], [])                                 # folder missing
+
     def test_derived_follows_the_frames(self):
         self.app.derived.set_options({'limit': {'lo': 1, 'hi': 2, 'unit': 'V'}})
         self.app._frame(frames.STATUS, status_frame(), time.time())

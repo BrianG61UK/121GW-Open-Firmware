@@ -5,6 +5,14 @@ A program for Windows, macOS and Linux that connects to an EEVblog 121GW multime
 This is the branch `companion` of [121GW-Open-Firmware](https://github.com/zombu4/121GW-Open-Firmware): only the companion
 program lives here.  The firmware and the emulator are on `main`, the build that behaves like v2.05 on `like-v2.05`.
 
+<p align="center"><img src="docs/companion_live.gif" alt="LIVE view: the meter's reading, symbols, statistics and trend; MODE, HOLD and MIN/MAX pressed from the computer" width="760"></p>
+
+| Scope view | Recording |
+|---|---|
+| <img src="docs/companion_scope.gif" alt="SCOPE view: the trend on a scope grid with time base and cursors" width="420"> | <img src="docs/companion_record.gif" alt="RECORD starts a CSV recording; the LOG view lists the recordings" width="420"> |
+
+Recorded from a real 121GW with firmware F-1.07 over Bluetooth (nothing connected to the inputs, so the readings are small; the keys are pressed from the computer).
+
 ## What it does
 
 | | |

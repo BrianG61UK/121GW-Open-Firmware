@@ -602,6 +602,32 @@ class Companion:
                                                  'offset': offset, 'delay': delay, 'note': note}}
         return {'ok': True, 'set_to': self.clock['last']['time'], 'server': server, 'offset': offset, 'note': note}
 
+    RECORDINGS_MAX = 50              # newest files listed on the LOG view
+    RECORDINGS_EVERY = 2.0           # seconds between two looks at the folder (the page polls state() far more often)
+
+    def recordings(self):
+        """The CSV files in the recordings folder, newest first: [{'name', 'size' (bytes), 'date' 'YYYY-MM-DD', 'time'
+        'HH:MM'}], at most RECORDINGS_MAX; [] while the folder does not exist.  Looked up at most every
+        RECORDINGS_EVERY seconds."""
+        now = time.time()
+        cache = getattr(self, '_rec_cache', None)
+        if cache and now - cache[0] < self.RECORDINGS_EVERY:
+            return cache[1]
+        out = []
+        try:
+            with os.scandir(self.folder) as it:
+                for e in it:
+                    if e.is_file() and e.name.lower().endswith('.csv'):
+                        st = e.stat()
+                        out.append((st.st_mtime, e.name, st.st_size))
+        except OSError:
+            out = []
+        out.sort(reverse=True)
+        lst = [{'name': n, 'size': s, 'date': time.strftime('%Y-%m-%d', time.localtime(m)),
+                'time': time.strftime('%H:%M', time.localtime(m))} for m, n, s in out[:self.RECORDINGS_MAX]]
+        self._rec_cache = (now, lst)
+        return lst
+
     def state(self, since=None):
         L = self.link
         return {'now': time.time(),
@@ -612,6 +638,7 @@ class Companion:
                 'clock': self.clock,
                 'session': self.session.snapshot(since),
                 'folder': self.folder,
+                'recordings': self.recordings(),
                 'derived': self.derived.snapshot(),
                 'desk': self.desk,
                 'diag': dict(self.diag),
