@@ -1318,6 +1318,9 @@ FUNC bft_poll
     movs r0, #0
     ldr r1, =bft_pos
     strh r0, [r1]
+    ldr r1, =bfx_staged
+    strh r0, [r1]                           @ IMP-36: the staged READ bytes are void once the page changes owner
+                                            @ (log_buf may be reused by logging or cal.bin meanwhile)
     movs r0, #BFT_ST_WAIT
     movs r1, #0
     bl bft_set_state                        @ waiting (also after leaving: shown when the page comes back)

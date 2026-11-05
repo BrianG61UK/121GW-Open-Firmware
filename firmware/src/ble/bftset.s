@@ -45,6 +45,8 @@
 @ bit 3 the clock (page CL); bits 7..4 must be 0.  PUT sets the three RAM variables and calls set_b20_store with the mask
 @ 0x0F, which changes bits 3..0 of the byte and keeps bits 7..4 (EEPROM_MAP.md 4.1); the pages call it with the mask of
 @ their own bits, one page at a time.
+@ The save routines of the pages do not return the result of the EEPROM write (set_nvm_store's status is dropped by the
+@ page code, as in v2.05): PUT answers the value in effect in RAM; a write the NVM layer refused is not reported.
 @ Not offered: 0x018 (logging interval, 0..999 does not fit the one-byte value), the rotary memory 0x008..0x00E, the
 @ identity, calibration, restore and user-zero bytes (EEPROM_MAP.md 9.2).
 @
