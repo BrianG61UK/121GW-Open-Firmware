@@ -15,11 +15,11 @@
 @             is erased first (the firmware mark first of all), so the answer comes after the erase
 @   2 DATA    seq = packet number from 0; the bytes are programmed in half-pages as they arrive
 @   3 END     all bytes sent: the flash is checked against the CRC-32; firmware: image check, firmware mark; bootloader:
-@             slot header, INSTALL record; the meter restarts half a second after the answer
+@             slot header, INSTALL record; the meter restarts 1.5 s after the END packet (RESET_DELAY, bl_main.s)
 @   4 ABORT   back to waiting (an erased firmware stays without mark: the bootloader stays in update mode)
 @   5 STATUS  payload index(1): 0x80 bootloader version (major << 8 | minor << 4 | patch), 1 state, 2 bytes received
-@             / 256; the
-@             firmware's page Ld refuses index 0x80 (status 3), so the answer tells the bootloader from the firmware
+@             / 256; the firmware's page Ld refuses index 0x80 (status 3), so the answer tells the bootloader
+@             from the firmware
 @ Status: 0 accepted, 1 CRC wrong, 2 not the expected packet (next = expected), 3 not allowed now, 4 START refused,
 @         5 bytes beyond the size, 0x10 + n END failed: n = 2 length or CRC-32 wrong, 3 not a firmware image,
 @         6 flash write or check failed.
@@ -33,45 +33,46 @@
     .include "bl.inc"
 
     .equ RING_LEN,          1024            @ power of two: four full packets
-    .equ MAXPAY,            232
-    .equ ST_WAIT,           0
-    .equ ST_RECV,           1
-    .equ ST_DONE,           2
-    .equ KIND_FW,           0
-    .equ KIND_BL,           2
+    .equ MAXPAY,            232             @ largest payload of one packet
+    .equ ST_WAIT,           0               @ no transfer in progress: waiting for START
+    .equ ST_RECV,           1               @ START accepted, DATA packets are being programmed
+    .equ ST_DONE,           2               @ END accepted: the restart is due
+    .equ KIND_FW,           0               @ START kind: firmware image
+    .equ KIND_BL,           2               @ START kind: bootloader image
     .equ GAP_TICKS,         20              @ 200 ms without a byte drops a packet being assembled
     .equ APB1_USART2,       0x00020000      @ RCC_APB1ENR bit 17
-    .equ AHB_GPIOD,         0x00000008
-    .equ NVIC_ISER1,        0xE000E104
-    .equ NVIC_ICER1,        0xE000E184
+    .equ AHB_GPIOD,         0x00000008      @ RCC_AHBENR bit 3: GPIOD clock
+    .equ NVIC_ISER1,        0xE000E104      @ NVIC set-enable register 1 (IRQ32..63)
+    .equ NVIC_ICER1,        0xE000E184      @ NVIC clear-enable register 1 (IRQ32..63)
     .equ IRQ38_BIT,         0x00000040      @ IRQ 38 = bit 6 of the second ISER / ICER word
     .equ CR1_ON,            0x0000202C      @ UE | RXNEIE | TE | RE (RM0038 26.6.4)
-    .equ SR_RXNE,           0x20
-    .equ SR_TXE,            0x80
-    .equ SR_TC,             0x40
-    .equ VEC_WORDS,         73
+    .equ SR_RXNE,           0x20            @ USART_SR: receive data register not empty
+    .equ SR_TXE,            0x80            @ USART_SR: transmit data register empty
+    .equ SR_TC,             0x40            @ USART_SR: transmission complete
+    .equ VEC_WORDS,         73              @ table entries: 16 core exceptions + IRQ0..56 (bl_main.s bl_vectors)
 
+@ RAM of the link: receive ring, the packet being assembled, the stage for half-pages and the transfer state.
     .section .bss.bl_ble, "aw", %nobits
     .balign 4
     .global bl_ble_activity
-bl_ring:        .space RING_LEN
-bl_pkt:         .space 8 + MAXPAY
+bl_ring:        .space RING_LEN             @ receive ring: filled by bl_usart_isr (head), emptied by bl_ble_poll (tail)
+bl_pkt:         .space 8 + MAXPAY           @ packet being assembled: B5 5B type seq(2) len payload crc16(2)
 bl_stage:       .space 384                  @ bytes waiting for their half-page: < 128 left + 232 of a packet
-bl_ans:         .space 12
-bl_size:        .space 4
-bl_crc:         .space 4
-bl_recv:        .space 4
+bl_ans:         .space 12                   @ answer packet, 11 bytes
+bl_size:        .space 4                    @ image size from START
+bl_crc:         .space 4                    @ image CRC-32 from START
+bl_recv:        .space 4                    @ image bytes received so far
 bl_dest0:       .space 4                    @ first address of the image
 bl_dest:        .space 4                    @ next half-page to program
 bl_slot:        .space 4                    @ slot of a bootloader image
 bl_ble_activity: .space 4                   @ ticks of the last received packet (bl_main.s timeouts)
 bl_rx_head:     .space 2                    @ written by the interrupt
-bl_rx_tail:     .space 2
-bl_pos:         .space 2
-bl_seq:         .space 2
-bl_staged:      .space 2
-bl_state:       .space 1
-bl_kind:        .space 1
+bl_rx_tail:     .space 2                    @ read position of bl_ble_poll
+bl_pos:         .space 2                    @ bytes of the packet assembled so far; 0 = waiting for B5
+bl_seq:         .space 2                    @ number of the next DATA packet expected
+bl_staged:      .space 2                    @ bytes in bl_stage
+bl_state:       .space 1                    @ ST_WAIT, ST_RECV or ST_DONE
+bl_kind:        .space 1                    @ KIND_FW or KIND_BL of the running transfer
 bl_last_pct:    .space 1                    @ percent shown, 200 = "Ld oK" shown, 0xFF = draw at the next chance
 bl_show_err:    .space 1                    @ END or flash error to show, 0 none
 bl_txt:         .space 5                    @ main display text
@@ -87,12 +88,18 @@ bl_ram_vectors: .space VEC_WORDS * 4
 @ -----------------------------------------------------------------------------
 @ bl_ble_on - BLE module on, USART2 at 19200 baud, receive interrupt from the RAM vector table
 @ Clobbers : r0-r3, r12, flags
+@ Context  : main, on entering update mode and when a key press switches the module on again (bl_main.s)
+@ Note     : order as the firmware: PF15 high first, then PD5/PD6 become AF7.  The vector table is copied to RAM with
+@            the USART2 entry (exception 54 = IRQ38 + 16) pointing at the RAM handler, and VTOR is moved there: the
+@            handler can then run while a flash operation executes (the flash stalls instruction fetches from the bank
+@            being written, bl_flash.s).
 @ -----------------------------------------------------------------------------
 FUNC bl_ble_on
     push {r4, lr}
     ldr r0, =(GPIOF_BASE + GPIO_BSRRL)
     mov r1, #0x8000
     strh r1, [r0]                           @ PF15 high: BLE module supply (before PD5/PD6 become AF7)
+    @ GPIOD clock on
     ldr r0, =RCC_AHBENR
     ldr r1, [r0]
     orr r1, r1, #AHB_GPIOD
@@ -100,10 +107,12 @@ FUNC bl_ble_on
     ldr r0, =GPIOD_BASE
     ldr r1, =bl_desc_usart
     bl brd_gpio_init                        @ PD5 TX, PD6 RX: AF7, pull-up (as the firmware)
+    @ USART2 clock on
     ldr r0, =RCC_APB1ENR
     ldr r1, [r0]
     orr r1, r1, #APB1_USART2
     str r1, [r0]
+    @ ring, packet assembly and state cleared
     movs r0, #0
     ldr r1, =bl_rx_head
     strh r0, [r1]
@@ -123,81 +132,92 @@ FUNC bl_ble_on
     bne 1b
     ldr r1, =bl_ram_vectors
     ldr r0, =bl_usart_isr
-    str r0, [r1, #(54 * 4)]
-    dsb
+    str r0, [r1, #(54 * 4)]                 @ USART2 handler into the RAM table
+    dsb                                     @ table writes complete before VTOR changes
     ldr r0, =SCB_VTOR
-    str r1, [r0]
+    str r1, [r0]                            @ VTOR = the RAM table
     dsb
-    isb
+    isb                                     @ new table in effect before the next instruction
     ldr r4, =USART2_BASE_BL
-    movs r0, #USART_BRR_19200
+    movs r0, #USART_BRR_19200               @ baud divider for MSI 4.194 MHz (bl.inc)
     str r0, [r4, #USART_BRR]
     ldr r0, =CR1_ON
-    str r0, [r4, #USART_CR1]
+    str r0, [r4, #USART_CR1]                @ UE | RXNEIE | TE | RE: USART on, receive interrupt on
     ldr r0, =NVIC_ISER1
     movs r1, #IRQ38_BIT
-    str r1, [r0]
+    str r1, [r0]                            @ IRQ38 (USART2) enabled in the NVIC
     pop {r4, pc}
 ENDFUNC bl_ble_on
 
 @ -----------------------------------------------------------------------------
 @ bl_ble_off - USART2 and its interrupt off, the flash vector table again, BLE module supply off (PF15 low)
 @ Clobbers : r0-r3, flags
+@ Context  : main, before the firmware is started, before the card update, and after 10 minutes without a packet
 @ -----------------------------------------------------------------------------
 FUNC bl_ble_off
     ldr r0, =NVIC_ICER1
     movs r1, #IRQ38_BIT
-    str r1, [r0]
+    str r1, [r0]                            @ IRQ38 disabled in the NVIC
     ldr r0, =USART2_BASE_BL
     movs r1, #0
-    str r1, [r0, #USART_CR1]
+    str r1, [r0, #USART_CR1]                @ USART2 off
     ldr r0, =SCB_VTOR
     ldr r1, =BL_BASE
-    str r1, [r0]
+    str r1, [r0]                            @ VTOR back to the table in flash (BL_BASE)
     dsb
     isb
     ldr r0, =(GPIOF_BASE + GPIO_BSRRH)
     mov r1, #0x8000
-    strh r1, [r0]
+    strh r1, [r0]                           @ GPIOF BSRRH bit 15: PF15 low
     bx lr
 ENDFUNC bl_ble_off
 
 @ -----------------------------------------------------------------------------
 @ bl_ble_send - send r1 bytes from r0, polled (TXE before each byte, TC at the end)
+@ In       : r0 = address, r1 = length (>= 1)
 @ Clobbers : r0-r3, flags
+@ Context  : main, only bl_answer
+@ Note     : returns when the last byte has left the shift register, so the caller may do slow work (flash) after it.
 @ -----------------------------------------------------------------------------
 LFUNC bl_ble_send
     ldr r2, =USART2_BASE_BL
 1:  ldr r3, [r2, #USART_SR]
-    tst r3, #SR_TXE
+    tst r3, #SR_TXE                         @ wait until the transmit register is empty
     beq 1b
-    ldrb r3, [r0], #1
+    ldrb r3, [r0], #1                       @ next byte
     str r3, [r2, #USART_DR]
     subs r1, r1, #1
-    bne 1b
+    bne 1b                                  @ all r1 bytes
 2:  ldr r3, [r2, #USART_SR]
-    tst r3, #SR_TC
+    tst r3, #SR_TC                          @ last byte completely shifted out?
     beq 2b
     bx lr
 ENDFUNC bl_ble_send
 
 @ -----------------------------------------------------------------------------
-@ bl_crc16 - CRC-16/CCITT-FALSE of r1 bytes at r0; Out r0; clobbers r1-r3, r12
+@ bl_crc16 - CRC-16/CCITT-FALSE of r1 bytes at r0
+@ In       : r0 = address, r1 = length
+@ Out      : r0 = CRC-16
+@ Clobbers : r1-r3, r12
+@ Context  : main (packet check, answer)
+@ Note     : start value 0xFFFF, polynomial 0x1021, most significant bit first, no final XOR.  Bit 16 of the working
+@            value is the bit shifted out; the bits above bit 15 are cut after each byte.
+@ -----------------------------------------------------------------------------
 @ -----------------------------------------------------------------------------
 LFUNC bl_crc16
-    movw r2, #0xFFFF
-    movw r12, #0x1021
-1:  cbz r1, 4f
+    movw r2, #0xFFFF                        @ start value
+    movw r12, #0x1021                       @ polynomial
+1:  cbz r1, 4f                              @ no bytes left: done
     ldrb r3, [r0], #1
-    eor r2, r2, r3, lsl #8
+    eor r2, r2, r3, lsl #8                  @ the byte joins the high half
     movs r3, #8
 2:  lsls r2, r2, #1
-    tst r2, #0x10000
+    tst r2, #0x10000                        @ the bit shifted out of bit 15
     it ne
     eorne r2, r2, r12
     subs r3, r3, #1
     bne 2b
-    uxth r2, r2
+    uxth r2, r2                             @ drop the bits above bit 15
     subs r1, r1, #1
     b 1b
 4:  mov r0, r2
@@ -206,7 +226,12 @@ ENDFUNC bl_crc16
 
 @ -----------------------------------------------------------------------------
 @ bl_answer - answer the packet in bl_pkt: r0 = status, r1 = next
+@ In       : r0 = status, r1 = next (u16: the packet number expected, or a value for STATUS)
+@ Out      : -
 @ Clobbers : r0-r3, r12, flags (r4 saved)
+@ Context  : main, once per packet
+@ Note     : answer B5 5B 81 seq(2) 03 status next(2) crc16(2): the sequence field is copied from the request, the
+@            payload is 3 bytes, the CRC-16 covers type..payload (7 bytes).
 @ -----------------------------------------------------------------------------
 LFUNC bl_answer
     push {r4, lr}
@@ -218,29 +243,34 @@ LFUNC bl_answer
     movs r2, #0x81
     strb r2, [r4, #2]
     ldr r2, =bl_pkt
-    ldrb r3, [r2, #3]
+    ldrb r3, [r2, #3]                       @ sequence number copied from the request
     strb r3, [r4, #3]
     ldrb r3, [r2, #4]
     strb r3, [r4, #4]
     movs r2, #3
-    strb r2, [r4, #5]
-    strb r0, [r4, #6]
-    strb r1, [r4, #7]
+    strb r2, [r4, #5]                       @ payload length 3
+    strb r0, [r4, #6]                       @ status
+    strb r1, [r4, #7]                       @ next, low byte
     lsrs r1, r1, #8
-    strb r1, [r4, #8]
-    adds r0, r4, #2
-    movs r1, #7
+    strb r1, [r4, #8]                       @ next, high byte
+    adds r0, r4, #2                         @ CRC over type..payload
+    movs r1, #7                             @ 7 bytes: type, seq(2), length, status, next(2)
     bl bl_crc16
-    strb r0, [r4, #9]
+    strb r0, [r4, #9]                       @ CRC low byte
     lsrs r0, r0, #8
-    strb r0, [r4, #10]
+    strb r0, [r4, #10]                      @ CRC high byte
     mov r0, r4
-    movs r1, #11
+    movs r1, #11                            @ 11 bytes in all
     bl bl_ble_send
     pop {r4, pc}
 ENDFUNC bl_answer
 
-@ bl_le32 - little-endian u32 at r0 (any alignment); clobbers r1, r2
+@ -----------------------------------------------------------------------------
+@ bl_le32 - little-endian u32 at r0 (any alignment)
+@ Out      : r0 = value
+@ Clobbers : r1, r2
+@ Context  : main (packet fields are not aligned)
+@ -----------------------------------------------------------------------------
 LFUNC bl_le32
     ldrb r1, [r0, #3]
     ldrb r2, [r0, #2]
@@ -255,22 +285,30 @@ ENDFUNC bl_le32
 @ -----------------------------------------------------------------------------
 @ bl_ble_poll - assemble packets from the ring; handle one complete packet per call
 @ In       : r0 = 10 ms tick count (bl_main.s)
+@ Out      : -
 @ Clobbers : r0-r3, r12, flags (r4-r7 saved)
+@ Context  : main, from the update loop while the link is open
+@ Note     : packet layout in bl_pkt: [0] B5, [1] 5B, [2] type, [3..4] seq, [5] payload length, [6..] payload, then the
+@            CRC-16 (low, high).  bl_pos counts the bytes assembled; r5 = bl_pos while a byte is handled.  A byte that
+@            does not fit (no B5 at the start, no 5B after it) restarts the assembly, a length above MAXPAY drops the
+@            packet.  bl_packet does the packet's work before returning, so the answer goes out inside this call.
+@ -----------------------------------------------------------------------------
 @ -----------------------------------------------------------------------------
 FUNC bl_ble_poll
     push {r4-r7, lr}
     mov r7, r0                              @ r7 = now (ticks)
-    ldr r6, =bl_pkt
+    ldr r6, =bl_pkt                         @ r6 = packet buffer
     ldr r0, =bl_pos                         @ a packet cut short is dropped after GAP_TICKS without a byte
     ldrh r1, [r0]
-    cbz r1, 1f
+    cbz r1, 1f                              @ no packet in progress: no gap check
     ldr r2, =bl_last_byte
     ldr r2, [r2]
-    subs r2, r7, r2
+    subs r2, r7, r2                         @ ticks since the last byte
     cmp r2, #GAP_TICKS
     blo 1f
     movs r1, #0
     strh r1, [r0]
+    @ take one byte from the ring, if any
 1:  ldr r1, =bl_rx_tail
     ldrh r2, [r1]
     ldr r0, =bl_rx_head
@@ -278,20 +316,21 @@ FUNC bl_ble_poll
     cmp r0, r2
     beq 9f                                  @ ring empty
     ldr r0, =bl_ring
-    ldrb r3, [r0, r2]
+    ldrb r3, [r0, r2]                       @ r3 = the byte
     adds r2, r2, #1
-    bfc r2, #10, #22
-    strh r2, [r1]
+    bfc r2, #10, #22                        @ wrap at RING_LEN (1024)
+    strh r2, [r1]                           @ tail advanced
     ldr r0, =bl_last_byte
-    str r7, [r0]
+    str r7, [r0]                            @ tick of this byte
     ldr r1, =bl_pos
-    ldrh r5, [r1]
+    ldrh r5, [r1]                           @ r5 = bytes assembled so far
     cbnz r5, 2f
-    cmp r3, #0xB5
+    cmp r3, #0xB5                           @ first byte of a packet must be B5, anything else is skipped
     bne 1b
     strb r3, [r6, #0]
     movs r5, #1
     b 8f
+    @ second byte: 5B continues; B5 again counts as a new start; anything else restarts
 2:  cmp r5, #1
     bne 3f
     cmp r3, #0x5B
@@ -304,48 +343,54 @@ FUNC bl_ble_poll
 21: strb r3, [r6, #1]
     movs r5, #2
     b 8f
+    @ further bytes are stored; from the sixth on, the length byte (index 5) says when the packet is complete
 3:  strb r3, [r6, r5]
     adds r5, r5, #1
-    cmp r5, #6
+    cmp r5, #6                              @ length byte not in yet
     blo 8f
-    ldrb r0, [r6, #5]
+    ldrb r0, [r6, #5]                       @ payload length
     cmp r0, #MAXPAY
     bls 4f
-    movs r5, #0
+    movs r5, #0                             @ longer than MAXPAY: drop the packet (r5 = 0)
     b 8f
-4:  adds r0, r0, #8
+4:  adds r0, r0, #8                         @ total bytes = 8 + payload (framing 6, CRC 2)
     cmp r5, r0
-    blo 8f
+    blo 8f                                  @ not complete yet
     movs r0, #0                             @ complete
-    strh r0, [r1]
+    strh r0, [r1]                           @ packet consumed: bl_pos = 0
     ldr r0, =bl_ble_activity
     str r7, [r0]
     ldrb r4, [r6, #5]
-    adds r0, r6, #2
-    adds r1, r4, #4
+    adds r0, r6, #2                         @ CRC over type, seq, length and payload
+    adds r1, r4, #4                         @ length + 4
     bl bl_crc16
-    adds r4, r4, #6
+    adds r4, r4, #6                         @ r4 = index of the CRC low byte (6 + length)
     ldrb r1, [r6, r4]
     adds r4, r4, #1
     ldrb r2, [r6, r4]
-    orr r1, r1, r2, lsl #8
+    orr r1, r1, r2, lsl #8                  @ received CRC-16
     cmp r0, r1
-    beq 5f
+    beq 5f                                  @ equal: handle the packet
     movs r0, #1                             @ CRC wrong: resend
     movs r1, #0
     bl bl_answer
     b 9f
-5:  bl bl_packet
+5:  bl bl_packet                            @ valid packet: execute
     b 9f
 8:  ldr r1, =bl_pos
-    strh r5, [r1]
+    strh r5, [r1]                           @ save the assembly position, take the next byte
     b 1b
 9:  pop {r4-r7, pc}
 ENDFUNC bl_ble_poll
 
 @ -----------------------------------------------------------------------------
 @ bl_packet - handle the complete packet in bl_pkt
+@ Out      : -
 @ Clobbers : r0-r3, r12, flags (r4-r7 saved)
+@ Context  : main, only bl_ble_poll, after the CRC-16 was verified
+@ Note     : dispatch on the type byte: 1 START, 2 DATA, 3 END, 4 ABORT, 5 STATUS.  Every path ends in .Lp_answer with
+@            r0 = status, r1 = next, then the display is redrawn.  r4 = bl_pkt throughout.  Status codes are listed in
+@            the file header.
 @ -----------------------------------------------------------------------------
 LFUNC bl_packet
     push {r4-r7, lr}
@@ -361,37 +406,41 @@ LFUNC bl_packet
     beq .Lp_abort
     cmp r0, #5
     beq .Lp_status
+@ an unknown type, or a request that does not fit the state: status 3, next 0
 .Lp_notallowed:
     movs r0, #3
     movs r1, #0
     b .Lp_answer
+@ STATUS: one payload byte, the index; 0x80 bootloader version, 1 state, 2 bytes received / 256
 .Lp_status:
-    ldrb r0, [r4, #5]
+    ldrb r0, [r4, #5]                       @ payload length must be 1
     cmp r0, #1
     bne .Lp_notallowed
     ldrb r0, [r4, #6]
-    cmp r0, #0x80
+    cmp r0, #0x80                           @ index 0x80
     bne 1f
-    ldr r1, =((((BL_VERSION >> 16) & 0xFF) << 8) | (((BL_VERSION >> 8) & 0xF) << 4) | (BL_VERSION & 0xF))
+    ldr r1, =((((BL_VERSION >> 16) & 0xFF) << 8) | (((BL_VERSION >> 8) & 0xF) << 4) | (BL_VERSION & 0xF))  @ major << 8 | minor << 4 | patch
     b 3f
 1:  cmp r0, #1
     bne 2f
     ldr r1, =bl_state
-    ldrb r1, [r1]
+    ldrb r1, [r1]                           @ bl_state
     b 3f
 2:  cmp r0, #2
     bne .Lp_notallowed
     ldr r1, =bl_recv
     ldr r1, [r1]
-    lsrs r1, r1, #8
-3:  movs r0, #0
+    lsrs r1, r1, #8                         @ bytes received / 256
+3:  movs r0, #0                             @ status 0, next = the value
     b .Lp_answer
+@ ABORT: back to waiting
 .Lp_abort:
     movs r0, #ST_WAIT
     ldr r1, =bl_state
     strb r0, [r1]
     movs r1, #0
     b .Lp_answer
+@ START: payload size(4) crc32(4) kind(1) [version(4)], i.e. 9 or 13 bytes
 .Lp_start:
     ldr r0, =bl_state
     ldrb r0, [r0]
@@ -402,20 +451,20 @@ LFUNC bl_packet
     beq 1f
     cmp r5, #13
     bne .Lp_refuse
-1:  adds r0, r4, #6
+1:  adds r0, r4, #6                         @ size at +6
     bl bl_le32
     mov r6, r0                              @ r6 = size
-    adds r0, r4, #10
+    adds r0, r4, #10                        @ CRC-32 at +10
     bl bl_le32
     ldr r1, =bl_crc
-    str r0, [r1]
+    str r0, [r1]                            @ kept for END
     movs r0, #0
-    cmp r5, #13
+    cmp r5, #13                             @ the version field is there only in the 13-byte form, else 0
     bne 2f
     adds r0, r4, #15
     bl bl_le32
 2:  ldr r1, =bl_hdr_ver
-    str r0, [r1]
+    str r0, [r1]                            @ version word of the header written at END (bl_flash.s)
     ldrb r7, [r4, #14]                      @ r7 = kind
     cmp r7, #KIND_FW
     beq .Lp_start_fw
@@ -424,17 +473,18 @@ LFUNC bl_packet
     @ bootloader image into the slot that does not hold the running bootloader
     subs r0, r6, #1
     cmp r0, #BL_MAX
-    bhs .Lp_refuse
-    bl bl_free_slot
+    bhs .Lp_refuse                          @ size must be 1..BL_MAX bytes
+    bl bl_free_slot                         @ r0 = the slot not holding the running bootloader
     ldr r1, =bl_slot
     str r0, [r1]
-    add r1, r0, #SLOT_SIZE
+    add r1, r0, #SLOT_SIZE                  @ the whole slot (header page and image) is erased
     bl bl_erase
-    cbnz r0, .Lp_refuse_flash
+    cbnz r0, .Lp_refuse_flash               @ erase failed: START refused, back to waiting
     ldr r0, =bl_slot
     ldr r0, [r0]
-    add r0, r0, #SLOT_IMG
+    add r0, r0, #SLOT_IMG                   @ the image starts behind the header page (SLOT_IMG)
     b .Lp_start_go
+@ firmware: 0x124 (73 vector words) .. APP_MAX bytes
 .Lp_start_fw:
     cmp r6, #0x124
     blo .Lp_refuse
@@ -442,25 +492,27 @@ LFUNC bl_packet
     cmp r6, r0
     bhi .Lp_refuse
     ldr r0, =FW_MARK                        @ the firmware mark first: from now on the bootloader stays in update mode
-    add r1, r0, #0x100
+    add r1, r0, #0x100                      @ end of the mark page
     bl bl_erase
     cbnz r0, .Lp_refuse_flash
+@ then the image area, size rounded up to whole 256-byte pages
     ldr r0, =APP_BASE
-    add r1, r6, #0xFF
+    add r1, r6, #0xFF                       @ size rounded up to 256
     bic r1, r1, #0xFF
     add r1, r1, r0
     bl bl_erase
     cbnz r0, .Lp_refuse_flash
-    ldr r0, =APP_BASE
+    ldr r0, =APP_BASE                       @ programming starts at APP_BASE
+@ common part of START: addresses, counters and state; the answer says accepted (status 0, next 0)
 .Lp_start_go:
     ldr r1, =bl_dest0
-    str r0, [r1]
+    str r0, [r1]                            @ bl_dest0: first address of the image (for the CRC at END)
     ldr r1, =bl_dest
-    str r0, [r1]
+    str r0, [r1]                            @ bl_dest: next half-page to program
     ldr r1, =bl_size
-    str r6, [r1]
+    str r6, [r1]                            @ image size
     ldr r1, =bl_kind
-    strb r7, [r1]
+    strb r7, [r1]                           @ kind
     movs r0, #0
     ldr r1, =bl_recv
     str r0, [r1]
@@ -477,14 +529,17 @@ LFUNC bl_packet
     movs r0, #0
     movs r1, #0
     b .Lp_answer
+@ an erase failed: back to waiting, START refused
 .Lp_refuse_flash:
     movs r0, #ST_WAIT
     ldr r1, =bl_state
     strb r0, [r1]
+@ START refused: status 4
 .Lp_refuse:
     movs r0, #4
     movs r1, #0
     b .Lp_answer
+@ DATA: only while receiving; packet number must be the expected one
 .Lp_data:
     ldr r0, =bl_state
     ldrb r0, [r0]
@@ -495,7 +550,7 @@ LFUNC bl_packet
     orr r5, r0, r1, lsl #8                  @ r5 = seq
     ldr r2, =bl_seq
     ldrh r6, [r2]                           @ r6 = expected
-    cmp r5, r6
+    cmp r5, r6                              @ the expected packet
     beq 1f
     blo 2f                                  @ an earlier packet again (its answer was lost): accepted, not stored
     movs r0, #2                             @ ahead: name the packet expected
@@ -506,16 +561,16 @@ LFUNC bl_packet
     b .Lp_answer
 1:  ldrb r5, [r4, #5]                       @ r5 = payload length
     ldr r0, =bl_recv
-    ldr r1, [r0]
+    ldr r1, [r0]                            @ r1 = bytes received including this packet
     add r1, r1, r5
     ldr r2, =bl_size
     ldr r2, [r2]
     cmp r1, r2
-    bls 3f
-    movs r0, #5
+    bls 3f                                  @ within the size from START
+    movs r0, #5                             @ status 5: bytes beyond the size
     mov r1, r6
     b .Lp_answer
-3:  str r1, [r0]
+3:  str r1, [r0]                            @ bl_recv updated
     @ payload to the stage, half-pages out
     ldr r7, =bl_staged
     ldrh r0, [r7]
@@ -530,13 +585,14 @@ LFUNC bl_packet
     b 4b
 5:  strh r0, [r7]
     bl bl_flush_stage                       @ every full half-page programmed
-    cbnz r0, .Lp_flash_fail
-    adds r6, r6, #1
+    cbnz r0, .Lp_flash_fail                 @ flash write or check failed
+    adds r6, r6, #1                         @ next packet number expected
     ldr r2, =bl_seq
     strh r6, [r2]
     movs r0, #0
-    mov r1, r6
+    mov r1, r6                              @ next = the new expected number
     b .Lp_answer
+@ a flash write failed: LdE 6 on the display, back to waiting, status 0x16 (0x10 + 6)
 .Lp_flash_fail:
     movs r0, #6
     ldr r1, =bl_show_err
@@ -547,13 +603,14 @@ LFUNC bl_packet
     movs r0, #0x16
     movs r1, #0
     b .Lp_answer
+@ END: all bytes must be there, then the flash is checked
 .Lp_end:
     ldr r0, =bl_state
     ldrb r0, [r0]
     cmp r0, #ST_DONE
     bne 1f
     movs r0, #0                             @ END again (the answer was lost): done
-    movs r1, #0
+    movs r1, #0                             @ next 0
     b .Lp_answer
 1:  cmp r0, #ST_RECV
     bne .Lp_notallowed
@@ -571,20 +628,21 @@ LFUNC bl_packet
     cbz r0, 3f
     ldr r1, =bl_show_err
     strb r0, [r1]
-    adds r0, r0, #0x10
+    adds r0, r0, #0x10                      @ status 0x10 + n
     movs r1, #ST_WAIT
     ldr r2, =bl_state
     strb r1, [r2]
     movs r1, #0
     b .Lp_answer
-3:  movs r0, #ST_DONE
+3:  movs r0, #ST_DONE                       @ check done: ST_DONE
     ldr r1, =bl_state
     strb r0, [r1]
     movs r0, #1
     ldr r1, =bl_reset_due
-    strb r0, [r1]
+    strb r0, [r1]                           @ bl_main.s restarts after RESET_DELAY
     movs r0, #0
     movs r1, #0
+@ answer first, then redraw: the sender is not held up
 .Lp_answer:
     bl bl_answer
     bl bl_ble_draw                          @ the display after the answer: the sender is not held up
@@ -595,11 +653,16 @@ ENDFUNC bl_packet
 @ bl_ble_draw - main display during a transfer (as the firmware's page Ld): "Ld nn" percent received with the
 @ bargraph, "Ld oK" when the image is checked (shown until the restart), "LdE n" after a failed END (n = END error 2, 3
 @ or 6) or a failed flash write (6); the sub display keeps "-IAP-"
+@ Out      : -
 @ Clobbers : r0-r3, r12, flags (r4, r5 saved)
+@ Context  : main, after every answer
+@ Note     : the text is built in bl_txt (5 characters); bl_last_pct remembers what is shown so that the display is
+@            redrawn only when the percent changes (0xFF forces a redraw, 200 = "Ld oK" shown).
+@ -----------------------------------------------------------------------------
 @ -----------------------------------------------------------------------------
 LFUNC bl_ble_draw
     push {r4, r5, lr}
-    ldr r4, =bl_txt
+    ldr r4, =bl_txt                         @ r4 = text buffer: "Ld" then three characters
     movs r0, #'L'
     strb r0, [r4, #0]
     movs r0, #'d'
@@ -608,12 +671,12 @@ LFUNC bl_ble_draw
     ldrb r5, [r0]
     cbz r5, 1f
     movs r1, #0
-    strb r1, [r0]
+    strb r1, [r0]                           @ the error is drawn once, then cleared
     movs r0, #'E'                           @ "LdE n"
     strb r0, [r4, #2]
     movs r0, #' '
     strb r0, [r4, #3]
-    adds r0, r5, #'0'
+    adds r0, r5, #'0'                       @ digit of the error number
     strb r0, [r4, #4]
     b 8f
 1:  ldr r0, =bl_state
@@ -632,11 +695,11 @@ LFUNC bl_ble_draw
     strb r0, [r4, #3]
     movs r0, #'K'
     strb r0, [r4, #4]
-    movs r0, #26
+    movs r0, #26                            @ all 26 segments
     bl bl_lcd_bar
     b 8f
 2:  cmp r0, #ST_RECV
-    bne 9f
+    bne 9f                                  @ waiting: nothing to draw
     ldr r0, =bl_recv                        @ percent = received x 100 / size, at most 99 until the check
     ldr r0, [r0]
     ldr r1, =bl_size
@@ -648,13 +711,13 @@ LFUNC bl_ble_draw
     it hi
     movhi r2, #99
     ldr r3, =bl_last_pct
-    ldrb r12, [r3]
+    ldrb r12, [r3]                          @ r12 = percent shown last
     cmp r2, r12
     beq 9f                                  @ unchanged: no redraw
-    strb r2, [r3]
+    strb r2, [r3]                           @ remember it
     movs r3, #10
-    udiv r12, r2, r3
-    mls r3, r12, r3, r2
+    udiv r12, r2, r3                        @ tens
+    mls r3, r12, r3, r2                     @ units
     movs r0, #' '
     strb r0, [r4, #2]
     adds r12, r12, #'0'
@@ -667,7 +730,7 @@ LFUNC bl_ble_draw
     muls r0, r2, r0
     udiv r0, r0, r1
     bl bl_lcd_bar
-8:  movs r0, #5
+8:  movs r0, #5                             @ main display, position 5
     mov r1, r4
     bl bl_lcd_text
     bl bl_lcd_commit
@@ -679,18 +742,23 @@ ENDFUNC bl_ble_draw
 @ partial one (zero padded)
 @ Out      : r0 = 0, else non-zero
 @ Clobbers : r1-r3, r12, flags (r4-r6 saved)
+@ Context  : main (after every DATA packet, and at END)
+@ Note     : DATA payloads (up to 232 bytes) are appended to bl_stage; the flash takes 128-byte half-pages, so the
+@            stage keeps the remainder (< 128 bytes) between packets.  bl_dest is the next half-page to program.
+@            Padding with zeros equals the erased state, so the image CRC is over the real bytes only (bl_size).
+@ -----------------------------------------------------------------------------
 @ -----------------------------------------------------------------------------
 LFUNC bl_flush_stage
-    movs r0, #0
+    movs r0, #0                             @ normal entry: full half-pages only
 bl_flush_stage_all:                         @ entry with r0 = 1: the partial half-page too
     push {r4-r6, lr}
-    mov r6, r0
-    ldr r4, =bl_staged
-1:  ldrh r5, [r4]
+    mov r6, r0                              @ r6 = 1: also the partial half-page
+    ldr r4, =bl_staged                      @ r4 = &bl_staged
+1:  ldrh r5, [r4]                           @ bytes in the stage
     cmp r5, #128
-    bhs 2f
-    cbz r6, 8f
-    cbz r5, 8f
+    bhs 2f                                  @ a full half-page is there
+    cbz r6, 8f                              @ not the end: leave the rest staged
+    cbz r5, 8f                              @ nothing staged: done
     ldr r0, =bl_stage                       @ pad the last half-page with zeros
     add r0, r0, r5
     movs r1, #0
@@ -698,25 +766,25 @@ bl_flush_stage_all:                         @ entry with r0 = 1: the partial hal
     adds r5, r5, #1
     cmp r5, #128
     bne 3b
-    strh r5, [r4]
+    strh r5, [r4]                           @ now a full half-page
 2:  ldr r0, =bl_dest
     ldr r0, [r0]
     ldr r1, =bl_stage
-    movs r2, #1
-    bl bl_write_hp
-    cbnz r0, 9f
+    movs r2, #1                             @ one half-page
+    bl bl_write_hp                          @ program bl_stage at bl_dest and read it back
+    cbnz r0, 9f                             @ error: return it
     ldr r0, =bl_dest
     ldr r1, [r0]
-    adds r1, r1, #128
+    adds r1, r1, #128                       @ bl_dest += 128
     str r1, [r0]
     ldrh r5, [r4]                           @ move the rest down
-    subs r5, r5, #128
+    subs r5, r5, #128                       @ bytes staged after this half-page
     strh r5, [r4]
     ldr r0, =bl_stage
     add r1, r0, #128
     cmp r5, #0
-    beq 1b
-4:  ldrb r2, [r1], #1
+    beq 1b                                  @ nothing left: the loop ends at the test above
+4:  ldrb r2, [r1], #1                       @ the rest moves to the start of the stage
     strb r2, [r0], #1
     subs r5, r5, #1
     bne 4b
@@ -729,12 +797,17 @@ ENDFUNC bl_flush_stage
 @ bl_end_check - after the last byte: last half-page, CRC-32 of the programmed image, then mark or slot header
 @ Out      : r0 = 0 done, 2 length or CRC wrong, 3 not a firmware image, 6 flash failed
 @ Clobbers : r1-r3, r12, flags (r4, r5 saved)
+@ Context  : main, from the END packet when all bytes have arrived
+@ Note     : the CRC-32 is computed over the flash itself (bl_dest0, bl_size bytes), so it proves what was programmed,
+@            not what was received.  The mark or slot header is written only after that check, so an interrupted or
+@            bad transfer leaves no valid mark.  r5 = CRC-32 of the flash.
 @ -----------------------------------------------------------------------------
 LFUNC bl_end_check
     push {r4, r5, lr}
-    movs r0, #1
+    movs r0, #1                             @ also the partial last half-page
     bl bl_flush_stage_all
-    cbnz r0, 6f
+    cbnz r0, 6f                             @ flash failure: 6
+    @ CRC-32 of the programmed image against the value from START
     ldr r1, =bl_dest0
     ldr r1, [r1]
     ldr r2, =bl_size
@@ -743,36 +816,38 @@ LFUNC bl_end_check
     mov r5, r0                              @ r5 = CRC of the flash
     ldr r1, =bl_crc
     ldr r1, [r1]
-    cmp r0, r1
+    cmp r0, r1                              @ differs: 2
     bne 2f
     ldr r0, =bl_kind
     ldrb r0, [r0]
     cmp r0, #KIND_BL
-    beq 4f
+    beq 4f                                  @ bootloader image: slot header and INSTALL record
     @ firmware: initial SP in the RAM, reset vector Thumb inside the firmware area
     ldr r4, =APP_BASE
     ldr r0, [r4, #0]
+    @ initial SP must lie in RAM 0x20000001..0x2000C000, as in bl_card.s
     ldr r1, =0x20000001
     cmp r0, r1
     blo 3f
     ldr r1, =0x2000C000
     cmp r0, r1
     bhi 3f
-    ldr r0, [r4, #4]
-    tst r0, #1
+    ldr r0, [r4, #4]                        @ reset vector
+    tst r0, #1                              @ Thumb bit
     beq 3f
-    cmp r0, r4
+    cmp r0, r4                              @ inside APP_BASE..APP_LIMIT
     blo 3f
     ldr r1, =APP_LIMIT
     cmp r0, r1
     bhs 3f
+    @ image accepted: firmware mark (FW_MAGIC, size, CRC-32, version word from START)
     ldr r0, =FW_MARK
     ldr r1, =FW_MAGIC
     ldr r2, =bl_size
     ldr r2, [r2]
     mov r3, r5
     bl bl_write_header
-    cbnz r0, 6f
+    cbnz r0, 6f                             @ mark write failed: 6
     movs r0, #0
     pop {r4, r5, pc}
 4:  ldr r0, =bl_slot                        @ bootloader: slot header, then the INSTALL record for the starter
@@ -803,22 +878,24 @@ ENDFUNC bl_end_check
 @ bootloader mark, so slot A holds the running bootloader when its image CRC equals the mark's; then B is free, else A
 @ Out      : r0 = slot address
 @ Clobbers : r1-r3, r12, flags
+@ Context  : main, at START of a bootloader image
 @ -----------------------------------------------------------------------------
 LFUNC bl_free_slot
     ldr r0, =SLOT_A
-    ldr r1, [r0, #8]
+    ldr r1, [r0, #8]                        @ word 2 of the slot A header: image CRC-32
     ldr r2, =BL_MARK
-    ldr r2, [r2, #8]
+    ldr r2, [r2, #8]                        @ word 2 of the bootloader mark: the same field
     cmp r1, r2
     ite eq
     ldreq r0, =SLOT_B                       @ A holds the running one
-    ldrne r0, =SLOT_A
+    ldrne r0, =SLOT_A                       @ else slot A
     bx lr
 ENDFUNC bl_free_slot
 
     .ltorg
 
     .section .rodata.bl_ble, "a", %progbits
+@ PD5 (TX) and PD6 (RX): AF7, 40 MHz, push-pull, pull-up
 bl_desc_usart:
     GPIO_DESC 0x0060, GPIO_MODE_AF, GPIO_SPEED_40M, GPIO_OT_PP, GPIO_PUPD_UP, 7, BRD_LEVEL_KEEP
 
@@ -829,26 +906,30 @@ bl_last_byte:   .space 4                    @ ticks of the last received byte
 @ -----------------------------------------------------------------------------
 @ bl_usart_isr - USART2 interrupt, runs from RAM: received byte into the ring (a full ring drops it; the packet CRC
 @ then fails and the sender repeats it).  Reading SR then DR also clears an overrun (RM0038 26.6.1).
+@ Context  : interrupt (exception 54, from the RAM vector table set up by bl_ble_on)
+@ Note     : r1 = SR, r2 = DR (read unconditionally).  The ring holds RING_LEN - 1 bytes: head + 1 == tail means full.
+@            The literals are in this routine's own RAM copy, so it reads no flash while a flash operation runs.
 @ -----------------------------------------------------------------------------
     .section .ramcode.bl_ble, "ax", %progbits
 FUNC bl_usart_isr
-    ldr r0, 7f
-    ldr r1, [r0, #USART_SR]
-    ldr r2, [r0, #USART_DR]
+    ldr r0, 7f                              @ USART2 base
+    ldr r1, [r0, #USART_SR]                 @ r1 = SR
+    ldr r2, [r0, #USART_DR]                 @ r2 = DR; reading SR then DR clears RXNE and an overrun
     tst r1, #SR_RXNE
-    beq 2f
+    beq 2f                                  @ no received byte: leave
     ldr r0, 8f                              @ bl_rx_head
-    ldrh r1, [r0]
+    ldrh r1, [r0]                           @ r1 = head
     adds r3, r1, #1
-    bfc r3, #10, #22
+    bfc r3, #10, #22                        @ next head, wrapped at 1024
     ldr r12, 9f                             @ bl_rx_tail
-    ldrh r12, [r12]
+    ldrh r12, [r12]                         @ tail
     cmp r3, r12
-    beq 2f
+    beq 2f                                  @ ring full: byte dropped
     ldr r12, 10f                            @ bl_ring
-    strb r2, [r12, r1]
-    strh r3, [r0]
+    strb r2, [r12, r1]                      @ store the byte
+    strh r3, [r0]                           @ publish the new head
 2:  bx lr
+@ literals (RAM copy)
     .balign 4
 7:  .word USART2_BASE_BL
 8:  .word bl_rx_head

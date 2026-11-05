@@ -210,7 +210,9 @@ transfer kind "bootloader image"; per-block CRC-16, end CRC-32).  The bootloader
 the running bootloader (half-page programming from RAM, bank 2 target), checks it, appends INSTALL
 with that slot to the control area (after erasing the area when fewer than 4 records are free; a full area makes the
 starter ignore requests), resets.  The starter installs it (6.2).  The new bootloader
-appends OK once it has reached its main loop with the LCD and BLE working; if it hangs, removing the
+appends OK early in its start (bl_main.s bl_reset: after the clock, GPIO and LCD set-up and the lamp test, before the
+key check and before the Bluetooth module is started): a bootloader that hangs before that point is replaced; one that
+reaches it but whose Bluetooth path fails is kept (the card update with MEM + HOLD still works then); if it hangs, removing the
 batteries makes the starter put the previous one back (6.2 step 3).  A power cut at any moment leaves either the old
 bootloader, a repeated install, or a rollback.
 

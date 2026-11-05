@@ -19,7 +19,7 @@
     .include "bl.inc"
 
     .equ LCD_SR_FCRSF,      0x20            @ RM0038 16.5.3
-    .equ LCD_SR_RDY,        0x10
+    .equ LCD_SR_RDY,        0x10            @ RDY: LCD_SR step-up converter ready flag
     .equ LCD_FCR_VALUE,     0x00C01040      @ PS = 3 (bits 25:22), DIV = 0, CC = 4 (bits 12:10), PON = 4 (bits 6:4)
     .equ LCD_CR_VALUE,      0x0000004C      @ BIAS = 2 (1/3, bits 6:5), DUTY = 3 (1/4, bits 4:2), VSEL = 0, MUX_SEG = 0
     .equ LCD_POLLS,         0x8000          @ bound of the set-up waits (as the firmware's LCD_WAIT_POLLS use)
@@ -27,6 +27,7 @@
     .equ APB1_LCDEN,        0x00000200      @ RCC_APB1ENR bit 9 (RM0038 6.3.10)
     .equ APB1_PWREN,        0x10000000      @ RCC_APB1ENR bit 28
 
+@ shadow copy of LCD_RAM0..7: the text and bargraph routines only change this copy; bl_lcd_commit sends it to the controller
     .section .bss.bl_lcd, "aw", %nobits
     .balign 4
 bl_shadow:      .space 32                   @ LCD_RAM0..7
@@ -36,47 +37,60 @@ bl_shadow:      .space 32                   @ LCD_RAM0..7
 @ -----------------------------------------------------------------------------
 @ bl_lcd_init - pins, clock and controller; the shadow cleared (nothing shown until bl_lcd_commit)
 @ Clobbers : r0-r3, r12, flags
+@ Context  : main, once from bl_reset, before the lamp test
+@ Note     : order: pins to AF11, APB1 clocks for LCD and PWR, LSI as LCD clock, FCR, wait for FCR taken over, CR,
+@            LCDEN, wait for ENS (controller on) and RDY (step-up converter ready).  Every wait is bounded, so a
+@            controller that never answers cannot hang the start; the waits give no status back.
 @ -----------------------------------------------------------------------------
 FUNC bl_lcd_init
     push {r4, lr}
     ldr r4, =bl_lcd_pins                    @ AF11 pins, port by port
 1:  ldr r0, [r4], #4                        @ port base, 0 ends the list
     cbz r0, 2f
-    mov r1, r4
-    bl brd_gpio_init
-    adds r4, r4, #GPIO_DESC_SIZE
+    mov r1, r4                              @ r1 = the GPIO descriptor that follows the port base
+    bl brd_gpio_init                        @ brd_gpio_init(r0 = port base, r1 = descriptor)
+    adds r4, r4, #GPIO_DESC_SIZE            @ skip the descriptor to the next port
     b 1b
+    @ APB1 clocks on: LCD (bit 9) and PWR (bit 28)
 2:  ldr r0, =RCC_APB1ENR
     ldr r1, [r0]
     ldr r2, =(APB1_LCDEN | APB1_PWREN)
     orrs r1, r1, r2
     str r1, [r0]
+    @ bl_main.s header: the RTC_BKP0R request is read before this point
     bl rcc_lsi_as_rtc_lcd_clock             @ LCD clock = RTCCLK = LSI
+    @ frame control register: prescaler, divider, contrast and pulse-on-duration fields as in the header
     ldr r0, =LCD_FCR
     ldr r1, =LCD_FCR_VALUE
     str r1, [r0]
     movs r0, #LCD_SR_FCRSF                  @ FCR taken over (16.5.2)
     bl bl_lcd_wait
+    @ control register: duty and bias first, then the same value with LCDEN set to switch the controller on
     ldr r0, =LCD_CR
     movs r1, #LCD_CR_VALUE
     str r1, [r0]
     orr r1, r1, #LCD_CR_LCDEN
     str r1, [r0]
-    movs r0, #LCD_SR_ENS
+    movs r0, #LCD_SR_ENS                    @ ENS: controller enabled
     bl bl_lcd_wait
-    movs r0, #LCD_SR_RDY
+    movs r0, #LCD_SR_RDY                    @ RDY: step-up converter ready
     bl bl_lcd_wait
-    bl bl_lcd_clear
+    bl bl_lcd_clear                         @ clear the shadow (nothing shown until the first commit)
     pop {r4, pc}
 ENDFUNC bl_lcd_init
 
-@ bl_lcd_wait - wait until LCD_SR has all bits of r0 (bounded); clobbers r1-r3
+@ -----------------------------------------------------------------------------
+@ bl_lcd_wait - wait until LCD_SR has all bits of r0 (bounded by LCD_POLLS reads, then give up without a status)
+@ In       : r0 = mask of LCD_SR bits
+@ Clobbers : r1-r3
+@ Context  : main, only bl_lcd_init
+@ -----------------------------------------------------------------------------
 LFUNC bl_lcd_wait
     ldr r1, =LCD_SR
     ldr r2, =LCD_POLLS
 1:  ldr r3, [r1]
-    bics r3, r0, r3
-    beq 2f
+    bics r3, r0, r3                         @ r3 = mask bits not yet set (0 when all are)
+    beq 2f                                  @ all set: done
     subs r2, r2, #1
     bne 1b
 2:  bx lr
@@ -85,11 +99,13 @@ ENDFUNC bl_lcd_wait
 @ -----------------------------------------------------------------------------
 @ bl_lcd_clear - all segments off in the shadow
 @ Clobbers : r0-r2
+@ Context  : main (bl_lcd_init, update mode)
+@ Note     : only the shadow changes; the display follows at the next bl_lcd_commit.
 @ -----------------------------------------------------------------------------
 FUNC bl_lcd_clear
     ldr r0, =bl_shadow
     movs r1, #0
-    movs r2, #8
+    movs r2, #8                             @ 8 words of the shadow
 1:  str r1, [r0], #4
     subs r2, r2, #1
     bne 1b
@@ -99,30 +115,37 @@ ENDFUNC bl_lcd_clear
 @ -----------------------------------------------------------------------------
 @ bl_lcd_all_on - every segment on (the lamp test the old bootloader shows at every start), committed
 @ Clobbers : r0-r3, r12, flags
+@ Context  : main, from bl_reset after bl_lcd_init
+@ Note     : ends with a branch to bl_lcd_commit, which returns to the caller.
 @ -----------------------------------------------------------------------------
 FUNC bl_lcd_all_on
     ldr r0, =bl_shadow
-    mov r1, #0xFFFFFFFF
-    movs r2, #8
+    mov r1, #0xFFFFFFFF                     @ all 32 bits set
+    movs r2, #8                             @ 8 words of the shadow
 1:  str r1, [r0], #4
     subs r2, r2, #1
     bne 1b
-    b bl_lcd_commit
+    b bl_lcd_commit                         @ tail call: commit and return
 ENDFUNC bl_lcd_all_on
 
 @ -----------------------------------------------------------------------------
 @ bl_lcd_text - draw 5 characters
-@ In       : r0 = first position (0 sub display, 5 main display), r1 = 5 characters
+@ In       : r0 = first position (0 sub display, 5 main display), r1 = 5 characters (ASCII)
+@ Out      : -
 @ Clobbers : r0-r3, r12, flags (r4-r7 saved)
+@ Context  : main
+@ Note     : only the shadow changes (bl_lcd_commit shows it).  Always exactly 5 characters, so a text is a whole
+@            display half; lower and upper case letters, digits, space and '-' have segments, anything else is blank.
+@ -----------------------------------------------------------------------------
 @ -----------------------------------------------------------------------------
 FUNC bl_lcd_text
     push {r4-r7, lr}
     mov r4, r0
     mov r5, r1
-    add r6, r4, #5
-1:  ldrb r0, [r5], #1
-    bl bl_font
-    mov r1, r4
+    add r6, r4, #5                          @ r6 = position after the last character
+1:  ldrb r0, [r5], #1                       @ next character
+    bl bl_font                              @ r0 = font byte
+    mov r1, r4                              @ r1 = position
     bl bl_lcd_glyph
     adds r4, r4, #1
     cmp r4, r6
@@ -130,24 +153,32 @@ FUNC bl_lcd_text
     pop {r4-r7, pc}
 ENDFUNC bl_lcd_text
 
-@ bl_font - segment byte of character r0 (firmware fn_0801AFFC rules); clobbers r1
+@ -----------------------------------------------------------------------------
+@ bl_font - segment byte of character r0 (firmware fn_0801AFFC rules)
+@ In       : r0 = ASCII character
+@ Out      : r0 = font byte (bit -> segment b a g f c e - d, bit 6 unused)
+@ Clobbers : r1
+@ Context  : main, only bl_lcd_text
+@ Note     : '0'..'9', 'A'..'Z' and 'a'..'z' index the firmware's font tables; '-' is segment g (0x04); every other
+@            character, the space included, is blank.
+@ -----------------------------------------------------------------------------
 LFUNC bl_font
     sub r1, r0, #'0'
-    cmp r1, #10
+    cmp r1, #10                             @ a digit: index 0..9
     bhs 1f
-    ldr r0, =v205_tab_08029184
+    ldr r0, =v205_tab_08029184              @ digit table of the firmware font
     ldrb r0, [r0, r1]
     bx lr
-1:  sub r1, r0, #'A'
+1:  sub r1, r0, #'A'                        @ upper case letter: index 0..25
     cmp r1, #26
     bhs 2f
-    ldr r0, =v205_tab_080290B8
+    ldr r0, =v205_tab_080290B8              @ upper case table
     ldrb r0, [r0, r1]
     bx lr
-2:  sub r1, r0, #'a'
+2:  sub r1, r0, #'a'                        @ lower case letter: index 0..25
     cmp r1, #26
     bhs 3f
-    ldr r0, =v205_tab_080290D4
+    ldr r0, =v205_tab_080290D4              @ lower case table
     ldrb r0, [r0, r1]
     bx lr
 3:  cmp r0, #'-'
@@ -162,40 +193,48 @@ ENDFUNC bl_font
 @ decimal point slot is not)
 @ In       : r0 = font byte, r1 = position 0..9
 @ Clobbers : r0-r3, r12, flags
+@ Context  : main, only bl_lcd_text
+@ Note     : bl_lcd_posmap has 7 bytes per position, one per font bit 0..5 and 7 (bit 6 of the font byte is unused).
+@            Each byte is a shadow segment code (word << 5 | bit) for bl_lcd_seg.
 @ -----------------------------------------------------------------------------
 LFUNC bl_lcd_glyph
     push {r4-r6, lr}
     mov r4, r0
-    ldr r5, =bl_lcd_posmap
+    ldr r5, =bl_lcd_posmap                  @ 7-byte rows of the position map
     movs r2, #7                             @ 7 bytes per position
     mla r5, r1, r2, r5
     movs r6, #0                             @ font bits 0..5, then bit 7
 1:  ldrb r0, [r5, r6]                       @ word << 5 | bit
-    cmp r6, #6
+    cmp r6, #6                              @ entries 0..5 take font bits 0..5, entry 6 takes font bit 7
     ite lo
     movlo r1, r6
     movhs r1, #7
-    lsr r2, r4, r1
+    lsr r2, r4, r1                          @ the font bit for this entry
     and r1, r2, #1                          @ r1 = segment on
-    bl bl_lcd_seg
+    bl bl_lcd_seg                           @ set or clear the shadow segment
     adds r6, r6, #1
-    cmp r6, #7
+    cmp r6, #7                              @ seven entries per position
     bne 1b
     pop {r4-r6, pc}
 ENDFUNC bl_lcd_glyph
 
-@ bl_lcd_seg - shadow segment r0 (word << 5 | bit) on (r1 = 1) or off (r1 = 0); clobbers r0-r3
+@ -----------------------------------------------------------------------------
+@ bl_lcd_seg - shadow segment r0 (word << 5 | bit) on (r1 = 1) or off (r1 = 0)
+@ In       : r0 = segment code, r1 = 0 or 1
+@ Clobbers : r0-r3, r12
+@ Context  : main (bl_lcd_glyph, bl_lcd_bar)
+@ -----------------------------------------------------------------------------
 LFUNC bl_lcd_seg
     lsrs r2, r0, #5                         @ word
     and r0, r0, #31                         @ bit
     movs r3, #1
-    lsls r3, r3, r0
+    lsls r3, r3, r0                         @ r3 = mask of the bit
     ldr r0, =bl_shadow
-    ldr r12, [r0, r2, lsl #2]
+    ldr r12, [r0, r2, lsl #2]               @ the shadow word
     cmp r1, #0
     ite ne
-    orrne r12, r12, r3
-    biceq r12, r12, r3
+    orrne r12, r12, r3                      @ on: set the bit
+    biceq r12, r12, r3                      @ off: clear the bit
     str r12, [r0, r2, lsl #2]
     bx lr
 ENDFUNC bl_lcd_seg
@@ -203,21 +242,24 @@ ENDFUNC bl_lcd_seg
 @ -----------------------------------------------------------------------------
 @ bl_lcd_bar - bargraph: segments 0..n-1 on, n..25 off
 @ In       : r0 = n (0..26)
+@ Out      : -
 @ Clobbers : r0-r3, r12, flags (r4, r5 saved)
+@ Context  : main (card update progress, Bluetooth transfer progress)
+@ Note     : bl_lcd_barmap gives the shadow segment code of bargraph segment 0..25; n = 26 lights all of them ("Ld oK").
 @ -----------------------------------------------------------------------------
 FUNC bl_lcd_bar
     push {r4, r5, lr}
     mov r4, r0
     movs r5, #0
 1:  ldr r0, =bl_lcd_barmap
-    ldrb r0, [r0, r5]
+    ldrb r0, [r0, r5]                       @ r0 = segment code of bargraph segment r5
     cmp r5, r4
     ite lo
-    movlo r1, #1
-    movhs r1, #0
+    movlo r1, #1                            @ segment below n: on
+    movhs r1, #0                            @ the rest: off
     bl bl_lcd_seg
     adds r5, r5, #1
-    cmp r5, #26
+    cmp r5, #26                             @ 26 segments in all
     bne 1b
     pop {r4, r5, pc}
 ENDFUNC bl_lcd_bar
@@ -225,17 +267,21 @@ ENDFUNC bl_lcd_bar
 @ -----------------------------------------------------------------------------
 @ bl_lcd_commit - shadow to LCD_RAM0..7, update request (RM0038 16.3.6: LCD_RAM is write-protected while UDR is set,
 @ so the previous update is waited for)
+@ Out      : -
 @ Clobbers : r0-r3, r12, flags
+@ Context  : main
+@ Note     : the wait for UDR is bounded by UDR_POLLS reads; if it runs out the copy goes on anyway.
 @ -----------------------------------------------------------------------------
 FUNC bl_lcd_commit
     push {lr}
     ldr r1, =LCD_SR
     ldr r2, =UDR_POLLS
 1:  ldr r3, [r1]
-    tst r3, #LCD_SR_UDR
+    tst r3, #LCD_SR_UDR                     @ update request of the previous commit still pending?
     beq 2f
     subs r2, r2, #1
     bne 1b
+    @ copy the 8 shadow words to LCD_RAM0..7
 2:  ldr r0, =bl_shadow
     ldr r1, =LCD_RAM
     movs r2, #8
@@ -243,6 +289,7 @@ FUNC bl_lcd_commit
     str r3, [r1], #4
     subs r2, r2, #1
     bne 3b
+    @ request the update
     ldr r1, =LCD_SR
     movs r0, #LCD_SR_UDR
     str r0, [r1]                            @ UDR: transfer the RAM to the display
@@ -272,13 +319,13 @@ bl_lcd_barmap:
     .balign 4
 bl_lcd_pins:
     .word GPIOA_BASE
-    GPIO_DESC 0x87CE, GPIO_MODE_AF, 0, GPIO_OT_PP, GPIO_PUPD_NONE, 11, BRD_LEVEL_KEEP
+    GPIO_DESC 0x87CE, GPIO_MODE_AF, 0, GPIO_OT_PP, GPIO_PUPD_NONE, 11, BRD_LEVEL_KEEP  @ PA 0x87CE: AF11, push-pull, no pull
     .word GPIOB_BASE
-    GPIO_DESC 0xFF3B, GPIO_MODE_AF, 0, GPIO_OT_PP, GPIO_PUPD_NONE, 11, BRD_LEVEL_KEEP
+    GPIO_DESC 0xFF3B, GPIO_MODE_AF, 0, GPIO_OT_PP, GPIO_PUPD_NONE, 11, BRD_LEVEL_KEEP  @ PB 0xFF3B
     .word GPIOC_BASE
-    GPIO_DESC 0x06FF, GPIO_MODE_AF, 0, GPIO_OT_PP, GPIO_PUPD_NONE, 11, BRD_LEVEL_KEEP
+    GPIO_DESC 0x06FF, GPIO_MODE_AF, 0, GPIO_OT_PP, GPIO_PUPD_NONE, 11, BRD_LEVEL_KEEP  @ PC 0x06FF
     .word GPIOD_BASE
-    GPIO_DESC 0xFF00, GPIO_MODE_AF, 0, GPIO_OT_PP, GPIO_PUPD_NONE, 11, BRD_LEVEL_KEEP
+    GPIO_DESC 0xFF00, GPIO_MODE_AF, 0, GPIO_OT_PP, GPIO_PUPD_NONE, 11, BRD_LEVEL_KEEP  @ PD 0xFF00
     .word GPIOE_BASE
-    GPIO_DESC 0x000F, GPIO_MODE_AF, 0, GPIO_OT_PP, GPIO_PUPD_NONE, 11, BRD_LEVEL_KEEP
-    .word 0
+    GPIO_DESC 0x000F, GPIO_MODE_AF, 0, GPIO_OT_PP, GPIO_PUPD_NONE, 11, BRD_LEVEL_KEEP  @ PE 0x000F
+    .word 0                                 @ end of the list
