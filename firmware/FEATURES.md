@@ -351,7 +351,9 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
      rtc/nju6350.s) and their XOR.  IMP-31 (F-1.02): the fast firmware applies every valid frame; v2.05 only the first one
      after the Bluetooth toggle.  Emulator test test_ble_clock.py.
   6. SD card file manager and synced folder (firmware implemented: IMP-36 file requests, IMP-37 settings, emulator tests
-     test_bft_files.py / test_bft_settings.py all pass; owner request 2026-11-04; owner chose the synced folder over a drive mount,
+     test_bft_files.py / test_bft_settings.py all pass; verified working on a meter 2026-11-05 with F-1.05 and the companion:
+     LIST 0.1 s, INFO, a download of 169384 bytes in 163 s (1038 B/s) byte for byte equal to the file written, GET of 19
+     settings, PUT of the display level and back with read-back; owner request 2026-11-04; owner chose the synced folder over a drive mount,
      which would need macFUSE / WinFsp / FUSE and is slow for file browsers at about 1 KB/s): list, download, delete and
      rename files, and a "sync" that copies new or changed files of the card into a normal folder on the computer.
      Firmware change (fast build): the transfer protocol of 2.10 gains list / read / delete / rename requests, using
