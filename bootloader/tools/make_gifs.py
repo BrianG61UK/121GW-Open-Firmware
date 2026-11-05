@@ -72,7 +72,8 @@ def bt_update():
 
     def wait(n, timeout):
         got = orig(n, timeout)
-        r.take()
+        if X.T.now(e) - r.last >= 2.0:              # one picture per 2 s of the transfer (time-lapse)
+            r.take()
         return got
     h.wait = wait
     h.transfer(data, X.KIND_FW)
@@ -113,7 +114,7 @@ def page(frames_json):
            '</body></html>' % (css, imgs, js)
 
 
-def render(frames, out, width=300):
+def render(frames, out, width=260):
     from playwright.sync_api import sync_playwright
     from PIL import Image
     html = os.path.join(tempfile.mkdtemp(prefix='blgif_'), 'p.html')
@@ -135,7 +136,7 @@ def render(frames, out, width=300):
             images.append(im)
             durs.append(int(max(0.08, min(1.8, secs / 6.0)) * 1000))   # time-lapse: one sixth of the emulated time
         br.close()
-    images = [i.quantize(colors=96, method=Image.Quantize.MEDIANCUT).convert('RGB') for i in images]
+    images = [i.quantize(colors=48, method=Image.Quantize.MEDIANCUT).convert('RGB') for i in images]
     images[0].save(out, save_all=True, append_images=images[1:], duration=durs, loop=0, optimize=True)
     print('%s: %d frames' % (out, len(images)))
 

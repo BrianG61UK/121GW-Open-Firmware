@@ -1078,6 +1078,28 @@ comparison with v2.05 diverge only where the R0.08a image does, plus the clock-r
 written and complete; the production image sent over Bluetooth (172 s, 3 failed card writes repeated), checked, written
 as EEVBlog.bin and BTLOAD.TMP deleted; that image flashed and started.
 
+### 7A.1 exFAT, long names and format (IMP-32, owner decision 2026-11-04)
+
+Since F-1.04 the configuration is: FF_FS_EXFAT 1, FF_USE_LFN 1 (static working buffer, FF_MAX_LFN 255, FF_LFN_UNICODE 0),
+FF_CODE_PAGE 437 (the code page 932 tables of ffunicode.c are 48 KB; the meter's own names are ASCII), FF_USE_MKFS 1, the
+rest as above.  FSIZE_t is 64-bit; `fat_f_lseek` passes the R0.08a 32-bit offset as r2:r3, `fat_f_tell` returns the low
+word.  Structures: FATFS 572, FIL 592, DIR 80, FILINFO 288 bytes (`inc/ff16x.inc`, offsets measured with the ARM
+compiler; constants: every numeric #define of ff.c / ff.h for this configuration); all in `.bss_port` (FATFS and
+FILINFO leave the v2.05 areas 0x20006830 and 0x20007B38); globals LfnBuf (512 bytes) and DirBuf (608).  The bootloader
+assembles the same sources with FF_FS_READONLY 1 and FF_USE_MKFS 0 (bootloader/DESIGN.md G4).
+Translated: everything of ff.c that this configuration compiles (exFAT directory sets, allocation bitmap, contiguous
+files, long-name entries and numeric tails, f_mkfs and create_partition, f_truncate, f_mkdir, f_chmod), and the code page
+437 part of ffunicode.c.
+Verification (2026-11-04): differential harness (`fatfs16/harness_x`, outside the repository): ChaN's C (host) against
+the translation (Unicorn), 26 images (the 8 FAT images above, exFAT at several cluster sizes and offsets made by mkfs,
+FAT32 by mkfs, 9 damaged boot sectors, a blank volume) x 219 scripts of the full and 30 of the read-only configuration
+(long names, numeric tails, exFAT fragmented and contiguous files, truncate, directories, mkfs of every format, injected
+read and write errors): 6474 runs, every output line and image identical; r4-r11 and sp preserved; deepest stack use
+536 bytes (f_rename), f_open 400.  Per-group checks under QEMU (Cortex-M3) against the compiled C: low level 1000 trials
+per routine, files and volumes 631851 values, mkfs 6588 cases, all identical.  Emulator (`bootloader/tests/test_exfat.py`):
+the page For formats the card as exFAT, logging writes its CSV file on it, the Bluetooth transfer writes EEVBlog.bin on it,
+and the bootloader updates the firmware from it.
+
 ## 8. Conventions
 
 ### 8.1 File layout
