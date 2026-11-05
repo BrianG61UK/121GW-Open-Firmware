@@ -586,6 +586,15 @@ FUNC ar_sample
     strb r2, [r3]
 @ change the range: new range, apply request for the main loop, blank request, restart the confirmation
 .Las_commit:
+    cmp r5, #MODE_OHM
+    bne 1f
+    ldr r2, =hold_stage2
+    ldrb r2, [r2]
+    cbnz r2, 1f                             @ auto-hold stage 2 keeps its digits, as the v2.05 blank rule (0x08016FEC)
+    movs r0, #0
+    bl fn_08019A98                          @ OHM: blank the main digits now (v2.05 decides and blanks in the same pass);
+1:                                          @ the apply draws the new decimal point and its skip counter (2 updates for
+                                            @ r1..r5) holds the display stage, which would leave the old digits standing
     ldr r2, =meter_range
     strb r9, [r2]                           @ new range
     movs r2, #1
