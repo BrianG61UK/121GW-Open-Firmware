@@ -32,5 +32,5 @@ Steps with pictures:
 https://github.com/zombu4/121GW-Open-Firmware/blob/main/emulator/START.md
 TXT
 rm -f "$out"
-hdiutil create -quiet -volname "121GW Emulator" -srcfolder "$stage" -ov -format UDZO "$out"
+hdiutil create -volname "121GW Emulator" -srcfolder "$stage" -ov -format UDZO "$out"
 echo "make_dmg: $out"
