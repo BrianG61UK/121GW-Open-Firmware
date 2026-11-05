@@ -439,7 +439,11 @@ FUN_08008138), both after the calibration offset and gain and only at range 0; t
 3. The port uses the same programming method: one byte at a time, FTDW = 0, PEKEYR keys 0x89ABCDEF then 0x02030405
    written only when PELOCK reads 1, PELOCK set again after every byte, at most 10 attempts per byte. It never sets PECR ERASE, PROG, DATA, FPRG or
    OBL_LAUNCH, never writes FLASH_PRGKEYR, FLASH_OPTKEYR, FLASH_ACR outside the clock set-up, the option bytes
-   0x1FF80000..0x1FF800FF, program flash 0x08000000..0x0805FFFF, or FLASH_WRPRx.
+   0x1FF80000..0x1FF800FF, program flash 0x08000000..0x0805FFFF, or FLASH_WRPRx.  (The one writer of program flash in the
+   production image is outside this module: nvm/blinst.s, the first install of the two-part bootloader, limited to the
+   starter 0x08000000..0x080003FF, slot A 0x08052000..0x08057FFF, the control records 0x0805E000..0x0805FEFF and the
+   firmware mark 0x0805FF00..0x0805FFFF, after a check that the bootloader area is one of EEVblog's builds and the battery
+   is at least 4.80 V; DESIGN.md 1, check_image.py role 'blinst'.)
 4. Multi-byte values are written MSB first, as v2.05 does (same intermediate states on power loss).
 
 ### 9.2 Write classes and the allowed-write table
