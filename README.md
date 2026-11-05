@@ -2,6 +2,17 @@
 
 <p align="center"><img src="emulator/ui/assets/logo_anim.gif" alt="121GW running this firmware in the emulator" width="300"></p>
 
+## Downloads
+
+Everything is on the [**latest release**](../../releases/latest):
+
+| File | What it is |
+|---|---|
+| `firmware-<version>.zip` | the firmware for the meter (`EEVBlog.bin`) with its user guide |
+| `121GW-User-Manual-<version>.pdf` | the user manual |
+| `121GW-Companion-<version>-<platform>` | the 121GW Companion, the computer app for the meter over Bluetooth: live view, graphs, recording, firmware and bootloader updates, card files, settings (Windows, macOS, Linux) |
+| `121GW-Open-Firmware-Emulator-<version>-<platform>` | the emulator of the meter (Windows, macOS, Linux) |
+
 **User manual:** [**manual.pdf**](firmware/docs/manual/manual.pdf): how to use the meter with this firmware, every key,
 every measuring function, every SETUP page and every message, with pictures of the display.
 
