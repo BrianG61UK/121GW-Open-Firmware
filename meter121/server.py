@@ -15,8 +15,11 @@ import mimetypes
 import os
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+
+LOG_COMMANDS = os.environ.get('COMPANION_LOG') == '1'
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # the page: next to the package in a source tree; in the packaged program (PyInstaller) in the bundle folder
@@ -84,6 +87,8 @@ def make_handler(app):
                 return self._json(413, {'error': 'request too large'})
             try:
                 cmd = json.loads(self.rfile.read(n) or b'{}')
+                if LOG_COMMANDS:                        # COMPANION_LOG=1: every command as it arrives (diagnosis)
+                    print('%.3f command %s' % (time.time(), json.dumps(cmd)[:200]), file=sys.stderr, flush=True)
                 return self._json(200, app.command(cmd))
             except (ValueError, TypeError, KeyError, RuntimeError, OSError) as e:
                 return self._json(400, {'error': str(e)})

@@ -75,7 +75,8 @@ class Companion:
         # firmware update (FEATURES.md 2.11 stage 4): state none / available / downloading / waiting_ld / sending / done /
         # error; 'later' hides the notice until the next connection
         # 'fw' / 'bl': (meter text, release tag) of a newer firmware / bootloader, or None; 'what' of a running update
-        self.update = {'state': 'none', 'fw': None, 'bl': None, 'what': None, 'step': '', 'later': False, 'done': 0,
+        self.update = {'state': 'none', 'fw': None, 'bl': None, 'checked': None, 'latest': [], 'check_error': '',
+                       'what': None, 'step': '', 'later': False, 'done': 0,
                        'total': 0, 'message': ''}
         self._sender = None
         self._cancel = False
@@ -217,24 +218,28 @@ class Companion:
         if self.update['state'] not in ('none', 'available'):
             return
         fw = bl = None
+        latest, problems = [], []
         try:
             ver, tag = releases.latest()
+            latest.append(tag)
             cur = releases.version_of_meter(self.version)
             if self.mode == 'bootloader' or (cur is not None and ver > cur):
                 fw = (releases.meter_text(ver), tag)
-        except (OSError, ValueError, releases.ReleaseError):
-            pass                                            # offline or none published: nothing offered
+        except (OSError, ValueError, releases.ReleaseError) as e:
+            problems.append('firmware releases: %s' % e)    # offline or none published: nothing offered
         try:
             bver, btag = releases.latest_bootloader()
+            latest.append(btag)
             have = releases.version_of_bootloader(self.bl)
             if have is not None and bver > have:
                 bl = (releases.bootloader_text(bver), btag)
             elif self.bl == 'EEV':
                 bl = (releases.bootloader_text(bver), btag)
-        except (OSError, ValueError, releases.ReleaseError):
-            pass
+        except (OSError, ValueError, releases.ReleaseError) as e:
+            problems.append('bootloader releases: %s' % e)
         state = 'available' if fw or bl else 'none'
-        self.update.update(state=state, fw=fw, bl=bl)
+        # checked / latest / check_error: what the UI shows for 'none' (up to date, or why nothing could be checked)
+        self.update.update(state=state, fw=fw, bl=bl, checked=time.time(), latest=latest, check_error='; '.join(problems))
 
     # ------------------------------------------------------------------ updates
     def _run_update(self, what):

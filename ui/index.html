@@ -908,7 +908,11 @@ function drawMeter(L, M, u, C) {
   $('m-fw').textContent = $('fw').textContent; $('m-bl').textContent = $('bl').textContent;
   $('m-dev').textContent = L.device ? L.device[1] + '  ' + L.device[0] : '—';
   $('m-link').textContent = L.state === 'connected' ? 'connected · ' + (L.detail || '') : L.state;
-  $('m-upd').textContent = UPTXT[u.state] || nz(u.state);
+  const hhmm = t => new Date(t * 1000).toTimeString().slice(0, 5);
+  $('m-upd').textContent = u.state !== 'none' ? (UPTXT[u.state] || nz(u.state))
+    : u.check_error ? 'check failed: ' + u.check_error + (u.checked ? ' · ' + hhmm(u.checked) : '')
+    : u.checked ? 'up to date · newest ' + (u.latest || []).join(', ') + ' · checked ' + hhmm(u.checked)
+    : L.state === 'connected' ? 'checking…' : 'checked when a meter is connected';
   const av = [u.fw ? 'firmware ' + u.fw[0] : null, u.bl ? 'bootloader ' + u.bl[0] : null].filter(Boolean);
   $('m-avail').textContent = av.length ? av.join(' · ') : u.state === 'none' ? '—' : 'nothing newer';
   const ntp = $('ntp');
@@ -991,9 +995,9 @@ function drawDiag(D) {
 // ---------------------------------------------------------------- header, lamps, devices
 function drawHeader(L, M, S, now) {
   const fwTxt = L.state !== 'connected' ? 'F-—' : M.mode === 'bootloader' ? 'UPDATE MODE'
-    : M.firmware === 'fast' ? 'F-' + String(M.version).replace(/^v/i, '') : M.firmware === 'other' ? 'F-2.05 / LIKE' : 'F-…';
+    : M.firmware === 'fast' ? 'F-' + String(M.version).replace(/^(F-|v)/i, '') : M.firmware === 'other' ? 'F-2.05 / LIKE' : 'F-…';
   $('fw').textContent = fwTxt;
-  $('bl').textContent = L.state !== 'connected' || !M.bootloader ? 'B-—' : M.bootloader === 'EEV' ? 'EEV' : 'B-' + String(M.bootloader).replace(/^v/i, '');
+  $('bl').textContent = L.state !== 'connected' || !M.bootloader ? 'B-—' : M.bootloader === 'EEV' ? 'EEV' : 'B-' + String(M.bootloader).replace(/^(B-|v)/i, '');
   const lamp = (id, on, busy) => { const e = $(id); e.classList.toggle('on', !!on); e.classList.toggle('busy', !!busy && !on); };
   lamp('l-link', L.state === 'connected', L.state === 'scanning' || L.state === 'connecting' || L.state === 'lost');
   lamp('l-live', L.state === 'connected' && S.last && now - S.last.t <= 3);
