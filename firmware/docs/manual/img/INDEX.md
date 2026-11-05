@@ -201,3 +201,35 @@ Not made:
 | for_edit_yes.png | Page For in edit after REL: the answer "Fr yE" (yes) - main display "0.0000", sub display "Fr YE", lit: DC SegV apo auto, bar graph 1 segments | as for_page, SETUP held 1 s, REL pressed |
 | for_working.png | Page For while the card is being formatted: "Fr --" - main display "0.0000", sub display "Fr --", lit: DC SegV apo auto, bar graph 1 segments | as for_edit_yes, then SETUP held 1 s to confirm |
 | for_ok.png | Page For: the card is now exFAT: "Fr oK" - main display "0.0000", sub display "Fr oK", lit: DC SegV apo auto, bar graph 1 segments | as for_edit_yes, then SETUP held 1 s to confirm |
+
+## Features of the open firmware in use
+
+| File | What it shows | How it was made |
+|---|---|---|
+| feat_relpct.png | REL in percent: reference 1.000 V, now 1.100 V - main display "10.000", sub display "25.0c", lit: DC REL Sub% apo, bar graph 6 segments | dial 2 DCV, rEL-P preset (0x020 = 1); 1.0 V, REL, then 1.1 V |
+| feat_dbm.png | dBm of 1.000 V AC (600 ohm reference) - main display "1.0000", sub display "2.218", lit: AC SegV SubdB Subm apo auto, bar graph 6 segments | dial 2 ACV, 1.0 V AC 1 kHz, SETUP to the dBm page (11) |
+| feat_dbm_ref.png | dBm reference page in edit: r 600 - main display "1.0000", sub display "r 600", lit: AC SegV SubdB Subm apo auto, bar graph 6 segments | as feat_dbm, SETUP held: reference edit |
+| feat_loop.png | 4-20 mA loop view: 12 mA shown as 50 % - main display "50.00", sub display "BD.0FF", lit: DC Sub% apo auto, bar graph 7 segments | dial 8 DCmA, mA jack, L4-20 preset (0x028 = 1), 12 mA |
+| feat_pt100.png | PT100 view: 138.51 ohm shown as a temperature - main display "100.0", sub display "25.0c", lit: SegTempC apo auto, bar graph 7 segments | dial 5 OHM, Pt100 preset (0x029 = 1), 138.51 ohm |
+| feat_up300.png | Continuity threshold UP300 (beep above 300 ohm) - main display "0F.L", sub display "UP300", lit: Beep SegR SubR apo, bar graph 26 segments | dial 5 BEEP, 0x014 = 3, SETUP to page 10 |
+| feat_bh25.png | Continuity beep hold 25 ms - main display "0F.L", sub display "BH 25", lit: Beep SegR apo, bar graph 26 segments | dial 5 BEEP, 0x021 = 2, SETUP to the bH page |
+| feat_tcJ.png | Thermocouple type J selected - main display "82.9", sub display "Tc-J", lit: SegTempC apo | dial 3 TEMP, 0x00F = 1, SETUP to the tc page |
+| feat_dsp2.png | Display level 2 - main display "1.2340", sub display "D5P 2", lit: DC SegV apo auto, bar graph 7 segments | dial 2 DCV; preset 0x013 = 1, 0x015 = 3, 0x020 = 8, 0x017 = 1; SETUP to page 24 |
+| feat_bt20.png | Bluetooth 20 readings per second - main display "1.2340", sub display "BT 20", lit: DC SegV apo auto, bar graph 7 segments | dial 2 DCV; preset 0x013 = 1, 0x015 = 3, 0x020 = 8, 0x017 = 1; SETUP to page 21 |
+| feat_cl12.png | 12-hour clock display - main display "1.2340", sub display "CL 12", lit: DC SegV apo auto, bar graph 7 segments | dial 2 DCV; preset 0x013 = 1, 0x015 = 3, 0x020 = 8, 0x017 = 1; SETUP to page 25 |
+| feat_bl30.png | Backlight off after 30 s - main display "1.2340", sub display "BL305", lit: DC SegV apo auto, bar graph 7 segments | dial 2 DCV; preset 0x013 = 1, 0x015 = 3, 0x020 = 8, 0x017 = 1; SETUP to page 20 |
+| feat_time12.png | Time page in 12-hour form - main display "1.2340", sub display "6-25", lit: DC SegV apo auto, bar graph 7 segments | dial 2 DCV; preset 0x013 = 1, 0x015 = 3, 0x020 = 8, 0x017 = 1; SETUP to page 7 |
+
+## Display crops of the dial pictures
+
+Cut from the full-panel dial pictures for the picture grid of the manual.
+
+| File | What it shows | How it was made |
+|---|---|---|
+| d_DCV.png | The display part of dial_DCV.png | top 665 of 1338 px of dial_DCV.png (the panel above the dial) |
+| d_ACV.png | The display part of dial_ACV.png | top 665 of 1338 px of dial_ACV.png (the panel above the dial) |
+| d_LowZ.png | The display part of dial_LowZ.png | top 665 of 1338 px of dial_LowZ.png (the panel above the dial) |
+| d_TEMP.png | The display part of dial_TEMP.png | top 665 of 1338 px of dial_TEMP.png (the panel above the dial) |
+| d_FREQ.png | The display part of dial_FREQ.png | top 665 of 1338 px of dial_FREQ.png (the panel above the dial) |
+| d_OHM.png | The display part of dial_OHM.png | top 665 of 1338 px of dial_OHM.png (the panel above the dial) |
+| d_DCmA.png | The display part of dial_DCmA.png | top 665 of 1338 px of dial_DCmA.png (the panel above the dial) |

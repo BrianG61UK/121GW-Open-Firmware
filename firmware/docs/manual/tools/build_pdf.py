@@ -1,11 +1,13 @@
 """Build the user manual: firmware/docs/manual/src/manual.html + style.css -> firmware/docs/manual/manual.pdf.
 
-    python3 -I firmware/docs/manual/tools/build_pdf.py            (needs Playwright with Chromium)
+    python3 -I firmware/docs/manual/tools/build_pdf.py            (needs Playwright with Chromium, and PyMuPDF)
 
-The table of contents is made from the h2 / h3 headings of the source (each gets an id); page numbers come from the PDF
-footer.  The pictures are the PNG files in firmware/docs/manual/img, rendered from the emulator by make_screens.py, so
-the manual shows what the firmware really displays.  The firmware version printed on the cover is read from
-firmware/src/inc/config.inc (FW_VER_C0..C4), so the manual cannot name a version the source does not build.
+The table of contents is made from the h2 / h3 headings of the source (each gets an id).  Chromium writes every
+<a href="#id"> as a link to the page of that id; a first rendering is read back (PyMuPDF) to learn the page of every
+heading, a second rendering then prints those page numbers in the contents and wherever the source writes
+<a class="pg" href="#id"></a>, and the PDF gets bookmarks (the viewer's sidebar) for every chapter and section.
+The pictures are the PNG files in firmware/docs/manual/img, rendered from the emulator by make_screens.py.  The
+firmware version on the cover is read from firmware/src/inc/config.inc (FW_VER_C0..C4).
 """
 import html
 import os
@@ -35,7 +37,8 @@ def slug(text, used):
     return s
 
 
-def build_html():
+def build_html(pages):
+    """The page HTML; `pages` = {id: page number} from an earlier rendering (empty on the first one)."""
     body = open(SRC, encoding='utf-8').read().replace('{{FW_VERSION}}', fw_version())
     used, toc = set(), []
 
@@ -46,20 +49,21 @@ def build_html():
         if not idm:
             attrs += ' id="%s"' % hid
         if 'data-notoc' not in attrs:
-            toc.append((level, hid, re.sub(r'<[^>]+>', '', text)))
+            toc.append((int(level), hid, re.sub(r'<[^>]+>', '', text).strip()))
         return '<h%s%s>%s</h%s>' % (level, attrs, text, level)
     body = re.sub(r'<h([23])((?:\s[^>]*)?)>(.*?)</h\1>', head, body, flags=re.S)
-    items = ''.join('<li class="toc%s"><a href="#%s">%s</a></li>' % (lv, hid, html.escape(t)) for lv, hid, t in toc)
+    items = ''.join('<li class="toc%d"><a href="#%s"><span class="t">%s</span><span class="n">%s</span></a></li>'
+                    % (lv, hid, html.escape(t), pages.get(hid, '00')) for lv, hid, t in toc)
     body = body.replace('{{TOC}}', '<ol class="toc">%s</ol>' % items)
+    body = re.sub(r'<a class="pg" href="#([^"]+)"></a>',
+                  lambda m: '<a class="pg" href="#%s">page %s</a>' % (m.group(1), pages.get(m.group(1), '00')), body)
     css = open(CSS, encoding='utf-8').read()
     return ('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>121GW Open Firmware - User Manual</title>'
-            '<style>%s</style></head><body>%s</body></html>' % (css, body))
+            '<style>%s</style></head><body>%s</body></html>' % (css, body)), toc
 
 
-def main():
+def render(page_html, out):
     from playwright.sync_api import sync_playwright
-    page_html = os.path.join(MAN, 'src', '_build.html')
-    open(page_html, 'w', encoding='utf-8').write(build_html())
     footer = ('<div style="font-size:8px;width:100%;padding:0 14mm;color:#666;display:flex;justify-content:space-between;'
               'font-family:Helvetica,Arial,sans-serif"><span>121GW Open Firmware ' + fw_version() + ' - User Manual</span>'
               '<span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>')
@@ -68,13 +72,48 @@ def main():
         pg = b.new_page()
         pg.goto('file://' + page_html)
         pg.wait_for_load_state('networkidle')
-        pg.pdf(path=OUT, format='A4', print_background=True, display_header_footer=True,
+        pg.pdf(path=out, format='A4', print_background=True, display_header_footer=True,
                header_template='<span></span>', footer_template=footer,
-               margin={'top': '16mm', 'bottom': '18mm', 'left': '14mm', 'right': '14mm'})
+               margin={'top': '14mm', 'bottom': '16mm', 'left': '14mm', 'right': '14mm'})
         b.close()
+
+
+def heading_pages(pdf):
+    """{id: page number (1-based)} from the links Chromium wrote (contents and page references)."""
+    import pymupdf
+    d = pymupdf.open(pdf)
+    pages = {}
+    for p in d:
+        for ln in p.get_links():
+            if ln.get('nameddest') and ln.get('page', -1) >= 0:
+                pages.setdefault(ln['nameddest'], ln['page'] + 1)
+    return pages, d.page_count
+
+
+def main():
+    page_html = os.path.join(MAN, 'src', '_build.html')
+    tmp = OUT + '.tmp.pdf'
+    pages = {}
+    for _ in range(3):                                     # numbers can move a heading only if the contents grow: repeat
+        text, toc = build_html(pages)
+        open(page_html, 'w', encoding='utf-8').write(text)
+        render(page_html, tmp)
+        found, n = heading_pages(tmp)
+        if found == pages:
+            break
+        pages = found
+    import pymupdf
+    d = pymupdf.open(tmp)
+    d.set_toc([[lv - 1, t, pages.get(hid, 1)] for lv, hid, t in toc])      # bookmarks: chapters level 1, sections 2
+    d.set_metadata({'title': '121GW Open Firmware - User Manual', 'subject': 'EEVblog 121GW with the open firmware ' +
+                    fw_version()})
+    d.save(OUT, garbage=3, deflate=True)
+    d.close()
+    os.remove(tmp)
     os.remove(page_html)
-    print('%s: %d bytes' % (OUT, os.path.getsize(OUT)))
-    return 0
+    missing = [hid for _lv, hid, _t in toc if hid not in pages]
+    print('%s: %d pages, %d bytes%s' % (OUT, n, os.path.getsize(OUT), ('; no page for ' + ', '.join(missing)) if missing else ''))
+    return 1 if missing else 0
 
 
 if __name__ == '__main__':
