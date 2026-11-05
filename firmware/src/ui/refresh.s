@@ -1129,16 +1129,16 @@ ENDFUNC ui_bootwin_main_busy
 
 @ -----------------------------------------------------------------------------
 @ ui_version_sub - draw the version ("F-0.91" production, config.inc) on the sub display
-@ Replaces : nothing (new, IMP-02); same text and decimal point as the splash fn_0801A854, which uses the main digits
+@ Replaces : nothing (new, IMP-02); the text and decimal point of v2.05's splash FUN_0801A854, which used the main digits
 @ In       : -
 @ Out      : -   (sets the commit request 0x2000805B)
 @ Clobbers : r0-r3, r12, flags
-@ Context  : main only
+@ Context  : main only; called by ui_bootwin_gate and by bootwin_start (CAL, at power-on in place of the splash, IMP-35)
 @ RAM      : writes the text buffer 0x20007C30 and lcd_shadow (sub display digits, decimal point, unit group)
 @ Spec     : DESIGN.md 7.1; analysis/lcd_map.md 2, 4.3
 @ Deviation: IMP-02
 @ -----------------------------------------------------------------------------
-LFUNC ui_version_sub
+FUNC ui_version_sub
     push {r4, lr}
     bl fn_0801A760                          @ clear the sub-display unit group and the sub minus sign
     ldr r4, =v_20007C30                     @ text buffer
