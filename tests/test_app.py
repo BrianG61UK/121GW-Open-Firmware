@@ -279,6 +279,8 @@ class Options(AppCase):
 
 class Http(AppCase):
     def test_commands_need_the_header(self):
+        self.app._frame_t = time.time() + 3600         # the desk watcher probes after DESK_STALE s without a status frame:
+                                                       # keep it quiet, so that every packet sent here comes from a command
         httpd = server.serve(self.app, 0)
         self.addCleanup(httpd.server_close)
         self.addCleanup(httpd.shutdown)

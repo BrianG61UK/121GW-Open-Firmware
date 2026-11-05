@@ -279,7 +279,8 @@ class Sync(CardCase):
         self.meter.files['NUL'] = (b'1', 0, 0)
         r = self.card.sync(self.tmp)
         self.assertEqual(sorted(r['skipped']), ['NUL', 'x.part'])
-        self.assertFalse(os.path.exists(os.path.join(self.tmp, 'NUL')))
+        # no file of that name in the folder (os.path.exists cannot tell: on Windows NUL is a device and always "exists")
+        self.assertNotIn('nul', [n.lower() for n in os.listdir(self.tmp)])
 
 
 if __name__ == '__main__':
