@@ -428,6 +428,12 @@ const api = async cmd => {
   return j;
 };
 // commands of the state contract: one place that decides how a name and its parameters are put on the wire
+// A button's text is written only when it changes: rewriting it replaces the text node, and WebKit fires no click when
+// the node pressed is gone at the release, so a redraw between press and release (the page redraws several times a
+// second) swallowed the click (2026-11-05: Connect needed about ten clicks, the update notice's button did not answer;
+// traced with COMPANION_LOG=1: press and release reached the page every time, the click only once).
+const setText = (el, s) => { s = String(s); if (el.textContent !== s) el.textContent = s; };
+let devSig = '';
 const send = (name, params, nested) => api(nested ? {[name]: params} : Object.assign({[name]: true}, params || {}));
 const say = (text, bad) => {
   const m = $('msg'); m.className = bad ? 'bad' : '';
@@ -840,7 +846,7 @@ function drawLog(S) {
   $('recdot2').className = 'recdot' + (rec ? ' on' : ''); $('rectime2').textContent = rec ? hms(state.now - S.rec_start) : '00:00:00';
   $('recrows2').textContent = rec ? String(S.rec_rows) : S.rec_path ? String(S.rec_rows) : '—';
   $('recpath').textContent = S.rec_path || '—'; $('recfolder').textContent = state.folder || '—';
-  $('rec').textContent = rec ? 'Stop' : 'Record';
+  setText($('rec'), rec ? 'Stop' : 'Record');
   const list = Array.isArray(state.recordings) ? state.recordings : S.rec_path ? [{name: S.rec_path.split(/[\\/]/).pop(), size: null, date: null}] : [];
   $('reclist').replaceChildren(...(list.length ? list.map(f => h('tr', {}, h('td', {}, f.name), h('td', {class: 'r'}, f.size === null || f.size === undefined ? '—' : grp(f.size)),
     h('td', {}, nz(f.date) + (f.time ? '  ' + f.time : '')))) : [h('tr', {class: 'empty'}, h('td', {colspan: 3}, 'no recordings yet'))]));
@@ -860,8 +866,10 @@ function drawUpdate(u, M) {
   u = u || {state: 'none'}; M = M || {};
   const n = $('notice'), t = $('ntext'), p = $('nprimary'), q = $('nsecondary'), pr = $('nprog'), fwb = $('nfw'), blb = $('nbl');
   const show = (kids, prim, sec, bad, both) => {
-    n.classList.add('show'); t.replaceChildren(...(bad ? [h('span', {class: 'warn'}, 'Fault'), ' '] : []), ...kids);
-    p.hidden = !prim; p.textContent = prim || ''; q.hidden = !sec; q.textContent = sec || ''; pr.hidden = true; fwb.hidden = blb.hidden = !both;
+    n.classList.add('show');
+    const nk = h('span', {}, ...(bad ? [h('span', {class: 'warn'}, 'Fault'), ' '] : []), ...kids);
+    if (t.innerHTML !== nk.innerHTML) t.replaceChildren(...nk.childNodes);
+    p.hidden = !prim; setText(p, prim || ''); q.hidden = !sec; setText(q, sec || ''); pr.hidden = true; fwb.hidden = blb.hidden = !both;
   };
   const st = u.state;
   let frac = 0;
@@ -1004,13 +1012,22 @@ function drawHeader(L, M, S, now) {
   lamp('l-desk', desk()); lamp('l-log', S.recording);
   lamp('l-sd', state.card && typeof state.card.total_bytes === 'number' && state.card.total_bytes > 0);
   // idle: Connect; connected: Disconnect; searching (scanning, connecting, lost: the link keeps trying): Stop
-  $('connect').textContent = L.state === 'idle' ? 'Connect' : L.state === 'connected' ? 'Disconnect' : 'Stop searching';
+  setText($('connect'), L.state === 'idle' ? 'Connect' : L.state === 'connected' ? 'Disconnect' : 'Stop searching');
   $('connect').className = L.state === 'idle' ? 'pri' : '';
   const found = L.state !== 'connected' && L.found && L.found.length;
   $('devband').classList.toggle('show', !!found);
-  if (found) $('devs').replaceChildren(...L.found.map(f => h('button', {'data-a': f[0]}, `${f[1]}  ·  ${f[2]} dBm`)));
+  const dsig = found ? JSON.stringify(L.found) : '';
+  if (found && dsig !== devSig) $('devs').replaceChildren(...L.found.map(f => h('button', {'data-a': f[0]}, `${f[1]}  ·  ${f[2]} dBm`)));
+  devSig = dsig;
   $('sline').textContent = 'RX ' + grp(L.rx_bytes) + ' B';
 }
+// COMPANION_LOG=1 (state.trace_ui): every pointer event is reported to the program's log (diagnosis of lost clicks)
+for (const ev of ['pointerdown', 'pointerup', 'click'])
+  document.addEventListener(ev, e => {
+    if (state && !state.trace_ui) return;             // before the first state: report too (clicks before the page is ready)
+    const t = e.target.closest('button'); fetch('/api', {method: 'POST', headers: {'Content-Type': 'application/json',
+      'X-121GW-Companion': '1'}, body: JSON.stringify({ui_event: ev, on: t ? (t.id || t.textContent.trim()) : e.target.tagName})});
+  }, true);
 $('connect').onclick = async () => {
   try { await api(state && state.link.state !== 'idle' ? {disconnect: true} : {connect: null}); } catch (e) { fail(e); }
 };
@@ -1038,7 +1055,7 @@ function render() {
     $('recdot').className = 'recdot' + (S.recording ? ' on' : '');
     $('rectime').textContent = S.recording ? hms(state.now - S.rec_start) : '00:00:00';
     $('recrows').textContent = S.recording ? S.rec_rows + ' rows' : '';
-    $('rec2').textContent = S.recording ? 'Stop' : 'Record';
+    setText($('rec2'), S.recording ? 'Stop' : 'Record');
     drawTrace($('trend'), {data: trend, t1: state.now, win: 600, auto: true, mini: true});
   }
   else if (view === 'scope') drawScopeView();

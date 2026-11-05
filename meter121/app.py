@@ -51,6 +51,7 @@ DESK_PERIOD = 1.0                                # seconds between looks of the 
 DESK_PROBE_TIMEOUT = 1.5                         # seconds the page Ld has to answer a status request
 KEY_ECHO_WAIT = 1.0                              # seconds to wait for the echo of a key frame
 LINK_WAIT = 2.5                                  # seconds a command waits for the link while the desk watcher's page check has it
+TRACE_UI = os.environ.get('COMPANION_LOG') == '1'     # the page and the window report pointer events (diagnosis)
 UPDATE_ACTIVE = ('downloading', 'waiting_ld', 'restarting', 'sending')      # update states that own the link
 RELEASE_RECHECK = 1800.0                         # seconds between release checks while connected
 VERSION_WAIT = 2.0                               # seconds to wait for the answer to a version request
@@ -272,7 +273,7 @@ class Companion:
             self._enter_update_mode()
             self._boot_send(data, transfer.KIND_FIRMWARE, None, text)
             self._wait_restart(lambda: self.mode == 'firmware' and self.version == text,
-                               'the meter did not come back with %s' % text)
+                               'the meter did not come back with %s' % text, 'it starts %s' % text)
             u.update(message='')
         else:
             self._sender = transfer.Sender(self.link.send)
@@ -305,7 +306,8 @@ class Companion:
             self._enter_update_mode()
             ver = releases.version_of_bootloader(text)
             self._boot_send(boot, transfer.KIND_BOOTLOADER, ver[0] << 16 | ver[1] << 8 | ver[2], text)
-        self._wait_restart(lambda: self.bl == text, 'the meter did not report bootloader %s' % text)
+        self._wait_restart(lambda: self.bl == text, 'the meter did not report bootloader %s' % text,
+                           'it starts bootloader %s' % text)
         u.update(message='')
 
     def _wait_ld(self):
@@ -319,17 +321,18 @@ class Companion:
         """Restart the meter into the bootloader's update mode (key code 0x91) unless it is there already."""
         if self.mode == 'bootloader':
             return
-        self.update.update(state='restarting', message='the meter restarts into its update mode')
         try:
             self.link.send(frames.UPDATE_MODE_REQUEST)
         except Exception:                               # noqa: BLE001 - the meter restarts at once: the write's
             pass                                        # confirmation can be lost with the link (bleak: disconnected)
-        self._wait_restart(lambda: self.mode == 'bootloader', 'the meter did not come back in its update mode')
+        self._wait_restart(lambda: self.mode == 'bootloader', 'the meter did not come back in its update mode',
+                           'into its update mode')
 
-    def _wait_restart(self, ready, failure, timeout=90.0):
+    def _wait_restart(self, ready, failure, what, timeout=90.0):
         """The meter restarts (its Bluetooth module is switched off with it): wait for the link to drop, the link
-        reconnects by itself, then for `ready()` after the version questions."""
-        self.update.update(state='restarting')
+        reconnects by itself, then for `ready()` after the version questions.  `what` says where it restarts to (the
+        page shows "the meter restarts: <what>")."""
+        self.update.update(state='restarting', message=what)
         end = time.time() + timeout
         while time.time() < end and self.link.state == 'connected' and not ready():
             time.sleep(0.2)
@@ -651,10 +654,13 @@ class Companion:
                 'derived': self.derived.snapshot(),
                 'desk': self.desk,
                 'diag': dict(self.diag),
+                'trace_ui': TRACE_UI,
                 'card': dict(self.card_st, files=list(self.card_st['files']), locked_reason=self._lock_reason()),
                 'settings': dict(self.settings_st, locked_reason=self._lock_reason())}
 
     def command(self, c):
+        if 'ui_event' in c:                             # COMPANION_LOG=1: the page reports a pointer event (diagnosis)
+            return {'ok': True}
         if 'connect' in c:
             self.link.connect(c['connect'])
             return {'ok': True}
@@ -742,17 +748,48 @@ def documents_folder():
     return paths.documents_dir()
 
 
-def _activate_mac():
-    """Make the program the active application once its window is shown (macOS).  A program that was not started from
-    the Dock or the Finder (a terminal, a script) is not activated by macOS: its window stays inactive, and a click on an
-    inactive window only activates it, so the first clicks on a button did nothing (2026-11-05, Connect needed up to four
-    clicks).  AppKit is called on the main thread (the shown event comes on another one)."""
+def _activate_mac(win):
+    """Make the program the active application and its window the key window once the window is shown (macOS).
+
+    A program that was not started from the Dock or the Finder (a terminal, a script) is not activated by macOS: its
+    window stays inactive, and a click on an inactive window only activates it, so the first clicks on a button did
+    nothing (2026-11-05: Connect needed up to four clicks; the update notice's button did not answer until the user had
+    switched to another program and back; the cause of that one was the page, see index.html setText).  AppKit is called
+    on the main thread (the shown event comes on another one)."""
     try:
         import AppKit
         app = AppKit.NSApplication.sharedApplication()
-        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(lambda: app.activateIgnoringOtherApps_(True))
+
+        def front():
+            if hasattr(app, 'activate'):                 # macOS 14 and later
+                app.activate()
+            else:
+                app.activateIgnoringOtherApps_(True)
+            if getattr(win, 'native', None) is not None:
+                win.native.makeKeyAndOrderFront_(None)
+        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(front)
     except Exception:
         pass                                            # not fatal: the window works, it is only not in front
+
+
+def _trace_clicks():
+    """COMPANION_LOG=1: every mouse press that reaches pywebview's web view (webview.platforms.cocoa
+    BrowserView.WebKitHost) is written to the log with the window's key / main state and whether the program is
+    active; the page reports its own pointer events (ui_event), so a lost click shows where it was lost (macOS)."""
+    try:
+        import AppKit
+        from webview.platforms.cocoa import BrowserView
+        down = BrowserView.WebKitHost.mouseDown_
+
+        def mouseDown_(self, event):
+            w = self.window()
+            print('%.3f native mouseDown key=%s main=%s active=%s' % (
+                time.time(), bool(w and w.isKeyWindow()), bool(w and w.isMainWindow()),
+                bool(AppKit.NSApplication.sharedApplication().isActive())), file=sys.stderr, flush=True)
+            return down(self, event)
+        BrowserView.WebKitHost.mouseDown_ = mouseDown_
+    except Exception:
+        pass                                            # diagnosis only
 
 
 def open_window(url):
@@ -763,7 +800,9 @@ def open_window(url):
         import webview
         win = webview.create_window(TITLE, url, width=1180, height=760, min_size=(860, 560), background_color='#0c0c0b')
         if sys.platform == 'darwin':
-            win.events.shown += _activate_mac
+            if TRACE_UI:
+                _trace_clicks()
+            win.events.shown += lambda: _activate_mac(win)
         webview.start(gui='edgechromium' if sys.platform == 'win32' else None)
         return True
     except Exception:
