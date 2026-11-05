@@ -1,5 +1,7 @@
 121GW Companion: live view, recording and firmware information for the EEVblog 121GW over Bluetooth LE.
 
+New in 1.2.0: five views (LIVE, SCOPE, LOG, CARD, METER) in a new bench-instrument design; derived values (REL %, loop %, Pt100 / Pt1000, own limit test); the meter's keys from the computer; the SD card from the computer (list, download, delete, sync to a folder) and the meter's settings, both with firmware F-1.05 or newer on the page Ld-bt; the diagnosis values.  Verified working on a meter: card list, a 169 KB download equal to the file on the card, settings read and changed.
+
 Updates: it checks this project's releases, updates the meter's firmware (page `Ld-bt` and the card routine with EEVblog's bootloader), sets the meter's clock, installs the two-part bootloader once (releases `bl-vA.B.C`, fresh batteries) and from then on updates the firmware, the bootloader or both over Bluetooth with nothing to press on the meter. How-to: `bootloader/README.md` on the branch `bootloader` of 121GW-Open-Firmware.
 
 Assets

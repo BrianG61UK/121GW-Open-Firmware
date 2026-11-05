@@ -14,9 +14,15 @@ program lives here.  The firmware and the emulator are on `main`, the build that
 | Trend | the last 10 minutes on a scope-style grid; the trace breaks where the meter had no value (overload, range change) |
 | Recording | every reading with its time to a CSV file (`Documents/121GW` by default) |
 | Firmware version | the fast firmware from F-1.02 on reports its version; the header shows it |
-| Firmware and bootloader updates | when a newer firmware or bootloader release exists, a notice offers "Update both", "Firmware only", "Bootloader only" or "Later" (checked at every connection and every 30 minutes).  With the two-part bootloader (releases `bl-vA.B.C`) the meter restarts into its update mode and receives the file over Bluetooth, nothing to press, then restarts into it.  With EEVblog's bootloader the firmware goes to the card on the page `Ld-bt` and the key sequence installs it; the first install of the two-part bootloader also goes through `Ld-bt` (firmware F-1.03 or newer, fresh batteries) |
+| Firmware and bootloader updates | when a newer firmware or bootloader release exists, a notice offers "Update both", "Firmware only", "Bootloader only" or "Later" (checked at every connection and every 30 minutes).  With the two-part bootloader (releases `bl-vA.B.C`) the meter restarts into its update mode and receives the file over Bluetooth, nothing to press, then restarts into it.  With EEVblog's bootloader the firmware goes to the card on the page `Ld-bt` and the key sequence installs it; the first install of the two-part bootloader also goes through `Ld-bt` (firmware F-1.04 or newer, fresh batteries) |
 | Bootloader | the meter's bootloader is shown next to the firmware version (EEVblog original, or B-A.BC) |
 | Meter clock | "Sync time" sets the meter's clock from an NTP server (pool.ntp.org, or your own) to the second |
+| Five views | LIVE (reading, derived values, statistics, the meter's keys), SCOPE (trend with two cursors: time, voltage and frequency differences), LOG (recordings), CARD (the SD card), METER (versions, updates, clock, settings, diagnostics); keys 1..5 switch views |
+| Derived values | REL in percent, 4-20 / 0-20 mA loop percent, Pt100 / Pt1000 temperature from ohms (IEC 60751), a limit test with your own low and high limits (PASS / HI / LO) |
+| Meter keys | RANGE, HOLD, REL, PEAK, MODE, MIN/MAX and MEM (long) from the computer |
+| SD card (firmware F-1.05 or newer, meter on the page `Ld-bt`) | the card's files with size, date and time; download (about 1 KB/s, every 8 KB checked with a CRC-32), delete (cal.bin, EEVBlog.bin and BTLOAD.TMP are protected), free space, and "Sync to folder": new or changed files copied into a folder on the computer, nothing deleted there |
+| Settings (firmware F-1.05 or newer, page `Ld-bt`) | the meter's SETUP settings read and changed from the computer, each stored as the meter's own page stores it; calibration, serial number and rotary memory cannot be reached |
+| Diagnostics | the meter's 21 SD card and transfer diagnosis values with their meaning (page `Ld-bt`) |
 
 The meter accepts one Bluetooth connection at a time: close the phone application before connecting.  Turn Bluetooth
 on at the meter with a long press of PEAK.  While the SETUP page `Ld` (firmware transfer) is shown the meter sends no
