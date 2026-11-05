@@ -465,7 +465,7 @@ function setView(v) {
   view = v;
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
-  if (v === 'card' && desk()) { cardSig = ''; send('card_list').catch(fail); send('card_info').catch(fail); }
+  if (v === 'card' && desk()) { cardSig = ''; send('card_refresh').catch(fail); }
   if (v === 'meter') readSettings();
   render();
 }
@@ -761,7 +761,7 @@ segs($('spacebar'), 60); segs($('progbar'), 60);
 document.querySelectorAll('th.sort').forEach(th => th.onclick = () => {
   sortDir = sortKey === th.dataset.s ? -sortDir : 1; sortKey = th.dataset.s; cardSig = ''; render();
 });
-$('c-refresh').onclick = () => { cardSig = ''; send('card_list').catch(fail); send('card_info').catch(fail); };
+$('c-refresh').onclick = () => { cardSig = ''; send('card_refresh').catch(fail); };
 $('c-folder').oninput = () => $('c-folder').dataset.edited = '1';
 $('c-sync').onclick = () => {
   const folder = $('c-folder').value.trim();
@@ -1061,7 +1061,7 @@ async function poll() {
   if ((S.trend || []).length) since = S.trend[S.trend.length - 1][0];
   if (trend.length > 6000) trend = trend.slice(-6000);
   const dk = desk();
-  if (dk && !prevDesk && view === 'card') { cardSig = ''; send('card_list').catch(fail); send('card_info').catch(fail); }
+  if (dk && !prevDesk && view === 'card') { cardSig = ''; send('card_refresh').catch(fail); }
   if (dk && !prevDesk && view === 'meter') readSettings();
   prevDesk = dk;
   render();

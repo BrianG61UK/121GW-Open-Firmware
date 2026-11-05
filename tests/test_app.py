@@ -196,6 +196,11 @@ class CardCommands(AppCase):
         self.assertIsNone(st['error'])
         st = self.card_op({'card_info': True})
         self.assertEqual((st['free_bytes'], st['total_bytes']), (1_000_000 * 64 * 512, 100_000_000 * 64 * 512))
+        self.app.card_st.update(files=[], free_bytes=None, total_bytes=None)
+        st = self.card_op({'card_refresh': True})                  # what the page sends: list and space in one job
+        self.assertEqual([f['name'] for f in st['files']], sorted(sample_files()))
+        self.assertEqual((st['free_bytes'], st['total_bytes']), (1_000_000 * 64 * 512, 100_000_000 * 64 * 512))
+        self.assertIsNone(st['error'])
         dest = os.path.join(self.tmp, 'dl')
         st = self.card_op({'card_download': True, 'name': 'LOG0002.CSV', 'dest': dest})
         self.assertIsNone(st['error'])

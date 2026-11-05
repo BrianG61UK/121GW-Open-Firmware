@@ -541,6 +541,15 @@ class Companion:
             return 'card information'
         return self._card_start('info', job)
 
+    def card_refresh(self):
+        """The file list and then the card's space in one job: two separate requests sent together would meet a
+        running job, and the second one would be refused ("a card operation is running")."""
+        def job(c, progress):
+            self.card_st['files'] = c.list()
+            self.card_st.update(c.info())
+            return '%d files, card information' % len(self.card_st['files'])
+        return self._card_start('list', job)
+
     def card_download(self, name, dest):
         card.check_local_name(name)
         folder = self._folder_arg(dest, os.path.join(self.folder, 'card'))
@@ -699,6 +708,8 @@ class Companion:
             return self.card_list()
         if 'card_info' in c:
             return self.card_info()
+        if 'card_refresh' in c:
+            return self.card_refresh()
         if 'card_download' in c:
             return self.card_download(self._arg(c, 'card_download', 'name'), self._arg(c, 'card_download', 'dest'))
         if 'card_delete' in c:
