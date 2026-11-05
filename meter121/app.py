@@ -704,13 +704,28 @@ def documents_folder():
     return paths.documents_dir()
 
 
+def _activate_mac():
+    """Make the program the active application once its window is shown (macOS).  A program that was not started from
+    the Dock or the Finder (a terminal, a script) is not activated by macOS: its window stays inactive, and a click on an
+    inactive window only activates it, so the first clicks on a button did nothing (2026-11-05, Connect needed up to four
+    clicks).  AppKit is called on the main thread (the shown event comes on another one)."""
+    try:
+        import AppKit
+        app = AppKit.NSApplication.sharedApplication()
+        AppKit.NSOperationQueue.mainQueue().addOperationWithBlock_(lambda: app.activateIgnoringOtherApps_(True))
+    except Exception:
+        pass                                            # not fatal: the window works, it is only not in front
+
+
 def open_window(url):
     """Native window; False when none can be made (the browser is used then)."""
     if sys.platform.startswith('linux'):
         return False
     try:
         import webview
-        webview.create_window(TITLE, url, width=1180, height=760, min_size=(860, 560), background_color='#0c0c0b')
+        win = webview.create_window(TITLE, url, width=1180, height=760, min_size=(860, 560), background_color='#0c0c0b')
+        if sys.platform == 'darwin':
+            win.events.shown += _activate_mac
         webview.start(gui='edgechromium' if sys.platform == 'win32' else None)
         return True
     except Exception:
