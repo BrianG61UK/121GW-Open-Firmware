@@ -107,7 +107,7 @@ class FakeMeter:
         return struct.pack('<IHHBB', min(len(f[0]), 0xFFFFFFFF), f[1], f[2], attr | (0x80 if cut else 0), len(raw)) + raw
 
     def _handle(self, rtype, p):
-        if self.logging and rtype in (card.T_LIST, card.T_READ, card.T_DELETE, card.T_INFO, settings.T_PUT):
+        if self.logging and rtype in (card.T_LIST, card.T_READ, card.T_DELETE, card.T_INFO, card.T_FORMAT, settings.T_PUT):
             return card.ST_NOT_NOW, 0, b''
         if rtype == card.T_LIST:
             if len(p) != 2:

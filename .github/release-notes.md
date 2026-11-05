@@ -1,5 +1,7 @@
 121GW Companion: live view, recording and firmware information for the EEVblog 121GW over Bluetooth LE.
 
+Fixed in 1.2.4: a format refused by a meter whose firmware is older than F-1.09 says so (it said "not allowed now"); formatting a large card works with firmware F-1.10 (a slow card write stopped the format).
+
 New in 1.2.3: "Format card" in the CARD view (meter on the page Ld-bt, firmware F-1.09 or newer with the two-part bootloader): type FORMAT to confirm, a window stays open until the meter has formatted the card.
 
 Fixed in 1.2.3: buttons answer the first click on macOS (Connect needed up to ten clicks, the update notice's button did not answer: the page rewrote the button text on every redraw, and WebKit drops a click whose pressed text was replaced); the CARD view shows the card's space (two requests sent together refused the second); the LOG view lists the recordings folder with size and date; the update notice says where the meter restarts to.

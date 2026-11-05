@@ -197,6 +197,10 @@ class CardCommands(AppCase):
         self.assertIn('two-part bootloader', st['error'] or '')         # the meter's refusal reaches the page
         self.assertEqual(len(self.meter.files), len(sample_files()))
         self.meter.two_part = True
+        self.meter.logging = True                                         # the fake answers 3, as a firmware before F-1.09
+        st = self.card_op({'card_format': True, 'confirm': 'FORMAT'})
+        self.assertIn('older than F-1.09', st['error'] or '')
+        self.meter.logging = False
         st = self.card_op({'card_format': {'confirm': 'FORMAT'}})
         self.assertIsNone(st['error'])
         self.assertEqual((st['files'], st['result']), ([], 'the card is formatted'))

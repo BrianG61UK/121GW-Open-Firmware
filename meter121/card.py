@@ -300,6 +300,10 @@ class Card:
         """Format the card as exFAT (FORMAT, firmware F-1.09 or newer with the two-part bootloader): everything on it
         is gone.  Sent once (no repetition: the answer comes only when the meter has finished)."""
         status, field, _ = self.c.request(T_FORMAT, FORMAT_WORD, retries=1)
+        if status == ST_NOT_NOW:                       # firmware before F-1.09 answers every unknown type with 3
+            raise CardError('format refused: the meter\'s firmware is older than F-1.09 and does not know this command '
+                            '(update it first: leave the page Ld-bt, the update is offered on a measuring page), or a '
+                            'firmware transfer is running', status)
         if status != ST_OK:
             raise CardError('format refused: ' + describe(status, field), status)
 
