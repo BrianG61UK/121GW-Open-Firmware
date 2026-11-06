@@ -28,6 +28,8 @@
 
     .section .text.mres.cap, "ax", %progbits
 
+    .equ CAP_R1_AUTO_TICKS, 250                 @ IMP-43 (experimental): 2.5 s of 10 ms TIM2 ticks for CAP range 1 in auto range
+
 @ -----------------------------------------------------------------------------
 @ fn_0800EC28 - reload the CAP no-signal timeout
 @ Replaces : 0x0800EC28 FUN_0800EC28 (v2.05)
@@ -38,9 +40,11 @@
 @ RAM      : reads  0x2000803C meter_mode, 0x2000803D meter_range, 0x20008042 range_manual, 0x20007FDF
 @            writes 0x20007FC4, 0x20007FC6, 0x200080A3
 @ Spec     : analysis/hy3131_modes_misc.md 5.5 (timeout)
-@ Deviation: none
+@ Deviation: IMP-43 (experimental): range 1 (100 nF) in auto range reloads CAP_R1_AUTO_TICKS (250 = 2.5 s) instead of
+@            200 (strap 0) / 150 (strap 1): a slow 100 nF ceramic gets time for its result before the jump to range 2
+@            (1 uF), which shows it with a tenth of the resolution
 @ Reload in TIM2 ticks by 0x20007FDF (PF8 strap), manual flag 0x20008042 and range 0..5: strap 0: 200 for ranges 0..4 (300 for 0, 1 manual), 300 for 5;
-@ strap 1: 200, 150 (300 manual), 200, 200, 200, 300.
+@ strap 1: 200, 150 (300 manual), 200, 200, 200, 300 (v2.05; range 1 auto 250 in both, IMP-43).
 @ -----------------------------------------------------------------------------
 FUNC fn_0800EC28
     @ only in mode 12 (CAP)
@@ -55,7 +59,8 @@ FUNC fn_0800EC28
     movs r0, #0                        @ 0x0800EC3A
     ldr r1, =v_20007FC6                @ 0x0800EC3C pool 0x0800F6B0 = 0x20007FC6
     strh r0, [r1, #0]                  @ 0x0800EC40
-    @ PF8 strap (0x20007FDF) set: 200, 200/300, 200, 200, 200, 300 by range; strap clear: 200/300 (manual 300) for ranges 0, 1, 200 for 2..4, 300 for 5 (reload in TIM2 ticks into 0x20007FC4)
+    @ PF8 strap (0x20007FDF) set: 200, 150 (manual 300), 200, 200, 200, 300 by range; strap clear: 200 (manual 300) for
+    @ ranges 0, 1, 200 for 2..4, 300 for 5 (reload in TIM2 ticks into 0x20007FC4); range 1 auto: CAP_R1_AUTO_TICKS (IMP-43)
     ldr r0, =v_20007FDF                @ 0x0800EC42 pool 0x0800F6B4 = 0x20007FDF
     ldrb r0, [r0, #0]                  @ 0x0800EC46
     cmp r0, #0                         @ 0x0800EC48
@@ -88,7 +93,7 @@ FUNC fn_0800EC28
     strh r0, [r1, #0]                  @ 0x0800EC84
     b .L0800EC90                       @ 0x0800EC86
 .L0800EC88:                              @ reached from 0x0800EC7A beq
-    movs r0, #150                      @ 0x0800EC88
+    movs r0, #CAP_R1_AUTO_TICKS        @ 0x0800EC88 v2.05: 150 (IMP-43)
     ldr r1, =v_20007FC4                @ 0x0800EC8A pool 0x0800F8C4 = 0x20007FC4
     strh r0, [r1, #0]                  @ 0x0800EC8E
 .L0800EC90:                              @ reached from 0x0800EC86 b
@@ -125,7 +130,12 @@ FUNC fn_0800EC28
     strh r0, [r1, #0]                  @ 0x0800ECD2
     b .L0800ECDE                       @ 0x0800ECD4
 .L0800ECD6:                              @ reached from 0x0800ECC8 beq
-    movs r0, #200                      @ 0x0800ECD6
+    ldr r0, =meter_range               @ ranges 0 and 1 share this reload in v2.05 (200)
+    ldrb r0, [r0, #0]
+    cmp r0, #1
+    ite eq
+    moveq r0, #CAP_R1_AUTO_TICKS       @ range 1 auto: IMP-43
+    movne r0, #200                     @ 0x0800ECD6 range 0 auto: 200 as v2.05
     ldr r1, =v_20007FC4                @ 0x0800ECD8 pool 0x0800F8C4 = 0x20007FC4
     strh r0, [r1, #0]                  @ 0x0800ECDC
 .L0800ECDE:                              @ reached from 0x0800ECD4 b
