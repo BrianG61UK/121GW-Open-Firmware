@@ -870,7 +870,7 @@ function drawCard(C, now) {
   if (sig === cardSig) return;
   cardSig = sig;
   const tb = $('files');
-  if (!files.length) { tb.replaceChildren(h('tr', {class: 'empty'}, h('td', {colspan: 4}, C.files ? 'no files on the card' : '—'))); return; }
+  if (!files.length) { tb.replaceChildren(h('tr', {class: 'empty'}, h('td', {colspan: 4}, C.listed ? 'no files on the card' : C.busy ? 'reading the card…' : '—'))); return; }
   tb.replaceChildren(...files.map(f => {
     const prot = !!(f.protected || f.locked || f.readonly) || PROTECTED.includes(String(f.name).toLowerCase());
     return h('tr', {}, h('td', {}, f.name), h('td', {class: 'r'}, grp(f.size)), h('td', {}, nz(f.date) + '  ' + nz(f.time)),

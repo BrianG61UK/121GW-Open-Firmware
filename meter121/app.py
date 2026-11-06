@@ -98,7 +98,7 @@ class Companion:
         except ValueError:
             self.derived = derived.Derived()
         self.diag = {'values': [], 'text': ''}
-        self.card_st = {'files': [], 'free_bytes': None, 'total_bytes': None, 'busy': False, 'op': '', 'progress': 0.0,
+        self.card_st = {'files': [], 'listed': False, 'free_bytes': None, 'total_bytes': None, 'busy': False, 'op': '', 'progress': 0.0,
                         'sync': {'folder': self.settings.get('card_sync_folder'), 'last': None, 'copied': 0},
                         'error': None, 'result': '', 'job': 0, 'done_job': 0}
         self.settings_st = {'items': [], 'error': None}
@@ -544,6 +544,7 @@ class Companion:
     def card_list(self):
         def job(c, progress):
             self.card_st['files'] = c.list()
+            self.card_st['listed'] = True                 # a listing has arrived (the page tells empty from unknown)
             return '%d files' % len(self.card_st['files'])
         return self._card_start('list', job)
 
@@ -558,6 +559,7 @@ class Companion:
         running job, and the second one would be refused ("a card operation is running")."""
         def job(c, progress):
             self.card_st['files'] = c.list()
+            self.card_st['listed'] = True                 # a listing has arrived (the page tells empty from unknown)
             self.card_st.update(c.info())
             return '%d files, card information' % len(self.card_st['files'])
         return self._card_start('list', job)
@@ -580,6 +582,7 @@ class Companion:
         def job(c, progress):
             c.delete(name)
             self.card_st['files'] = c.list()             # the page shows the folder as it is now
+            self.card_st['listed'] = True
             return 'deleted %s' % name
         return self._card_start('delete', job, check)
 
@@ -592,6 +595,7 @@ class Companion:
         def job(c, progress):
             c.format()
             self.card_st['files'] = c.list()
+            self.card_st['listed'] = True                 # a listing has arrived (the page tells empty from unknown)
             self.card_st.update(c.info())
             return 'the card is formatted'
         return self._card_start('format', job, check)

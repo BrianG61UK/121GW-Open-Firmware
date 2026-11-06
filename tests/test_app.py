@@ -77,7 +77,7 @@ class State(AppCase):
         self.assertEqual(set(st['derived']['limit']), {'lo', 'hi', 'unit', 'verdict'})
         self.assertIs(st['desk'], False)
         self.assertEqual(st['diag'], {'values': [], 'text': ''})
-        self.assertEqual(set(st['card']), {'files', 'free_bytes', 'total_bytes', 'busy', 'op', 'progress', 'sync', 'error',
+        self.assertEqual(set(st['card']), {'files', 'listed', 'free_bytes', 'total_bytes', 'busy', 'op', 'progress', 'sync', 'error',
                                            'result', 'job', 'done_job', 'locked_reason'})
         self.assertEqual(set(st['card']['sync']), {'folder', 'last', 'copied'})
         self.assertEqual(set(st['settings']), {'items', 'locked_reason', 'error'})
@@ -218,8 +218,9 @@ class CardCommands(AppCase):
         self.assertIsNone(st['error'])
         st = self.card_op({'card_info': True})
         self.assertEqual((st['free_bytes'], st['total_bytes']), (1_000_000 * 64 * 512, 100_000_000 * 64 * 512))
-        self.app.card_st.update(files=[], free_bytes=None, total_bytes=None)
+        self.app.card_st.update(files=[], listed=False, free_bytes=None, total_bytes=None)
         st = self.card_op({'card_refresh': True})                  # what the page sends: list and space in one job
+        self.assertTrue(st['listed'])                               # the page may now say "no files" for an empty list
         self.assertEqual([f['name'] for f in st['files']], sorted(sample_files()))
         self.assertEqual((st['free_bytes'], st['total_bytes']), (1_000_000 * 64 * 512, 100_000_000 * 64 * 512))
         self.assertIsNone(st['error'])
