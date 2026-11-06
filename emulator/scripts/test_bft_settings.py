@@ -7,13 +7,13 @@ Two emulated meters, both with the bundled synthetic EEPROM.  The reference mete
 with the keys (item poked, long SETUP = edit, REL until the page's RAM variable has the wanted value, long SETUP = save);
 for every setting the EEPROM byte and the RAM variable it ends with are recorded.  The second meter shows the page Ld
 (Bluetooth on) and takes PUT requests over the emulated USART2 (host side emulator/tools/btft.py).
-  T1 reference: the 16 pages (the three pages of EEPROM 0x020 together) give the recorded EEPROM byte and RAM value.
+  T1 reference: the 16 pages (the four pages of EEPROM 0x020 together) give the recorded EEPROM byte and RAM value.
   T2 GET: the 17 ids in table order with the values of the synthetic EEPROM as the pages show them.
   T3 round trip: every id with 2 .. 4 values (the first is the one the reference meter's page gave): status 0, the answer
      names the id and the value now in effect, the EEPROM byte and the RAM variable equal the reference's for the first
      value and the page's rules for the others (byte = value, RAM = value - bias), and no other EEPROM byte changed (the
      whole 1280-byte EEPROM is compared after every PUT).
-  T4 refusals: below the minimum and above the maximum of every id, a trigger of 3 and bits 7..4 in id 0x020, ids that
+  T4 refusals: below the minimum and above the maximum of every id, a trigger of 3 and bits 7..5 in id 0x020, ids that
      are not settings (rotary memory, identity, calibration, restore, user zero, the logging interval 0x018), a payload of
      2 and of 4 bytes: status 0x22, nothing changed.
   T5 gate: with logging on, with calibration mode on and with another SETUP page shown a PUT gets no answer and changes
@@ -57,7 +57,7 @@ SPEC = [
     (0x01A, 'LCD contrast', 0x20000237, 0, 10, 17, [16, 10, 17, 14], 4, None, 14),
     (0x01B, 'VA burden bd', 0x200080A8, 0, 0, 1, [1, 0], 11, 15, 0),
     (0x01E, 'buzzer', 0x20008078, 0, 0, 1, [0, 1], 3, None, 1),
-    (0x020, 'REL / trigger / clock', None, 0, 0, 15, [0x0B, 0x04, 0x05, 0x00], None, None, 0),
+    (0x020, 'REL / trigger / clock / anti-hunting', None, 0, 0, 31, [0x1B, 0x04, 0x15, 0x00], None, None, 0),
     (0x021, 'continuity hold', 'set_bh_code', 0, 0, 3, [2, 3, 0], 26, None, 0),
     (0x022, 'change threshold', 'log_ch_thr', 0, 1, 255, [7, 255, 1], 31, None, 1),
     (0x028, 'current loop', 'set_lp_code', 0, 0, 2, [1, 2, 0], 37, None, 0),
@@ -66,7 +66,7 @@ SPEC = [
 ]
 NOT_SETTINGS = [0x000, 0x001, 0x003, 0x007, 0x008, 0x009, 0x00A, 0x00B, 0x00C, 0x00D, 0x00E, 0x012, 0x018, 0x019, 0x01F, 0x023,
                 0x026, 0x02B, 0x030, 0x2D0, 0x2E0, 0x4D0, 0x4F8, 0x500, 0xFFFF]
-B20_VARS = ('set_relp', 'log_trig', 'set_clk12')
+B20_VARS = ('set_relp', 'log_trig', 'set_clk12', 'set_hunt_on')
 
 
 class Meter:
@@ -88,9 +88,9 @@ class Meter:
 
 
 def want_ram(spec, value):
-    """RAM bytes the page leaves for `value` (EEPROM 0x020: the three variables)."""
+    """RAM bytes the page leaves for `value` (EEPROM 0x020: the four variables)."""
     if spec[2] is None:
-        return (value & 1, value >> 1 & 3, value >> 3 & 1)
+        return (value & 1, value >> 1 & 3, value >> 3 & 1, value >> 4 & 1)
     return ((value - spec[3]) & 0xFF,)
 
 
@@ -122,10 +122,11 @@ def reference(m, spec_list):
     for spec in spec_list:
         before = bytes(e.m.eeprom)
         if spec[2] is None:
-            v = spec[6][0]                           # EEPROM 0x020: the three pages rEL (22), tr (30), CL (25)
+            v = spec[6][0]                           # EEPROM 0x020: the four pages rEL (22), tr (30), CL (25), HUnt (41)
             page(spec, 22, None, v & 1, m.addr('set_relp'))
             page(spec, 30, None, v >> 1 & 3, m.addr('log_trig'))
             page(spec, 25, None, v >> 3 & 1, m.addr('set_clk12'))
+            page(spec, 41, None, v >> 4 & 1, m.addr('set_hunt_on'))
         else:
             ram = m.addr(spec[2])
             target = (spec[6][0] - spec[3]) & 0xFF
@@ -187,7 +188,7 @@ def run_tests(image):
     for spec in SPEC:
         sid = spec[0]
         if spec[2] is None:
-            values = [0x10, 0x06, 0x0E, 0xFF]        # bits 7..4, trigger 3 (twice)
+            values = [0x20, 0x06, 0x0E, 0xFF]        # bit 5 (bits 7..5 are no settings), trigger 3 (twice)
         else:
             values = ([spec[4] - 1] if spec[4] > 0 else []) + ([spec[5] + 1, 255] if spec[5] < 255 else [])
         for value in values:

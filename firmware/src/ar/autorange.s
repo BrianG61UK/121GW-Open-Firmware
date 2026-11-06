@@ -26,7 +26,7 @@
 @            (0x20008045), ar_blank (0x2000805C), ar_ol_latch, mode_settle counted down
 @ Clobbers : r0-r3, r12, flags (r4-r6 saved)
 @ Context  : main (FUNC fn_0800DCFC, loop step 2, once per new mean 0x2000805D; both loop modes)
-@ RAM      : see ar.inc
+@ RAM      : see ar.inc; IMP-45: ah_block_down (.Lar_under) reads the CAP anti-hunting state and may take its lock
 @ Spec     : analysis/autorange_and_scheduler.md 2.2 (decision), 2.3
 @            Thresholds: up when |D| > U with U = FS + FS/10 (FS + FS/12 while the previous result was an overload,
 @            FS in DIODE); down when |D| < L with L = FS/10 (FS/100 in CAP range 5, 5 * FS/10 in ACA / DCA range 2).
@@ -519,8 +519,8 @@ FUNC autorange_step
     strb r0, [r1]                       @ 0800E1D6
     b .Lar_latch                        @ 0800E1D8
 
-@ |D| < L: go down unless HOLD (stage 1) is on or the range is 0; the OHM guard may veto.  Leaving CAP range 2 with
-@ |D| < 11 sets 0x200080A2.  Range - 1, apply request, blank; auto-hold stage 2 clears the captured value
+@ |D| < L: go down unless HOLD (stage 1) is on or the range is 0; the OHM guard may veto, and so does the CAP anti-hunting lock
+@ (IMP-45, ah_block_down).  Leaving CAP range 2 with |D| < 11 sets 0x200080A2.  Range - 1, apply request, blank; auto-hold stage 2 clears the captured value
 @ reached from 0800E19E beq (equal / zero) after tst r0, r1
 @              and from 0800E1A8 bne (not equal / non-zero) after cmp r0, #9
 @              and from 0800E1B2 bne (not equal / non-zero) after cmp r0, #6
@@ -535,6 +535,12 @@ FUNC autorange_step
     ldrb r0, [r0]                       @ 0800E1EC
     cmp r0, #0                          @ 0800E1EE
     beq .Lar_latch                      @ 0800E1F0
+    @ IMP-45: CAP range 2 locked by the anti-hunting rule (SETUP page HUnt): no step down (ar_sample takes the decision
+    @ first in the production image; this keeps the v2.05 rule from stepping down on the same reading).  r4 = |D|
+    mov r0, r4
+    bl ah_block_down                    @ r0 = 1 refuse
+    cmp r0, #0
+    bne .Lar_latch
     movs r0, #0                         @ 0800E1F2
     bl fn_0800E2A0                      @ 0800E1F4
     cmp r0, #0                          @ 0800E1F8

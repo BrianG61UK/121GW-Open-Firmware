@@ -534,9 +534,9 @@ ENDFUNC fn_08011384
 @ Note     : The call of fn_08011394 (item 10 in BEEP) now accepts the codes 0..15 (IMP-05).
 @ Note     : Production image only: item 20 (bL, set_bl_load), 21 (bt, set_bt_load), 22 (rEL, set_relp_load), 23 (tc,
 @            set_tc_load), 24 (dSP, set_dsp_load), 25 (CL, set_relp_load), 26 (bH, set_bh_load), 30 (tr, set_relp_load),
-@            31 (Ch, set_ch_load), 37 (LP, set_lp_load), 38 (Pt, set_rtd_load), 1 (battery trim, set_btrim_load) and 11 of ACV (dBm reference, set_dbm_load)
+@            31 (Ch, set_ch_load), 37 (LP, set_lp_load), 38 (Pt, set_rtd_load), 41 (HUnt, set_relp_load), 1 (battery trim, set_btrim_load) and 11 of ACV (dBm reference, set_dbm_load)
 @            are re-read from the EEPROM in the same way (IMP-07, IMP-09, IMP-11, IMP-10, IMP-12, IMP-13, IMP-16, IMP-21,
-@            IMP-24, IMP-25, IMP-27, IMP-08).
+@            IMP-24, IMP-25, IMP-45, IMP-27, IMP-08).
 @ -----------------------------------------------------------------------------
 FUNC fn_0800D190
     push {r7, lr}                           @ 0800D190
@@ -674,6 +674,11 @@ FUNC fn_0800D190
     bl set_rtd_load
     b .L0800D280
 .Lto_not_rtd:
+    cmp r0, #41                             @ IMP-45: the same for the page HUnt (item 41; byte 0x020, as rEL)
+    bne .Lto_not_hunt
+    bl set_relp_load
+    b .L0800D280
+.Lto_not_hunt:
     cmp r0, #1                              @ IMP-27: the same for the battery trim (item 1)
     bne .Lto_not_btrim
     bl set_btrim_load

@@ -24,7 +24,7 @@ setting is kept over a power-off.
 The new pages come after the original SETUP pages, in this order:
 
 `bL` (backlight) → `bt` (Bluetooth speed) → `Ld` (firmware over Bluetooth) → `For` (format the card as exFAT, only with the new bootloader) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) → `dSP` (display
-level) → `bH` (continuity hold, BEEP only) → `LP` (4–20 mA view, DC mA only) → `Pt` (PT100 / PT1000 view, Ω only) → `CL` (12 / 24-hour clock) → `Lt`, `Lo`, `HI` (limit test; the verdict page
+level) → `bH` (continuity hold, BEEP only) → `LP` (4–20 mA view, DC mA only) → `Pt` (PT100 / PT1000 view, Ω only) → `HUnt` (capacitance anti-hunting, CAP only) → `CL` (12 / 24-hour clock) → `Lt`, `Lo`, `HI` (limit test; the verdict page
 while the test is on) → `tr`, `Ch` (logging trigger) → back to the first page (while MIN/MAX is on, the statistics pages
 `n` and `Sd` and the time pages `tHI` and `tLo` come before it)
 
@@ -237,6 +237,22 @@ The card update (HOLD + MEM at power-on, SETUP) keeps working with the two-part 
 
 Tip: `bH100` makes even the shortest touch audible (good for scratching along a trace); `bHOFF` shows intermittent
 contacts as broken beeps.
+
+## Capacitance anti-hunting (CAP)
+
+- **The problem:** with some ceramic capacitors of about 100 nF the capacitance range keeps changing (100 nF, 1 µF, 100 nF,
+  …): the digits stay blank and only the decimal point moves. Each range change blanks the display, and the capacitor
+  never gets a chance to be measured on one range. (Reported on the EEVblog forum; why those capacitors behave so is not
+  proven.)
+- **Where:** page `HUnt`, in CAP mode only, after `dSP` and before `CL`. Four letters leave no room for the value on the
+  sub display, so the sub display shows `HUnt` and the main display shows `oFF` (the default, as the original) or `on`.
+  Long SETUP starts the edit (the sub display blinks), REL or PEAK switches, long SETUP saves.
+- **What it does with `on`:** after the 100 nF range has found no result twice in a row, the meter stays on the 1 µF
+  range and shows the value (about `0.095` µF for 95 nF) as long as the capacitor reads 10 to 99.9 nF there. It lets go and
+  ranges as usual when a different capacitor is connected (the reading changes by more than 20 %), when a result comes on
+  the 100 nF range, with open probes, when you change the range by hand or press REL, when you change the function and at
+  power-off. The 1 µF range has one digit less than the 100 nF range (0.0950 µF instead of 95.00 nF).
+- **Only needed** if your capacitor shows the hunting; leave it `oFF` otherwise. It only acts in CAP auto range.
 
 ## Statistics (MIN/MAX)
 

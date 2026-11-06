@@ -64,11 +64,34 @@ Bluetooth, the 121GW Companion, lives on the branch [`companion`](../../tree/com
 | exFAT cards, long file names, card format | SETUP page `For` | reads and writes FAT12 / FAT16 / FAT32 / exFAT cards with long file names; `For` formats the card as exFAT (shown only with the two-part bootloader) |
 | Two-part bootloader support | SETUP page `Ld`, the 121GW Companion | first install of the bootloader over Bluetooth; on request over Bluetooth the meter restarts into the bootloader's update mode (firmware and bootloader updates without card or keys) |
 | Limit test | SETUP pages `Lt`, `Lo`, `HI` | PASS / HI / Lo verdict against captured limits, with beeps |
+| Capacitance anti-hunting | CAP, SETUP page `HUnt` | keeps the 1 µF range for ceramic capacitors that make the range hunt (off by default) |
 | Logging trigger | SETUP pages `tr`, `Ch` | SD records every interval, on a change, or on a limit verdict change |
 | MIN/MAX times | MIN/MAX, pages `tHI`, `tLo`; SD file | when the maximum and the minimum happened, on the meter and in the closing rows of the log file |
 
 How to set and use each one: [`firmware/USER_GUIDE.md`](firmware/USER_GUIDE.md). The like-v2.05 build (branch
 `like-v2.05`) has none of these and behaves like the original firmware apart from the defect fixes.
+
+## Anti-hunting (capacitance)
+
+**The problem.** With some small ceramic capacitors of about 100 nF the capacitance range of the 121GW never settles: the
+display keeps switching between the 100 nF and the 1 µF range, the digits stay blank and only the decimal point moves.
+(Reported on the EEVblog forum.) On the 100 nF range such a capacitor gets no result in time, so after 2.5 s the meter
+moves up to the 1 µF range; there the capacitor reads below 0.1000 µF, so the meter goes down again, and so on. Why those
+capacitors get no result in time is not proven: nobody has measured one on a meter yet, so the emulator reproduces the
+behaviour with a setting for a capacitor that cannot be measured in time on a range (`cap_slow_ranges`).
+
+**The rule** (SETUP page `HUnt`, CAP only, **off by default**; the companion's METER view has the same setting). With `on`,
+after the 100 nF range has found no result **twice in a row**, the meter stays on the 1 µF range and shows the value (about
+`0.095` µF for 95 nF) as long as the capacitor reads 10 to 99.9 nF there. It lets go and ranges as usual when a different
+capacitor is connected (the reading changes by more than 20 %), with open probes, when a result comes on the 100 nF range,
+when you change the range by hand or press REL, when you change the function, and at power-off. Everything else in the
+capacitance measurement is unchanged.
+
+<p align="center"><img src="firmware/docs/antihunt/antihunt.gif" alt="Emulator display, CAP with a 95 nF capacitor that hunts: with HUnt off the range keeps changing and the digits stay blank; with HUnt on the meter stays on the 1 uF range and shows 0.0949 uF" width="380"></p>
+
+The picture is made by `emulator/tools/make_antihunt_gif.py` from the emulator running the firmware (time-lapse, three times
+faster than real time). How to use it: [`firmware/USER_GUIDE.md`](firmware/USER_GUIDE.md); design: IMP-45 in
+[`firmware/DESIGN.md`](firmware/DESIGN.md); test: `emulator/scripts/test_cap_antihunt.py`.
 
 ## Two-part bootloader (updates over Bluetooth)
 

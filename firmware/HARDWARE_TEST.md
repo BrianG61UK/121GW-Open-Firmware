@@ -122,6 +122,12 @@ These checks confirm on hardware what the emulator cannot.
    bootloader B-1.11 and bootloader update 1.1.0 to 1.1.1 over Bluetooth): follow `bootloader/README.md` (branch
    `bootloader`): fresh batteries, install from the companion, then a firmware and a bootloader update. The data EEPROM
    dump before and after must be identical.
+30. Capacitance anti-hunting (production build, IMP-45; not yet tried on a meter: no capacitor that hunts is at hand): CAP,
+   SETUP page `HUnt` (after `dSP`): the sub display shows `HUnt`, the main display `oFF`; long SETUP (the sub display
+   blinks), REL: `on`, long SETUP saves (only EEPROM 0x020 bit 4 changes). A ceramic capacitor of about 100 nF that makes
+   the range hunt (digits blank, decimal point moving, with `oFF`) must then stay on the 1 µF range after two timeouts
+   (about 6 s) and show its value; a different capacitor, open probes or a MODE or RANGE press end the lock. Capacitors
+   that measure normally behave as before with `on` or `oFF`.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

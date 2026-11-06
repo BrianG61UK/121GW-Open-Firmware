@@ -11,7 +11,7 @@ Groups:
   setup    every SETUP page of DCV (the pages shared by all functions), normal and edit state; also with MIN/MAX on
            (statistics pages) and with Bluetooth on
   setupm1..4  the SETUP pages that differ from DCV's, for the other functions (Low Z, V and mV / Temp; Hz and Ohm / ...;
-           mVA / VA and uA / uVA; A / mA), normal and edit state
+           mVA / VA and uA / uVA; A / mA), normal and edit state (the walk of setupm2 draws the CAP page HUnt by itself: no code per page)
   special  lamp test, version, power-off, cal.bin messages, logging messages, SD errors
   limit    the limit test (Lt, Lo, HI pages and the PASS / HI / Lo verdicts) and the logging trigger pages (tr, Ch)
   boot     the bootloader's screens: lamp test, -IAP-, Ld nn, Ld oK, the card update
@@ -1022,6 +1022,16 @@ def g_feat(r):
     e.advance(4.0)
     need(goto_item(e, 23), 'tc page not reached')
     r.add(e, 'feat_tcJ', 'Thermocouple type J selected', 'dial 3 TEMP, 0x00F = 1, SETUP to the tc page')
+    # capacitance anti-hunting (HUnt: EEPROM 0x020 bit 4 = 1): the page shows its name on the sub display, "on" on the main display
+    e = meter(patch={0x020: 0x10})
+    e.command({'dial': 5})
+    e.advance(2.0)
+    need(to_mode(e, 'CAP'), 'CAP not reached')
+    e.command({'input': dict(kind='F', value=100e-9)})
+    e.advance(6.0)
+    need(goto_item(e, 41), 'HUnt page not reached')
+    e.advance(1.0)
+    r.add(e, 'feat_hunt', 'Capacitance anti-hunting on: the page HUnt', 'dial 5 CAP, HUnt preset (0x020 = 0x10), 100 nF, SETUP to the page HUnt (item 41)')
     # display level 2, Bluetooth 20/s, 12-hour clock, backlight 30 s (one meter)
     e = meter(patch={0x013: 1, 0x015: 3, 0x020: 8, 0x017: 1})
     e.command({'dial': 2})

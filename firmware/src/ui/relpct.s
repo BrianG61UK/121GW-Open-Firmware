@@ -207,7 +207,7 @@ ENDFUNC ui_rp_text_prep
 @            0x20008061 when the view ends
 @ Note     : the percent views clear the unit and prefix signs and light %; the RTD view clears them (% included) and
 @            lights degC (0x200080AB non-zero) or degF (0), the signs of TEMP (fn_0801A3A4).  The views are tried in the
-@            order of fn_08016E08, so the mask belongs to the view that is drawn; the pages Sd, tHI and tLo, drawn there
+@            order of fn_08016E08, so the mask belongs to the view that is drawn; the pages Sd, tHI, tLo and HUnt (IMP-45), drawn there
 @            before every view, take no mask (before IMP-25 the percent mask also covered the standard deviation of Sd).
 @ -----------------------------------------------------------------------------
 FUNC ui_relpct_mask
@@ -216,6 +216,8 @@ FUNC ui_relpct_mask
     cbnz r0, 0f                             @ page Sd on the main digits (IMP-14): the reading's own unit, no view
     bl ui_mmt_view
     cbnz r0, 0f                             @ page tHI / tLo on the main digits (IMP-21): no view
+    bl ui_hunt_view
+    cbnz r0, 0f                             @ page HUnt on the main digits (IMP-45): no view
     bl ui_relpct_view
     cbnz r0, 1f
     bl ui_loop_view                         @ IMP-24: the DCmA loop percent view uses the same mask

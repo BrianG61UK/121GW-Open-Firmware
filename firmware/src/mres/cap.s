@@ -14,6 +14,8 @@
 @ OF-33: the range jump now sets the display-blank flag 0x2000805C (cleared by autorange_step at the next result, as for any range
 @ change) and the value redraw request 0x2000805F (outside HOLD), so the refresh of the same pass draws blank digits before
 @ meter_apply_mode_range commits the new range's decimal point; the old count is not drawn with it.
+@ IMP-45: the anti-hunting rule (antihunt.s, SETUP page HUnt) counts a range-1 timeout here (ah_timeout_note, before the jump) and
+@ follows each accepted result (ah_result); ar_sample / autorange_step refuse the step down from range 2 while it is locked.
 @ IMP-01 (production): the unsmoothed count X is passed to ar_sample (r1 = 0: counter modes have no AD1 code); a discarded result is not smoothed or published.
 @ =============================================================================
 
@@ -163,14 +165,16 @@ ENDFUNC fn_0800EC28
 @ Context  : main only
 @ RAM      : reads  0x20007E10 cal_gain, 0x20007E00 cal_offset, 0x2000803D meter_range, 0x20008042 range_manual,
 @            0x20007D08, 0x20007D64, 0x20007E40, 0x20007E44, 0x20007E68, 0x20007FC6, 0x2000808A, 0x2000808C,
-@            0x2000808E, 0x200080A4
+@            0x2000808E, 0x200080A4 (ah_result: set_hunt_on, range_manual, 0x2000805C, ah_lock, ah_ref)
 @            writes 0x20007D08, 0x20007D64, 0x20007E68, 0x20007FC8, 0x20008045, 0x2000805D, 0x200080A4
 @ Spec     : analysis/hy3131_modes_misc.md 5.5
-@ Deviation: IMP-01
+@ Deviation: IMP-01, IMP-45
 @ X = CTC / CTB (ranges 0, 1, 5) or CTC * 100 / CTB; ranges 0, 1: X = X - offset (0 if offset >= X), then X = f2uiz(X / gain) if gain != 0 and X != 0;
 @ ranges 2..5: X = f2uiz(X / gain) with no offset and no gain test (f2uiz truncates, DEF-11).  A capture running (0x2000808C / 0x2000808E) calls the CAL
 @ routines fn_0800F034 / fn_0800F6C0 / fn_0800F470, which arm NVM themselves.  Smoothing: threshold X/10 (range 5) or X/50, at least 20, depth 10;
 @ ranges 2..4 show 0 below 21 counts; 0x2000805D = 1 except in manual range 4 outside calibration while 0x200080A4 counts down.
+@ IMP-45: every accepted result (ar_sample returned 0) calls ah_result (antihunt.s) before the timeout reload; it clears the
+@ anti-hunting count on range 1 and keeps the lock reference / ends the lock on range 2.
 @ -----------------------------------------------------------------------------
 FUNC fn_0800B33C
     push {r4, lr}                      @ 0x0800B33C
@@ -390,7 +394,8 @@ FUNC fn_0800B33C
     movs r0, #1                        @ 0x0800B524
     ldr r1, =v_2000805D                @ 0x0800B526 pool 0x0800B968 = 0x2000805D
     strb r0, [r1, #0]                  @ 0x0800B52A
-.L0800B52C:                              @ reached from 0x0800B522 b
+.L0800B52C:                              @ reached from 0x0800B522 b; every accepted result passes here
+    bl ah_result                       @ IMP-45: anti-hunting state follows the accepted result (range 1: count reset; range 2: lock reference / unlock)
 .Lcap_discard:                              @ discarded result: no smoothing, no new value; only the no-signal timeout is reloaded
     bl fn_0800EC28                     @ 0x0800B52C
     pop {r4, pc}                       @ 0x0800B530
@@ -405,13 +410,16 @@ ENDFUNC fn_0800B33C
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main only
 @ RAM      : reads  0x2000803D meter_range, 0x20008042 range_manual, 0x2000808A, 0x200080A2, 0x200080A3, hold_active, hold_stage2
+@            (ah_timeout_note: set_hunt_on, ah_timeouts)
 @            writes 0x2000803D meter_range, 0x20008046, 0x2000804A, 0x2000804B, 0x2000805C, 0x2000805D, 0x2000805F, 0x2000807C,
 @            0x200080A2, 0x200080A3, 0x200080A4
 @ Spec     : analysis/hy3131_modes_misc.md 5.5 (timeout); ORIGINAL_FIRMWARE_ISSUES.md OF-33
-@ Deviation: OF-33
+@ Deviation: OF-33, IMP-45
 @ When the timeout flag 0x200080A3 is set: clear it and reload (fn_0800EC28).  Manual range or calibration mode: overload (0x20008046 = 1, new value
 @ 0x2000805D = 1; range 4 also 0x200080A4 = 2).  Auto: ranges 0, 1 -> 2 and 2..4 -> 5, 0x2000807C = 0, 0x2000804A = 0, 0x2000804B = 1 (re-apply);
 @ if the new range is 2 and 0x200080A2 is set: clear it, overload off, range 0.
+@ IMP-45: in the auto branch the range the timeout leaves goes to ah_timeout_note first (antihunt.s), which counts a range-1 timeout
+@ while 0x200080A2 is clear.
 @ -----------------------------------------------------------------------------
 FUNC fn_0800B540
     push {r7, lr}                      @ 0x0800B540
@@ -461,6 +469,7 @@ FUNC fn_0800B540
     @ ---- auto range: ranges 0, 1 -> 2; 2, 3, 4 -> 5 ----
     ldr r0, =meter_range               @ 0x0800B59E pool 0x0800B960 = 0x2000803D
     ldrb r0, [r0, #0]                  @ 0x0800B5A2
+    bl ah_timeout_note                 @ IMP-45: r0 = the range the timeout leaves; a range-1 timeout with 0x200080A2 clear is counted (r0 kept)
     cmp r0, #2                         @ 0x0800B5A4
     bge .L0800B5B2                     @ 0x0800B5A6
     movs r0, #2                        @ 0x0800B5A8

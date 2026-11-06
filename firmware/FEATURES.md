@@ -483,6 +483,28 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   conditions: two-part bootloader, not while a firmware transfer runs).  The meter cannot report progress meanwhile (its
   link is deaf during card work); the companion shows a window whose OK unlocks when the meter answers.
 
+### 2.19 Capacitance anti-hunting (implemented, IMP-45, F-1.16; off by default)
+- Request (EEVblog forum, firmware thread, 2026-11-06): with a small ceramic capacitor of about 100 nF the CAP auto range
+  keeps changing range, the digits stay blank and only the decimal point moves.
+- Facts: DESIGN.md section 10, IMP-45. In auto range, range 1 (100 nF) gets no counter result within the no-signal timeout
+  (2.5 s since IMP-43), so the timeout jumps to range 2 (1 uF); there the capacitor reads below 1000 counts (below
+  0.1000 uF), so the decision steps down to range 1, and so on. Every range change blanks the digits (OF-33). No such
+  capacitor has been measured on a meter, so why range 1 gets no result is not proven; the emulator reproduces the behaviour
+  with a model setting for a capacitor that cannot be measured in time on a range (`cap_slow_ranges`).
+- What it does (CAP, auto range, page `HUnt` on): after two consecutive range-1 timeouts the meter stays on range 2 and
+  shows the value as long as the reading is 10.0 to 99.9 nF on range 2 (100..999 counts). It lets go (normal ranging
+  again) when the reading changes by more than 20 % (and 50 counts), when a result arrives on range 1, when the range is
+  changed by hand (also REL), on a mode change, with the setting off, and at power-off. Open leads (a zero reading) never
+  lock. Everything else is unchanged: the up step, the other ranges, the other modes.
+- Where: the SETUP page `HUnt` (item 41, CAP mode only, after `dSP`, before `CL`). The four letters leave no room for the
+  value on the sub display, so the sub display shows `HUnt` and the main display `on` or `oFF`, as the pages `Sd`, `tHI`
+  and `tLo` show their values on the main display. Long SETUP edits (the sub display blinks), REL or PEAK switches, long
+  SETUP saves, SETUP short leaves without saving; the edit timeout re-reads the EEPROM.
+- How: `mres/antihunt.s` (state in RAM: counted timeouts, lock, reference), hooks in `mres/cap.s` (count, result),
+  `ar/arfast.s` (`ar_sample` and `ar_apply`) and `ar/autorange.s`; the page in `set/relp.s`, its main display text in
+  `ui/hunt.s`. Storage: EEPROM 0x020 bit 4 (1 = on; an erased byte reads as off). The companion (1.2.16) shows and
+  changes it on the METER view.
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
@@ -492,7 +514,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 | 0x013 | 2.4 display | 0 level 1, 1 level 2 | level 1 | as 0x011 | approved, implemented |
 | 0x015 | 2.5 BLE | 0 2/s, 1 4/s, 2 10/s, 3 20/s | 2/s | 0x014 continuity code, 0x016 APO | approved, implemented |
 | 0x017 | 2.9 backlight | bits 6..0: 0 OFF, 1 30 s, 2..100 1..99 min; bit 7: on/off state | OFF, dark | as 0x015 | approved, implemented |
-| 0x020 | 2.3, 2.6, 2.12 | bit 0 REL percent, bits 2..1 log trigger, bit 3 12-hour clock | v2.05 | none (free word 0x020..0x023) | approved, implemented |
+| 0x020 | 2.3, 2.6, 2.12, 2.19 | bit 0 REL percent, bits 2..1 log trigger, bit 3 12-hour clock, bit 4 CAP anti-hunting | v2.05 | none (free word 0x020..0x023) | approved, implemented |
 | 0x021 | 2.13 continuity | hold code 0..3 (100 / 50 / 25 ms / off = 15 ms) | 100 ms | as 0x020 | approved, implemented (the limits of 2.1 are RAM only) |
 | 0x022 | 2.6 | change threshold 1..255 | 1 | as 0x020 | approved, implemented |
 | 0x028 | 2.14 loop | view code 0..2 (off / 4..20 / 0..20 mA) | off | none (free word 0x028..0x02B) | approved, implemented (planned for the LO limit of 2.1, which stays RAM only) |
@@ -524,13 +546,14 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 36 | verdict `PASS`/`HI`/`Lo` | while the limit test is on (shown when it is switched on) | no (implemented) |
 | 39 | `Ld` firmware over Bluetooth (after `bt`) | with Bluetooth on | transfer (implemented) |
 | 40 | `For` card format (after `Ld`) | only with the two-part bootloader | yes, after a confirmation (implemented) |
+| 41 | `HUnt` CAP anti-hunting (after `dSP`) | CAP mode only; name on the sub display, `on` / `oFF` on the main display | yes (implemented) |
 | 32 | `n` count | MIN/MAX on | no |
 | 33 | `Sd` | MIN/MAX on | no |
 | 34, 35 | `tHI`, `tLo` | MIN/MAX on | no |
 
 Items 32..35 are the MIN/MAX pages. v2.05 uses 0..12 and 100; the page dispatcher falls back to item 0 for an unknown item
 (`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 25. SETUP short steps
-20 -> 21 -> 22 -> 23 (TEMP only) -> 24 -> 26 (BEEP only) -> 25 -> 27 -> 28 -> 29 -> 36 (test on) -> 30 -> 31 (tr-Ch) ->
+20 -> 21 -> 22 -> 23 (TEMP only) -> 24 -> 26 (BEEP only) / 41 (CAP only) -> 25 -> 27 -> 28 -> 29 -> 36 (test on) -> 30 -> 31 (tr-Ch) ->
 32 -> 33 (MIN/MAX on) -> 0 (`fn_08015410`); each new page joins that chain.
 
 ## 5. Order of work and checks
