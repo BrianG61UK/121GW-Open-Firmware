@@ -239,9 +239,9 @@ ENDFUNC ar_decision_pending
 @ Clobbers : r0-r3, r12, flags (r4-r6 saved)
 @ Context  : main (tail call of fn_0800DB48, which has just stored the v2.05 settle count in 0x20000238)
 @ RAM      : writes 0x200080F8 (ar_ol_latch) = 0, ar_state (counts 0, discard n, blank progress, timeout mark, last mode),
-@            ui_blank_req (W3), 0x20000238 (TP only); reads 0x20000238, ar_freq_tmo_count
+@            ui_blank_req (W3), 0x20000238 (TP only); reads 0x20000238, ar_freq_tmo_count; the anti-hunting state (ah_apply_note)
 @ Spec     : analysis/autorange_and_scheduler.md 5.2 P4 (settle after a change)
-@ Deviation: OF-20 (latch), OF-32 (blank request), IMP-01 (settle profiles)
+@ Deviation: OF-20 (latch), OF-32 (blank request), IMP-01 (settle profiles), IMP-45 (anti-hunting: ah_apply_note first)
 @
 @ ui_blank_req (firmware/requests/W3_to_W4.md 1): set to 1 in FREQ, PULSE, DUTY and BEEP, cleared in every mode but
 @ LowZ (mode 0, owned by MRES: there only a request of 1 left by the previous mode is withdrawn); ar_result_seen
@@ -259,6 +259,7 @@ ENDFUNC ar_decision_pending
 @ -----------------------------------------------------------------------------
 FUNC ar_apply
     push {r4, r5, r6, lr}
+    bl ah_apply_note                        @ IMP-45: an apply that leaves CAP range 1 / 2 ends the anti-hunting lock (r0, r1 kept)
     movs r3, #0
     ldr r2, =ar_ol_latch
     strb r3, [r2]                           @ the overload hysteresis starts clear at every apply (OF-20)
@@ -392,9 +393,10 @@ ENDFUNC ar_apply
 @ Context  : main (called by MDC, MAC and MRES after each conversion and before it is accumulated)
 @ RAM      : reads 0x200080F8, 0x20000238, 0x2000803C, 0x2000803D, 0x2000808A, range_manual, minmax_state,
 @            hold_active, hold_stage2, 0x2000804A, 0x2000804B, range_count, full_scale_table; writes
-@            meter_range, 0x2000804B, 0x2000805C (blank), 0x200080A2 (CAP) and ar_state
+@            meter_range, 0x2000804B, 0x2000805C (blank), 0x200080A2 (CAP) and ar_state; ah_block_down reads the
+@            anti-hunting state and may take the lock (ah_lock)
 @ Spec     : analysis/autorange_and_scheduler.md 5.2 P2, P3 (thresholds U and L of autorange_step)
-@ Deviation: IMP-01
+@ Deviation: IMP-01, IMP-45
 @
 @ The sample is judged only when v2.05's autorange_step would also be allowed to range: ranging by samples needs
 @ automatic range, no MIN/MAX, no HOLD, no calibration mode, two or more ranges, a settled range (mode_settle = 0)
@@ -408,6 +410,8 @@ ENDFUNC ar_apply
 @         uses L = FS/100 in CAP range 5, 0x0800DFB6)
 @ The OHM direction guard (fn_0800E2A0) may refuse the step; the confirmation is then kept and tried again with the
 @ next sample.
+@ IMP-45: a step down from CAP range 2 is refused whatever its target while the anti-hunting lock is set (ah_block_down at
+@ .Las_do_down, before the OHM guard and before 0x200080A2 is stored); the confirmation count is kept.
 @ -----------------------------------------------------------------------------
 FUNC ar_sample
     push {r4, r5, r6, r7, r8, r9, r10, lr}
@@ -592,6 +596,12 @@ FUNC ar_sample
     b .Las_dn_loop
 @ target range in r9 (0 when none higher holds the value): ask the OHM direction guard, then commit
 .Las_do_down:
+    @ IMP-45: CAP range 2 locked by the anti-hunting rule (SETUP page HUnt): no step down, whatever the target (this
+    @ includes a jump from range 2 to range 0), before the OHM guard and before ar_cap_small is stored below.  r4 = |X|
+    mov r0, r4
+    bl ah_block_down                        @ r0 = 1 refuse; the lock is taken here when two range-1 timeouts were counted
+    cmp r0, #0
+    bne .Las_accept
     ldr r3, =ar_ohm_jump
     ldrb r2, [r3]
     subs r2, r2, #1

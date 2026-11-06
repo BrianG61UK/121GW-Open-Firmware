@@ -34,7 +34,8 @@
 @ RAM      : reads v_20008038; writes acdc_active, filter_1khz, hold_active, hold_stage2, meter_mode, meter_range,
 @            minmax_state, peak_hold, rel_active, set_bat_low, set_cal_mode, set_date_edit_en, set_diode_15v,
 @            set_key_remote_code, set_key_remote_req, v_20007FE0, v_20008065, v_20008066, v_20008072, v_20008073,
-@            v_20008087, v_200080B1, v_200080B2, v_200080C5, va_channel; strict image: v_2000807B = 0 (OF-55)
+@            v_20008087, v_200080B1, v_200080B2, v_200080C5, va_channel; the anti-hunting state and setting (ah_reset,
+@            set_relp_load: set_hunt_on; IMP-45); strict image: v_2000807B = 0 (OF-55)
 @ Spec     : EEPROM_MAP.md 6 (boot reads, order of the calls); analysis/keys_setup.md 3; DESIGN.md 3.2 step 5
 @ Note     : Order as v2.05: read the NJU6350 (fn_0800FF18); markers 0x26 and 0x1F (fn_08010F10, fn_080104BC); board
 @            temperature offset (load_cal_record_from_eeprom(0xC8, 0)); interval, contrast, APO, temperature unit,
@@ -73,7 +74,8 @@ FUNC fn_08024DE0
     bl set_dbm_load                         @ IMP-08: load the dBm reference (EEPROM 0x011)
     bl set_bt_load                          @ IMP-09: load the Bluetooth frame rate (EEPROM 0x015)
     bl set_tc_load                          @ IMP-10: load and select the thermocouple type (EEPROM 0x00F)
-    bl set_relp_load                        @ IMP-11, IMP-13: load the REL view and the clock (EEPROM 0x020 bits 0, 3)
+    bl set_relp_load                        @ IMP-11, IMP-13, IMP-45: load the REL view, the clock and the anti-hunting setting (EEPROM 0x020 bits 0, 3, 4)
+    bl ah_reset                             @ IMP-45: no anti-hunting lock or counted timeout survives a STOP wake (RAM is kept in STOP)
     bl set_dsp_load                         @ IMP-12: load the display level (EEPROM 0x013)
     bl set_bh_load                          @ IMP-16: load the continuity hold time (EEPROM 0x021)
     bl lt_reset                             @ IMP-20: limit test off, no limits (RAM only)

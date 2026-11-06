@@ -19,13 +19,23 @@ ADR3440/ADR3450 data sheet Rev. C, Table 3 "ADR3412 Electrical Characteristics" 
 (specification tables), SCH = 121GW circuit diagram.
 
 Stimulus (set_stimulus): {'kind': k, 'value': x, 'ac': bool, 'freq': Hz, 'duty': 0..1, 'width': s, 'dc': V,
-                          'amps': A, 'board': degC or None, 'probe': 'K' | 'J' | 'T' | 'N' | 'R' | 'S'}
+                          'amps': A, 'board': degC or None, 'probe': 'K' | 'J' | 'T' | 'N' | 'R' | 'S',
+                          'cap_slow_ranges': [CAP ranges 0..5]}
     kind 'V'      volts: the DC value, or with ac the RMS of a sine of `freq` Hz plus the DC component 'dc'
     kind 'A'      amperes (DC, or RMS of a sine with ac), entering through the plugged current jack (A or mA)
     kind 'ohm'    resistance (also continuity in BEEP)
     kind 'Hz'     a signal of `value` Hz at the counter input; duty = high fraction, or 'width' = high time in s
                   (overrides duty when > 0)
-    kind 'F'      capacitance in farads
+    kind 'F'      capacitance in farads.  'cap_slow_ranges' (default none) is a MODEL SETTING, not physics: a capacitor
+                  that cannot be measured in time on the listed CAP ranges.  On those ranges no counter result ever
+                  completes (the counter input carries no signal), so the firmware's no-signal timeout (mres/cap.s
+                  fn_0800B540) fires on them as it does on the other ranges for a capacitor of no signal; the other ranges
+                  measure the value normally.  It reproduces the CAP range hunting that forum users report for some
+                  ceramic capacitors of about 100 nF (range 1 never delivers a result, range 2 reads below 1000 counts).
+                  The physical cause of such a capacitor on a real meter is UNPROVEN (no such capacitor has been measured
+                  on the meter); the setting only supplies the behaviour that the firmware then reacts to.  With the value
+                  0 F and ranges [0, 1] it models the open leads of the real meter, whose counter delivers nothing on
+                  ranges 0 and 1 (the timeout path of misc 5.5) but a zero reading on range 2.
     kind 'degC'   thermocouple (hot junction) temperature; 'probe' selects the thermocouple type (default 'K')
     kind 'diode'  forward voltage of the device under test in volts
     kind 'VA'     voltage `value` and current 'amps' at the same time (both RMS with ac)
@@ -290,7 +300,7 @@ class _Base:
         self.board = None              # emu.board.Board, set by the application (dial position)
         self.noise_counts = noise_counts
         self.stim = {'kind': 'open', 'value': 0.0, 'ac': False, 'freq': 0.0, 'duty': 0.5, 'width': 0.0, 'dc': 0.0,
-                     'amps': 0.0, 'board': None, 'probe': 'K'}
+                     'amps': 0.0, 'board': None, 'probe': 'K', 'cap_slow_ranges': ()}
         self.stim_epoch = 0.0          # chip time at which the current signal started (counter edge phase)
         # Hardware truth: the calibration the physical front end actually has.  It is a frozen copy of the EEPROM taken
         # when the emulator starts (or an image given with --hw-cal), never the live EEPROM: the firmware may rewrite its
@@ -325,7 +335,12 @@ class _Base:
         probe = str(s.get('probe', self.stim.get('probe', 'K'))).upper()
         if probe not in TC_PROBES:
             raise ValueError(f'unknown thermocouple probe {probe} (K, J, T, N, R or S)')
+        slow = s.get('cap_slow_ranges', ()) or ()
+        if isinstance(slow, (str, bytes)) or not all(isinstance(r, int) and not isinstance(r, bool) and 0 <= r <= 5
+                                                      for r in slow):
+            raise ValueError('cap_slow_ranges must be a list of CAP ranges 0..5')
         st = {'kind': kind, 'value': float(s.get('value', 0.0)), 'ac': bool(s.get('ac', False)),
+              'cap_slow_ranges': tuple(sorted(set(slow))),
               'freq': float(s.get('freq', 0.0) or 0.0), 'duty': float(s.get('duty', 0.5)),
               'width': float(s.get('width', 0.0) or 0.0), 'dc': float(s.get('dc', 0.0) or 0.0),
               'amps': float(s.get('amps', 0.0) or 0.0), 'board': None if b is None else float(b), 'probe': probe}
@@ -1260,6 +1275,11 @@ class CalibratedFrontend(_Base):
         if h >= CTA_RANGE:
             p['why'] = ('CAP: the high time exceeds the 24-bit CTC (DS p36); the counter behaviour on CTC overflow is '
                         'not stated (misc UNPROVEN: counter corner cases)')
+            return
+        if rng in st.get('cap_slow_ranges', ()):
+            # MODEL SETTING (module docstring, kind 'F'): this range never completes a conversion; no counter signal
+            p.update(ok=True, gain=g, cap_h=None,
+                     why=f'CAP range {rng} listed in cap_slow_ranges: no counter result (model setting, cause UNPROVEN)')
             return
         p.update(ok=True, gain=g, cap_h=h,
                  why='CAP counter signal: pulse train, physical method UNPROVEN (misc 5.5)')

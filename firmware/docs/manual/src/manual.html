@@ -30,6 +30,7 @@ get. Click a page number to jump there.</p>
 <tr><td>4–20 mA loop</td><td>See a loop current as 0–100 %</td><td><a class="pg" href="#f-loop"></a></td></tr>
 <tr><td>Better continuity</td><td>Beep below or above 1–300 Ω, adjustable beep hold</td><td><a class="pg" href="#f-beep"></a></td></tr>
 <tr><td>Faster digits</td><td>Choose calm or quick-reacting digits</td><td><a class="pg" href="#f-dsp"></a></td></tr>
+<tr><td>Steady capacitance range</td><td>Stops the range from hunting with some 100 nF ceramic capacitors</td><td><a class="pg" href="#f-hunt"></a></td></tr>
 <tr><td>Backlight timer</td><td>The light switches off by itself to save the batteries</td><td><a class="pg" href="#f-bl"></a></td></tr>
 <tr><td>Faster Bluetooth</td><td>Up to 20 readings per second to your phone or computer</td><td><a class="pg" href="#f-bt"></a></td></tr>
 <tr><td>12-hour clock</td><td>Time shown as 1–12</td><td><a class="pg" href="#f-cl"></a></td></tr>
@@ -336,6 +337,19 @@ than the 500 mV range). Only small changes are averaged, so in mV, where already
 dSP is hardly visible. Hz, ms and % are not affected.</p>
 </div><div class="pics"><figure><img src="../img/feat_dsp2.png" alt=""><figcaption>Level 2.</figcaption></figure></div></div>
 
+<div class="feat" id="f-hunt"><div class="txt">
+<h3>Steady capacitance range (anti-hunting)</h3>
+<p class="where"><b>Where:</b> capacitance · settings page <span class="lcd">HUnt</span> (sub display), value on the main display</p>
+<p>With some small ceramic capacitors of about 100 nF the capacitance range keeps changing between 100 nF and 1 µF: the
+digits stay blank and only the decimal point moves. The page <span class="lcd">HUnt</span> has two values, shown on the main
+display: <span class="lcd">oFF</span> (the default, as the original) and <span class="lcd">on</span>. With <span class="lcd">on</span>
+the meter stays on the 1 µF range after the 100 nF range has given no result twice in a row, and shows the value
+(about 0.095 µF for a 95 nF capacitor, one digit less than the 100 nF range would show). It goes back to normal ranging when you connect
+a different capacitor, with open probes, when you change the range by hand, press REL or change the function, and when you
+switch the meter off. Leave it <span class="lcd">oFF</span> if your capacitors measure normally. It does nothing in the other
+functions.</p>
+</div><div class="pics"><figure><img src="../img/feat_hunt.png" alt=""><figcaption>HUnt on.</figcaption></figure></div></div>
+
 <div class="feat" id="f-bl"><div class="txt">
 <h3>Backlight timer</h3>
 <p class="where"><b>Where:</b> settings page <span class="lcd">bL</span></p>
@@ -465,6 +479,7 @@ menu is locked while logging and while you look at stored readings.</p>
 <tr><td><span class="lcd">bH100</span></td><td>Continuity beep hold</td><td>continuity</td><td><a class="pg" href="#f-beep"></a></td></tr>
 <tr><td><span class="lcd">LPOFF</span></td><td>4–20 mA loop view</td><td>DC mA</td><td><a class="pg" href="#f-loop"></a></td></tr>
 <tr><td><span class="lcd">PtOFF</span></td><td>PT100 / PT1000 view</td><td>resistance</td><td><a class="pg" href="#f-pt"></a></td></tr>
+<tr><td><span class="lcd">HUnt</span></td><td>Capacitance anti-hunting (on / oFF on the main display)</td><td>capacitance</td><td><a class="pg" href="#f-hunt"></a></td></tr>
 <tr><td><span class="lcd">CL 24</span></td><td>12 / 24-hour clock</td><td>all</td><td><a class="pg" href="#f-cl"></a></td></tr>
 <tr><td><span class="lcd">LtOFF</span>, <span class="lcd">Lo</span>, <span class="lcd">HI</span></td><td>Pass / fail test and its limits</td><td>all</td><td><a class="pg" href="#f-limit"></a></td></tr>
 <tr><td><span class="lcd">PASS</span></td><td>Pass / fail result</td><td>while the test is on</td><td><a class="pg" href="#f-limit"></a></td></tr>

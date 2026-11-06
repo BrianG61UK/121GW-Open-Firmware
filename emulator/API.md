@@ -202,6 +202,7 @@ and `board`, which keep their present value.
 | `dc` | 0 | V, DC component of an AC voltage (AC+DC) |
 | `amps` | 0 | A, the current of the `VA` kind |
 | `board` | present | board temperature in degC at the cold junction (sets the PA4 thermistor voltage), or `null`: the board temperature follows the PA4 voltage |
+| `cap_slow_ranges` | `[]` | list of CAP ranges 0..5, kind `F` only: a MODEL SETTING for a capacitor that cannot be measured in time on those ranges; on them no counter result ever completes, so the firmware's no-signal timeout fires (`[1]` with 95 nF reproduces the range hunting reported for some ceramic capacitors; `[0, 1]` with 0 F models open leads). The physical cause is unproven |
 | `probe` | present (`K` at start) | thermocouple type of the `degC` kind: `K`, `J` or `T`; the EMF follows the K table of the firmware image or the NIST ITS-90 J / T tables (`emu/tc_nist.py`); temperature span K -210..1360, J -210..1200, T -210..400 degC |
 
 Kinds: `open` test leads open, nothing connected (the default; every field except `board` is ignored); `V` volts (DC, or RMS
@@ -211,7 +212,7 @@ continuity in BEEP); `Hz` a signal of `value` hertz at the counter input (FREQ, 
 and current `amps` at the same time (both RMS with `ac`). The stimulus must fit the firmware's present mode: `GET /state`
 `frontend.supported` and `frontend.reason` say whether it does. Validation errors (HTTP 400): unknown kind; non-finite
 numbers; negative `width`, `freq`, resistance or capacitance; a negative AC value; `duty` outside (0, 1); `width` without
-`freq`.
+`freq`; `cap_slow_ranges` that is not a list of integers 0..5.
 
 ```
 curl -s -X POST localhost:8121/input -d '{"input":{"kind":"V","value":1.5}}'                          # 1.5 V DC

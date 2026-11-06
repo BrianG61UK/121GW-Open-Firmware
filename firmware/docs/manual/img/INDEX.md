@@ -1,6 +1,6 @@
 # Display pictures for the user manual
 
-Made by `tools/make_screens.py` from the emulator running the production firmware (`firmware/build/EEVBlog.bin`; F-1.06, special_version.png F-1.15) with the synthetic EEPROM; every picture shows the display words the firmware wrote, drawn with the emulator page's glass layers.  Pictures that show the whole front panel (695 x 1338 px) include the dial position and the plugged jacks; the others are cut off below the keys (695 x 665 px).  "main" and "sub" are the decoded text of the main and sub display (the font draws S like 5, b like B, I like 1).  Keys: "long" = held 1 s.  In the edit state of a SETUP page (SETUP held 1 s) the value blinks; an edit picture is made only where the lit phase differs from the normal page, otherwise the normal page picture shows it.  The emulator runs without measurement noise, so every run gives the same readings.
+Made by `tools/make_screens.py` from the emulator running the production firmware (`firmware/build/EEVBlog.bin`; F-1.06, special_version.png F-1.16) with the synthetic EEPROM; every picture shows the display words the firmware wrote, drawn with the emulator page's glass layers.  Pictures that show the whole front panel (695 x 1338 px) include the dial position and the plugged jacks; the others are cut off below the keys (695 x 665 px).  "main" and "sub" are the decoded text of the main and sub display (the font draws S like 5, b like B, I like 1).  Keys: "long" = held 1 s.  In the edit state of a SETUP page (SETUP held 1 s) the value blinks; an edit picture is made only where the lit phase differs from the normal page, otherwise the normal page picture shows it.  The emulator runs without measurement noise, so every run gives the same readings.
 
 The repository keeps only the pictures the manual uses (src/manual.html), reduced for print to 560 px (display) or
 420 px (whole panel) wide with 96 colours; the other pictures listed below are made again by running make_screens.py.
@@ -142,7 +142,7 @@ Not made:
 
 | File | What it shows | How it was made |
 |---|---|---|
-| special_version.png | Power-on: the firmware version on the sub display (the main display is still blank) - main display ".", sub display "F-1.15", bar graph 1 segments | dial 2 (V); power cycle, display after 0.10 s |
+| special_version.png | Power-on: the firmware version on the sub display (the main display is still blank) - main display ".", sub display "F-1.16", bar graph 1 segments | dial 2 (V); power cycle, display after 0.10 s |
 | special_lamptest.png | Lamp test of the power-on window: every segment on | power cycle, RANGE pressed 0.5 s later and held |
 | msg_oFF.png | Power-off screen "-oFF-" (auto power-off, shown for the last beep) - main display "-oFF-", sub display "" | dial 2 (V); auto power-off countdown (RAM 0x20000230) set to 2 s and run out |
 | msg_SdCAL.png | cal.bin menu "SdCAL" (MEM held at power-on) - main display "5D.CAL", sub display "" | power cycle with MEM held, released after 0.5 s |
@@ -214,6 +214,7 @@ Not made:
 | feat_up300.png | Continuity threshold UP300 (beep above 300 ohm) - main display "0F.L", sub display "UP300", lit: Beep SegR SubR apo, bar graph 26 segments | dial 5 BEEP, 0x014 = 3, SETUP to page 10 |
 | feat_bh25.png | Continuity beep hold 25 ms - main display "0F.L", sub display "BH 25", lit: Beep SegR apo, bar graph 26 segments | dial 5 BEEP, 0x021 = 2, SETUP to the bH page |
 | feat_tcJ.png | Thermocouple type J selected - main display "82.9", sub display "Tc-J", lit: SegTempC apo | dial 3 TEMP, 0x00F = 1, SETUP to the tc page |
+| feat_hunt.png | Capacitance anti-hunting on: the page HUnt - main display "on", sub display "HUnT", lit: SegCapF Segn apo auto | dial 5 CAP, HUnt preset (0x020 = 0x10), 100 nF, SETUP to the page HUnt (item 41) |
 | feat_dsp2.png | Display level 2 - main display "1.2340", sub display "D5P 2", lit: DC SegV apo auto, bar graph 7 segments | dial 2 DCV; preset 0x013 = 1, 0x015 = 3, 0x020 = 8, 0x017 = 1; SETUP to page 24 |
 | feat_bt20.png | Bluetooth 20 readings per second - main display "1.2340", sub display "BT 20", lit: DC SegV apo auto, bar graph 7 segments | dial 2 DCV; preset 0x013 = 1, 0x015 = 3, 0x020 = 8, 0x017 = 1; SETUP to page 21 |
 | feat_cl12.png | 12-hour clock display - main display "1.2340", sub display "CL 12", lit: DC SegV apo auto, bar graph 7 segments | dial 2 DCV; preset 0x013 = 1, 0x015 = 3, 0x020 = 8, 0x017 = 1; SETUP to page 25 |
