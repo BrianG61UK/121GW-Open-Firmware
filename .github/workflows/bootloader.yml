@@ -41,6 +41,33 @@ jobs:
           path: bdist
           if-no-files-found: error
 
+  tests:
+    # The bootloader's emulator tests (starter decisions and power cuts, the scenarios B1..B9, the exFAT card with the
+    # firmware's format): one job per script.  test_first_install.py is not run here: it needs EEVblog's bootloader
+    # images, which are not in this repository.  Not on release tags, as the emulator workflow's tests.
+    name: Bootloader test ${{ matrix.script }}
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      EMU_TEST_WALL_S: '2280'
+    strategy:
+      fail-fast: false
+      matrix:
+        script: [test_starter.py, test_bootloader.py, test_exfat.py]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Production build (firmware/build/EEVBlog.bin and 121gw.map; the objects the bootloader links)
+        uses: ./.github/actions/build-firmware
+        with:
+          target: none
+      - name: Emulator data (v2.05 table data of the build, synthetic EEPROM)
+        run: python -I emulator/tools/prepare_data.py --dist dist
+      - name: Bootloader build
+        run: make -C bootloader PYTHON=python3
+      - name: Run ${{ matrix.script }}
+        run: python -I bootloader/tests/${{ matrix.script }}
+
   release:
     name: Publish bootloader-${{ github.ref_name }}.zip
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'bl-v')

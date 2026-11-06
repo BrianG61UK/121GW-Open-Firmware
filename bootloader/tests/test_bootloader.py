@@ -41,6 +41,17 @@ APP = open(IMAGE_PATH, 'rb').read()
 KIND_FW, KIND_BL = 0, 2
 
 
+def bl_version():
+    """BL_VERSION of bootloader/src/bl.inc (major << 16 | minor << 8 | patch) as the STATUS 0x80 answer gives it:
+    major << 8 | minor << 4 | patch (src/bl_ble.s, protocol comment)."""
+    for line in open(os.path.join(ROOT, 'bootloader', 'src', 'bl.inc')):
+        f = line.split()
+        if len(f) >= 3 and f[0] == '.equ' and f[1] == 'BL_VERSION,':
+            v = int(f[2], 16)
+            return (v >> 16 & 0xFF) << 8 | (v >> 8 & 0xFF) << 4 | (v & 0xFF)
+    raise SystemExit('BL_VERSION not found in bootloader/src/bl.inc')
+
+
 def fw_mark(img):
     w = struct.pack('<4I', B.FW_MAGIC, len(img), B.crc32(img), 0)
     return w + struct.pack('<I', B.crc32(w))
@@ -220,7 +231,7 @@ def b4(ee0):
     e.advance(1.0)
     release(e)
     h = Host(e)
-    r, _ = h.transfer(new, KIND_FW, cut_after=200)
+    r, _ = h.transfer(APP, KIND_FW, cut_after=200)
     T.check('transfer cut after 200 packets', r == 'cut', repr(r))
     power_cycle(e)
     e.advance(2.0)
@@ -244,7 +255,9 @@ def b5(ee0):
     e.advance(2.0)
     T.check('update mode after the request', texts(e) == ('-1AP-', '-1AP-'), repr(texts(e)))
     st = Host(e).send(btft.packet(5, 0, b'\x80'))
-    T.check('STATUS 0x80 answers the bootloader version 1.0', st is not None and st[1] == 0 and st[2] == 0x0100, repr(st))  # 1.0.0
+    want = bl_version()
+    T.check('STATUS 0x80 answers the bootloader version (bl.inc BL_VERSION, 0x%03X)' % want,
+            st is not None and st[1] == 0 and st[2] == want, repr(st))
 
 
 

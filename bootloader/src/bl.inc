@@ -25,7 +25,7 @@
     .equ CMD_OK,            3
     .equ BKP_MAGIC,         0x55504454      @ RTC_BKP0R: update mode requested by the firmware (firmware ble/blcmd.s)
     .equ RTC_BKP0R,         0x40002850      @ RM0038 20.6.20
-    .equ BL_VERSION,        0x00010102      @ this bootloader: 1.1.2 (major << 16 | minor << 8 | patch)
+    .equ BL_VERSION,        0x00010103      @ this bootloader: 1.1.3 (major << 16 | minor << 8 | patch)
 
     .equ BL_RAM_BASE,       0x20008100      @ RAM of the bootloader's own objects; below it the v2.05 addresses the
                                             @ firmware's SD driver uses (firmware/src/sd) are left to that driver

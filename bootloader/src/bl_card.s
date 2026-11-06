@@ -69,7 +69,7 @@ FUNC bl_card_update
     bl bl_lcd_bar
     bl bl_lcd_commit                        @ shadow to the display
     movs r0, #1
-    bl sys_clock_select                     @ HSE for the card (firmware bft_card_begin)
+    bl sys_clock_select                     @ the card-session clock, PLL 32 MHz (firmware IMP-41, bft_card_begin)
     @ card start: up to 10 tries; its result is not used here, a missing card shows as the f_open failure below
     movs r0, #10
     bl sd_bringup_retry

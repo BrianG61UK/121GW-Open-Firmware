@@ -1,5 +1,7 @@
 121GW two-part bootloader: firmware and bootloader updates over Bluetooth from the 121GW Companion, no card and no keys needed; the card update (MEM + HOLD, then SETUP) keeps working, now with a 30 s window and from FAT or exFAT cards.
 
+New in bl-v1.1.3 (B-1.13): the card update reads the SD card at the firmware's card-session clock (32 MHz, as the processor's reference manual requires for the SD interface; firmware v1.1.2, GitHub issue 5) instead of 4 MHz.
+
 Assets of this release
 - `bootloader-<tag>.zip`: `install.bin` (the first install, sent by the companion to firmware F-1.04 (v1.0.4) or newer on the page Ld), `blimage.bin` (the bootloader image the companion sends to an installed bootloader), `starter.bin`, `README.md` (what it does, how to install and update, what the display shows), `LICENSE` and `SHA256SUMS`.
 - `*.sha256`: checksum of the file with the same name.
