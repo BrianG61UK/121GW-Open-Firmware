@@ -322,6 +322,9 @@
     .equ USART_CR2,           0x10            @ 27.6.5
     .equ USART_CR3,           0x14            @ 27.6.6
     .equ USART_GTPR,          0x18            @ 27.6.7
+    .equ USART_SR_FE,         0x0002          @ framing error (27.6.1 bit 1)
+    .equ USART_SR_NF,         0x0004          @ noise detected (27.6.1 bit 2)
+    .equ USART_SR_ORE,        0x0008          @ overrun error (27.6.1 bit 3)
     .equ USART_SR_RXNE,       0x0020
     .equ USART_SR_TC,         0x0040
     .equ USART_SR_TXE,        0x0080

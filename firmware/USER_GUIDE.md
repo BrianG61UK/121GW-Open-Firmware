@@ -99,7 +99,9 @@ setting (meter at 25 °C). Set `tc` to the probe you plug in.
 - **What it does:** the meter averages its last few readings before showing them, so the last digit stays steady; a big
   change still shows immediately. With `dSP 2` that averaging is four times shorter, so small changes and slow drifts
   appear about four times sooner (in AC volts a small step: 0.24 s instead of 0.96 s). How often the digits update does
-  not change.
+  not change in any function: that is set by the measuring chip (the 50 mV range, for example, updates more slowly than
+  the 500 mV range). Only changes smaller than a few digits are averaged; in mV, where that is a few microvolts, `dSP` is
+  hardly visible.
 - **Cost:** the last digit can be a little less steady (for example a temperature that toggles between 99.9 and 100.0).
 
 Tip: `dSP 2` while adjusting a trimmer or watching something warm up or charge; `dSP 1` for the steadiest reading.
