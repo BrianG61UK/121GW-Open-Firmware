@@ -69,7 +69,7 @@ ble_txq_tail:       .space 1            @ queue read index (USART2 handler)
 @ ble_sysclk_is_hse - is HSE the system clock?
 @ Replaces : nothing in v2.05 (new, NF-04)
 @ In       : -
-@ Out      : r0 = 1 if RCC_CFGR.SWS = HSE (SD card access, sys_clock_select(1)), else 0
+@ Out      : r0 = 1 if RCC_CFGR.SWS is not MSI (SD card access, sys_clock_select(1): PLL, or HSE as v2.05), else 0
 @ Clobbers : r0, flags
 @ Context  : ISR-safe
 @ Spec     : RM0038 6.3.3 RCC_CFGR SWS; DESIGN.md 6.26 NF-04
@@ -78,10 +78,10 @@ FUNC ble_sysclk_is_hse
     ldr r0, =RCC_CFGR                       @ clock configuration register
     ldr r0, [r0]
     ands r0, r0, #RCC_CFGR_SWS_MASK         @ SWS bits 3:2 = clock in use
-    cmp r0, #BLE_SWS_HSE                    @ 10b = HSE
-    ite eq
-    moveq r0, #1                            @ HSE in use
-    movne r0, #0                            @ MSI, HSI or PLL
+    cmp r0, #0                              @ 00b = MSI: the baud rate was computed for it (IMP-41: a card session
+    ite ne                                  @ runs on the PLL, v2.05 on HSE: both are "not MSI")
+    movne r0, #1                            @ a card-session clock
+    moveq r0, #0                            @ MSI
     bx lr
 ENDFUNC ble_sysclk_is_hse
     .ltorg
@@ -196,7 +196,7 @@ FUNC ble_tx_start_frame
     ldr r1, =ble_start_pending
     strb r0, [r1]                           @ frame start requested
     push {lr}
-    bl ble_tx_kick                          @ begin now unless busy or on HSE
+    bl ble_tx_kick                          @ begin now unless busy or on the card-session clock
     pop {pc}
 .Lsf_ret:
     bx lr

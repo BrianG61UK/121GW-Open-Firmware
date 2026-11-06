@@ -144,7 +144,7 @@ ENDFUNC set_fmt_edit
 LFUNC fmt_run
     push {r4, lr}
     movs r0, #1
-    bl sys_clock_select                     @ HSE for the card (as bft_card_begin)
+    bl sys_clock_select                     @ the card-session clock, PLL 32 MHz (as bft_card_begin)
     movs r0, #10
     bl sd_bringup_retry
     bl fmt_mkfs

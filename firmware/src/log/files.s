@@ -102,7 +102,7 @@
 @   log_write_step()   : r0 = 0 busy (call again on the next pass), 1 done; the result is in log_write_result
 @   log_write_session(): start + step until done, return the result (the v2.05 form used by the baseline loop and
 @                        by log_stop); v2.05 signature: no input, r0 = 0 written, 1 failed
-@ A step runs one log_session_once, which holds SYSCLK = HSE only for its own duration (sys_clock_select(1) at its
+@ A step runs one log_session_once, which holds the card-session clock (PLL 32 MHz, IMP-41; v2.05 HSE) only for its own duration (sys_clock_select(1) at its
 @ start, (0) at its end, 0x0801D1B2 / 0x0801D372), exactly the SD command sequence of one v2.05 attempt.
 @ The three routines below each carry their own header.
 @ -----------------------------------------------------------------------------
@@ -243,7 +243,7 @@ ENDFUNC log_write_session
 @ Out       : r0 = 0 the session wrote and verified its rows, 1 no card (bring-up failed), 3 file could not be created, 4 file could
 @             not be opened, 5 seek failed, 7 flush failed, 8 verification failed (error codes shown as SdExx)
 @ Clobbers  : r0-r3, r12, flags (v2.05 regeffects.txt; r4-r11 preserved)
-@ Context   : main only; holds SYSCLK = HSE from its first to its last instruction (sys_clock_select(1) .. (0), v2.05 0x0801D1B2 / 0x0801D372)
+@ Context   : main only; holds the card-session clock (PLL 32 MHz, IMP-41) from its first to its last instruction (sys_clock_select(1) .. (0), v2.05 0x0801D1B2 / 0x0801D372)
 @ RAM       : reads/writes log_new_file, log_header_due, log_closing, log_file_seq, log_row_no, log_blocks, log_file_size,
 @             log_flush_start, log_bytes_total, log_limit_hit, log_active, log_error_code, ui_refresh_request, bat_low
 @ Spec      : v2.05 listing 0x0801D1A8..0x0801D37B
@@ -254,7 +254,7 @@ FUNC log_session_once
     movs    r4, #0                          @ 0801D1AA r4 = 0
     movs    r5, #0                          @ 0801D1AC r5 = 0
     movs    r6, #0                          @ 0801D1AE r6 = 0
-    @ SYSCLK = HSE for the SD access
+    @ the card-session clock for the SD access (PLL 32 MHz, IMP-41)
     movs    r0, #1                          @ 0801D1B0 r0 = 1
     bl      sys_clock_select                @ 0801D1B2 call sys_clock_select
     @ bring the card up (up to 10 tries, SD module); non-zero: no card, return 1

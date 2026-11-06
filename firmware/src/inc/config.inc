@@ -29,12 +29,18 @@
     .equ FW_VER_C1, '-'
     .equ FW_VER_C2, '1'
     .equ FW_VER_C3, '1'
-    .equ FW_VER_C4, '1'
+    .equ FW_VER_C4, '2'
 
     @ DEBUG = 1 sets DBGMCU_CR DBG_SLEEP | DBG_STOP | DBG_STANDBY at every start as v2.05 does (0x0801BEF8).
     @ Production (0) leaves DBGMCU_CR alone so STOP is the true low-current STOP (NF-18, RM0038 30.16.3).
     .ifndef DEBUG
     .equ DEBUG, 0                       @ SWITCH DEBUG default 0 (NF-18)
+    .endif
+
+    @ BLE_AT_POWERUP = 1 switches Bluetooth on at every power-up as a long PEAK does (ble/blcmd.s blcmd_ble_on), so a
+    @ computer can reach a development build without a key press.  Production (0): off at power-up, as v2.05.
+    .ifndef BLE_AT_POWERUP
+    .equ BLE_AT_POWERUP, 0              @ SWITCH BLE_AT_POWERUP default 0 (development builds only)
     .endif
 
     @ MPU_GUARD = 1 makes program flash 0x08000000..0x0807FFFF and the option-byte page 0x1FF80000..0x1FF800FF

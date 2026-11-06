@@ -19,6 +19,7 @@
     .thumb
     .include "macros.inc"
     .include "hw.inc"
+    .include "ram_v205.inc"
 
     .equ BLCMD_MARK,        0x08005F00      @ bootloader mark (bootloader/tools/blimage.py header)
     .equ BLCMD_HDR_MAGIC,   0x32484C42      @ "BLH2"
@@ -106,6 +107,32 @@ FUNC blcmd_info
     bl ble_tx_queue_put                     @ refused when the queue is full: the host asks again
     pop {r4, pc}
 ENDFUNC blcmd_info
+
+@ -----------------------------------------------------------------------------
+@ blcmd_ble_on - Bluetooth on, the steps of a long PEAK that switches it on (key/long.s .Llp_key_peak): the transfer flag,
+@ no pending remote key, the module told (fn_0800C51A), the counter 0x20007FB0 cleared; called at power-up by a
+@ development build (config.inc BLE_AT_POWERUP)
+@ Clobbers : r0-r3, r12, flags
+@ -----------------------------------------------------------------------------
+FUNC blcmd_ble_on
+    push {r4, lr}
+    movs r0, #1
+    ldr r1, =v_2000802B
+    strb r0, [r1]                           @ key_ble_on: the status frames go out
+    movs r0, #0
+    ldr r1, =v_20008033
+    strb r0, [r1]
+    ldr r1, =v_20008069
+    strb r0, [r1]                           @ key_remote_ev: no remote key waiting
+    ldr r1, =v_2000806D
+    strb r0, [r1]                           @ key_remote_code
+    movs r0, #1
+    bl fn_0800C51A                          @ tell the Bluetooth module (as 0x08016560)
+    movs r0, #0
+    ldr r1, =v_20007FB0
+    strh r0, [r1]
+    pop {r4, pc}
+ENDFUNC blcmd_ble_on
 
 @ -----------------------------------------------------------------------------
 @ blcmd_update_mode - restart into the bootloader's update mode (code 0x91); returns only when no two-part

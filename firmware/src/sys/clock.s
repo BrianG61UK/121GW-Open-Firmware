@@ -17,6 +17,10 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
+    .equ SYS_TIM_PSC_MSI, 260               @ 4 194 304 / 261 / 161 = 99.81 Hz (TIM2), / 16 = 1004.4 Hz (TIM3), as v2.05
+    .equ SYS_STEP_LOOPS, 64                 @ subs + bne: at least 2 cycles each (PM0056 3.3), 128 cycles = 8 us at 16 MHz
+    .equ SYS_TIM_PSC_PLL, 1990              @ 32 000 000 / 1991 / 161 = 99.83 Hz, / 16 = 1004.5 Hz (IMP-41)
+
     .section .text.sys.clock, "ax", %progbits
 
 @ -----------------------------------------------------------------------------
@@ -127,40 +131,166 @@ LFUNC sys_set_sysclk
     bne .Lsss_pll_wait
     b .Lsss_fail
 .Lsss_pll_ok:
-    @ SW = PLL (0x08026092..0x080260A8)
+    @ SW = PLL (0x08026092..0x080260A8); OF-70: v2.05 goes from MSI 2.097 MHz to 16 MHz in one step (7.6 x), RM0038
+    @ 6.2.7 allows less than 4 x per step with 5 us between two changes: SW = PLL together with HCLK = SYSCLK / 2
+    @ (8 MHz, 3.8 x), at least 5 us, then HPRE = /1 (16 MHz, 2 x)
     ldr r1, =RCC_CFGR
     ldr r0, [r1]
-    bic r0, r0, #RCC_CFGR_SW_MASK
-    str r0, [r1]
-    ldr r0, [r1]
-    orr r0, r0, #RCC_CFGR_SW_PLL
+    bic r0, r0, #(RCC_CFGR_SW_MASK | RCC_CFGR_HPRE_MASK)
+    orr r0, r0, #(RCC_CFGR_SW_PLL | RCC_CFGR_HPRE_DIV2)
     str r0, [r1]
     ldr r2, =SYS_WAIT_POLLS
 .Lsss_sws_wait:                             @ wait SWS = PLL (0x080260AA..0x080260B4)
     ldr r0, [r1]
     and r0, r0, #RCC_CFGR_SWS_MASK
     cmp r0, #RCC_CFGR_SWS_PLL
-    beq .Lsss_done
+    beq .Lsss_step
     subs r2, r2, #1
     bne .Lsss_sws_wait
 .Lsss_fail:                                 @ a step timed out: select MSI and continue on it
     ldr r1, =RCC_CFGR
     ldr r0, [r1]
-    bic r0, r0, #RCC_CFGR_SW_MASK           @ SW = 00 = MSI
+    bic r0, r0, #(RCC_CFGR_SW_MASK | RCC_CFGR_HPRE_MASK) @ SW = 00 = MSI, HCLK = SYSCLK
+    str r0, [r1]
+    bx lr
+.Lsss_step:
+    movs r2, #SYS_STEP_LOOPS                @ at least 2 cycles a pass at 8 MHz: 16 us
+1:  subs r2, r2, #1
+    bne 1b
+    ldr r0, [r1]
+    bic r0, r0, #RCC_CFGR_HPRE_MASK         @ HCLK = SYSCLK = 16 MHz
     str r0, [r1]
 .Lsss_done:
     bx lr
 ENDFUNC sys_set_sysclk
 
 @ -----------------------------------------------------------------------------
-@ sys_clock_select - run clock (MSI range 6) or SD-card clock (HSE if it starts)
+@ sys_pll_session - IMP-41: SYSCLK = PLL from HSE x24 /3 for a card session (VCO 96 MHz, SYSCLK = HCLK = PCLK1 =
+@                   PCLK2 = 32 MHz, SDIOCLK = VCO / 2 = 48 MHz)
+@ In       : HSE running (HSERDY), SYSCLK = MSI
+@ Out      : r0 = 1 SYSCLK = PLL, 0 a step did not complete (SYSCLK still MSI, timer prescalers unchanged)
+@ Clobbers : r0-r3, r12, flags
+@ Context  : main
+@ Spec     : RM0038 6.2 ("If the USB or SDIO interface is used ... the PLL VCO clock ... must be programmed to output a
+@            96 MHz frequency", SDIOCLK = PLLVCO/2); 6.3.3 PLLMUL 0110 = x24, "can be written only when the PLL is
+@            disabled", VCO at most 96 MHz in Range 1; 3.3.2 / Table 13: 32 MHz needs Range 1, 64-bit access and one
+@            wait state, set before the frequency is raised.  v2.05 ran every card session on HSE 4 MHz (SYSCLK 4 MHz,
+@            SDIOCLK 24 MHz from a 48 MHz VCO): at that clock the DMA stopped feeding the SDIO after a few words (GitHub
+@            issue 5: TXUNDERR on a meter).  The PLL is configured here at every session, so a session does not depend
+@            on the boot-time PLL setup (issue 6: the STOP preparation clears it).
+@ -----------------------------------------------------------------------------
+FUNC sys_pll_session
+    push {r4, lr}
+    ldr r0, =PWR_CR
+    ldr r1, [r0]
+    and r1, r1, #PWR_CR_VOS_MASK
+    cmp r1, #PWR_CR_VOS_RANGE1
+    bne .Lsps_fail                          @ not Range 1 (sys_system_init sets it): no 32 MHz
+    ldr r0, =FLASH_ACR
+    ldr r1, [r0]
+    orr r1, r1, #FLASH_ACR_ACC64
+    str r1, [r0]                            @ 64-bit access first (RM0038 3.3.2)
+    orr r1, r1, #FLASH_ACR_LATENCY
+    str r1, [r0]                            @ then one wait state
+    ldr r1, [r0]
+    tst r1, #FLASH_ACR_LATENCY
+    beq .Lsps_fail                          @ not taken: no 32 MHz
+    ldr r2, =RCC_CR
+    ldr r1, [r2]
+    bic r1, r1, #RCC_CR_PLLON
+    str r1, [r2]                            @ PLL off: its fields can be written only then (SYSCLK is MSI here)
+    ldr r4, =SYS_WAIT_POLLS
+1:  ldr r1, [r2]
+    tst r1, #RCC_CR_PLLRDY
+    beq 2f
+    subs r4, r4, #1
+    bne 1b
+    b .Lsps_fail
+2:  ldr r3, =RCC_CFGR
+    ldr r1, [r3]
+    bic r1, r1, #RCC_CFGR_PLL_MASK
+    orr r1, r1, #RCC_CFGR_PLL_HSE_X24_DIV3
+    str r1, [r3]                            @ HSE x24 /3
+    ldr r1, [r2]
+    orr r1, r1, #RCC_CR_PLLON
+    str r1, [r2]
+    ldr r4, =SYS_WAIT_POLLS
+3:  ldr r1, [r2]
+    tst r1, #RCC_CR_PLLRDY
+    bne 4f
+    subs r4, r4, #1
+    bne 3b
+    b .Lsps_fail
+4:  ldr r1, [r3]
+    bic r1, r1, #(RCC_CFGR_HPRE_MASK | RCC_CFGR_SW_MASK)
+    orr r1, r1, #(RCC_CFGR_HPRE_DIV2 | RCC_CFGR_SW_PLL)
+    str r1, [r3]                            @ SW = PLL and HCLK = SYSCLK / 2 in one write: MSI 4.194 MHz -> 16 MHz -> 32 MHz,
+                                            @ each step below 4 x (RM0038 6.2.7 note, datasheet Table 4 note 2: VCORE
+                                            @ drop); two writes would pass through MSI / 2 = 2.1 MHz -> 16 MHz (7.6 x)
+    ldr r4, =SYS_WAIT_POLLS
+5:  ldr r1, [r3]
+    and r1, r1, #RCC_CFGR_SWS_MASK
+    cmp r1, #RCC_CFGR_SWS_PLL
+    beq 6f
+    subs r4, r4, #1
+    bne 5b
+    movs r0, #RCC_CFGR_SW_MSI
+    bl fn_0801FE06                          @ the switch did not complete: back to MSI
+    bl sys_hclk_div1                        @ and HCLK = SYSCLK again
+    b .Lsps_fail
+6:  movs r4, #SYS_STEP_LOOPS                @ at least 5 us at 16 MHz between the two changes (RM0038 6.2.7 note)
+7:  subs r4, r4, #1
+    bne 7b
+    bl sys_hclk_div1                        @ HCLK = SYSCLK = 32 MHz
+    movw r0, #SYS_TIM_PSC_PLL
+    bl sys_timers_psc                       @ TIM2 / TIM3 ticks keep their length at 32 MHz
+    movs r0, #1
+    pop {r4, pc}
+.Lsps_fail:
+    movs r0, #0
+    pop {r4, pc}
+ENDFUNC sys_pll_session
+
+@ sys_hclk_div1 - HPRE = /1 (HCLK = SYSCLK); clobbers r0, r1
+FUNC sys_hclk_div1
+    ldr r1, =RCC_CFGR
+    ldr r0, [r1]
+    bic r0, r0, #RCC_CFGR_HPRE_MASK
+    str r0, [r1]
+    bx lr
+ENDFUNC sys_hclk_div1
+
+@ -----------------------------------------------------------------------------
+@ sys_timers_run - IMP-41: the TIM2 / TIM3 prescalers for the run clock (MSI 4.194 MHz: 260, as v2.05 sets them)
+@ Clobbers : r0, r1
+@ -----------------------------------------------------------------------------
+FUNC sys_timers_run
+    movw r0, #SYS_TIM_PSC_MSI
+    b sys_timers_psc
+ENDFUNC sys_timers_run
+
+@ sys_timers_psc - r0 = prescaler for TIM2 and TIM3 (ARR unchanged: TIM2 160, TIM3 15); the prescaler is preloaded and
+@ takes effect at the next update event (RM0038 17.3.1), so the tick that runs during the switch is the only one of
+@ another length; clobbers r1
+FUNC sys_timers_psc
+    ldr r1, =(TIM2_BASE + TIM_PSC)
+    str r0, [r1]
+    ldr r1, =(TIM3_BASE + TIM_PSC)
+    str r0, [r1]
+    bx lr
+ENDFUNC sys_timers_psc
+    .ltorg
+
+@ -----------------------------------------------------------------------------
+@ sys_clock_select - run clock (MSI range 6) or SD-card clock (PLL 32 MHz from HSE, IMP-41)
 @ Replaces : 0x0801BF1A FUN_0801BF1A (v2.05); canonical symbol fn_0801BF1A is an alias
-@ In       : r0 = 0 run (HSI on, SYSCLK = MSI 4.194 MHz, LSE and HSE off); any other value: SD (HSE on, SYSCLK =
-@            HSE if HSERDY within 0x5000 polls, HSI off then; else unchanged)
+@ In       : r0 = 0 run (TIM2 / TIM3 prescalers for MSI, HSI on, SYSCLK = MSI 4.194 MHz, LSE and HSE off); any other
+@            value: SD (HSE on; if HSERDY within 0x5000 polls: SYSCLK = PLL 32 MHz by sys_pll_session, or HSE as v2.05
+@            when the PLL does not come up; HSI off then; else unchanged)
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main
-@ Spec     : DESIGN.md 3.1, 3.3, C.2; NF-02 (bounded wait for HSERDY clear instead of 0x0801BF58 b .)
+@ Spec     : DESIGN.md 3.1, 3.3, C.2; NF-02 (bounded wait for HSERDY clear instead of 0x0801BF58 b .); IMP-41
 @ -----------------------------------------------------------------------------
 FUNC sys_clock_select
     .global fn_0801BF1A
@@ -169,6 +299,7 @@ FUNC sys_clock_select
     uxtb r4, r0                             @ v2.05 0x0801BF1E
     cbnz r4, .Lscs_sd                       @ non-zero: SD clock (0x0801BF22)
     @ run clock
+    bl sys_timers_run                       @ IMP-41: the timer prescalers for MSI again before the switch
     movs r0, #1
     bl fn_0801FDE2                          @ HSION (0x0801BF26)
     ldr r4, =SYS_WAIT_POLLS
@@ -202,9 +333,11 @@ FUNC sys_clock_select
     uxtb r0, r0
     cmp r0, #1
     bne .Lscs_common                        @ HSE did not start: stay on the present clock (0x0801BF6A)
+    bl sys_pll_session                      @ IMP-41: SYSCLK = PLL 32 MHz (r0 = 1), else 0
+    cbnz r0, 1f
     movs r0, #RCC_CFGR_SW_HSE
-    bl fn_0801FE06                          @ SW = HSE (0x0801BF6E)
-    movs r0, #0
+    bl fn_0801FE06                          @ the PLL did not come up: SW = HSE as v2.05 (0x0801BF6E)
+1:  movs r0, #0
     bl fn_0801FDE2                          @ HSI off (0x0801BF74)
 .Lscs_common:
     bl fn_0801BFC6                          @ GPIO A..H clocks on (0x0801BF78)
