@@ -57,6 +57,7 @@ UPDATE_ACTIVE = ('downloading', 'waiting_ld', 'restarting', 'sending')      # up
 RELEASE_RECHECK = 1800.0                         # seconds between release checks while connected
 VERSION_WAIT = 2.0                               # seconds to wait for the answer to a version request
 VERSION_RETRY = 10.0                             # seconds between requests while the link is not ready
+BL_ASK_TRIES = 3                                 # bootloader questions (key code 0x92) until an answer counts as none
 DAILY = 86400.0                                  # update check "daily": seconds between two release checks
 
 # the program's own settings (SETTINGS view), stored in settings.json; the meter's SETUP settings are on the meter
@@ -205,17 +206,22 @@ class Companion:
         except (RuntimeError, ValueError, OSError, clock.ClockError) as e:
             self.clock['auto'] = 'not set on connect: %s' % e
 
-    def _ask_bootloader(self):
-        """'EEV', 'B-A.BC', or None when the firmware does not answer key code 0x92 (older than F-1.03)."""
-        self._blver = None
-        try:
-            self.link.send(frames.BL_VERSION_REQUEST)
-        except (RuntimeError, OSError, TimeoutError):
-            return None
-        end = time.time() + VERSION_WAIT
-        while time.time() < end and self._blver is None:
-            time.sleep(0.05)
-        return self._blver
+    def _ask_bootloader(self, tries=BL_ASK_TRIES):
+        """'EEV', 'B-A.BC', or None when the firmware does not answer key code 0x92 (older than F-1.03).  Asked up to
+        `tries` times: one lost answer showed "B-—" for the whole connection, and an update then took the card route
+        of EEVblog's bootloader on a meter that may have the two-part one (GitHub issue 10)."""
+        for _ in range(tries):
+            self._blver = None
+            try:
+                self.link.send(frames.BL_VERSION_REQUEST)
+            except (RuntimeError, OSError, TimeoutError):
+                return None
+            end = time.time() + VERSION_WAIT
+            while time.time() < end and self._blver is None:
+                time.sleep(0.05)
+            if self._blver is not None:
+                return self._blver
+        return None
 
     def _boot_probe(self):
         """(A, B, C) when the bootloader's update mode answers its status request, else None."""
@@ -308,6 +314,8 @@ class Companion:
         text, tag = u['fw']
         u.update(state='downloading', what='firmware', step=text, message='getting %s from the releases' % text)
         data = releases.image(tag)
+        if self.bl is None and self.mode == 'firmware' and self.fw_kind == 'fast' and not self.desk:
+            self.bl = self._ask_bootloader()             # not known yet: the route depends on it (issue 10)
         if self.mode == 'bootloader' or releases.version_of_bootloader(self.bl):
             self._enter_update_mode()
             self._boot_send(data, transfer.KIND_FIRMWARE, None, text)

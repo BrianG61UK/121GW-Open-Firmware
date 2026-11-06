@@ -1,5 +1,7 @@
 121GW Companion: live view, recording and firmware information for the EEVblog 121GW over Bluetooth LE.
 
+New in 1.2.8: the bootloader of the meter is asked up to three times after connecting, and again before an update chooses its route (one lost answer showed "B-—" for the whole connection, so the bootloader update was not offered and a firmware update could take the card route; GitHub issue 10); the local server answers a malformed request at once instead of holding a thread (GitHub issue 8).
+
 New in 1.2.7: a SETTINGS view (key 6) for the program's own settings: the recordings and card sync folders, the CSV format of recordings (comma-separated with a decimal point, or semicolon-separated with a decimal comma for spreadsheets that expect one), the time server and setting the meter's clock after each connection, how often to look for new firmware and bootloader releases (on connect, daily, never), diagnostic logging, and a reset of all of them. The time server moved there from the METER view, where "Sync time" stays.
 
 New in 1.2.6: the CARD view says "no files on the card" only once the meter has answered the listing; until then it shows "reading the card…" (GitHub issue 7: an unanswered listing looked like an empty card).

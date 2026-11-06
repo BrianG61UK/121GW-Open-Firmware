@@ -322,6 +322,42 @@ class Options(AppCase):
         self.assertEqual(app_mod.Companion(self.tmp).state()['derived']['loop_range'], '4-20')
 
 
+class BootloaderQuestion(AppCase):
+    """Key code 0x92 (bootloader version) is asked again when an answer is lost (GitHub issue 10)."""
+    def answering(self, lost):
+        """The meter answers 0x92 with F7 'B-113', the first `lost` answers do not arrive."""
+        body = b'\xF7B-113'
+        x = 0
+        for b in body:
+            x ^= b
+        f7 = body + bytes([x])
+        asked = []
+        send = self.meter.send
+
+        def meter_send(pkt):
+            if bytes(pkt) == bytes(frames.BL_VERSION_REQUEST):
+                asked.append(1)
+                if len(asked) > lost:
+                    self.meter._out(f7)
+                return
+            send(pkt)
+        self.app.link.send = meter_send
+        wait_ = app_mod.VERSION_WAIT
+        app_mod.VERSION_WAIT = 0.1
+        self.addCleanup(setattr, app_mod, 'VERSION_WAIT', wait_)
+        return asked
+
+    def test_a_lost_answer_is_asked_again(self):
+        asked = self.answering(lost=1)
+        self.assertEqual(self.app._ask_bootloader(), 'B-1.13')
+        self.assertEqual(len(asked), 2)
+
+    def test_no_answer_after_all_tries(self):
+        asked = self.answering(lost=99)
+        self.assertIsNone(self.app._ask_bootloader())
+        self.assertEqual(len(asked), app_mod.BL_ASK_TRIES)
+
+
 class Prefs(AppCase):
     """The program's own settings (SETTINGS view): prefs_set / prefs_reset, stored in settings.json."""
     def unforced(self):
