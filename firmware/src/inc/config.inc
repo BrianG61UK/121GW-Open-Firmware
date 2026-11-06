@@ -39,6 +39,13 @@
 
     @ BLE_AT_POWERUP = 1 switches Bluetooth on at every power-up as a long PEAK does (ble/blcmd.s blcmd_ble_on), so a
     @ computer can reach a development build without a key press.  Production (0): off at power-up, as v2.05.
+    @ SD_READ_ONLY = 1 leaves the card write path out of sd/sdcard.s and sd/diskio.s (block write, write wait, stop,
+    @ ACMD22, disk_write, the write-timeout diagnosis): the bootloader, which only reads the card, assembles its own
+    @ copies of the two files with it (bootloader/Makefile).  The firmware is built with 0.
+    .ifndef SD_READ_ONLY
+    .equ SD_READ_ONLY, 0                @ SWITCH SD_READ_ONLY default 0 (1 only in the bootloader's own build)
+    .endif
+
     .ifndef BLE_AT_POWERUP
     .equ BLE_AT_POWERUP, 0              @ SWITCH BLE_AT_POWERUP default 0 (development builds only)
     .endif
