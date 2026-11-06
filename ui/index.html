@@ -423,7 +423,10 @@ footer .r { color: var(--faint); min-width: 160px; }
       <div class="eng">Diagnosis</div>
       <div class="cap">diagnostic logging (clicks and commands to the terminal; from the next start)</div>
       <div class="row" style="margin:4px 0 4px"><span class="seg" id="p-diag"><button data-v="on">On</button><button data-v="off">Off</button></span></div>
-      <div class="path" id="p-diag-note" style="margin:0 0 24px"></div>
+      <div class="path" id="p-diag-note" style="margin:0 0 12px"></div>
+      <div class="cap">extended diagnosis (the meter counts link errors inside; needs firmware F-1.15 or newer; the report shows the counts)</div>
+      <div class="row" style="margin:4px 0 4px"><span class="seg" id="p-xdiag"><button data-v="on">On</button><button data-v="off">Off</button></span></div>
+      <div class="path" id="p-xdiag-note" style="margin:0 0 24px"></div>
       <div class="eng">Reset</div>
       <div class="cardbar" style="margin:4px 0 4px"><button id="p-reset">Reset all settings</button></div>
       <div class="path" id="p-file"></div>
@@ -1139,6 +1142,7 @@ $('p-csv').onclick = e => { const b = e.target.closest('button'); if (b) setPref
 $('p-upd').onclick = e => { const b = e.target.closest('button'); if (b) setPref('update_check', b.dataset.v); };
 $('p-clock').onclick = e => { const b = e.target.closest('button'); if (b) setPref('clock_on_connect', b.dataset.v === 'on'); };
 $('p-diag').onclick = e => { const b = e.target.closest('button'); if (b) setPref('diag_log', b.dataset.v === 'on'); };
+$('p-xdiag').onclick = e => { const b = e.target.closest('button'); if (b) setPref('ext_diag', b.dataset.v === 'on'); };
 $('p-reset').onclick = () => $('pconfirm').classList.add('show');
 $('pc-cancel').onclick = () => $('pconfirm').classList.remove('show');
 $('pc-ok').onclick = () => {
@@ -1158,6 +1162,8 @@ function drawPrefs(P, C, S) {
     : rec ? 'a recording is running: stop it to change the folder' : '');
   seg($('p-csv'), P.csv_format); seg($('p-upd'), P.update_check);
   seg($('p-clock'), P.clock_on_connect ? 'on' : 'off'); seg($('p-diag'), P.diag_log ? 'on' : 'off');
+  seg($('p-xdiag'), P.ext_diag ? 'on' : 'off');
+  setText($('p-xdiag-note'), P.ext_diag_note || '');
   setText($('p-clock-note'), C && C.auto ? C.auto : '');
   setText($('p-diag-note'), P.diag_log === P.diag_log_active ? (P.diag_log_active ? 'on now' : '')
     : 'takes effect at the next start of the program');

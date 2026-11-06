@@ -10,16 +10,27 @@ FEATURES.md 2.10 and 2.11):
     F8     15      echo of a set-clock frame              7th hex pair = XOR of the first six
     F6     7       version answer of the fast build       XOR of all 7 bytes = 0
     F7     7       bootloader version answer (F-1.03 on)  XOR of all 7 bytes = 0
+    F9     20      extended link diagnosis (F-1.15 on):   XOR of all 20 bytes = 0
+                   the nine u16 counters of the meter, little-endian (answer to key code 0x95, xdiag_values())
     B5 5B  8+n     answer of the file transfer (2.10)     CRC-16/CCITT-FALSE; type 0x81 = transfer / status answer
                    (transfer.py), type 0x82 = answer of the card and settings requests (card.py, settings.py); the
                    length byte [5] gives n, so both are taken the same way
 
 Bytes inside a binary frame can equal a start byte, so a frame is taken only when its whole length is present and its
 check passes; otherwise the first byte is dropped and the search goes on from the next one (resynchronisation, also
-after a frame the meter abandoned part way).  Standard library only.
+after a frame the meter abandoned part way).  The bytes skipped in one run are kept (Reassembler.damaged(), the report's
+"damaged pieces").  Standard library only.
 """
+import collections
 
 STATUS, KEY_ECHO, CLOCK_ECHO, VERSION, BL_VERSION, BFT = 'status', 'key_echo', 'clock_echo', 'version', 'bl_version', 'bft'
+XDIAG = 'xdiag'
+DAMAGED_KEEP = 20                       # skipped runs kept
+DAMAGED_BYTES = 32                      # bytes kept of one run (its real length is kept too)
+XDIAG_LEN = 20
+XDIAG_NAMES = ('bytes received', 'overruns (ORE)', 'noise flags (NE)', 'framing errors (FE)',
+               'bytes discarded on the card-session clock', 'rejected key / clock frames',
+               'page Ld packets with a wrong CRC', 'answers not queued (transmit queue full)', 'battery voltage (0.01 V)')
 
 
 def _xor(data):
@@ -55,9 +66,14 @@ def _pair(data, i):
 class Reassembler:
     """feed(chunk) -> list of (kind, bytes) for every complete, checked frame in the stream so far."""
 
-    def __init__(self):
+    def __init__(self, pieces=None):
+        """pieces: a deque (maxlen DAMAGED_KEEP) that receives the skipped runs; given, it outlives this reassembler (the
+        link makes a new one at every connection and keeps the damaged pieces of all of them)."""
         self.buf = bytearray()
         self.dropped = 0                 # bytes skipped while resynchronising
+        self.pieces = pieces if pieces is not None else collections.deque(maxlen=DAMAGED_KEEP)   # (length, first bytes)
+        self._run = bytearray()          # the run being skipped: first DAMAGED_BYTES bytes
+        self._run_len = 0                # and its real length
 
     def feed(self, chunk):
         self.buf += chunk
@@ -67,13 +83,30 @@ class Reassembler:
             if got == 'wait':
                 break
             if got is None:
+                if len(self._run) < DAMAGED_BYTES:
+                    self._run.append(self.buf[0])
+                self._run_len += 1
                 del self.buf[0]
                 self.dropped += 1
                 continue
+            self._end_run()              # a valid frame ends the run of skipped bytes before it
             kind, n = got
             out.append((kind, bytes(self.buf[:n])))
             del self.buf[:n]
         return out
+
+    def _end_run(self):
+        if self._run_len:
+            self.pieces.append((self._run_len, bytes(self._run)))
+        self._run, self._run_len = bytearray(), 0
+
+    def damaged(self):
+        """[(length, bytes)] of the last skipped runs, oldest first, the run in progress last; of a run longer than
+        DAMAGED_BYTES only the first DAMAGED_BYTES bytes are kept."""
+        out = list(self.pieces)
+        if self._run_len:
+            out.append((self._run_len, bytes(self._run)))
+        return out[-DAMAGED_KEEP:]
 
     def _take(self):
         """(kind, length) of a valid frame at the start of buf, None when there is none, 'wait' when more bytes are
@@ -89,6 +122,10 @@ class Reassembler:
                 return 'wait'
             ok = _xor(b[:7]) == 0 and all(0x20 <= c < 0x7F for c in b[1:6])
             return ((VERSION if s == 0xF6 else BL_VERSION), 7) if ok else None
+        if s == 0xF9:
+            if len(b) < XDIAG_LEN:
+                return 'wait'
+            return (XDIAG, XDIAG_LEN) if _xor(b[:XDIAG_LEN]) == 0 else None
         if s == 0xF4:
             if len(b) < 5:
                 return 'wait'
@@ -121,7 +158,7 @@ def version_text(frame):
 
 def key_frame(code):
     """The key frame of `code` (0x01..0x08 short, 0x81..0x88 long, 0x90 version, 0x91 update mode, 0x92 bootloader
-    version): F4 and the code as an
+    version, 0x93 / 0x94 / 0x95 extended diagnosis on / off / counters): F4 and the code as an
     ASCII hex pair twice (analysis/ble_packet.md 6)."""
     h = b'%02X' % code
     return b'\xF4' + h + h
@@ -136,3 +173,18 @@ def bl_version_text(frame):
     """'B-1.00' from F7 'B' '-' d d d x, or 'EEV' for EEVblog's bootloader ('B-EEV')."""
     c = frame[1:6].decode('ascii')
     return 'EEV' if c == 'B-EEV' else c[:3] + '.' + c[3:]
+
+
+XDIAG_ON_REQUEST = key_frame(0x93)             # extended diagnosis on, counters cleared (firmware F-1.15 on, ble/xdiag.s)
+XDIAG_OFF_REQUEST = key_frame(0x94)            # extended diagnosis off
+XDIAG_REQUEST = key_frame(0x95)                # the counters, answered with F9 while the diagnosis is on
+
+
+def xdiag_values(frame):
+    """The nine u16 values of an F9 frame, in the order of XDIAG_NAMES."""
+    return [frame[1 + 2 * i] | frame[2 + 2 * i] << 8 for i in range(9)]
+
+
+def hex_spaced(data):
+    """'F2 0A 00': the bytes as hex pairs separated by spaces (a separator that anonymise() does not take for an address)."""
+    return ' '.join('%02X' % b for b in data)

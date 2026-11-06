@@ -62,6 +62,10 @@ class FakeMeter:
         self.echo_keys = True                          # answer a key frame F4 with its echo
         self.keys = []                                 # key frames received
         self.diag = list(range(100, 121))              # STATUS values 0..20
+        self.fast_xdiag = False                        # firmware F-1.15: key codes 0x93 / 0x94 / 0x95, STATUS 40..48
+        self.xdiag_counting = False
+        self.xdiag_values = [1000, 2, 1, 3, 0, 4, 5, 6, 598]    # the nine counters (rx_bytes .. battery_cv)
+        self.xdiag_lost = 0                            # F9 answers to swallow (a lost notification)
 
     # -- the link side
     def _out(self, data):
@@ -78,6 +82,17 @@ class FakeMeter:
             self.keys.append(pkt)
             if self.echo_keys:
                 self._out(pkt)
+            if self.fast_xdiag:                         # ble/commands.s: 0x93 on and clear, 0x94 off, 0x95 counters (F9 only while on)
+                code = frames._pair(pkt, 1)
+                if code == 0x93:
+                    self.xdiag_counting = True
+                elif code == 0x94:
+                    self.xdiag_counting = False
+                elif code == 0x95 and self.xdiag_counting:
+                    if self.xdiag_lost:
+                        self.xdiag_lost -= 1
+                    else:
+                        self._out(xdiag_frame(self.xdiag_values))
             return
         if not self.on_ld:
             return
@@ -192,6 +207,12 @@ class FakeMeter:
         return card.ST_NOT_NOW, 0, b''                 # an unknown type
 
 
+def xdiag_frame(values):
+    """The frame F9 of the firmware (ble/xdiag.s): F9, nine u16 little-endian, XOR of the 19 bytes before it."""
+    body = b'\xF9' + b''.join(struct.pack('<H', v) for v in values)
+    return body + bytes([frames._xor(body)])
+
+
 def make_client(meter):
     return card.Client(meter.send, meter.answers)
 
@@ -206,4 +227,4 @@ def sample_files():
             'EEVBlog.bin': (b'\x00' * 300, fat_date(2026, 10, 1), fat_time(0, 0, 0))}
 
 
-__all__ = ['FakeMeter', 'make_client', 'sample_files', 'fat_date', 'fat_time', 'card', 'frames', 'settings', 'transfer']
+__all__ = ['FakeMeter', 'make_client', 'xdiag_frame', 'sample_files', 'fat_date', 'fat_time', 'card', 'frames', 'settings', 'transfer']

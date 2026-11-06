@@ -2,7 +2,9 @@
 the link, to attach to a GitHub issue instead of a screenshot.
 
 Contents: the companion's version and the system; the meter (firmware, bootloader, mode, page Ld); the link (state,
-bytes received, bytes skipped as damaged); the update state; the statistics of the last transfer; the diagnosis values
+bytes received, bytes skipped as damaged); the link details (the last damaged pieces as hex, the notifications, the writes
+with response, the advertisement signal strength, the MTU, the disconnects, the status frame rate, and with the setting
+"Extended diagnosis" on and firmware F-1.15 or newer the meter's own counters); the update state; the statistics of the last transfer; the diagnosis values
 of the firmware with their text; the meter's SETUP settings as last read; the companion's own settings (no token, no
 paths); the event log (connections, version and bootloader questions, page Ld, updates, card operations, errors).
 Anonymised (anonymise() runs over the whole text at the end, whatever a field held): no Bluetooth device ID (a
@@ -16,6 +18,8 @@ import re
 import socket
 import sys
 import time
+
+from . import frames
 
 MAC_RE = re.compile(r'\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}\b')
 UUID_RE = re.compile(r'\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b')
@@ -77,6 +81,61 @@ def system_text():
     return '%s %s (%s)' % (platform.system(), platform.release(), platform.machine())
 
 
+def _ms(seconds):
+    return '-' if seconds is None else '%.0f ms' % (seconds * 1000)
+
+
+def link_details(app):
+    """The lines of the section [link details]: what the companion measured on the link, and the meter's own counters
+    (app.xdiag, read by app.xdiag_collect() when the report is saved).  Hex dumps use spaces between the bytes, so
+    anonymise() does not take them for addresses."""
+    out = []
+    w = out.append
+    L = app.link
+    st = L.stats.snapshot()
+    pieces = L.damaged()
+    w('damaged pieces   %s' % ('none (no byte was skipped)' if not pieces else
+                               'the last %d runs of skipped bytes, oldest first (length: first %d bytes)' % (
+                                   len(pieces), frames.DAMAGED_BYTES)))
+    for n, data in pieces:
+        w('  %3d bytes: %s%s' % (n, frames.hex_spaced(data), ' ...' if n > len(data) else ''))
+    sz = st['sizes']
+    w('notifications    %d; sizes 1..20: %d, 21..64: %d, 65..244: %d%s; gap median %s, 95 %% %s, max %s' % (
+        st['notifications'], sz[0], sz[1], sz[2], ', larger: %d' % sz[3] if sz[3] else '',
+        _ms(st['gap_median']), _ms(st['gap_p95']), _ms(st['gap_max'])))
+    w('writes (with response)  %d; confirmed after median %s, max %s%s' % (
+        st['writes'], _ms(st['write_median']), _ms(st['write_max']),
+        '; %d failed' % st['write_errors'] if st['write_errors'] else ''))
+    if st['rssi']:
+        sig = '; '.join('connection %d: %s' % (n, '%d dBm' % r if r is not None else 'not given') for n, r in st['rssi'])
+    else:
+        sig = 'not seen'
+    w('advertisement signal  %s' % sig)
+    w('MTU              %s' % ('%d bytes (bleak client mtu_size)' % st['mtu'] if st['mtu'] is not None else
+                               'not available from the Bluetooth backend'))
+    w('disconnects      %d%s' % (st['disconnect_count'], ':' if st['disconnect_count'] else ''))
+    for t, user, why in st['disconnects']:
+        w('  %s  %s' % (time.strftime('%H:%M:%S', time.localtime(t)), why))
+    n, a, b = app._st_n, app._st_first, app._st_last
+    bt = next((it.get('text') for it in ((app.settings_st or {}).get('items') or []) if it.get('code') == 'bt'), None)
+    if n >= 2 and b > a:
+        w('status frames    %.2f per second measured (%d frames in %.1f s of this connection); meter setting bt: %s' % (
+            (n - 1) / (b - a), n, b - a, bt or 'not read (SETTINGS of the meter)'))
+    else:
+        w('status frames    not measured yet (%d in this connection); meter setting bt: %s' % (n, bt or 'not read'))
+    x = getattr(app, 'xdiag', None) or {'state': 'not read'}
+    if x['state'] == 'values':
+        w('meter counters   %s; %s' % (x['source'], 'the meter was told to count (key code 0x93) after this connection began'
+                                          if x.get('counting') else 'the counting was not started in this connection: the '
+                                          'values are from the last start of counting in the meter (or 0)'))
+        for name, v in zip(frames.XDIAG_NAMES, x['values']):
+            w('  %-44s %d%s' % (name, v, ' (= %.2f V)' % (v / 100.0) if name.startswith('battery') else
+                                 ' (65535 = the counter is full)' if v == 0xFFFF else ''))
+    else:
+        w('meter counters   %s' % (x.get('text') or 'not read'))
+    return out
+
+
 def build(app, now=None):
     """The report as text."""
     now = time.time() if now is None else now
@@ -98,6 +157,9 @@ def build(app, now=None):
     w('state       %s %s' % (L['state'], L.get('detail') or ''))
     w('name        %s' % ((L.get('device') or [None, '-'])[1] if L.get('device') else '-'))
     w('received    %s bytes, %s skipped as damaged' % (L.get('rx_bytes'), L.get('rx_dropped')))
+    w('')
+    w('[link details]')
+    out.extend(link_details(app))
     w('')
     w('[update]')
     w('state       %s%s' % (U.get('state'), (' - ' + U['message']) if U.get('message') else ''))
@@ -125,7 +187,7 @@ def build(app, now=None):
     w('')
     w('[companion settings]')
     p = st.get('prefs') or {}
-    for k in ('update_check', 'clock_on_connect', 'csv_format', 'diag_log'):
+    for k in ('update_check', 'clock_on_connect', 'csv_format', 'diag_log', 'ext_diag'):
         w('%-17s %s' % (k, p.get(k)))
     w('recordings folder %s' % ('custom' if app.settings.get('recordings_folder') or app.folder_forced else 'default'))
     w('')
@@ -145,6 +207,8 @@ def save(app, folder, read_diag=True):
             app.diag_read()
         except (RuntimeError, ValueError, OSError):
             pass                                        # the report is written with what is known
+    if read_diag:
+        app.xdiag_collect()                             # the meter's own counters (setting "Extended diagnosis")
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, time.strftime('121GW-report-%Y-%m-%d_%H-%M-%S.txt'))
     with open(path, 'w', encoding='utf-8') as f:

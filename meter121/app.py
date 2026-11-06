@@ -62,6 +62,10 @@ VERSION_TRIES = 3                                # version requests answered by 
 EVENTS_KEEP = 300                                # events kept for the diagnosis report
 BL_ASK_TRIES = 3                                 # bootloader questions (key code 0x92) until an answer counts as none
 DAILY = 86400.0                                  # update check "daily": seconds between two release checks
+XDIAG_MIN_VERSION = (1, 1, 5)                    # firmware F-1.15: key codes 0x93 / 0x94 / 0x95 and STATUS 40..48 (ble/xdiag.s)
+XDIAG_TRIES = 3                                  # tries of a key frame of the extended diagnosis / of the counters request
+XDIAG_WAIT = 2.0                                 # seconds to wait for the answer to each try
+XDIAG_STATUS_FIRST, XDIAG_STATUS_COUNT = 40, 9   # page Ld STATUS indices of the nine values (ble/bft.s bft_diag_tab)
 
 # the program's own settings (SETTINGS view), stored in settings.json; the meter's SETUP settings are on the meter
 PREF_DEFAULTS = {'recordings_folder': None,      # None: <Documents>/121GW
@@ -70,7 +74,8 @@ PREF_DEFAULTS = {'recordings_folder': None,      # None: <Documents>/121GW
                  'clock_on_connect': False,      # set the meter's clock from the time server after each connection
                  'update_check': 'connect',      # 'connect' (at each connection and every 30 min), 'daily', 'never'
                  'csv_format': 'comma',          # recordings: 'comma' = , and decimal point; 'semicolon' = ; and decimal comma
-                 'diag_log': False}              # the COMPANION_LOG=1 diagnosis, from the next start
+                 'diag_log': False,              # the COMPANION_LOG=1 diagnosis, from the next start
+                 'ext_diag': False}              # the meter counts link errors inside (F-1.15 on) and the report shows them
 UPDATE_CHECKS = ('connect', 'daily', 'never')
 CSV_FORMATS = {'comma': (',', '.'), 'semicolon': (';', ',')}
 
@@ -119,6 +124,13 @@ class Companion:
         except ValueError:
             self.derived = derived.Derived()
         self.diag = {'values': [], 'text': ''}
+        # extended link diagnosis (meter F-1.15 on): xdiag_on = the meter was told to count in this connection; the frame
+        # F9 of the last counters request; xdiag = the result the report shows (xdiag_collect)
+        self.xdiag_on = False
+        self._xdiag_frame = None
+        self._xdiag_evt = threading.Event()
+        self.xdiag = {'state': 'not read'}
+        self._st_n, self._st_first, self._st_last = 0, None, None   # status frames of this connection (frames per second)
         self.card_st = {'files': [], 'listed': False, 'free_bytes': None, 'total_bytes': None, 'busy': False, 'op': '', 'progress': 0.0,
                         'sync': {'folder': self.settings.get('card_sync_folder'), 'last': None, 'copied': 0},
                         'error': None, 'result': '', 'job': 0, 'done_job': 0}
@@ -133,6 +145,7 @@ class Companion:
             r = display.decode(frame, t)
             self.session.add(r)
             self.derived.feed(r)
+            self._st_n, self._st_first, self._st_last = self._st_n + 1, (t if self._st_first is None else self._st_first), t
             if self.desk:
                 self.event('page Ld left (status frames again)')
             self._frame_t, self.desk = t, False          # status frames are sent only while page Ld is not shown
@@ -140,6 +153,9 @@ class Companion:
             self._ver = frames.version_text(frame)
         elif kind == frames.BL_VERSION:
             self._blver = frames.bl_version_text(frame)
+        elif kind == frames.XDIAG:
+            self._xdiag_frame = frame
+            self._xdiag_evt.set()
         elif kind == frames.KEY_ECHO:
             self._key_echo = frame
             if frame == frames.VERSION_REQUEST:
@@ -167,6 +183,8 @@ class Companion:
         self.event('link %s%s' % (state, (': ' + detail) if detail else ''))
         self.desk = False                                # a new connection or none: the page is not known any more
         self._frame_t = 0.0
+        self.xdiag_on = False                            # the counting is told again at each connection
+        self._st_n, self._st_first, self._st_last = 0, None, None
         if state == 'connected':
             self.fw_kind, self.version, self.mode = 'unknown', None, 'unknown'
             if self.update['state'] in ('none', 'available', 'done', 'error'):
@@ -196,6 +214,7 @@ class Companion:
                     self.fw_kind, self.version = 'fast', self._ver
                     self.bl = self._ask_bootloader()
                     self.mode = 'firmware'
+                    self._xdiag_connect()
                     self._check_release()
                     self._clock_on_connect()
                 elif self._echo is not None:
@@ -213,6 +232,108 @@ class Companion:
                     else:
                         time.sleep(VERSION_RETRY)
             self._asked.clear()
+
+    # ------------------------------------------------------------------ extended link diagnosis (meter F-1.15 on)
+    def _xdiag_supported(self):
+        """True when the connected meter runs the fast firmware F-1.15 or newer: only that firmware knows the key codes
+        0x93 / 0x94 / 0x95 and STATUS 40..48.  Older firmware gets none of them."""
+        v = releases.version_of_meter(self.version)
+        return self.fw_kind == 'fast' and v is not None and v >= XDIAG_MIN_VERSION
+
+    def _xdiag_connect(self):
+        """After the version and bootloader questions of a connection: switch the meter's counting on when the setting
+        is on and the firmware knows it."""
+        if not self.settings.get('ext_diag'):
+            return
+        if not self._xdiag_supported():
+            self.event('extended diagnosis: not switched on, the meter has %s (F-1.15 or newer needed)' % (self.version or 'v2.05'))
+            return
+        self._xdiag_switch(True)
+
+    def _xdiag_switch(self, on):
+        """Send key code 0x93 (on, counters cleared) or 0x94 (off) and wait for its echo, up to XDIAG_TRIES times.
+        Returns True when the meter echoed it.  Never sent to firmware older than F-1.15, and not while the page Ld owns
+        the link (no key arrives there)."""
+        what = 'extended diagnosis ' + ('on' if on else 'off')
+        if not self._xdiag_supported():
+            self.event('%s: not sent, the meter has %s' % (what, self.version or 'v2.05'))
+            return False
+        frame = frames.XDIAG_ON_REQUEST if on else frames.XDIAG_OFF_REQUEST
+        try:
+            with self._ops(what, need_desk=False, wait=LINK_WAIT):
+                if self.desk:
+                    raise RuntimeError('page Ld owns the link')
+                for _ in range(XDIAG_TRIES):
+                    self._key_echo = None
+                    self.link.send(frame)
+                    end = time.time() + XDIAG_WAIT
+                    while time.time() < end and self._key_echo != frame:
+                        time.sleep(0.02)
+                    if self._key_echo == frame:
+                        self.xdiag_on = on
+                        self.event('%s: confirmed' % what)
+                        return True
+        except (RuntimeError, OSError, TimeoutError) as e:
+            self.event('%s: not done (%s)' % (what, e))
+            return False
+        self.event('%s: no echo after %d tries' % (what, XDIAG_TRIES))
+        return False
+
+    def xdiag_collect(self):
+        """The meter's nine counters for the report (setting ext_diag on, firmware F-1.15 or newer): on the page Ld the
+        STATUS values 40..48, else the counters request 0x95 (up to XDIAG_TRIES tries of XDIAG_WAIT seconds each).
+        The result is kept in self.xdiag: {'state': 'off' | 'unsupported' | 'values' | 'error', 'values', 'source',
+        'counting', 'text'}."""
+        res = {'state': 'off', 'text': 'off (SETTINGS: Extended diagnosis)'}
+        if self.settings.get('ext_diag'):
+            if self.link.state != 'connected':
+                res = {'state': 'error', 'text': 'not connected to a meter'}
+            elif not self._xdiag_supported():
+                res = {'state': 'unsupported',
+                       'text': 'not supported by this firmware (%s; F-1.15 or newer needed)' % (self.version or 'v2.05')}
+            else:
+                res = self._xdiag_read()
+        self.xdiag = res
+        return res
+
+    def _xdiag_read(self):
+        counting = self.xdiag_on
+        try:
+            if self.desk:
+                with self._ops('extended diagnosis', wait=LINK_WAIT) as (sender, _):
+                    values = [sender.status_value(i) for i in range(XDIAG_STATUS_FIRST, XDIAG_STATUS_FIRST + XDIAG_STATUS_COUNT)]
+                return {'state': 'values', 'values': values, 'source': 'page Ld STATUS %d..%d' % (
+                    XDIAG_STATUS_FIRST, XDIAG_STATUS_FIRST + XDIAG_STATUS_COUNT - 1), 'counting': counting}
+            with self._ops('extended diagnosis', need_desk=False, wait=LINK_WAIT):
+                if self.desk:
+                    raise RuntimeError('page Ld owns the link')
+                for _ in range(XDIAG_TRIES):
+                    self._xdiag_frame = None
+                    self._xdiag_evt.clear()
+                    self.link.send(frames.XDIAG_REQUEST)
+                    if self._xdiag_evt.wait(XDIAG_WAIT) and self._xdiag_frame is not None:
+                        return {'state': 'values', 'values': frames.xdiag_values(self._xdiag_frame), 'source': 'frame F9',
+                                'counting': counting}
+            return {'state': 'error', 'text': 'no answer to the counters request after %d tries of %.0f s (the meter counts '
+                    'only after it was told to; or the link was not ready)' % (XDIAG_TRIES, XDIAG_WAIT)}
+        except (RuntimeError, OSError, TimeoutError, transfer.TransferError) as e:
+            return {'state': 'error', 'text': 'not read: %s' % e}
+
+    def _xdiag_apply(self, on):
+        """The setting was changed while connected: tell the meter (on: 0x93 clears and starts the counting; off: 0x94)."""
+        if self.link.state != 'connected' or self.mode != 'firmware':
+            return
+        self._xdiag_switch(on)
+
+    def _xdiag_note(self):
+        """One line for the SETTINGS view under the setting."""
+        if not self.settings.get('ext_diag'):
+            return ''
+        if self.link.state != 'connected' or self.mode == 'unknown':
+            return 'starts when a meter is connected'
+        if not self._xdiag_supported():
+            return 'not supported by this firmware (%s): F-1.15 or newer needed' % (self.version or 'v2.05')
+        return 'the meter is counting' if self.xdiag_on else 'switched on at the next connection (or when the link is free)'
 
     def _clock_on_connect(self):
         """Setting clock_on_connect: the meter's clock from the time server once per connection (the result or the
@@ -755,7 +876,8 @@ class Companion:
         p['recordings_folder'] = self.folder
         p['card_sync_folder'] = self.card_st['sync']['folder'] or os.path.join(self.folder, 'card')
         p['ntp_server'] = self.clock['server']
-        p.update(folder_forced=self.folder_forced, diag_log_active=TRACE_UI, file=config_path())
+        p.update(folder_forced=self.folder_forced, diag_log_active=TRACE_UI, file=config_path(),
+                 ext_diag_note=self._xdiag_note())
         return p
 
     @staticmethod
@@ -783,7 +905,7 @@ class Companion:
             if not value or len(value) > 253 or any(ch.isspace() for ch in value):
                 raise ValueError('a time server name or address is needed')
             self.clock['server'] = value
-        elif key in ('clock_on_connect', 'diag_log'):
+        elif key in ('clock_on_connect', 'diag_log', 'ext_diag'):
             if not isinstance(value, bool):
                 raise ValueError('%s: true or false' % key)
         elif key == 'update_check':
@@ -794,6 +916,8 @@ class Companion:
                 raise ValueError('csv_format: one of %s' % ', '.join(CSV_FORMATS))
         self.settings[key] = value
         save_settings(self.settings)
+        if key == 'ext_diag' and self.link.state == 'connected' and self.mode == 'firmware':
+            threading.Thread(target=self._xdiag_apply, args=(value,), name='xdiag', daemon=True).start()
         if key == 'update_check' and self.link.state == 'connected' and self.mode != 'unknown':
             if value == 'never' or self.update['state'] in ('none', 'available'):
                 self.update.update(state='none', check_error='', checked=None)
@@ -819,7 +943,8 @@ class Companion:
         return {'now': time.time(),
                 'link': {'state': L.state, 'detail': L.detail, 'device': L.device, 'found': L.found,
                          'rx_bytes': L.rx_bytes, 'rx_dropped': L.rx_dropped},
-                'meter': {'firmware': self.fw_kind, 'version': self.version, 'bootloader': self.bl, 'mode': self.mode},
+                'meter': {'firmware': self.fw_kind, 'version': self.version, 'bootloader': self.bl, 'mode': self.mode,
+                          'xdiag': self.xdiag_on},
                 'update': dict(self.update),
                 'last_transfer': self.last_transfer,
                 'clock': self.clock,

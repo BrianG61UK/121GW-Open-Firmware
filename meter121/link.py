@@ -10,6 +10,8 @@ power-off; the link scans again by itself while `want` is set).  One central at 
 connection, so the phone application or another bridge must not be connected.
 """
 import asyncio
+import collections
+import math
 import threading
 import time
 
@@ -19,6 +21,98 @@ SERVICE = '0bd51666-e7cb-469b-8e4d-2742f1ba77cc'
 CHAR = 'e7add780-b042-4876-aae1-112855353cc1'
 SCAN_SECONDS = 6.0
 RETRY_SECONDS = 3.0
+
+
+SIZE_BUCKETS = ((1, 20), (21, 64), (65, 244))     # notification sizes in the report (244 = the largest the meter's MTU 247 gives)
+SAMPLES_KEEP = 4000                                # gaps and confirmation times kept for the median / 95 % / maximum
+DISCONNECTS_KEEP = 50
+
+
+def percentile(values, q):
+    """Nearest-rank percentile (q in 0..1) of a list of numbers; None for an empty list."""
+    if not values:
+        return None
+    v = sorted(values)
+    return v[min(len(v) - 1, max(0, int(math.ceil(q * len(v))) - 1))]
+
+
+class LinkStats:
+    """What the report's [link details] shows about the Bluetooth link itself (always recorded, a few numbers per
+    notification): notification count, sizes and gaps; writes with response and the time until they were confirmed; the
+    advertisement signal strength when the meter was found; the negotiated MTU; the disconnects with their reasons.
+    Written by the link thread, read by the report thread: all under one lock."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.notifications = 0
+        self.sizes = [0] * (len(SIZE_BUCKETS) + 1)      # one per bucket and one for anything larger
+        self.gaps = collections.deque(maxlen=SAMPLES_KEEP)      # seconds between two notifications of one connection
+        self._last = None
+        self.writes = 0
+        self.write_errors = 0
+        self.last_write_error = None                    # (monotonic time, text)
+        self.write_times = collections.deque(maxlen=SAMPLES_KEEP)   # seconds from the write to its confirmation
+        self.rssi = []                                  # [(connection number, dBm or None)] at discovery
+        self.connections = 0
+        self.mtu = None                                 # bleak client mtu_size of the last connection, None = not available
+        self.disconnects = collections.deque(maxlen=DISCONNECTS_KEEP)   # (wall time, user?, reason)
+        self.disconnect_count = 0
+
+    def notification(self, size, t=None):
+        t = time.monotonic() if t is None else t
+        with self._lock:
+            self.notifications += 1
+            for i, (lo, hi) in enumerate(SIZE_BUCKETS):
+                if size <= hi:
+                    self.sizes[i] += 1
+                    break
+            else:
+                self.sizes[-1] += 1
+            if self._last is not None:
+                self.gaps.append(t - self._last)
+            self._last = t
+
+    def write(self, seconds):
+        with self._lock:
+            self.writes += 1
+            self.write_times.append(seconds)
+
+    def write_error(self, text, t=None):
+        with self._lock:
+            self.write_errors += 1
+            self.last_write_error = (time.monotonic() if t is None else t, text)
+
+    def advertised(self, rssi):
+        with self._lock:
+            self.rssi.append((self.connections + 1, rssi))
+            del self.rssi[:-DISCONNECTS_KEEP]
+
+    def connected(self, mtu):
+        with self._lock:
+            self.connections += 1
+            self.mtu = mtu
+            self._last = None                           # a gap never spans two connections
+
+    def disconnect(self, reason, user=False, now=None):
+        with self._lock:
+            self.disconnect_count += 1
+            self._last = None
+            self.disconnects.append((time.time() if now is None else now, user, reason))
+
+    def recent_write_error(self, within=5.0):
+        with self._lock:
+            e = self.last_write_error
+        return e[1] if e and time.monotonic() - e[0] <= within else None
+
+    def snapshot(self):
+        with self._lock:
+            gaps, wt = list(self.gaps), list(self.write_times)
+            return {'notifications': self.notifications, 'sizes': list(self.sizes),
+                    'gap_median': percentile(gaps, 0.5), 'gap_p95': percentile(gaps, 0.95), 'gap_max': max(gaps) if gaps else None,
+                    'writes': self.writes, 'write_errors': self.write_errors,
+                    'write_median': percentile(wt, 0.5), 'write_max': max(wt) if wt else None,
+                    'rssi': list(self.rssi), 'connections': self.connections, 'mtu': self.mtu,
+                    'disconnects': list(self.disconnects), 'disconnect_count': self.disconnect_count}
 
 
 class MeterLink:
@@ -38,6 +132,13 @@ class MeterLink:
         self._task = None
         self.rx_bytes = 0                  # bytes received in this connection
         self.rx_dropped = 0                # of them skipped while resynchronising (frames.Reassembler)
+        self.stats = LinkStats()           # notification / write / disconnect statistics for the report
+        self.pieces = collections.deque(maxlen=frames.DAMAGED_KEEP)   # damaged pieces of all connections (frames.Reassembler)
+        self.reasm = frames.Reassembler(self.pieces)
+
+    def damaged(self):
+        """The last runs of bytes the reassembler skipped, oldest first: [(length, first bytes)]."""
+        return self.reasm.damaged()
 
     # ------------------------------------------------------------------ thread-safe interface
     def connect(self, address=None):
@@ -83,7 +184,10 @@ class MeterLink:
         self._task = asyncio.ensure_future(self._keep())
 
     async def _stop(self):
+        was = self.state
         await self._end_task()
+        if was == 'connected':
+            self.stats.disconnect('disconnected by the user', user=True)
         self._set('idle')
 
     async def _end_task(self):
@@ -133,14 +237,16 @@ class MeterLink:
                 self._set('lost' if lost else 'scanning', 'no 121GW found: meter on, Bluetooth on (long PEAK), phone app closed?')
                 await asyncio.sleep(RETRY_SECONDS)
                 continue
-            address, name, _ = pick[0]
+            address, name, rssi = pick[0]
+            self.stats.advertised(rssi)                   # the advertisement's signal strength at discovery (dBm)
             self._set('connecting', name)
             gone = asyncio.Event()
-            reasm = frames.Reassembler()
+            reasm = self.reasm = frames.Reassembler(self.pieces)
             self.rx_bytes = self.rx_dropped = 0
 
             def on_notify(_h, chunk):
                 t = time.time()
+                self.stats.notification(len(chunk))
                 self.rx_bytes += len(chunk)
                 got = reasm.feed(bytes(chunk))
                 self.rx_dropped = reasm.dropped
@@ -159,14 +265,28 @@ class MeterLink:
                 await asyncio.sleep(RETRY_SECONDS)
                 continue
             self.device = (address, name)
+            try:
+                mtu = int(client.mtu_size)                # not every backend knows it
+            except Exception:                             # noqa: BLE001 - absent, or the backend raises: not available
+                mtu = None
+            self.stats.connected(mtu)
             self._set('connected', name)
             await gone.wait()
             self._client = None
             lost = True
+            why = 'the Bluetooth stack reported the connection as gone (it gives no cause)'
+            err = self.stats.recent_write_error()
+            self.stats.disconnect(why + ('; last write error: %s' % err if err else ''))
             if self.want:
                 self._set('lost', 'the meter went away (auto power-off or out of range); looking for it again')
 
     async def _send(self, data):
         if self._client is None or self.state != 'connected':
             raise RuntimeError('not connected to a meter')
-        await self._client.write_gatt_char(CHAR, data, response=True)
+        t0 = time.monotonic()
+        try:
+            await self._client.write_gatt_char(CHAR, data, response=True)
+        except Exception as e:
+            self.stats.write_error('%s: %s' % (type(e).__name__, e))
+            raise
+        self.stats.write(time.monotonic() - t0)         # seconds until the write was confirmed
