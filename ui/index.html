@@ -378,6 +378,7 @@ footer .r { color: var(--faint); min-width: 160px; }
         <span class="cap">link</span><span class="v num" id="m-link">—</span>
         <span class="cap">update check</span><span class="v num" id="m-upd">—</span>
         <span class="cap">available</span><span class="v num" id="m-avail">—</span>
+        <span class="cap">last transfer</span><span class="v num" id="m-xfer">—</span>
       </div>
       <div class="sbar" id="m-prog" style="grid-template-columns:repeat(40,1fr);margin-top:12px"></div>
       <div class="eng" style="margin-top:24px">Clock</div>
@@ -942,6 +943,8 @@ $('sync').onclick = async () => {
   syncing = false;
 };
 segs($('nprog'), 30); segs($('m-prog'), 40);
+// what the last transfer spent its time on (transfer.stats_text), shown when an update ends and on the METER view
+const xferNote = () => state && state.last_transfer ? [h('br'), h('span', {class: 'cap'}, 'transfer: ' + state.last_transfer.text)] : [];
 function drawUpdate(u, M) {
   u = u || {state: 'none'}; M = M || {};
   const n = $('notice'), t = $('ntext'), p = $('nprimary'), q = $('nsecondary'), pr = $('nprog'), fwb = $('nfw'), blb = $('nbl');
@@ -972,8 +975,8 @@ function drawUpdate(u, M) {
           left !== null ? [' · about ', num(Math.ceil(left / 60) + ' min'), ' left'] : ''].flat(), null, 'Cancel');
     pr.hidden = false; lit(pr, frac);
   }
-  else if (st === 'done' && !u.later) show([u.message ? u.message : 'update finished'], 'OK');
-  else if (st === 'error' && !u.later) show(['update stopped: ' + u.message], 'Try again', 'Close', true);
+  else if (st === 'done' && !u.later) show([u.message ? u.message : 'update finished', ...xferNote()], 'OK');
+  else if (st === 'error' && !u.later) show(['update stopped: ' + u.message, ...xferNote()], 'Try again', 'Close', true);
   else n.classList.remove('show');
   if (st !== 'sending') upStart = null;
   lit($('m-prog'), frac);
@@ -1005,6 +1008,8 @@ function drawMeter(L, M, u, C) {
   $('m-avail').textContent = av.length ? av.join(' · ') : u.state === 'none' ? '—' : 'nothing newer';
   setText($('ntpname'), C ? 'time server ' + (C.server || '—') + ' (SETTINGS)' : '');
   $('sync').disabled = L.state !== 'connected';
+  const X = state.last_transfer;
+  setText($('m-xfer'), X ? (X.ok ? '' : 'stopped · ') + X.what + ': ' + X.text : '—');
   if (C && C.last && !syncing) $('clockres').textContent = `set to ${C.last.time} from ${C.server} · offset ${(C.last.offset * 1000).toFixed(0)} ms` + (C.last.note || '');
 }
 

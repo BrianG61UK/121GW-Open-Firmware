@@ -97,6 +97,7 @@ class Companion:
                        'total': 0, 'message': ''}
         self._sender = None
         self._cancel = False
+        self.last_transfer = None                        # statistics of the last firmware / bootloader transfer
         # desk mode: the meter shows the SETUP page Ld (status frames stop, the page answers transfer requests); the
         # exclusive use of the link by one operation (probe, diagnosis, card, settings) is the lock
         self.desk = False
@@ -398,11 +399,15 @@ class Companion:
         u = self.update
         u.update(state='sending', done=0, total=total, step=text)
         box = {}
+        sender, dropped0 = self._sender, self.link.rx_dropped
         th = threading.Thread(target=lambda: box.setdefault('r', self._guard(job)), daemon=True)
         th.start()
         while th.is_alive():
-            u.update(done=self._sender.done)
+            u.update(done=sender.done)
             time.sleep(0.2)
+        dropped = max(0, self.link.rx_dropped - dropped0)
+        self.last_transfer = dict(sender.stats, what=text, rx_dropped=dropped, ok=not isinstance(box.get('r'), Exception),
+                                  text=transfer.stats_text(sender.stats, dropped), at=time.time())
         if isinstance(box.get('r'), Exception):
             raise box['r']
         u.update(done=total)
@@ -789,6 +794,7 @@ class Companion:
                          'rx_bytes': L.rx_bytes, 'rx_dropped': L.rx_dropped},
                 'meter': {'firmware': self.fw_kind, 'version': self.version, 'bootloader': self.bl, 'mode': self.mode},
                 'update': dict(self.update),
+                'last_transfer': self.last_transfer,
                 'clock': self.clock,
                 'session': self.session.snapshot(since),
                 'folder': self.folder,

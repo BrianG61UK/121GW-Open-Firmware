@@ -38,6 +38,34 @@ class TransferError(Exception):
     pass
 
 
+def new_stats():
+    """What a transfer spent its time on (GitHub issue 9: a firmware took 55 minutes instead of 3 over a Mac's link):
+    packets of the file, packets sent in all (with repeats), answers that did not come within the timeout and the
+    seconds waited for them, answers 'CRC wrong' (the meter got a damaged packet), resynchronisations ('not the
+    expected packet'), answers to an earlier packet (late or repeated), the slowest answer, the whole time."""
+    return {'packets': 0, 'sends': 0, 'timeouts': 0, 'waited_s': 0.0, 'crc_wrong': 0, 'resync': 0, 'stray': 0,
+            'slowest_s': 0.0, 'seconds': 0.0}
+
+
+def stats_text(st, dropped=None):
+    """One line for the page."""
+    parts = ['%d packets in %.0f s' % (st['packets'], st['seconds'])]
+    repeats = st['sends'] - st['packets']
+    parts.append('%d sent again' % repeats if repeats > 0 else 'none sent again')
+    if st['timeouts']:
+        parts.append('%d answers missing (%.0f s waited for them)' % (st['timeouts'], st['waited_s']))
+    if st['crc_wrong']:
+        parts.append('%d packets arrived damaged' % st['crc_wrong'])
+    if st['resync']:
+        parts.append('%d resynchronisations' % st['resync'])
+    if st['stray']:
+        parts.append('%d late answers' % st['stray'])
+    parts.append('slowest answer %.1f s' % st['slowest_s'])
+    if dropped:
+        parts.append('%d received bytes damaged' % dropped)
+    return ', '.join(parts)
+
+
 def packet(ptype, seq, payload=b''):
     body = struct.pack('<BHB', ptype, seq & 0xFFFF, len(payload)) + bytes(payload)
     return b'\xB5\x5B' + body + struct.pack('<H', crc16(body))
@@ -59,13 +87,18 @@ class Sender:
         self.done = 0
         self.total = 0
         self.cancelled = False
+        self.stats = new_stats()
 
     def _ask(self, pkt, seq, timeout):
+        st = self.stats
         for _ in range(RETRIES):
             while not self.answers.empty():
                 self.answers.get_nowait()
             self.send(pkt)
-            end = time.monotonic() + timeout
+            st['sends'] += 1
+            sent = time.monotonic()
+            end = sent + timeout
+            answered = False
             while time.monotonic() < end:
                 if self.cancelled:
                     raise TransferError('cancelled')
@@ -74,10 +107,17 @@ class Sender:
                 except queue.Empty:
                     continue
                 if status == 1:
+                    st['crc_wrong'] += 1
+                    answered = True
                     break                                     # CRC wrong: send again
                 if a_seq != seq:
+                    st['stray'] += 1
                     continue
+                st['slowest_s'] = max(st['slowest_s'], time.monotonic() - sent)
                 return status, nxt
+            if not answered:
+                st['timeouts'] += 1
+                st['waited_s'] += timeout
         raise TransferError('no answer to packet %d (is "Ld-bt" still shown on the meter?)' % seq)
 
     def probe(self, timeout=1.5):
@@ -105,6 +145,14 @@ class Sender:
         repeat."""
         pkts = [packet(T_DATA, n, data[i:i + MAX_PAYLOAD]) for n, i in enumerate(range(0, len(data), MAX_PAYLOAD))]
         self.total, self.done = len(data), 0
+        self.stats = dict(new_stats(), packets=len(pkts) + 2)    # START, the data, END
+        t0 = time.monotonic()
+        try:
+            return self._run(pkts, data, kind)
+        finally:
+            self.stats['seconds'] = time.monotonic() - t0
+
+    def _run(self, pkts, data, kind):
         start = struct.pack('<II', len(data), zlib.crc32(data) & 0xFFFFFFFF)
         if kind is not None:
             start += bytes([kind])
@@ -115,6 +163,7 @@ class Sender:
         while n < len(pkts):
             status, nxt = self._ask(pkts[n], n, TIMEOUT_DATA)
             if status == 2:
+                self.stats['resync'] += 1
                 n = nxt                                       # the meter names the packet it expects
                 continue
             if status:
@@ -150,6 +199,15 @@ class BootSender(Sender):
     def run(self, data, kind=KIND_FIRMWARE, version=None):
         pkts = [packet(T_DATA, n, data[i:i + MAX_PAYLOAD]) for n, i in enumerate(range(0, len(data), MAX_PAYLOAD))]
         self.total, self.done = len(data), 0
+        self.stats = dict(new_stats(), packets=len(pkts) + 2)    # START, the data, END
+        t0 = time.monotonic()
+        try:
+            return self._run_boot(pkts, data, kind, version)
+        finally:
+            self.stats['seconds'] = time.monotonic() - t0
+
+    def _run_boot(self, pkts, data, kind, version):
+        st = self.stats
         start = struct.pack('<IIB', len(data), zlib.crc32(data) & 0xFFFFFFFF, kind)
         if version is not None:
             start += struct.pack('<I', version)
@@ -166,9 +224,11 @@ class BootSender(Sender):
             while acked < len(pkts) and not stalled:
                 while inflight < 2 and nxt_send < len(pkts):
                     self.send(pkts[nxt_send])
+                    st['sends'] += 1
                     nxt_send += 1
                     inflight += 1
-                end = time.monotonic() + TIMEOUT_DATA
+                waiting = time.monotonic()
+                end = waiting + TIMEOUT_DATA
                 got = None
                 while time.monotonic() < end:
                     if self.cancelled:
@@ -179,16 +239,24 @@ class BootSender(Sender):
                     except queue.Empty:
                         continue
                 if got is None:
+                    st['timeouts'] += 1
+                    st['waited_s'] += TIMEOUT_DATA
                     stalled = True                    # no answer: start again from the first unconfirmed packet
                     break
+                st['slowest_s'] = max(st['slowest_s'], time.monotonic() - waiting)
                 seq, status, nxt = got
-                if status == 0 and seq == acked:
-                    acked += 1
-                    inflight -= 1
+                if status == 0 and seq >= acked:
+                    # the bootloader takes DATA only in order (bl_ble.s .Lp_data) and names the next packet it expects:
+                    # an answer to a later packet confirms the earlier ones too (their answers were lost)
+                    new = max(acked + 1, min(nxt, nxt_send))
+                    inflight = max(0, inflight - (new - acked))
+                    acked = new
                     self.done = min(len(data), acked * MAX_PAYLOAD)
                 elif status == 0 and seq < acked:
+                    st['stray'] += 1
                     inflight = max(0, inflight - 1)   # the answer to a repeated packet: its slot is free again
                 elif status in (1, 2):
+                    st['crc_wrong' if status == 1 else 'resync'] += 1
                     stalled = True                    # CRC wrong or out of order: resend from the expected one
                     if status == 2:
                         acked = nxt
