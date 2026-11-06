@@ -81,6 +81,8 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-66 | SD card | disk_read / disk_write give the caller's buffer to the SDIO DMA, which aligns every word access down: a sector read into or written from a buffer that is not a multiple of 4 lands 1..3 bytes off (FatFs passes the caller's buffer for whole sectors) | medium | fixed |
 | OF-67 | Keys | Holding MEM while switching on (the cal.bin backup / restore entry) for longer than the long-press time also starts logging; the following MODE then does not confirm the backup or restore | medium | fixed |
 | OF-68 | SD card | The capacity of a high-capacity card is computed in 32 bits and wraps above 4 GiB (a 32 GB card reads as 1.72 GiB); unused in v2.05, but the port's card format sized the volume by it | medium | fixed |
+| OF-69 | SD card | Card sessions run the CPU on the 4 MHz crystal with the PLL at a 48 MHz VCO, where the reference manual requires 96 MHz for the SDIO; on a meter block writes stopped with a transmit underrun | medium | fixed |
+| OF-70 | Clock | The reset clock set-up raises the CPU clock 7.6-fold in one step; the reference manual allows less than 4-fold per step | low | fixed |
 
 ## Details
 
@@ -1026,3 +1028,22 @@ formatted on the meter (page `Fr`) got a 1.72 GiB volume.  Found on a meter (202
 meter showed 1.72 GB total in the Companion.  Port: the capacity is (C_SIZE + 1) << 19 as a 64-bit value.  Emulator
 `test_sd_capacity.py`: a 32 GB card holds the full 31 914 459 136 bytes in the record (v1.0.7: 1 849 688 064).
 A card already formatted this way keeps its small volume until it is formatted again.
+
+### OF-69 — card sessions on the 4 MHz crystal, PLL VCO 48 MHz
+FUN_0801BF1A(1) (0x0801BF5C..0x0801BF6E) switches SYSCLK to HSE for every card access; the PLL set up at reset
+(SetSysClock, HSE x12 /3, 0x08026066..0x0802607C) gives a 48 MHz VCO and so SDIOCLK = VCO / 2 = 24 MHz.  RM0038 6.2: "If
+the USB or SDIO interface is used ... the PLL VCO clock ... must be programmed to output a 96 MHz frequency".  With
+HCLK 4 MHz and SDIO_CK 8 MHz (ClockDiv 1) the CPU has 16 cycles per 32-bit word the SDIO sends.  On a meter
+(2026-11-05, the port F-1.08 .. F-1.11, which keeps this clock plan, 32 GB SanDisk card) block writes stopped with
+TXUNDERR after DMA2 channel 4 had moved 3 of 128 words, and the card format failed.  Experiments on the meter: ClockDiv 4
+(SDIO_CK 4 MHz) passed, a card clock held off until the FIFO was full passed (170 s per format), a delay after the DMA
+start failed.  How v2.05 itself behaves with this card was not tested.  Port (IMP-41): a card session runs on the PLL,
+HSE x24 /3 = 32 MHz, VCO 96 MHz, SDIOCLK 48 MHz.  Verified working on a meter: three formats in 16 s each, logging and a
+download without a failed block.
+
+### OF-70 — the reset clock set-up raises the clock 7.6-fold in one step
+SetSysClock (0x08026092..0x080260A8) selects the PLL (16 MHz) while the CPU runs on MSI at 2.097 MHz.  RM0038 6.2.7 note:
+"the final frequency is less then 4 x initial frequency to limit the VCORE drop due to a current consumption peak when
+the frequency increases. It must also respect 5 us delay between two changes" (the same rule as datasheet Table 4 note
+2).  Port: SW = PLL is written together with HPRE = /2 (8 MHz, 3.8 x), then after at least 5 us HPRE = /1 (16 MHz, 2 x).
+No failure on a meter has been traced to this.

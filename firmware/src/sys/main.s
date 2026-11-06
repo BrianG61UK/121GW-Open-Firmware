@@ -73,6 +73,9 @@ FUNC sys_main
     ldrb r0, [r0]
     bl lcd_init                             @ lcd_init(contrast, 1) (0x08024B62)
     bl sys_bootwin_begin                    @ power-on window (FUN_0800EA3A at 0x08024B66)
+    .if BLE_AT_POWERUP
+    bl blcmd_ble_on                         @ development build: Bluetooth on as a long PEAK would switch it on
+    .endif
 
     @ ---------------------------------------------------------------- main loop 0x08024B6A..0x08024DDE
     @ r4 = scratch across calls (callee-saved)

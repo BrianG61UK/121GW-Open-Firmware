@@ -28,9 +28,11 @@
     .section .text.sd, "ax", %progbits
 
 @ names of the v2.05 variables used in this file (addresses unchanged, DESIGN.md 5.1)
+    .equ SD_CLKDIV_FULL,          1                     @ ClockDiv of the data transfers: SDIO_CK = SDIOCLK / (ClockDiv + 2)
+                                                        @ (v2.05: 1, 8 MHz from SDIOCLK 24 MHz; IMP-41: 16 MHz from 48 MHz)
     .equ SD_WRITE_TICKS,          60                    @ IMP-33: write wait 600 ms (10 ms ticks): above the SD write timeout of
                                                                 @ 250 ms (SDSC/SDHC) / 500 ms (SDXC), Physical Layer 4.6.2.2
-    .equ SD_WRITE_POLLS,          100000                @ backstop when the tick counter does not run (about 0.8 s at 4 MHz)
+    .equ SD_WRITE_POLLS,          800000                @ backstop when the tick counter does not run (about 0.8 s at 32 MHz, IMP-41)
     .equ sd_card_info,            v_20007698            @ 0x20007698 card information record (0x58 bytes, filled by sd_get_card_info): CSD fields from +0, CID fields from +0x2C, capacity (u64) +0x48, block size +0x50, RCA (u16) +0x54, card type +0x56
     .equ sdio_init_struct,        v_20007B50            @ 0x20007B50 SDIO host configuration being built (6 words: ClockEdge, ClockBypass, ClockPowerSave, BusWide, HardwareFlowControl, ClockDiv in the byte at +0x14)
     .equ sdio_data_struct,        v_20007B68            @ 0x20007B68 data path configuration (DataTimeOut, DataLength, DataBlockSize, TransferDir, TransferMode, DPSM)
@@ -83,7 +85,7 @@ FUNC sd_init
     b       .Lsd_init_2688                  @ 08022612 goto 0x8022688
     @ full speed: the SDIO_InitTypeDef is built at 0x20007B50 and written by sdio_init (CLKCR = 0x0101)
 .Lsd_init_2614:                         @ v2.05 0x08022614, reached from 0x0802260C
-    movs    r0, #1                          @ 08022614 r0 = 1
+    movs    r0, #SD_CLKDIV_FULL             @ 08022614 v2.05: 1 (SDIO_CK = SDIOCLK / 3)
     ldr.w   r1, =sdio_init_struct           @ 08022616 r1 = &sdio_init_struct
     strb    r0, [r1, #0x14]                 @ 0802261A u8 [sdio_init_struct+0x14] = r0
     movs    r0, #0                          @ 0802261C r0 = 0
@@ -1038,7 +1040,7 @@ FUNC sd_set_bus_width
     uxtb    r5, r5                          @ 08022F24 r5 = u8(r5)
     cmp     r5, #0                          @ 08022F26 compare r5 with 0
     bne     .Lsd_set_bus_width_2F90         @ 08022F28 if (r5 != 0) goto 0x8022F90
-    movs    r0, #1                          @ 08022F2A r0 = 1
+    movs    r0, #SD_CLKDIV_FULL             @ 08022F2A v2.05: 1 (SDIO_CK = SDIOCLK / 3)
     ldr     r1, =sdio_init_struct           @ 08022F2C r1 = &sdio_init_struct
     strb    r0, [r1, #0x14]                 @ 08022F2E u8 [sdio_init_struct+0x14] = r0
     movs    r0, #0                          @ 08022F30 r0 = 0
@@ -1067,7 +1069,7 @@ FUNC sd_set_bus_width
     uxtb    r5, r5                          @ 08022F60 r5 = u8(r5)
     cmp     r5, #0                          @ 08022F62 compare r5 with 0
     bne     .Lsd_set_bus_width_2F90         @ 08022F64 if (r5 != 0) goto 0x8022F90
-    movs    r0, #1                          @ 08022F66 r0 = 1
+    movs    r0, #SD_CLKDIV_FULL             @ 08022F66 v2.05: 1 (SDIO_CK = SDIOCLK / 3)
     ldr     r1, =sdio_init_struct           @ 08022F68 r1 = &sdio_init_struct
     strb    r0, [r1, #0x14]                 @ 08022F6A u8 [sdio_init_struct+0x14] = r0
     movs    r0, #0                          @ 08022F6C r0 = 0

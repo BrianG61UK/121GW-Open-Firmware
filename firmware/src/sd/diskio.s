@@ -42,8 +42,23 @@ sd_dg_late:     .space 2                    @ writes whose busy wait ran out but
 sd_dg_wticks:   .space 2                    @ last write wait that ran out: its length in 10 ms ticks
 sd_dg_a22:      .space 2                    @ last ACMD22 answer: 0x8000 | SD error << 8 | count (low byte); 0 none yet
 sd_dg_retry:    .space 2                    @ block writes repeated after a failed attempt (IMP-40)
-sd_dg_wphase:   .space 1                    @ last write wait that ran out: 1 DMA / transfer end, 2 the card's busy (TXACT)
+sd_dg_wphase:   .space 1                    @ first write wait of this power-on that ran out: 1 DMA / transfer end, 2 busy
 sd_wr_try:      .space 1                    @ failed attempts of the block being written
+sd_dg_wtry:     .space 1                    @ that first timeout: which attempt of its block (0 the first)
+    .balign 4
+sd_cur_sec:     .space 4                    @ the block disk_write is writing: sector
+sd_cur_buf:     .space 4                    @ ... and the address the DMA reads it from
+    .global sd_dg_wsec, sd_dg_wbuf, sd_dg_wccr, sd_dg_wcmar, sd_dg_wdctrl, sd_dg_wdlen, sd_dg_wfifo, sd_dg_wsta, sd_dg_wtry
+sd_dg_wsec:     .space 4                    @ first write timeout: the sector
+sd_dg_wbuf:     .space 4                    @ ... the DMA source address
+sd_dg_wcmar:    .space 4                    @ ... DMA2 channel 4 CMAR
+sd_dg_wsta:     .space 4                    @ ... SDIO_STA
+sd_dg_wccr:     .space 2                    @ ... DMA2 channel 4 CCR
+sd_dg_wdctrl:   .space 2                    @ ... SDIO_DCTRL
+sd_dg_wdlen:    .space 2                    @ ... SDIO_DLEN (low 16 bits)
+sd_dg_wfifo:    .space 2                    @ ... SDIO_FIFOCNT (words still to go through the FIFO)
+    .global sd_dg_wclkcr
+sd_dg_wclkcr:   .space 2                    @ ... SDIO_CLKCR (WIDBUS bits 12:11, CLKDIV bits 7:0)
     .global sd_dg_flags, sd_dg_dmaisr, sd_dg_cndtr, sd_dg_dcount, sd_dg_stahi, sd_dg_recov
     .balign 4
 sd_dg_r1:       .space 4                    @ card status of the last CMD13 answer before the failure (0xFFFFFFFF: no answer)
@@ -72,6 +87,7 @@ sd_bounce:      .space 512
 
 @ names of the v2.05 variables used in this file (addresses unchanged, DESIGN.md 5.1)
     .equ fat_fs_obj,              ff16_fatfs            @ FATFS work area of drive 0 (production: R0.16 exFAT FATFS, 572 bytes, in .bss_port, IMP-32; v2.05: 0x20006830)
+    .equ SD_STATUS_POLLS,         160000                @ CMD13 / end-wait polls: v2.05 20000 at 4 MHz, x8 at 32 MHz (IMP-41)
     .equ sd_card_info,            v_20007698            @ 0x20007698 card information record (sdcard.s): capacity u64 at +0x48
     .equ sd_stop_condition,       v_20007EF0            @ 0x20007EF0 1 = the running transfer is a multi-block write that needs CMD12; 0 = single block read
     .equ sd_transfer_end,         v_20007EF4            @ 0x20007EF4 set to 1 by the SDIO interrupt at the end of the data transfer
@@ -84,7 +100,7 @@ sd_bounce:      .space 512
 @ In        : r0 = number of tries (u8; 10)
 @ Out       : r0 = 0 ok (also when r0 tries = 0 and nothing was tried: the initial result 0), 1 or 2 = result of the last sd_bringup
 @ Clobbers  : r0-r3, r12, flags (v2.05 regeffects.txt; r4-r11 preserved)
-@ Context   : main only; the caller holds SYSCLK = HSE (sys_clock_select(1))
+@ Context   : main only; the caller holds the card-session clock (sys_clock_select(1): PLL 32 MHz, IMP-41)
 @ Spec      : v2.05 listing 0x0801F84C..0x0801F87D
 @ Note      : because sd_bringup reports success even when no card answers (see sd_bringup), this routine returns 0 after the first
 @             call in every case seen; the card is really tested by the first file call (fat_chk_mounted -> disk_initialize).
@@ -434,15 +450,53 @@ ENDFUNC sd_dg_note
 @ (end flags, DMA flags and CNDTR, DCOUNT, SDIO_STA high half: values 7 .. 11 of the Bluetooth diagnosis); clobbers r0-r3
 FUNC sd_dg_wtimeout
     push {r4, lr}
+    mov r4, r3                              @ r4 = the tick when the wait began (r0-r3 are used below)
     ldr r1, =sd_dg_wphase
+    ldrb r2, [r1]
+    cbnz r2, 9f                             @ only the first timeout of this power-on is kept (later attempts follow it)
     strb r0, [r1]
+    ldr r1, =sd_wr_try
+    ldrb r0, [r1]
+    ldr r1, =sd_dg_wtry
+    strb r0, [r1]
+    ldr r1, =sd_cur_sec
+    ldr r0, [r1]
+    ldr r1, =sd_dg_wsec
+    str r0, [r1]
+    ldr r1, =sd_cur_buf
+    ldr r0, [r1]
+    ldr r1, =sd_dg_wbuf
+    str r0, [r1]
+    ldr r1, =(DMA2_BASE + DMA_CH4_CCR)
+    ldr r0, [r1]
+    ldr r2, =sd_dg_wccr
+    strh r0, [r2]
+    ldr r0, [r1, #12]                       @ CMAR (CCR + 0x0C: CNDTR + 4, CPAR + 8, CMAR + 12)
+    ldr r2, =sd_dg_wcmar
+    str r0, [r2]
+    ldr r1, =SDIO_BASE
+    ldr r0, [r1, #SDIO_DCTRL]
+    ldr r2, =sd_dg_wdctrl
+    strh r0, [r2]
+    ldr r0, [r1, #SDIO_DLEN]
+    ldr r2, =sd_dg_wdlen
+    strh r0, [r2]
+    ldr r0, [r1, #SDIO_FIFOCNT]
+    ldr r2, =sd_dg_wfifo
+    strh r0, [r2]
+    ldr r0, [r1, #SDIO_STA]
+    ldr r2, =sd_dg_wsta
+    str r0, [r2]
+    ldr r0, [r1, #SDIO_CLKCR]
+    ldr r2, =sd_dg_wclkcr
+    strh r0, [r2]
     ldr r1, =v_20007FC6
     ldrh r0, [r1]
-    subs r0, r0, r3
+    subs r0, r0, r4                         @ ticks since the wait began
     ldr r1, =sd_dg_wticks
     strh r0, [r1]
     bl sd_dg_end_state
-    pop {r4, pc}
+9:  pop {r4, pc}
 ENDFUNC sd_dg_wtimeout
 
 @ sd_dg_start - diagnosis: the status polling of a block begins now (tick counter v_20007FC6); clobbers r0, r1
@@ -519,7 +573,7 @@ FUNC disk_read
     ite     eq
     moveq   r4, r8                          @ aligned: the block goes straight to the caller's buffer
     ldrne   r4, =sd_bounce                  @ not aligned: into sd_bounce, copied out below
-    movw    r7, #0x4E20                     @ r7 = 20000 status polls (v2.05 0x08023F8C)
+    ldr     r7, =SD_STATUS_POLLS            @ r7 = status polls (v2.05 0x08023F8C: 20000; IMP-41: x8 for 32 MHz)
     movs    r0, #0x200
     str     r0, [sp]                        @ block length 0x200 (5th argument)
     lsls    r2, r5, #9                      @ r2:r3 = 64-bit byte address = sector * 512 (sd_read_block turns it into the block
@@ -550,7 +604,7 @@ FUNC disk_read
     @ OF-59: the card has sent the block; wait for the SDIO data end and the DMA end, or an SDIO error (v2.05 takes the
     @ buffer as soon as the card is back in the transfer state and never looks at sd_transfer_error)
 .Ldr_end:
-    movw    r7, #0x4E20                     @ at most 20000 polls
+    ldr     r7, =SD_STATUS_POLLS            @ at most SD_STATUS_POLLS polls (v2.05 20000, IMP-41: x8)
 1:  ldr     r0, =sd_transfer_error
     ldrb    r0, [r0]
     cmp     r0, #0
@@ -657,6 +711,9 @@ FUNC disk_write
     ldr     r8, =sd_bounce
 2:
     adds    r1, r5, r7                      @ r1 = sector of this block (first sector + i)
+    ldr     r0, =sd_cur_sec
+    str     r1, [r0]                        @ diagnosis: the block and its DMA source (sd_dg_wtimeout)
+    str     r8, [r0, #4]                    @ sd_cur_buf follows sd_cur_sec
     lsls    r4, r1, #9                      @ r4 = low word of the byte address sector * 512
     lsrs    r1, r1, #23                     @ r1 = upper word (OF-57: v2.05 computes (first << 9) + 512 * i in 32 bits,
                                             @ 0x08023FE4..0x08023FEA, and passes 0 as the upper word, 0x08023FFC)
@@ -679,7 +736,7 @@ FUNC disk_write
     str     r0, [sp, #8]                    @ OF-59: [sp+8] = non-zero when sd_wait_write failed or the SDIO reported an error
                                             @ (CRC status token negative, timeout, underrun); the card is still polled below
     bl      sd_dg_start                     @ diagnosis: the polling begins
-    movw    r0, #0x4e20                     @ 08024008
+    ldr     r0, =SD_STATUS_POLLS            @ 08024008 (v2.05 20000; IMP-41: x8 for the 32 MHz card-session clock)
     mov     r9, r0                          @ 0802400C r9 = r0
     @ poll the card state with CMD13 up to 20000 times: transfer state = ready
 .Ldisk_write_400E:                      @ v2.05 0x0802400E, reached from 0x0802401E

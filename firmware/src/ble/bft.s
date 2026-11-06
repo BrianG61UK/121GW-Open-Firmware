@@ -28,8 +28,10 @@
 @     type 0x03 END    all bytes sent: flush, check, copy, check the copy
 @     type 0x04 ABORT  back to waiting
 @     type 0x05 STATUS payload index(1): a diagnosis value in the answer's "next" field (bft_diag_tab)
-@     types 0x10 .. 0x14 SD card file requests (LIST, READ, CHUNK, DELETE, INFO; ble/bftsd.s, IMP-36) and 0x16 / 0x17
-@     settings (GET, PUT; ble/bftset.s, IMP-37), answered with the type 0x82 answer described in ble/bftsd.s
+@     types 0x10 .. 0x15 SD card requests (LIST, READ, CHUNK, DELETE, INFO, FORMAT; ble/bftsd.s, IMP-36, IMP-39) and
+@     0x16 / 0x17 settings (GET, PUT; ble/bftset.s, IMP-37), answered with the type 0x82 answer described in ble/bftsd.s
+@     type 0x18 UPDMODE  restart into the two-part bootloader's update mode (blcmd_update_mode, IMP-42); no answer (the
+@                      meter restarts), status 3 without the two-part bootloader
 @ Answer: B5 5B 81 seq(2) 03 status next(2) crc16(2), seq = the packet answered, next = the packet number expected
 @     (with status 0x11 instead: the failed step << 8 | its FatFs result, step 1 open, 2 seek, 3 write, 4 short write,
 @     5 close; with status 0 to END: the number of failed card sessions that were repeated successfully).
@@ -149,14 +151,22 @@ bft_reset_due:  .space 1                    @ 1: restart once the link has been 
 @ 17 the sd_init error code of the last one, 18 SCR reads since power-on, 19 / 20 of these the reads whose polling loop had
 @ read no word / one word when the block end was seen (IMP-34), 21 the write wait that last ran out (1 DMA / transfer end,
 @ 2 the card's busy; values 7 .. 11 then hold the transfer state at that moment), 22 its length in 10 ms ticks, 23 the last
-@ ACMD22 answer (0x8000 | SD error << 8 | count, 0 none yet), 24 blocks ACMD22 confirmed, 25 blocks written again (IMP-40)
-@ (sd/diskio.s, sd_dg_*)
+@ ACMD22 answer (0x8000 | SD error << 8 | count, 0 none yet), 24 blocks ACMD22 confirmed, 25 blocks written again (IMP-40),
+@ and of the first write timeout of the power-on: 26 / 27 the sector (low / high half), 28 / 29 the DMA source address,
+@ 30 DMA2 channel 4 CCR, 31 / 32 its CMAR, 33 SDIO_DCTRL, 34 SDIO_DLEN, 35 SDIO_FIFOCNT, 36 / 37 SDIO_STA, 38 which attempt,
+@ 39 SDIO_CLKCR
+@ (21, 22 and 7 .. 11 are of that first timeout as well) (sd/diskio.s, sd_dg_*)
 bft_diag_tab:   .word bft_fails, bft_diag, sd_dg_count, sd_dg_op, sd_dg_sta, sd_dg_terr, sd_dg_wait
                 .word sd_dg_flags, sd_dg_dmaisr, sd_dg_cndtr, sd_dg_dcount, sd_dg_stahi, sd_dg_recov
                 .word sd_dg_r1, sd_dg_r1 + 2, sd_dg_ticks, sd_dg_icount, sd_dg_ierr, sd_dg_scrs, sd_dg_scr0, sd_dg_scr1
                 .word sd_dg_wphase, sd_dg_wticks, sd_dg_a22, sd_dg_late, sd_dg_retry
+                .word sd_dg_wsec, sd_dg_wsec + 2, sd_dg_wbuf, sd_dg_wbuf + 2, sd_dg_wccr, sd_dg_wcmar, sd_dg_wcmar + 2
+                .word sd_dg_wdctrl, sd_dg_wdlen, sd_dg_wfifo, sd_dg_wsta, sd_dg_wsta + 2, sd_dg_wtry, sd_dg_wclkcr
 bft_diag_wid:   .byte 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2
-    .equ BFT_DIAG_N, 26
+                .byte 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2
+    .equ BFT_DIAG_N, 40
+    .equ BFT_T_UPDMODE, 0x18                @ request: restart into the two-part bootloader's update mode (as key code
+                                            @ 0x91, which the page Ld does not take: it owns the link)
 bft_name_tmp:   .asciz "0:BTLOAD.TMP"
 bft_name_img:   .asciz "0:EEVBlog.bin"
 
@@ -313,14 +323,14 @@ LFUNC bft_answer
 ENDFUNC bft_answer
 
 @ -----------------------------------------------------------------------------
-@ bft_card_begin / bft_card_end - the card session frame of log_session_once: SYSCLK = HSE, card up, mount ...
+@ bft_card_begin / bft_card_end - the card session frame of log_session_once: card-session clock (PLL 32 MHz, IMP-41), card up, mount ...
 @ power the SDIO block off, run clock again
 @ Clobbers : r0-r3, r12, flags
 @ -----------------------------------------------------------------------------
 FUNC bft_card_begin
     push {r4, lr}
     movs r0, #1
-    bl sys_clock_select                     @ HSE for the card
+    bl sys_clock_select                     @ the card-session clock (PLL 32 MHz, IMP-41)
     movs r0, #10
     bl sd_bringup_retry
     ldr r1, =bft_fatfs
@@ -1036,10 +1046,13 @@ LFUNC bft_packet
     cmp r0, #0x10
     blo 1f
     cmp r0, #0x17
-    bhi 1f
+    bhi 2f
     bl bfx_request                          @ 0x10 .. 0x17: SD card files and settings, answered with type 0x82
     pop {r4-r7, pc}                         @ (ble/bftsd.s, ble/bftset.s; r0 = type)
-1:  movs r0, #3                             @ unknown type: not allowed
+2:  cmp r0, #BFT_T_UPDMODE
+    bne 1f
+    bl blcmd_update_mode                    @ restart into the bootloader's update mode; returns only with EEVblog's
+1:  movs r0, #3                             @ unknown type (or 0x18 without the two-part bootloader): not allowed
     b .Lpk_answer
 .Lpk_start:
     ldrb r0, [r4, #5]                       @ payload 8 bytes (firmware) or 9 (+ kind)
