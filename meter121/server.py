@@ -82,7 +82,12 @@ def make_handler(app):
                 return self._json(403, {'error': 'missing header %s' % HEADER})
             if urlparse(self.path).path != '/api':
                 return self._json(404, {'error': 'not found'})
-            n = int(self.headers.get('Content-Length') or 0)
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+            except ValueError:
+                return self._json(400, {'error': 'bad Content-Length'})
+            if n < 0:                                   # rfile.read(-1) would wait for the end of the connection
+                return self._json(400, {'error': 'bad Content-Length'})
             if n > 65536:
                 return self._json(413, {'error': 'request too large'})
             try:

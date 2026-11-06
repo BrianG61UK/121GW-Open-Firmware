@@ -456,6 +456,15 @@ class Http(AppCase):
         c.close()
         self.assertIn('derived', st)
         self.assertIn('card', st)
+        for length in ('-1', 'abc'):                                  # answered at once, the thread does not hang
+            c = http.client.HTTPConnection('127.0.0.1', port, timeout=5)
+            c.putrequest('POST', '/api')
+            c.putheader(server.HEADER, '1')
+            c.putheader('Content-Length', length)
+            c.endheaders()
+            r = c.getresponse()
+            self.assertEqual((r.status, json.loads(r.read())['error']), (400, 'bad Content-Length'), length)
+            c.close()
 
 
 if __name__ == '__main__':
