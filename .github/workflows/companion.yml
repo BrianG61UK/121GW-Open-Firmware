@@ -24,7 +24,7 @@ concurrency:
 env:
   # tag companion-v1.2.3 -> 1.2.3 (step "Version"); any other ref -> dev
   REF_TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
-  PIP_PKGS: bleak==1.1.1 pywebview==6.1 pyinstaller==6.22.3 pillow
+  PIP_PKGS: bleak==1.1.1 pywebview==6.1 pyinstaller==6.22.3 pillow certifi==2026.10.23
 
 jobs:
   macos:

@@ -1,5 +1,7 @@
 121GW Companion: live view, recording and firmware information for the EEVblog 121GW over Bluetooth LE.
 
+New in 1.2.14: the update check works on macOS again: the program now carries its own list of trusted certificates, so the check no longer fails with "certificate verify failed: unable to get the local issuer certificate" (GitHub issue 13).
+
 New in 1.2.13: "Save report" on the METER view writes a diagnosis report (a text file in the recordings folder) to attach to a GitHub issue instead of a screenshot: versions, the link, the last transfer, the firmware's diagnosis, the meter's settings and a log of what happened since the companion started (connections, version and bootloader questions, page Ld, updates, card operations). It is anonymised: no Bluetooth ID or address, no computer or user name, no file paths, no time zone.
 
 New in 1.2.12: the diagnosis text on the METER view is shown in full instead of in a short box that had to be scrolled (GitHub issue 12).

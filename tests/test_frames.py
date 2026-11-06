@@ -60,3 +60,13 @@ class Answers82(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Certificates(unittest.TestCase):
+    """GitHub issue 13: the packaged macOS program had no CA file; the downloads carry certifi's list."""
+    def test_context_has_certifi_list(self):
+        import certifi
+        from meter121 import releases
+        ctx = releases._ssl_context()
+        self.assertGreater(ctx.cert_store_stats()['x509_ca'], 100)
+        self.assertTrue(certifi.where().endswith('.pem'))
