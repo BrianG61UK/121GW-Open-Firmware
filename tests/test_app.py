@@ -322,6 +322,104 @@ class Options(AppCase):
         self.assertEqual(app_mod.Companion(self.tmp).state()['derived']['loop_range'], '4-20')
 
 
+class Prefs(AppCase):
+    """The program's own settings (SETTINGS view): prefs_set / prefs_reset, stored in settings.json."""
+    def unforced(self):
+        """A program started without --folder: its recordings folder comes from the setting or <Documents>/121GW."""
+        docs = app_mod.documents_folder
+        app_mod.documents_folder = lambda: os.path.join(self.tmp, 'Documents', '121GW')
+        self.addCleanup(setattr, app_mod, 'documents_folder', docs)
+        a = app_mod.Companion()
+        a.link.state = 'idle'
+        return a
+
+    def set(self, key, value, app=None):
+        return (app or self.app).command({'prefs_set': {'key': key, 'value': value}})
+
+    def test_state_and_defaults(self):
+        p = self.app.state()['prefs']
+        self.assertEqual({k: p[k] for k in ('clock_on_connect', 'update_check', 'csv_format', 'diag_log')},
+                         {'clock_on_connect': False, 'update_check': 'connect', 'csv_format': 'comma', 'diag_log': False})
+        self.assertEqual(p['recordings_folder'], os.path.join(self.tmp, 'docs'))
+        self.assertTrue(p['folder_forced'])
+        self.assertEqual(p['card_sync_folder'], os.path.join(self.tmp, 'docs', 'card'))
+        self.assertEqual(p['file'], app_mod.config_path())
+
+    def test_set_persists_and_applies(self):
+        self.set('csv_format', 'semicolon')
+        self.set('clock_on_connect', True)
+        self.set('ntp_server', ' time.example.org ')
+        self.set('card_sync_folder', os.path.join(self.tmp, 'sync'))
+        self.assertEqual(self.app.clock['server'], 'time.example.org')
+        self.assertEqual(self.app.card_st['sync']['folder'], os.path.join(self.tmp, 'sync'))
+        again = app_mod.Companion(os.path.join(self.tmp, 'docs'))
+        p = again.prefs()
+        self.assertEqual((p['csv_format'], p['clock_on_connect'], p['ntp_server'], p['card_sync_folder']),
+                         ('semicolon', True, 'time.example.org', os.path.join(self.tmp, 'sync')))
+
+    def test_bad_values_are_refused_and_not_stored(self):
+        for key, value in (('nonsense', 1), ('clock_on_connect', 'yes'), ('diag_log', 1), ('update_check', 'hourly'),
+                           ('csv_format', 'tab'), ('ntp_server', 'a b'), ('ntp_server', ''), ('card_sync_folder', '  ')):
+            with self.assertRaises(ValueError, msg=key):
+                self.set(key, value)
+        self.assertFalse(os.path.exists(app_mod.config_path()))
+
+    def test_recordings_folder(self):
+        with self.assertRaises(ValueError):                   # --folder given: the setting cannot override it
+            self.set('recordings_folder', os.path.join(self.tmp, 'x'))
+        a = self.unforced()
+        self.assertEqual(a.folder, os.path.join(self.tmp, 'Documents', '121GW'))
+        new = os.path.join(self.tmp, 'rec')
+        self.set('recordings_folder', new, a)
+        path = a.command({'record': True})['path']
+        self.assertEqual(os.path.dirname(path), new)
+        with self.assertRaises(RuntimeError):                 # not while recording
+            self.set('recordings_folder', os.path.join(self.tmp, 'y'), a)
+        a.command({'record': False})
+        self.assertEqual(self.unforced().folder, new)         # the next start uses the setting
+
+    def test_csv_format_semicolon(self):
+        self.set('csv_format', 'semicolon')
+        path = self.app.command({'record': True})['path']
+        self.app.session.add({'t': 1000.25, 'value': 1.5, 'text': '1.500', 'unit': 'V', 'mode_name': 'DCV',
+                              'sub_text': '0.25', 'sub_unit': 'Hz', 'symbols': ['DC']})
+        self.app.command({'record': False})
+        with open(path, encoding='utf-8') as f:
+            head, row = f.read().splitlines()[:2]
+        self.assertEqual(head.split(';')[0], 'time')
+        cols = row.split(';')
+        self.assertTrue(cols[0].endswith(',250'), cols[0])
+        self.assertEqual(cols[1:8], ['DCV', '1,500', 'V', '1,5', '0,25', 'Hz', 'DC'])
+
+    def test_update_check_never_and_daily(self):
+        calls = []
+        latest = app_mod.releases.latest
+        app_mod.releases.latest = lambda: calls.append(1) or (_ for _ in ()).throw(app_mod.releases.ReleaseError('offline'))
+        self.addCleanup(setattr, app_mod.releases, 'latest', latest)
+        self.app.settings['update_check'] = 'never'
+        self.app._check_release()
+        self.assertEqual(calls, [])
+        self.assertEqual(self.app.update['check_error'], 'update check off (SETTINGS)')
+        self.app.settings.update(update_check='daily', release_checked_at=time.time() - 60)
+        self.app._check_release()
+        self.assertEqual(calls, [])                           # checked a minute ago: not again today
+        self.app.settings['release_checked_at'] = time.time() - app_mod.DAILY - 1
+        self.app._check_release()
+        self.assertEqual(calls, [1])
+
+    def test_reset(self):
+        a = self.unforced()
+        self.set('csv_format', 'semicolon', a)
+        self.set('recordings_folder', os.path.join(self.tmp, 'rec'), a)
+        a.command({'set_derived': {'loop_range': '0-20'}})
+        r = a.command({'prefs_reset': True})
+        self.assertEqual(r['prefs']['csv_format'], 'comma')
+        self.assertEqual(a.folder, os.path.join(self.tmp, 'Documents', '121GW'))
+        self.assertEqual(a.state()['derived']['loop_range'], '4-20')
+        with open(app_mod.config_path()) as f:
+            self.assertEqual(json.load(f), {})
+
+
 class Http(AppCase):
     def test_commands_need_the_header(self):
         self.app._frame_t = time.time() + 3600         # the desk watcher probes after DESK_STALE s without a status frame:

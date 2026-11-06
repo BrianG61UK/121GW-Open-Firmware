@@ -19,6 +19,7 @@ from contextlib import contextmanager
 from . import card, clock, derived, diag, display, frames, keys, paths, record, releases, transfer
 from . import settings as meter_settings
 from .link import MeterLink
+from . import server
 from .server import serve
 
 TITLE = '121GW Companion'
@@ -56,13 +57,27 @@ UPDATE_ACTIVE = ('downloading', 'waiting_ld', 'restarting', 'sending')      # up
 RELEASE_RECHECK = 1800.0                         # seconds between release checks while connected
 VERSION_WAIT = 2.0                               # seconds to wait for the answer to a version request
 VERSION_RETRY = 10.0                             # seconds between requests while the link is not ready
+DAILY = 86400.0                                  # update check "daily": seconds between two release checks
+
+# the program's own settings (SETTINGS view), stored in settings.json; the meter's SETUP settings are on the meter
+PREF_DEFAULTS = {'recordings_folder': None,      # None: <Documents>/121GW
+                 'card_sync_folder': None,       # None: <recordings folder>/card
+                 'ntp_server': clock.DEFAULT_SERVER,
+                 'clock_on_connect': False,      # set the meter's clock from the time server after each connection
+                 'update_check': 'connect',      # 'connect' (at each connection and every 30 min), 'daily', 'never'
+                 'csv_format': 'comma',          # recordings: 'comma' = , and decimal point; 'semicolon' = ; and decimal comma
+                 'diag_log': False}              # the COMPANION_LOG=1 diagnosis, from the next start
+UPDATE_CHECKS = ('connect', 'daily', 'never')
+CSV_FORMATS = {'comma': (',', '.'), 'semicolon': (';', ',')}
 
 
 class Companion:
-    def __init__(self, folder):
-        self.folder = folder
+    def __init__(self, folder=None):
+        """folder: the recordings folder given on the command line (--folder); it then overrides the setting."""
         self.settings = load_settings()
-        self.clock = {'server': self.settings.get('ntp_server') or clock.DEFAULT_SERVER, 'last': None}
+        self.folder_forced = folder is not None
+        self.folder = folder if folder is not None else self._pref_folder()
+        self.clock = {'server': self.settings.get('ntp_server') or clock.DEFAULT_SERVER, 'last': None, 'auto': ''}
         self._clock_echo = None
         self.session = record.Session()
         # firmware of the connected meter (FEATURES.md 2.11 stage 3): 'unknown' until asked; 'fast' with version;
@@ -166,8 +181,10 @@ class Companion:
                     self.bl = self._ask_bootloader()
                     self.mode = 'firmware'
                     self._check_release()
+                    self._clock_on_connect()
                 elif self._echo is not None:
                     self.fw_kind, self.mode = 'other', 'firmware'
+                    self._clock_on_connect()
                 else:
                     v = self._boot_probe()
                     if v is not None:
@@ -176,6 +193,17 @@ class Companion:
                     else:
                         time.sleep(VERSION_RETRY)
             self._asked.clear()
+
+    def _clock_on_connect(self):
+        """Setting clock_on_connect: the meter's clock from the time server once per connection (the result or the
+        reason it failed goes to clock.auto for the page)."""
+        if not self.settings.get('clock_on_connect'):
+            return
+        try:
+            r = self.sync_time(None)
+            self.clock['auto'] = 'set on connect to ' + r['set_to']
+        except (RuntimeError, ValueError, OSError, clock.ClockError) as e:
+            self.clock['auto'] = 'not set on connect: %s' % e
 
     def _ask_bootloader(self):
         """'EEV', 'B-A.BC', or None when the firmware does not answer key code 0x92 (older than F-1.03)."""
@@ -218,6 +246,14 @@ class Companion:
         firmware F-1.03 or newer: the firmware writes it)."""
         if self.update['state'] not in ('none', 'available'):
             return
+        policy = self.settings.get('update_check', 'connect')
+        if policy == 'never':
+            self.update.update(state='none', fw=None, bl=None, checked=None, latest=[],
+                               check_error='update check off (SETTINGS)')
+            return
+        last = self.settings.get('release_checked_at')
+        if policy == 'daily' and isinstance(last, (int, float)) and time.time() - last < DAILY:
+            return
         fw = bl = None
         latest, problems = [], []
         try:
@@ -241,6 +277,9 @@ class Companion:
         state = 'available' if fw or bl else 'none'
         # checked / latest / check_error: what the UI shows for 'none' (up to date, or why nothing could be checked)
         self.update.update(state=state, fw=fw, bl=bl, checked=time.time(), latest=latest, check_error='; '.join(problems))
+        if not problems:
+            self.settings['release_checked_at'] = time.time()
+            save_settings(self.settings)
 
     # ------------------------------------------------------------------ updates
     def _run_update(self, what):
@@ -666,6 +705,75 @@ class Companion:
         self._rec_cache = (now, lst)
         return lst
 
+    # ------------------------------------------------------------------ the program's settings (SETTINGS view)
+    def _pref_folder(self):
+        return self.settings.get('recordings_folder') or documents_folder()
+
+    def prefs(self):
+        """The settings as they apply now, plus what the page needs to explain them."""
+        p = {k: self.settings.get(k, d) for k, d in PREF_DEFAULTS.items()}
+        p['recordings_folder'] = self.folder
+        p['card_sync_folder'] = self.card_st['sync']['folder'] or os.path.join(self.folder, 'card')
+        p['ntp_server'] = self.clock['server']
+        p.update(folder_forced=self.folder_forced, diag_log_active=TRACE_UI, file=config_path())
+        return p
+
+    @staticmethod
+    def _folder_value(v):
+        if not isinstance(v, str) or not v.strip():
+            raise ValueError('a folder is needed')
+        return os.path.abspath(os.path.expanduser(v.strip()))
+
+    def set_pref(self, key, value):
+        """Change one setting: checked, applied at once (diag_log from the next start), stored."""
+        if key not in PREF_DEFAULTS:
+            raise ValueError('unknown setting %r' % (key,))
+        if key == 'recordings_folder':
+            if self.folder_forced:
+                raise ValueError('the recordings folder was given on the command line (--folder)')
+            if self.session.snapshot()['recording']:
+                raise RuntimeError('a recording is running: stop it first')
+            value = self._folder_value(value)
+            self.folder, self._rec_cache = value, None
+        elif key == 'card_sync_folder':
+            value = self._folder_value(value)
+            self.card_st['sync']['folder'] = value
+        elif key == 'ntp_server':
+            value = value.strip() if isinstance(value, str) else ''
+            if not value or len(value) > 253 or any(ch.isspace() for ch in value):
+                raise ValueError('a time server name or address is needed')
+            self.clock['server'] = value
+        elif key in ('clock_on_connect', 'diag_log'):
+            if not isinstance(value, bool):
+                raise ValueError('%s: true or false' % key)
+        elif key == 'update_check':
+            if value not in UPDATE_CHECKS:
+                raise ValueError('update_check: one of %s' % ', '.join(UPDATE_CHECKS))
+        elif key == 'csv_format':
+            if value not in CSV_FORMATS:
+                raise ValueError('csv_format: one of %s' % ', '.join(CSV_FORMATS))
+        self.settings[key] = value
+        save_settings(self.settings)
+        if key == 'update_check' and self.link.state == 'connected' and self.mode != 'unknown':
+            if value == 'never' or self.update['state'] in ('none', 'available'):
+                self.update.update(state='none', check_error='', checked=None)
+                threading.Thread(target=self._check_release, name='releases-now', daemon=True).start()
+        return {'ok': True, 'prefs': self.prefs()}
+
+    def reset_prefs(self):
+        """Every setting of the program back to its default (the meter's own settings are not touched)."""
+        if self.session.snapshot()['recording']:
+            raise RuntimeError('a recording is running: stop it first')
+        for k in list(PREF_DEFAULTS) + ['derived', 'release_checked_at']:
+            self.settings.pop(k, None)
+        save_settings(self.settings)
+        if not self.folder_forced:
+            self.folder, self._rec_cache = self._pref_folder(), None
+        self.card_st['sync']['folder'] = None
+        self.clock['server'] = clock.DEFAULT_SERVER
+        self.derived = derived.Derived()
+        return {'ok': True, 'prefs': self.prefs()}
+
     def state(self, since=None):
         L = self.link
         return {'now': time.time(),
@@ -682,7 +790,8 @@ class Companion:
                 'diag': dict(self.diag),
                 'trace_ui': TRACE_UI,
                 'card': dict(self.card_st, files=list(self.card_st['files']), locked_reason=self._lock_reason()),
-                'settings': dict(self.settings_st, locked_reason=self._lock_reason())}
+                'settings': dict(self.settings_st, locked_reason=self._lock_reason()),
+                'prefs': self.prefs()}
 
     def command(self, c):
         if 'ui_event' in c:                             # COMPANION_LOG=1: the page reports a pointer event (diagnosis)
@@ -695,7 +804,8 @@ class Companion:
             return {'ok': True}
         if 'record' in c:
             if c['record']:
-                return {'ok': True, 'path': self.session.start_recording(self.folder)}
+                sep, dec = CSV_FORMATS.get(self.settings.get('csv_format'), CSV_FORMATS['comma'])
+                return {'ok': True, 'path': self.session.start_recording(self.folder, sep, dec)}
             return {'ok': True, 'path': self.session.stop_recording()}
         if 'reset_stats' in c:
             self.session.reset_stats()
@@ -756,6 +866,10 @@ class Companion:
             return self.settings_put(self._arg(c, 'settings_put', 'id'), self._arg(c, 'settings_put', 'value'))
         if 'diag_read' in c:
             return self.diag_read()
+        if 'prefs_set' in c:
+            return self.set_pref(self._arg(c, 'prefs_set', 'key'), self._arg(c, 'prefs_set', 'value'))
+        if 'prefs_reset' in c:
+            return self.reset_prefs()
         if 'set_derived' in c:
             opts = c['set_derived'] if isinstance(c['set_derived'], dict) else \
                 {k: c[k] for k in ('loop_range', 'pt_type', 'limit') if k in c}
@@ -841,11 +955,15 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=TITLE)
     ap.add_argument('--port', type=int, default=8221)
     ap.add_argument('--port-tries', type=int, default=20)
-    ap.add_argument('--folder', default=None, help='folder for recordings (default <Documents>/121GW)')
+    ap.add_argument('--folder', default=None, help='folder for recordings (default: the SETTINGS view, else <Documents>/121GW)')
     ap.add_argument('--browser', action='store_true', help='use the default browser instead of a window')
     ap.add_argument('--no-open', action='store_true', help='open nothing (scripted use)')
     a = ap.parse_args(argv)
-    app = Companion(a.folder or documents_folder())
+    app = Companion(a.folder)
+    if app.settings.get('diag_log') is True:             # SETTINGS: diagnostic logging (as COMPANION_LOG=1)
+        global TRACE_UI
+        TRACE_UI = True
+        server.LOG_COMMANDS = True
     err = None
     for port in range(a.port, a.port + a.port_tries):
         try:

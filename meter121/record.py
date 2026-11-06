@@ -47,6 +47,7 @@ class Session:
         self.frames = 0
         self._file = None
         self._writer = None
+        self._dec = '.'
         self.rec_path = None
         self.rec_rows = 0
         self.rec_start = None
@@ -64,11 +65,13 @@ class Session:
             else:
                 self.trend.append((reading['t'], None, key))   # overload or blank: a gap in the trace
             if self._writer is not None:
+                d = self._dec
+                num = (lambda s: s.replace('.', d)) if d != '.' else (lambda s: s)
                 self._writer.writerow([time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(reading['t']))
-                                       + '.%03d' % int((reading['t'] % 1) * 1000),
-                                       reading.get('mode_name', ''), reading.get('text', ''), reading.get('unit', ''),
-                                       '' if v is None else repr(v), reading.get('sub_text', ''), reading.get('sub_unit', ''),
-                                       ' '.join(reading.get('symbols', []))])
+                                       + d + '%03d' % int((reading['t'] % 1) * 1000),
+                                       reading.get('mode_name', ''), num(reading.get('text', '')), reading.get('unit', ''),
+                                       '' if v is None else num(repr(v)), num(reading.get('sub_text', '')),
+                                       reading.get('sub_unit', ''), ' '.join(reading.get('symbols', []))])
                 self.rec_rows += 1
                 if self.rec_rows % 50 == 0:
                     self._file.flush()
@@ -77,14 +80,17 @@ class Session:
         with self.lock:
             self.stats.reset(self.stats.key)
 
-    def start_recording(self, folder):
+    def start_recording(self, folder, sep=',', dec='.'):
+        """sep: the field separator, dec: the decimal mark of the numbers (',' / '.' or ';' / ',' for spreadsheets of
+        countries that write a decimal comma)."""
         with self.lock:
             if self._writer is not None:
                 return self.rec_path
             os.makedirs(folder, exist_ok=True)
             self.rec_path = os.path.join(folder, time.strftime('121GW_%Y-%m-%d_%H-%M-%S.csv'))
             self._file = open(self.rec_path, 'w', newline='', encoding='utf-8')
-            self._writer = csv.writer(self._file)
+            self._writer = csv.writer(self._file, delimiter=sep)
+            self._dec = dec
             self._writer.writerow(['time', 'mode', 'display', 'unit', 'value', 'sub display', 'sub unit', 'symbols'])
             self.rec_rows, self.rec_start = 0, time.time()
             return self.rec_path

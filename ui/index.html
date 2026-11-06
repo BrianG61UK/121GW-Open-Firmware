@@ -247,7 +247,7 @@ footer .r { color: var(--faint); min-width: 160px; }
 </header>
 <nav id="tabs">
   <button data-v="live"><b>1</b>LIVE</button><button data-v="scope"><b>2</b>SCOPE</button><button data-v="log"><b>3</b>LOG</button>
-  <button data-v="card"><b>4</b>CARD</button><button data-v="meter"><b>5</b>METER</button>
+  <button data-v="card"><b>4</b>CARD</button><button data-v="meter"><b>5</b>METER</button><button data-v="prefs"><b>6</b>SETTINGS</button>
 </nav>
 <div class="band" id="devband"><span class="cap">meters found</span><div class="devs" id="devs"></div></div>
 <div class="band" id="notice"><span class="cap">update</span><span class="text" id="ntext"></span>
@@ -381,7 +381,7 @@ footer .r { color: var(--faint); min-width: 160px; }
       </div>
       <div class="sbar" id="m-prog" style="grid-template-columns:repeat(40,1fr);margin-top:12px"></div>
       <div class="eng" style="margin-top:24px">Clock</div>
-      <div class="cardbar" style="margin-bottom:8px"><input id="ntp" class="num" spellcheck="false" aria-label="NTP server"><button id="sync">Sync time</button></div>
+      <div class="cardbar" style="margin-bottom:8px"><span class="num" id="ntpname"></span><button id="sync">Sync time</button></div>
       <div class="path num" id="clockres"></div>
       <div class="eng" style="margin-top:24px">Diagnostics <button class="sm" id="diag-read" style="margin-left:8px">Read</button></div>
       <div class="diag" id="diagvals"></div>
@@ -394,6 +394,40 @@ footer .r { color: var(--faint); min-width: 160px; }
     </div>
   </div>
 </section>
+
+<!-- SETTINGS: the program's own settings (the meter's SETUP settings are on the METER view) -->
+<section class="view" id="v-prefs">
+  <div class="two">
+    <div>
+      <div class="eng">Files</div>
+      <div class="cap">recordings folder</div>
+      <div class="cardbar" style="margin:4px 0 4px"><input id="p-folder" class="num" spellcheck="false" aria-label="recordings folder" style="flex:1"><button id="p-folder-save">Save</button></div>
+      <div class="path" id="p-folder-note" style="margin:0 0 12px"></div>
+      <div class="cap">card sync folder</div>
+      <div class="cardbar" style="margin:4px 0 12px"><input id="p-sync" class="num" spellcheck="false" aria-label="card sync folder" style="flex:1"><button id="p-sync-save">Save</button></div>
+      <div class="cap">recordings: CSV format</div>
+      <div class="row" style="margin:4px 0 24px"><span class="seg" id="p-csv"><button data-v="comma">1.5 , separated</button><button data-v="semicolon">1,5 ; separated</button></span></div>
+      <div class="eng">Clock</div>
+      <div class="cap">time server</div>
+      <div class="cardbar" style="margin:4px 0 12px"><input id="p-ntp" class="num" spellcheck="false" aria-label="time server" style="flex:1"><button id="p-ntp-save">Save</button></div>
+      <div class="cap">set the meter's clock after connecting</div>
+      <div class="row" style="margin:4px 0 4px"><span class="seg" id="p-clock"><button data-v="on">On</button><button data-v="off">Off</button></span></div>
+      <div class="path" id="p-clock-note" style="margin:0 0 12px"></div>
+    </div>
+    <div>
+      <div class="eng">Updates</div>
+      <div class="cap">look for new firmware and bootloader releases</div>
+      <div class="row" style="margin:4px 0 24px"><span class="seg" id="p-upd"><button data-v="connect">On connect</button><button data-v="daily">Daily</button><button data-v="never">Never</button></span></div>
+      <div class="eng">Diagnosis</div>
+      <div class="cap">diagnostic logging (clicks and commands to the terminal; from the next start)</div>
+      <div class="row" style="margin:4px 0 4px"><span class="seg" id="p-diag"><button data-v="on">On</button><button data-v="off">Off</button></span></div>
+      <div class="path" id="p-diag-note" style="margin:0 0 24px"></div>
+      <div class="eng">Reset</div>
+      <div class="cardbar" style="margin:4px 0 4px"><button id="p-reset">Reset all settings</button></div>
+      <div class="path" id="p-file"></div>
+    </div>
+  </div>
+</section>
 </main>
 
 <div class="confirm" id="confirm"><div class="box">
@@ -401,6 +435,13 @@ footer .r { color: var(--faint); min-width: 160px; }
   <p>Delete <b class="num yel" id="cf-name"></b> from the meter's card? This cannot be undone. Type the name to confirm.</p>
   <input id="cf-input" class="num" spellcheck="false" autocomplete="off" aria-label="type the file name">
   <div class="btns" style="margin-top:0"><button id="cf-ok" disabled>Delete</button><button id="cf-cancel">Cancel</button></div>
+</div></div>
+
+<div class="confirm" id="pconfirm"><div class="box">
+  <div class="eng">Reset all settings</div>
+  <p>Every setting of this program goes back to its default: folders, CSV format, time server, update check, diagnosis
+  and the derived-value options. The meter's own settings and your files are not touched.</p>
+  <div class="btns" style="margin-top:0"><button id="pc-ok">Reset</button><button id="pc-cancel">Cancel</button></div>
 </div></div>
 
 <div class="confirm" id="fconfirm"><div class="box">
@@ -480,7 +521,7 @@ const connected = () => !!state && state.link && state.link.state === 'connected
 const desk = () => !!state && state.desk === true;
 
 // ---------------------------------------------------------------- views and keyboard
-const VIEWS = ['live', 'scope', 'log', 'card', 'meter'];
+const VIEWS = ['live', 'scope', 'log', 'card', 'meter', 'prefs'];
 function setView(v) {
   view = v;
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
@@ -493,7 +534,7 @@ $('tabs').onclick = e => { const b = e.target.closest('button'); if (b) setView(
 const typing = () => /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement && document.activeElement.tagName);
 document.addEventListener('keydown', e => {
   if (typing() || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.key >= '1' && e.key <= '5') setView(VIEWS[+e.key - 1]);
+  if (e.key >= '1' && e.key <= '6') setView(VIEWS[+e.key - 1]);
   else if (e.key === ' ' && view === 'scope') { e.preventDefault(); toggleFreeze(); }
 });
 
@@ -894,10 +935,9 @@ function drawLog(S) {
 
 // ---------------------------------------------------------------- METER: info, clock, update
 let syncing = false, upStart = null;
-$('ntp').oninput = () => { $('ntp').dataset.edited = '1'; };
 $('sync').onclick = async () => {
-  syncing = true; $('clockres').textContent = 'asking ' + $('ntp').value + ' …';
-  try { const j = await api({sync_time: true, server: $('ntp').value}); $('ntp').dataset.edited = ''; say('meter clock set to ' + j.set_to); }
+  syncing = true; $('clockres').textContent = 'asking ' + ((state && state.clock && state.clock.server) || '') + ' …';
+  try { const j = await api({sync_time: true}); say('meter clock set to ' + j.set_to); }
   catch (e) { $('clockres').textContent = e.message; fail(e); }
   syncing = false;
 };
@@ -963,8 +1003,7 @@ function drawMeter(L, M, u, C) {
     : L.state === 'connected' ? 'checking…' : 'checked when a meter is connected';
   const av = [u.fw ? 'firmware ' + u.fw[0] : null, u.bl ? 'bootloader ' + u.bl[0] : null].filter(Boolean);
   $('m-avail').textContent = av.length ? av.join(' · ') : u.state === 'none' ? '—' : 'nothing newer';
-  const ntp = $('ntp');
-  if (C && document.activeElement !== ntp && !ntp.dataset.edited) ntp.value = C.server || '';
+  setText($('ntpname'), C ? 'time server ' + (C.server || '—') + ' (SETTINGS)' : '');
   $('sync').disabled = L.state !== 'connected';
   if (C && C.last && !syncing) $('clockres').textContent = `set to ${C.last.time} from ${C.server} · offset ${(C.last.offset * 1000).toFixed(0)} ms` + (C.last.note || '');
 }
@@ -1074,6 +1113,46 @@ $('connect').onclick = async () => {
 $('devs').onclick = async e => { const a = e.target.closest('button'); if (!a) return; try { await api({connect: a.dataset.a}); } catch (err) { fail(err); } };
 
 // ---------------------------------------------------------------- the render pass and the poll loop
+// ---------------------------------------------------------------- SETTINGS: the program's own settings
+const setPref = (key, value) => send('prefs_set', {key, value}, true).then(() => say('saved')).catch(fail);
+function prefText(id, key) {                            // a text setting: the field shows the setting until edited
+  const el = $(id);
+  el.oninput = () => el.dataset.edited = '1';
+  $(id + '-save').onclick = () => send('prefs_set', {key, value: el.value}, true)
+    .then(() => { el.dataset.edited = ''; say('saved'); }).catch(fail);   // refused: the typed text stays for a correction
+  el.onkeydown = e => { if (e.key === 'Enter') $(id + '-save').click(); };
+}
+prefText('p-folder', 'recordings_folder'); prefText('p-sync', 'card_sync_folder'); prefText('p-ntp', 'ntp_server');
+$('p-csv').onclick = e => { const b = e.target.closest('button'); if (b) setPref('csv_format', b.dataset.v); };
+$('p-upd').onclick = e => { const b = e.target.closest('button'); if (b) setPref('update_check', b.dataset.v); };
+$('p-clock').onclick = e => { const b = e.target.closest('button'); if (b) setPref('clock_on_connect', b.dataset.v === 'on'); };
+$('p-diag').onclick = e => { const b = e.target.closest('button'); if (b) setPref('diag_log', b.dataset.v === 'on'); };
+$('p-reset').onclick = () => $('pconfirm').classList.add('show');
+$('pc-cancel').onclick = () => $('pconfirm').classList.remove('show');
+$('pc-ok').onclick = () => {
+  $('pconfirm').classList.remove('show');
+  ['p-folder', 'p-sync', 'p-ntp'].forEach(id => $(id).dataset.edited = '');
+  send('prefs_reset').then(() => say('settings reset')).catch(fail);
+};
+function drawPrefs(P, C, S) {
+  if (!P) return;
+  for (const [id, v] of [['p-folder', P.recordings_folder], ['p-sync', P.card_sync_folder], ['p-ntp', P.ntp_server]]) {
+    const el = $(id);
+    if (document.activeElement !== el && !el.dataset.edited && el.value !== (v || '')) el.value = v || '';
+  }
+  const rec = !!(S && S.recording);
+  $('p-folder').disabled = $('p-folder-save').disabled = P.folder_forced || rec;
+  setText($('p-folder-note'), P.folder_forced ? 'given on the command line (--folder): change it there'
+    : rec ? 'a recording is running: stop it to change the folder' : '');
+  seg($('p-csv'), P.csv_format); seg($('p-upd'), P.update_check);
+  seg($('p-clock'), P.clock_on_connect ? 'on' : 'off'); seg($('p-diag'), P.diag_log ? 'on' : 'off');
+  setText($('p-clock-note'), C && C.auto ? C.auto : '');
+  setText($('p-diag-note'), P.diag_log === P.diag_log_active ? (P.diag_log_active ? 'on now' : '')
+    : 'takes effect at the next start of the program');
+  $('p-reset').disabled = rec;
+  setText($('p-file'), 'settings file ' + (P.file || '—'));
+}
+
 function render() {
   if (!state) return;
   const L = state.link || {state: 'idle'}, S = state.session || {stats: {}, trend: []}, M = state.meter || {};
@@ -1102,6 +1181,7 @@ function render() {
   else if (view === 'log') drawLog(S);
   else if (view === 'card') drawCard(state.card, state.now);
   else if (view === 'meter') { drawMeter(L, M, U, state.clock); drawSettings(state.settings); drawDiag(state.diag); }
+  else if (view === 'prefs') drawPrefs(state.prefs, state.clock, S);
 }
 
 async function poll() {
