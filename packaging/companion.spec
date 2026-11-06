@@ -10,6 +10,11 @@ from PyInstaller.utils.hooks import collect_submodules
 root = os.path.abspath(os.path.join(SPECPATH, '..'))
 version = os.environ.get('APP_VERSION', 'dev')
 icon = os.environ.get('APP_ICON') or None
+# the version for the program itself (meter121/report.py app_version: the diagnosis report names it)
+version_file = os.path.join(root, 'build', 'app_version.txt')
+os.makedirs(os.path.dirname(version_file), exist_ok=True)
+with open(version_file, 'w', encoding='utf-8') as f:
+    f.write(version)
 
 if sys.platform == 'darwin':
     backend = ['bleak.backends.corebluetooth'] + collect_submodules('bleak.backends.corebluetooth')
@@ -21,7 +26,7 @@ else:
 a = Analysis(
     [os.path.join(root, 'packaging', 'entry.py')],
     pathex=[root],
-    datas=[(os.path.join(root, 'ui'), 'ui'), (os.path.join(root, 'LICENSE'), '.')],
+    datas=[(os.path.join(root, 'ui'), 'ui'), (os.path.join(root, 'LICENSE'), '.'), (version_file, '.')],
     hiddenimports=['meter121', 'meter121.app'] + backend
                   + (['webview', 'webview.platforms.cocoa'] if sys.platform == 'darwin' else [])
                   + (['webview', 'webview.platforms.edgechromium', 'webview.platforms.winforms'] if sys.platform == 'win32' else []),

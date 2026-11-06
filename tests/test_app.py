@@ -400,6 +400,39 @@ class VersionQuestion(AppCase):
         self.assertEqual(len(asked), app_mod.VERSION_TRIES)
 
 
+class Report(AppCase):
+    """The diagnosis report (report.py): its sections, the event log, and nothing that identifies the user."""
+    def test_report_is_written_and_anonymised(self):
+        import getpass
+        import socket
+        from meter121 import report
+        self.app.link.device = ('6C6DCEDE-1C8B-ECC5-EA3B-4067CF1EB479', '121GW')
+        self.app.version, self.app.bl = 'F-1.12', 'EEV'
+        self.app.event('link connected: 121GW AA:BB:CC:DD:EE:FF')
+        self.app.event('card download failed: cannot write %s' % os.path.join(os.path.expanduser('~'), 'Documents', 'x.csv'))
+        self.app.event('bootloader question: no answer')
+        r = self.app.command({'save_report': True})
+        self.assertEqual(os.path.dirname(r['path']), self.app.folder)
+        with open(r['path'], encoding='utf-8') as f:
+            text = f.read()
+        for part in ('[meter]', 'F-1.12', 'bootloader  EEV', '[link]', '[update]', '[diagnosis of the firmware]',
+                     '[events, oldest first]', 'bootloader question: no answer', 'companion   source'):
+            self.assertIn(part, text)
+        for secret in ('6C6DCEDE-1C8B-ECC5-EA3B-4067CF1EB479', 'AA:BB:CC:DD:EE:FF', os.path.expanduser('~'), self.tmp):
+            self.assertNotIn(secret, text)
+        for name in (socket.gethostname(), getpass.getuser()):
+            if len(name) >= 3:
+                self.assertNotRegex(text, r'(?i)(?<![A-Za-z0-9])%s(?![A-Za-z0-9])' % __import__('re').escape(name))
+        self.assertIn('<address>', text)
+        self.assertIn('<path>', text)
+        self.assertEqual(report.anonymise('random dom', ['dom']), 'random <name>')
+
+    def test_version_events(self):
+        self.app.event('version question: echo only')
+        self.assertEqual(self.app.events[-1][1], 'version question: echo only')
+        self.assertLessEqual(len(self.app.events), app_mod.EVENTS_KEEP)
+
+
 class Prefs(AppCase):
     """The program's own settings (SETTINGS view): prefs_set / prefs_reset, stored in settings.json."""
     def unforced(self):

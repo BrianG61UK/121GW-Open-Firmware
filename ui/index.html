@@ -384,7 +384,8 @@ footer .r { color: var(--faint); min-width: 160px; }
       <div class="eng" style="margin-top:24px">Clock</div>
       <div class="cardbar" style="margin-bottom:8px"><span class="num" id="ntpname"></span><button id="sync">Sync time</button></div>
       <div class="path num" id="clockres"></div>
-      <div class="eng" style="margin-top:24px">Diagnostics <button class="sm" id="diag-read" style="margin-left:8px">Read</button></div>
+      <div class="eng" style="margin-top:24px">Diagnostics <button class="sm" id="diag-read" style="margin-left:8px">Read</button><button class="sm" id="diag-save" style="margin-left:8px">Save report</button></div>
+      <div class="path" id="diag-file" style="margin:0 0 8px"></div>
       <div class="diag" id="diagvals"></div>
       <pre id="diagtext">—</pre>
     </div>
@@ -933,6 +934,12 @@ function drawLog(S) {
   $('reclist').replaceChildren(...(list.length ? list.map(f => h('tr', {}, h('td', {}, f.name), h('td', {class: 'r'}, f.size === null || f.size === undefined ? '—' : grp(f.size)),
     h('td', {}, nz(f.date) + (f.time ? '  ' + f.time : '')))) : [h('tr', {class: 'empty'}, h('td', {colspan: 3}, 'no recordings yet'))]));
 }
+
+// the diagnosis report: a text file for a GitHub issue (report.py; anonymised: no IDs, addresses, names or paths)
+$('diag-save').onclick = () => send('save_report').then(j => {
+  setText($('diag-file'), 'saved ' + j.name + ' in the recordings folder: attach it to the GitHub issue');
+  say('report saved: ' + j.name);
+}).catch(fail);
 
 // ---------------------------------------------------------------- METER: info, clock, update
 let syncing = false, upStart = null;

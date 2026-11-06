@@ -7,6 +7,7 @@ the default browser; closing the window ends the program.  Recordings go to <Doc
 otherwise.
 """
 import argparse
+import collections
 import json
 import os
 import queue
@@ -16,7 +17,7 @@ import time
 import webbrowser
 from contextlib import contextmanager
 
-from . import card, clock, derived, diag, display, frames, keys, paths, record, releases, transfer
+from . import card, clock, derived, diag, display, frames, keys, paths, record, releases, report, transfer
 from . import settings as meter_settings
 from .link import MeterLink
 from . import server
@@ -58,6 +59,7 @@ RELEASE_RECHECK = 1800.0                         # seconds between release check
 VERSION_WAIT = 2.0                               # seconds to wait for the answer to a version request
 VERSION_RETRY = 10.0                             # seconds between requests while the link is not ready
 VERSION_TRIES = 3                                # version requests answered by the echo alone until the firmware counts as v2.05
+EVENTS_KEEP = 300                                # events kept for the diagnosis report
 BL_ASK_TRIES = 3                                 # bootloader questions (key code 0x92) until an answer counts as none
 DAILY = 86400.0                                  # update check "daily": seconds between two release checks
 
@@ -77,6 +79,7 @@ class Companion:
     def __init__(self, folder=None):
         """folder: the recordings folder given on the command line (--folder); it then overrides the setting."""
         self.settings = load_settings()
+        self.events = collections.deque(maxlen=EVENTS_KEEP)    # (time, text) for the diagnosis report (report.py)
         self.folder_forced = folder is not None
         self.folder = folder if folder is not None else self._pref_folder()
         self.clock = {'server': self.settings.get('ntp_server') or clock.DEFAULT_SERVER, 'last': None, 'auto': ''}
@@ -130,6 +133,8 @@ class Companion:
             r = display.decode(frame, t)
             self.session.add(r)
             self.derived.feed(r)
+            if self.desk:
+                self.event('page Ld left (status frames again)')
             self._frame_t, self.desk = t, False          # status frames are sent only while page Ld is not shown
         elif kind == frames.VERSION:
             self._ver = frames.version_text(frame)
@@ -154,7 +159,12 @@ class Companion:
                     if sender is not None:
                         sender.answers.put(a)
 
+    def event(self, text):
+        """One line of the event log (the diagnosis report anonymises it)."""
+        self.events.append((time.time(), text))
+
     def _state(self, state, detail):
+        self.event('link %s%s' % (state, (': ' + detail) if detail else ''))
         self.desk = False                                # a new connection or none: the page is not known any more
         self._frame_t = 0.0
         if state == 'connected':
@@ -180,6 +190,8 @@ class Companion:
                 end = time.time() + VERSION_WAIT
                 while time.time() < end and self._ver is None:
                     time.sleep(0.05)
+                self.event('version question: %s' % ('answer %s' % self._ver if self._ver is not None else
+                                                     'echo only' if self._echo is not None else 'no answer'))
                 if self._ver is not None:
                     self.fw_kind, self.version = 'fast', self._ver
                     self.bl = self._ask_bootloader()
@@ -194,6 +206,7 @@ class Companion:
                     self._clock_on_connect()
                 else:
                     v = self._boot_probe()
+                    self.event('update-mode probe: %s' % ('bootloader %d.%d.%d' % v if v is not None else 'no answer'))
                     if v is not None:
                         self.bl, self.mode = releases.bootloader_text(v), 'bootloader'
                         self._check_release()
@@ -225,6 +238,7 @@ class Companion:
             end = time.time() + VERSION_WAIT
             while time.time() < end and self._blver is None:
                 time.sleep(0.05)
+            self.event('bootloader question: %s' % (self._blver or 'no answer'))
             if self._blver is not None:
                 return self._blver
         return None
@@ -298,6 +312,8 @@ class Companion:
         """what: 'firmware', 'bootloader' or 'both'.  With EEVblog's bootloader the firmware goes first (the first
         install needs F-1.03 on the meter); with the two-part bootloader the bootloader goes first (DESIGN.md 5)."""
         u = self.update
+        self.event('update %s started (firmware %s, bootloader %s)' % (what, u['fw'][0] if u['fw'] else '-',
+                                                                       u['bl'][0] if u['bl'] else '-'))
         try:
             steps = ['firmware', 'bootloader'] if what == 'both' else [what]
             if what == 'both' and self.bl != 'EEV':
@@ -308,8 +324,10 @@ class Companion:
                 else:
                     self._update_bootloader()
             u.update(state='done', step='', message=u.get('message', ''))
+            self.event('update done')
         except (OSError, ValueError, RuntimeError, releases.ReleaseError, transfer.TransferError) as e:
             u.update(state='error', message=str(e))
+            self.event('update stopped: %s' % e)
         finally:
             self._sender, self._cancel = None, False
 
@@ -413,6 +431,7 @@ class Companion:
         dropped = max(0, self.link.rx_dropped - dropped0)
         self.last_transfer = dict(sender.stats, what=text, rx_dropped=dropped, ok=not isinstance(box.get('r'), Exception),
                                   text=transfer.stats_text(sender.stats, dropped), at=time.time())
+        self.event('transfer of %s: %s' % (text, self.last_transfer['text']))
         if isinstance(box.get('r'), Exception):
             raise box['r']
         u.update(done=total)
@@ -485,7 +504,9 @@ class Companion:
                 continue
             try:
                 with self._ops('page check', need_desk=False) as (sender, _):
-                    self.desk = sender.probe(DESK_PROBE_TIMEOUT)
+                    was, self.desk = self.desk, sender.probe(DESK_PROBE_TIMEOUT)
+                if self.desk and not was:
+                    self.event('page Ld shown')
             except RuntimeError:
                 continue                                 # the link is in use: desk stays as it is
             except (OSError, TimeoutError):
@@ -578,6 +599,7 @@ class Companion:
             except Exception as e:                       # noqa: BLE001 - a bug must reach the page, not die in the thread
                 st['error'] = 'internal error: %r' % (e,)
             finally:
+                self.event('card %s: %s' % (op, ('failed: ' + st['error']) if st['error'] else 'done'))
                 st['busy'], st['op'] = False, ''
                 st['done_job'] = job_no
 
@@ -889,6 +911,9 @@ class Companion:
             return self.set_pref(self._arg(c, 'prefs_set', 'key'), self._arg(c, 'prefs_set', 'value'))
         if 'prefs_reset' in c:
             return self.reset_prefs()
+        if 'save_report' in c:
+            path = report.save(self, self.folder)
+            return {'ok': True, 'path': path, 'name': os.path.basename(path)}
         if 'set_derived' in c:
             opts = c['set_derived'] if isinstance(c['set_derived'], dict) else \
                 {k: c[k] for k in ('loop_range', 'pt_type', 'limit') if k in c}
