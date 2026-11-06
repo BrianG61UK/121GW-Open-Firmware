@@ -57,6 +57,7 @@ UPDATE_ACTIVE = ('downloading', 'waiting_ld', 'restarting', 'sending')      # up
 RELEASE_RECHECK = 1800.0                         # seconds between release checks while connected
 VERSION_WAIT = 2.0                               # seconds to wait for the answer to a version request
 VERSION_RETRY = 10.0                             # seconds between requests while the link is not ready
+VERSION_TRIES = 3                                # version requests answered by the echo alone until the firmware counts as v2.05
 BL_ASK_TRIES = 3                                 # bootloader questions (key code 0x92) until an answer counts as none
 DAILY = 86400.0                                  # update check "daily": seconds between two release checks
 
@@ -169,6 +170,7 @@ class Companion:
         ask again later."""
         while True:
             self._asked.wait()
+            echo_only = 0                                # answers with the echo but without a version frame
             while self.link.state == 'connected' and self.mode == 'unknown':
                 self._echo = self._ver = self._blver = None
                 try:
@@ -185,6 +187,9 @@ class Companion:
                     self._check_release()
                     self._clock_on_connect()
                 elif self._echo is not None:
+                    echo_only += 1
+                    if echo_only < VERSION_TRIES:       # the version frame may have been lost (GitHub issue 9: F-1.12
+                        continue                         # was shown as v2.05): ask again before deciding "v2.05"
                     self.fw_kind, self.mode = 'other', 'firmware'
                     self._clock_on_connect()
                 else:

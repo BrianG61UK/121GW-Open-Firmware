@@ -358,6 +358,48 @@ class BootloaderQuestion(AppCase):
         self.assertEqual(len(asked), app_mod.BL_ASK_TRIES)
 
 
+class VersionQuestion(AppCase):
+    """Key code 0x90: the fast firmware answers with the echo and a version frame F6; v2.05 only with the echo.  A lost
+    version frame must not make F-1.12 look like v2.05 (GitHub issue 9)."""
+    def answering(self, lost):
+        body = b'\xF6F-112'
+        x = 0
+        for b in body:
+            x ^= b
+        f6 = body + bytes([x])
+        asked = []
+
+        def meter_send(pkt):
+            pkt = bytes(pkt)
+            if pkt == bytes(frames.VERSION_REQUEST):
+                asked.append(1)
+                self.meter._out(pkt)                       # the echo always arrives
+                if len(asked) > lost:
+                    self.meter._out(f6)
+            elif pkt[:1] == b'\xF4':
+                self.meter._out(pkt)                       # other key frames (0x92): echo only, no bootloader answer
+        self.app.link.send = meter_send
+        for name, value in (('VERSION_WAIT', 0.1), ('VERSION_RETRY', 0.1)):
+            old = getattr(app_mod, name)
+            setattr(app_mod, name, value)
+            self.addCleanup(setattr, app_mod, name, old)
+        self.app._check_release = lambda: None              # no release lookup on the internet in a test
+        self.app.fw_kind, self.app.version, self.app.mode = 'unknown', None, 'unknown'
+        self.app._asked.set()
+        self.assertTrue(wait(lambda: self.app.mode == 'firmware', 10), 'no decision')
+        return asked
+
+    def test_lost_version_frames_are_asked_again(self):
+        asked = self.answering(lost=app_mod.VERSION_TRIES - 1)
+        self.assertEqual((self.app.fw_kind, self.app.version), ('fast', 'F-1.12'))
+        self.assertEqual(len(asked), app_mod.VERSION_TRIES)
+
+    def test_echo_only_every_time_is_v205(self):
+        asked = self.answering(lost=99)
+        self.assertEqual(self.app.fw_kind, 'other')
+        self.assertEqual(len(asked), app_mod.VERSION_TRIES)
+
+
 class Prefs(AppCase):
     """The program's own settings (SETTINGS view): prefs_set / prefs_reset, stored in settings.json."""
     def unforced(self):
