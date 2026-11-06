@@ -1,5 +1,7 @@
 121GW Companion: live view, recording and firmware information for the EEVblog 121GW over Bluetooth LE.
 
+New in 1.2.12: the diagnosis text on the METER view is shown in full instead of in a short box that had to be scrolled (GitHub issue 12).
+
 New in 1.2.11: the firmware version is asked up to three times after connecting before a meter is taken for EEVblog's v2.05 (a lost answer showed "F-2.05 / LIKE" for a meter with F-1.12, and the CARD view, the meter's settings and the update check were off for that connection).
 
 New in 1.2.10: the same as 1.2.9 (whose Windows build stopped at a test that assumed a finer clock than Windows has).
