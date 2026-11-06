@@ -83,6 +83,7 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-68 | SD card | The capacity of a high-capacity card is computed in 32 bits and wraps above 4 GiB (a 32 GB card reads as 1.72 GiB); unused in v2.05, but the port's card format sized the volume by it | medium | fixed |
 | OF-69 | SD card | Card sessions run the CPU on the 4 MHz crystal with the PLL at a 48 MHz VCO, where the reference manual requires 96 MHz for the SDIO; on a meter block writes stopped with a transmit underrun | medium | fixed |
 | OF-70 | Clock | The reset clock set-up raises the CPU clock 7.6-fold in one step; the reference manual allows less than 4-fold per step | low | fixed |
+| OF-71 | Bluetooth | The USART2 receive interrupt returns without reading USART_DR when RXNE is clear; an overrun flag (ORE) that is set with RXNE = 0 also raises this interrupt and is then never cleared, so the interrupt repeats for ever | medium | fixed |
 
 ## Details
 
@@ -1047,3 +1048,27 @@ SetSysClock (0x08026092..0x080260A8) selects the PLL (16 MHz) while the CPU runs
 the frequency increases. It must also respect 5 us delay between two changes" (the same rule as datasheet Table 4 note
 2).  Port: SW = PLL is written together with HPRE = /2 (8 MHz, 3.8 x), then after at least 5 us HPRE = /1 (16 MHz, 2 x).
 No failure on a meter has been traced to this.
+
+### OF-71 — an overrun with RXNE clear is never cleared, the receive interrupt repeats for ever
+The USART2 handler (IRQ38_Handler 0x080247D8..0x080248AE) asks `USART_GetITStatus(USART2, 0x525)` (call 0x08024826) and
+ends at 0x080248AE (`beq`, 0x0802482C) when the answer is 0. FUN_0801CC7C (0x0801CC7C..0x0801CCEA) answers 1 only if
+CR1 bit 5 (RXNEIE: `ldrh r2,[r3,#0xc]` 0x0801CCAC, mask 1 << (0x525 & 0x1F)) and SR bit 5 (RXNE: `lsrs r2,r2,#0x8`
+0x0801CCC4, `ldrh r2,[r3,#0x0]` 0x0801CCD0) are both set. USART_DR is read only after that check (FUN_0801CC00,
+`ldrh r0,[r0,#0x4]` at 0x0801CC00, called at 0x08024830). The initialisation enables only this interrupt
+(`movs r2,#0x1` 0x0801C426, `movw r1,#0x525` 0x0801C428, FUN_0801CC08 at 0x0801C430; the handler's TXE part uses 0x727).
+RM0038 27.3.3 (rm0038.txt lines 39425-39448) says of an overrun: "An interrupt is generated if either the RXNEIE bit is
+set or both the EIE and DMAR bits are set" and "The ORE bit is reset by a read to the USART_SR register followed by a
+USART_DR register read operation"; the note adds that ORE can be set with RXNE = 0: "if RXNE=0, then it means that the
+last valid data has already been read ... It may also occur when the new data is received during the reading sequence
+(between the USART_SR register read access and the USART_DR read access)". The same follows from the ORE bit
+description (27.6.1, lines 41229-41232: "An interrupt is generated if RXNEIE=1 in the USART_CR1 register. It is cleared
+by a software sequence (an read to the USART_SR register followed by a read to the USART_DR register)").
+So v2.05 has the same structure as the port had until F-1.14: with ORE = 1, RXNE = 0 and RXNEIE = 1 the interrupt line
+is active, the handler finds RXNE clear, returns without reading DR, and is entered again at once; nothing else in the
+handler clears ORE (the handler never reads the ORE bit). A byte arriving at the moment the handler reads the last
+byte is enough to reach this state; at 19200 baud one byte lasts 0.52 ms. Not observed on a meter; found by
+reading RM0038 against the handler. Port (F-1.15): `ble_usart2_isr` (`ble/usart.s`) reads SR once; with RXNE = 0,
+ORE = 1 and RXNEIE = 1 it reads DR once (the sequence that clears ORE), drops the lost byte and counts the overrun for
+the extended link diagnosis (IMP-44); every other path is unchanged. Emulator `test_ble_overrun.py` puts the state
+RXNE = 0, ORE = 1 in place with the USART model (a byte arriving between the SR read and the DR read) and checks that ORE
+is clear 50 ms after the interrupt is enabled (F-1.14: it stays set).

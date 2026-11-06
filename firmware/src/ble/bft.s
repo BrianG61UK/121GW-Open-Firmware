@@ -27,7 +27,8 @@
 @     type 0x02 DATA   seq = packet number from 0, payload = the next bytes of the file
 @     type 0x03 END    all bytes sent: flush, check, copy, check the copy
 @     type 0x04 ABORT  back to waiting
-@     type 0x05 STATUS payload index(1): a diagnosis value in the answer's "next" field (bft_diag_tab)
+@     type 0x05 STATUS payload index(1): a diagnosis value in the answer's "next" field (bft_diag_tab: index 0 .. 48; 40 .. 48
+@                      are the extended link diagnosis counters and the battery voltage, ble/xdiag.s, IMP-44)
 @     types 0x10 .. 0x15 SD card requests (LIST, READ, CHUNK, DELETE, INFO, FORMAT; ble/bftsd.s, IMP-36, IMP-39) and
 @     0x16 / 0x17 settings (GET, PUT; ble/bftset.s, IMP-37), answered with the type 0x82 answer described in ble/bftsd.s
 @     type 0x18 UPDMODE  restart into the two-part bootloader's update mode (blcmd_update_mode, IMP-42); no answer (the
@@ -155,16 +156,23 @@ bft_reset_due:  .space 1                    @ 1: restart once the link has been 
 @ and of the first write timeout of the power-on: 26 / 27 the sector (low / high half), 28 / 29 the DMA source address,
 @ 30 DMA2 channel 4 CCR, 31 / 32 its CMAR, 33 SDIO_DCTRL, 34 SDIO_DLEN, 35 SDIO_FIFOCNT, 36 / 37 SDIO_STA, 38 which attempt,
 @ 39 SDIO_CLKCR
-@ (21, 22 and 7 .. 11 are of that first timeout as well) (sd/diskio.s, sd_dg_*)
+@ (21, 22 and 7 .. 11 are of that first timeout as well) (sd/diskio.s, sd_dg_*).  Extended link diagnosis (IMP-44,
+@ ble/xdiag.s; the counters count only after the key code 0x93, and keep their values after 0x94): 40 bytes received on USART2,
+@ 41 overruns (SR.ORE), 42 noise flags (SR.NE), 43 framing errors (SR.FE), 44 bytes discarded while SYSCLK was not MSI (NF-04),
+@ 45 key / set-clock frames rejected, 46 packets answered with status 1 (CRC wrong), 47 answers / echoes not queued for lack of
+@ room, 48 battery voltage (0.01 V, read at the moment of the request)
 bft_diag_tab:   .word bft_fails, bft_diag, sd_dg_count, sd_dg_op, sd_dg_sta, sd_dg_terr, sd_dg_wait
                 .word sd_dg_flags, sd_dg_dmaisr, sd_dg_cndtr, sd_dg_dcount, sd_dg_stahi, sd_dg_recov
                 .word sd_dg_r1, sd_dg_r1 + 2, sd_dg_ticks, sd_dg_icount, sd_dg_ierr, sd_dg_scrs, sd_dg_scr0, sd_dg_scr1
                 .word sd_dg_wphase, sd_dg_wticks, sd_dg_a22, sd_dg_late, sd_dg_retry
                 .word sd_dg_wsec, sd_dg_wsec + 2, sd_dg_wbuf, sd_dg_wbuf + 2, sd_dg_wccr, sd_dg_wcmar, sd_dg_wcmar + 2
                 .word sd_dg_wdctrl, sd_dg_wdlen, sd_dg_wfifo, sd_dg_wsta, sd_dg_wsta + 2, sd_dg_wtry, sd_dg_wclkcr
+                .word xd_rx_bytes, xd_err_ore, xd_err_ne, xd_err_fe, xd_rx_dropped_hse, xd_bad_frames, xd_bft_crc_bad
+                .word xd_tx_q_full, pwr_bat_cv
 bft_diag_wid:   .byte 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2
                 .byte 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2
-    .equ BFT_DIAG_N, 40
+                .byte 2, 2, 2, 2, 2, 2, 2, 2, 2             @ 40 .. 48: nine u16 (IMP-44)
+    .equ BFT_DIAG_N, 49
     .equ BFT_T_UPDMODE, 0x18                @ request: restart into the two-part bootloader's update mode (as key code
                                             @ 0x91, which the page Ld does not take: it owns the link)
 bft_name_tmp:   .asciz "0:BTLOAD.TMP"
@@ -1415,6 +1423,8 @@ FUNC bft_poll
     orr r1, r1, r2, lsl #8
     cmp r0, r1
     beq 7f
+    ldr r0, =xd_bft_crc_bad
+    bl xd_inc                               @ IMP-44: counted while the extended link diagnosis is on
     movs r0, #1                             @ CRC wrong: resend
     bl bft_answer
     b .Lpo_ret

@@ -330,7 +330,10 @@ quick touch: 100, 50 or 25 ms, or <span class="lcd">bHOFF</span> (shortest, abou
 <h3>Faster digits (display level)</h3>
 <p class="where"><b>Where:</b> any function · settings page <span class="lcd">dSP</span></p>
 <p><span class="lcd">dSP 1</span> = calm, steady digits (as the original). <span class="lcd">dSP 2</span> = the digits follow
-changes about four times faster, for adjusting things or watching a value move. Hz, ms and % are not affected.</p>
+changes about four times faster, for adjusting things or watching a value move. It does not change how often the
+display updates, in any function: that is set by the measuring chip (the 50 mV range, for example, updates more slowly
+than the 500 mV range). Only small changes are averaged, so in mV, where already a change of a few digits shows at once,
+dSP is hardly visible. Hz, ms and % are not affected.</p>
 </div><div class="pics"><figure><img src="../img/feat_dsp2.png" alt=""><figcaption>Level 2.</figcaption></figure></div></div>
 
 <div class="feat" id="f-bl"><div class="txt">

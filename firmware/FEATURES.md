@@ -359,11 +359,23 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
      Firmware change (fast build): the transfer protocol of 2.10 gains list / read / delete / rename requests, using
      FatFs R0.16 (f_opendir / f_readdir / f_read / f_unlink / f_rename); only while logging is off and outside
      calibration mode, as 2.10.  Speed about 1 KB/s (measured for 2.10: 155 kB in 159 to 172 s).
+  7. Extended link diagnosis (implemented in F-1.15, IMP-44, `ble/xdiag.s`; emulator tests test_xdiag.py and, for the
+     overrun fix OF-71, test_ble_overrun.py; companion 1.2.15; not yet verified on a meter): a setting of the companion
+     ("Extended diagnosis", off by default) makes it send the key codes 0x93 / 0x94 / 0x95 of the key frame (as 0x90 ..
+     0x92, `F4 39 33 39 33` and so on; echoed first). 0x93 clears the counters and switches counting on (a RAM flag, 0 at
+     every reset, never stored), 0x94 switches it off, 0x95 is answered with the frame `F9` (20 bytes) while counting is
+     on. The eight u16 counters (saturating at 65535) are bytes received on USART2, overruns, noise flags and framing
+     errors (from the status register of the receive interrupt), bytes discarded while the system clock is the crystal
+     (card sessions), rejected key / set-clock frames, page Ld packets answered "CRC wrong", and answers not queued
+     because the transmit queue was full; the ninth value is the battery voltage in 0.01 V. They are also the page Ld
+     STATUS values 40 .. 48. Purpose: a user's report with damaged data (GitHub issue 9) must show whether the damage
+     happens in the meter, on the radio or in the computer. Older firmware ignores the three codes; the companion sends
+     them only to F-1.15 or newer.
 - Decoding rules (plan review 2026-11-04): the decimal point and unit prefix per mode and range are not in the frame
   (only the range index): taken from the firmware's range tables, not from the official app (they differ for modes 12,
   13, 14, 18, 23, ble_packet.md 8); the magnitude has 18 bits (bytes [5] bits 7..6, [7], [8]); the bar count [14] is
   clamped to 25 (OF-65: 45..55 on an overload); frames arrive split over several notifications and are reassembled by
-  start byte, length (F2 19, F4 5, F8 15, F6 7, bft B5 5B) and checksum, with a resync after a frame abandoned under NF-04;
+  start byte, length (F2 19, F4 5, F8 15, F6 7, F7 7, F9 20, bft B5 5B) and checksum, with a resync after a frame abandoned under NF-04;
   no frames come while the main digits are blank and while page Ld is shown.
 - Safety of the local program: every request that sends anything to the meter (version request, clock, file operations,
   firmware transfer) needs a custom request header, so no web page can trigger it; one Bluetooth central at a time (not

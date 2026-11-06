@@ -36,6 +36,9 @@
     .equ BLE_VERSION_LEN,   7
     .equ BLE_BLUPD_CODE,    0x91             @ restart into update mode (F4 39 31 39 31; ble/blcmd.s)
     .equ BLE_BLINFO_CODE,   0x92             @ bootloader version request (F4 39 32 39 32; ble/blcmd.s)
+    .equ BLE_XDON_CODE,     0x93             @ extended link diagnosis on, counters cleared (F4 39 33 39 33; ble/xdiag.s)
+    .equ BLE_XDOFF_CODE,    0x94             @ extended link diagnosis off (F4 39 34 39 34; ble/xdiag.s)
+    .equ BLE_XDGET_CODE,    0x95             @ extended link diagnosis counters request, answered with F9 (F4 39 35 39 35)
 
     .section .rodata.ble.version, "a", %progbits
 @ ble_version_frame - answer to the version request: F6, the five characters the meter shows at power-on (config.inc
@@ -77,7 +80,8 @@ ENDFUNC fn_0800C308
 @ Clobbers : r0-r3, r12, flags (AAPCS)
 @ Context  : main only (loop step 11, flag ble_rx_ready)
 @ RAM      : reads ble_rx_buf, ble_rx_len; writes ble_clock_bad, ble_clock_set, ble_cmd_buf, ble_day, ble_hour,
-@            ble_key_remote_code, ble_key_remote_req, ble_minute, ble_month, ble_rx_ready, ble_second, ble_year
+@            ble_key_remote_code, ble_key_remote_req, ble_minute, ble_month, ble_rx_ready, ble_second, ble_year,
+@            xd_bad_frames (xd_inc)
 @ Spec     : analysis/ble_packet.md 6
 @ Note     : Clears ble_rx_ready, copies the ble_rx_len received bytes to ble_cmd_buf, then: 0xF8 frame: decodes 7 hex
 @            pairs (offsets 1, 3, ..., 13), checks v6 == v0 ^ ... ^ v5, echoes the frame, and applies v0..v5 to
@@ -86,7 +90,9 @@ ENDFUNC fn_0800C308
 @            checksum clears ble_clock_bad (never read).  0xF4 frame: pairs at offsets 1 and 3 must be equal; then
 @            echo, key_remote_req = 1 and key_remote_code = the code (decoded by fn_08014AE6 in KEY); code 0x90 is
 @            answered with ble_version_frame instead (FEATURES.md 2.11 stage 3), 0x91 and 0x92 by ble/blcmd.s
-@            (bootloader update mode, bootloader version).  Any other first byte is ignored.
+@            (bootloader update mode, bootloader version), 0x93 / 0x94 / 0x95 by ble/xdiag.s (extended link diagnosis on,
+@            off, counters frame F9; IMP-44).  A frame rejected for its checksum (F8) or its unequal code pairs (F4) is
+@            counted in xd_bad_frames.  Any other first byte is ignored.
 @ -----------------------------------------------------------------------------
 FUNC fn_0800C332
     push {r3, r4, r5, r6, r7, r8, r9, r10, r11, lr} @ 0800C332
@@ -174,6 +180,8 @@ FUNC fn_0800C332
     movs r0, #0x0                           @ 0800C41E
     ldr.w r1, =ble_clock_bad                @ 0800C420
     strb r0, [r1, #0x0]                     @ 0800C424  ble_clock_bad = 0
+    ldr r0, =xd_bad_frames
+    bl xd_inc                               @ IMP-44: a set-clock frame rejected for its checksum
     b .L0800C46C                            @ 0800C426
 .L0800C428:  @ reached from 0800C376 bne (ble_cmd_buf != 248 (0xF8))
     ldr.w r0, =ble_cmd_buf                  @ 0800C428
@@ -193,7 +201,7 @@ FUNC fn_0800C332
     uxtb r0, r0                             @ 0800C44E
     uxtb r1, r1                             @ 0800C450
     cmp r0, r1                              @ 0800C452  compare r0 with r1
-    bne .L0800C46C                          @ 0800C454  if r0 != r1
+    bne .Lkey_bad                           @ 0800C454  if r0 != r1 (v2.05 branches to the end)
     bl fn_0800C308                          @ 0800C456  echo the received command frame
     ldrb r0, [sp, #0x1]                     @ the key code
     cmp r0, #BLE_BLINFO_CODE
@@ -205,13 +213,29 @@ FUNC fn_0800C332
     bl blcmd_update_mode                    @ 0x91: restart into the bootloader's update mode (returns only without it)
     b .L0800C46C
 3:  cmp r0, #BLE_VERSION_CODE
-    bne 1f
+    bne 4f
     @ FEATURES.md 2.11 stage 3: code 0x90 asks for the firmware version.  It is answered with ble_version_frame and is
     @ not handed to the key routine (a remote key restarts the backlight countdown and clears a pending message).
     @ Answer refused by a full queue: the host asks again.
     ldr r0, =ble_version_frame
     movs r1, #BLE_VERSION_LEN
     bl ble_tx_queue_put
+    b .L0800C46C
+4:  cmp r0, #BLE_XDON_CODE
+    bne 5f
+    bl xd_start                             @ 0x93: extended link diagnosis on, counters cleared (ble/xdiag.s, IMP-44)
+    b .L0800C46C
+5:  cmp r0, #BLE_XDOFF_CODE
+    bne 6f
+    bl xd_stop                              @ 0x94: extended link diagnosis off
+    b .L0800C46C
+6:  cmp r0, #BLE_XDGET_CODE
+    bne 1f
+    bl xd_send                              @ 0x95: counters frame F9 (only while the diagnosis is on)
+    b .L0800C46C
+.Lkey_bad:
+    ldr r0, =xd_bad_frames
+    bl xd_inc                               @ IMP-44: a key frame whose two code pairs differ
     b .L0800C46C
 1:  movs r0, #0x1                           @ 0800C45A
     ldr.w r1, =ble_key_remote_req           @ 0800C45C
