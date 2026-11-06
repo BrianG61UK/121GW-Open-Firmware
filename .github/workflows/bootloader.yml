@@ -42,9 +42,10 @@ jobs:
           if-no-files-found: error
 
   tests:
-    # The bootloader's emulator tests (starter decisions and power cuts, the scenarios B1..B9, the exFAT card with the
-    # firmware's format): one job per script.  test_first_install.py is not run here: it needs EEVblog's bootloader
-    # images, which are not in this repository.  Not on release tags, as the emulator workflow's tests.
+    # The bootloader's emulator tests (starter decisions and power cuts, the scenarios B1..B9): one job per script.
+    # Not run here: test_first_install.py (needs EEVblog's bootloader images) and test_exfat.py (reads the card with a
+    # host build of ChaN's FatFs R0.16, ../fatfs16/harness_x/ref); neither is in this repository.  Not on release
+    # tags, as the emulator workflow's tests.
     name: Bootloader test ${{ matrix.script }}
     if: github.ref_type != 'tag'
     runs-on: ubuntu-24.04
@@ -54,7 +55,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        script: [test_starter.py, test_bootloader.py, test_exfat.py]
+        script: [test_starter.py, test_bootloader.py]
     steps:
       - uses: actions/checkout@v7
       - name: Production build (firmware/build/EEVBlog.bin and 121gw.map; the objects the bootloader links)
