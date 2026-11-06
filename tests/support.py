@@ -25,9 +25,9 @@ def fat_time(h, mi, s):
     return h << 11 | mi << 5 | s // 2
 
 
-# bftset.s bfs_tab: id -> (min, max); 0x020 is one id with the value 0..15
+# bftset.s bfs_tab: id -> (min, max); 0x020 is one id with the value 0..31 (F-1.16; bit 4 the anti-hunting)
 RANGES = {0x00F: (0, 5), 0x010: (0, 1), 0x011: (0, 3), 0x013: (0, 1), 0x014: (0, 15), 0x015: (0, 3), 0x016: (0, 1),
-          0x017: (0, 100), 0x01A: (10, 17), 0x01B: (0, 1), 0x01E: (0, 1), 0x020: (0, 15), 0x021: (0, 3), 0x022: (1, 255),
+          0x017: (0, 100), 0x01A: (10, 17), 0x01B: (0, 1), 0x01E: (0, 1), 0x020: (0, 31), 0x021: (0, 3), 0x022: (1, 255),
           0x028: (0, 2), 0x029: (0, 2), 0x02A: (50, 150)}
 OK_NAME = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._ -')
 

@@ -270,6 +270,20 @@ class CardCommands(AppCase):
 
 
 class SettingsCommands(AppCase):
+    def test_anti_hunting_row_needs_firmware_f116(self):
+        self.go_desk()
+        self.app.version = 'F-1.15'
+        codes = [i['code'] for i in self.app.command({'settings_get': True})['items']]
+        self.assertNotIn('HUnt', codes)
+        with self.assertRaises(ValueError):
+            self.app.command({'settings_put': {'id': 0x420, 'value': 1}})
+        self.assertEqual(self.meter.eeprom[0x020], 0b0101)
+        self.app.version = 'F-1.16'
+        items = self.app.command({'settings_get': True})['items']
+        self.assertEqual(next(i for i in items if i['code'] == 'HUnt')['text'], 'off')
+        self.app.command({'settings_put': {'id': 0x420, 'value': 1}})
+        self.assertEqual(self.meter.eeprom[0x020], 0b10101)
+
     def test_get_put_and_ranges(self):
         with self.assertRaises(RuntimeError):
             self.app.command({'settings_get': True})

@@ -18,18 +18,18 @@ class Table(unittest.TestCase):
     def test_ids_codes_and_ranges(self):
         self.assertEqual(len({s.id for s in settings.TABLE}), len(settings.TABLE))
         codes = [s.code for s in settings.TABLE]
-        for c in ('bL', 'bt', 'rEL', 'tc', 'dSP', 'bH', 'LP', 'Pt', 'CL', 'BAT', 'tr', 'Ch'):
+        for c in ('bL', 'bt', 'rEL', 'tc', 'dSP', 'bH', 'LP', 'Pt', 'CL', 'BAT', 'tr', 'Ch', 'HUnt'):
             self.assertIn(c, codes)
         for s in settings.TABLE:
             self.assertLessEqual(s.min, s.max)
             if s.choices:
                 self.assertEqual((s.min, s.max), (0, len(s.choices) - 1), s.code)
             self.assertLessEqual((s.mask << s.shift), 0xFF, s.code)
-        # bftset.s: 17 ids; 0x020 is one id shown as three rows (ids 0x120, 0x220, 0x320); 0x018 is not offered
+        # bftset.s: 17 ids; 0x020 is one id shown as four rows (ids 0x120, 0x220, 0x320, 0x420); 0x018 is not offered
         self.assertEqual(sorted(s.wire for s in settings.TABLE),
                          sorted([0x00F, 0x010, 0x011, 0x013, 0x014, 0x015, 0x016, 0x017, 0x01A, 0x01B, 0x01E, 0x020, 0x020,
-                                 0x020, 0x021, 0x022, 0x028, 0x029, 0x02A]))
-        self.assertEqual({s.id for s in settings.TABLE if s.wire == 0x020}, {0x120, 0x220, 0x320})
+                                 0x020, 0x020, 0x021, 0x022, 0x028, 0x029, 0x02A]))
+        self.assertEqual({s.id for s in settings.TABLE if s.wire == 0x020}, {0x120, 0x220, 0x320, 0x420})
         self.assertEqual({r: (s.min, s.max) for r, s in ((s.wire, s) for s in settings.TABLE if s.wire != 0x020)},
                          {r: v for r, v in RANGES.items() if r != 0x020})
 
@@ -40,12 +40,14 @@ class Table(unittest.TestCase):
         self.assertEqual((by['Ch'].min, by['Ch'].max), (1, 255))
         self.assertEqual((by['BAT'].min, by['BAT'].max), (50, 150))
         self.assertEqual((by['tr'].min, by['tr'].max), (0, 2))             # 3 is refused by the meter: not offered
+        self.assertEqual((by['HUnt'].choices, by['HUnt'].shift, by['HUnt'].mask, by['HUnt'].wire),
+                         (['off', 'on'], 4, 1, 0x020))                       # bit 4 of the shared byte
         self.assertEqual((by['item 4'].min, by['item 4'].max), (10, 17))   # LCD contrast
 
     def test_range_checks(self):
         for code, ok, bad in (('tc', (0, 5), (-1, 6, 255)), ('bL', (0, 1, 100), (101, -1)), ('Ch', (1, 255), (0, 256)),
                               ('BAT', (50, 100, 150), (49, 151, 0)), ('Pt', (0, 2), (3,)), ('tr', (0, 2), (3,)),
-                              ('CL', (0, 1), (2,)), ('rEL', (0, 1), (2,)), ('item 4', (10, 17), (9, 18)),
+                              ('CL', (0, 1), (2,)), ('rEL', (0, 1), (2,)), ('HUnt', (0, 1), (2,)), ('item 4', (10, 17), (9, 18)),
                               ('item 10', (0, 15), (16,))):
             sid = next(s.id for s in settings.TABLE if s.code == code)
             for v in ok:
@@ -116,6 +118,37 @@ class OverTheLink(unittest.TestCase):
         self.assertEqual(m.eeprom[0x020], 0b0011)
         puts = [p for t, p in m.sent if t == settings.T_PUT]
         self.assertEqual(puts, [b'\x20\x00\x0c', b'\x20\x00\x0d', b'\x20\x00\x0b', b'\x20\x00\x03'])   # id 0x020, whole value
+
+    def test_anti_hunting_is_bit_4_and_keeps_the_other_fields(self):
+        m = meter(b020=0b01101)                         # rEL percent, tr 2... bits 3..0 = 1101: rEL 1, tr 2 (bits 2..1 = 10), CL 1
+        s = settings.Settings(make_client(m))
+        items = s.get_all()
+        self.assertEqual(next(i for i in items if i['code'] == 'HUnt')['text'], 'off')
+        s.put(0x420, 1)
+        self.assertEqual(m.eeprom[0x020], 0b11101)
+        self.assertEqual(next(i for i in s.get_all() if i['code'] == 'HUnt')['text'], 'on')
+        s.put(0x120, 0)                                 # another row keeps bit 4
+        self.assertEqual(m.eeprom[0x020], 0b11100)
+        s.put(0x420, 0)
+        self.assertEqual(m.eeprom[0x020], 0b01100)
+        puts = [p for t, p in m.sent if t == settings.T_PUT]
+        self.assertEqual(puts, [b'\x20\x00\x1d', b'\x20\x00\x1c', b'\x20\x00\x0c'])
+
+    def test_firmware_before_f116_neither_lists_nor_changes_the_row(self):
+        m = meter(b020=0b0100)
+        s = settings.Settings(make_client(m), hunt=False)
+        self.assertNotIn('HUnt', [i['code'] for i in s.get_all()])
+        self.assertIn('CL', [i['code'] for i in s.get_all()])
+        with self.assertRaises(ValueError):
+            s.put(0x420, 1)
+        self.assertEqual([t for t, _ in m.sent].count(settings.T_PUT), 0)
+
+    def test_a_value_above_31_in_the_shared_byte_is_not_changed(self):
+        m = meter(b020=0x20)                            # bit 5 is no setting: the meter would refuse the whole value
+        s = settings.Settings(make_client(m))
+        with self.assertRaises(card.CardError):
+            s.put(0x420, 1)
+        self.assertEqual([t for t, _ in m.sent].count(settings.T_PUT), 0)
 
     def test_invalid_trigger_must_be_set_first(self):
         m = meter(b020=0b0110)                          # tr = 3: the meter would refuse a PUT carrying it

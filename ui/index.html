@@ -124,7 +124,9 @@ main { flex: 1; min-height: 0; position: relative; }
 .cell { padding: 8px 16px 8px 20px; border-left: 1px solid var(--rule); min-width: 0; }
 .cell:first-child { border-left: 0; }
 .cell .big { font: 300 22px/32px var(--mono); text-align: right; min-width: 8ch; display: block; }
-.cell .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; }
+.cell .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; flex-wrap: wrap; }
+.cell .seg { flex-wrap: wrap; }                         /* the option buttons of a narrow cell go on two lines */
+#v-prefs .cap { white-space: normal; }                  /* long setting labels wrap instead of running out of the column */
 .cell input { width: 7ch; text-align: right; padding: 3px 4px; }
 .verdict { display: inline-flex; align-items: center; gap: 8px; font: 700 11px/16px var(--mono); letter-spacing: .14em; min-width: 7ch; }
 .verdict i { width: 8px; height: 8px; border: 1px solid var(--rule-hi); display: block; }

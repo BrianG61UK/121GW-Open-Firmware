@@ -11,13 +11,16 @@ edited and saved (RAM variable, side effect, store to the EEPROM), so the compan
 
 The id is the offset of the setting's byte in the data EEPROM and the value is the value of the setup page, which is the
 stored byte for every id but 0x017 and 0x020.  Not offered by the meter: 0x018 (logging interval) and every byte of the
-rotary memory, identity, calibration, restore and user zero; the table lists exactly the 17 ids of the firmware.
+rotary memory, identity, calibration, restore and user zero; the table lists exactly the 17 ids of the firmware (id 0x020 as four rows).
 
-The id 0x020 is ONE id with a value 0..15: bit 0 the REL view, bits 2..1 the logging trigger 0..2 (3 is refused), bit 3
-the clock; bits 7..4 are 0.  The page shows it as three rows (REL view, trigger, clock) with their own ids 0x120, 0x220,
-0x320 (`id` of the state contract; `wire` is 0x020 for all three).  Changing one row is a read-modify-write on this side:
-GET, replace the row's bits, PUT the whole value, so the other two rows keep what the meter reported.  If the meter's
+The id 0x020 is ONE id with a value 0..31 (0..15 before firmware F-1.16): bit 0 the REL view, bits 2..1 the logging
+trigger 0..2 (3 is refused), bit 3 the clock, bit 4 the capacitance anti-hunting (SETUP page HUnt, firmware F-1.16 and
+newer); bits 7..5 are 0.  The page shows it as four rows (REL view, trigger, clock, anti-hunting) with their own ids 0x120,
+0x220, 0x320, 0x420 (`id` of the state contract; `wire` is 0x020 for all four).  Changing one row is a read-modify-write on
+this side: GET, replace the row's bits, PUT the whole value, so the other rows keep what the meter reported.  If the meter's
 trigger bits read 3 (not valid) another row cannot be changed until the trigger is set (the meter would refuse the PUT).
+Firmware older than F-1.16 refuses a value above 15, so the anti-hunting row is neither listed nor changed for it
+(`Settings(client, hunt=False)`).
 The answer's value is compared with what was sent, and the settings are read back.
 """
 import struct
@@ -54,7 +57,7 @@ def parse_put(wire_id, field, data):
 
 
 # ---------------------------------------------------------------------------------------------------- the settings
-# id: the number the page and the commands use (equal to `wire` except for the three fields of the shared id 0x020);
+# id: the number the page and the commands use (equal to `wire` except for the four fields of the shared id 0x020);
 # wire: id on the link; shift / mask: the bit field inside the wire value; code: the SETUP page; choices: names by value
 Setting = namedtuple('Setting', 'id wire code name min max choices shift mask')
 
@@ -80,6 +83,7 @@ TABLE = [
     _s(0x120, 'rEL', 'REL display', 0, 1, ['difference', 'percent'], wire=B20, shift=0, mask=0x01),
     _s(0x220, 'tr', 'Logging trigger', 0, 2, ['interval', 'on change', 'on limit verdict'], wire=B20, shift=1, mask=0x03),
     _s(0x320, 'CL', 'Clock', 0, 1, ['24 hour', '12 hour'], wire=B20, shift=3, mask=0x01),
+    _s(0x420, 'HUnt', 'Capacitance anti-hunting', 0, 1, ['off', 'on'], wire=B20, shift=4, mask=0x01),
     _s(0x021, 'bH', 'Continuity beep hold (BEEP)', 0, 3, ['100 ms', '50 ms', '25 ms', 'off (15 ms)']),
     _s(0x022, 'Ch', 'Logging change threshold', 1, 255, None),
     _s(0x028, 'LP', 'Current loop view (DC mA)', 0, 2, ['off', '4-20 mA', '0-20 mA']),
@@ -131,9 +135,18 @@ def item(s, raw):
             'choices': list(s.choices) if s.choices else None, 'text': text(s, v)}
 
 
+HUNT_ID = 0x420                                     # the anti-hunting row: firmware F-1.16 and newer only
+
+
 class Settings:
-    def __init__(self, client):
+    def __init__(self, client, hunt=True):
+        """`hunt`: the meter's firmware knows the anti-hunting bit (F-1.16 or newer); without it the row HUnt is neither
+        listed nor changed (older firmware refuses every value of id 0x020 above 15)."""
         self.c = client
+        self.hunt = hunt
+
+    def rows(self):
+        return [s for s in TABLE if self.hunt or s.id != HUNT_ID]
 
     def raw_all(self):
         """{wire id: value} as the meter reports; ids the table does not know are dropped (never written either)."""
@@ -143,15 +156,17 @@ class Settings:
     def get_all(self):
         """state.settings.items: one entry per table setting the meter reports."""
         raw = self.raw_all()
-        return [item(s, raw[s.wire]) for s in TABLE if s.wire in raw]
+        return [item(s, raw[s.wire]) for s in self.rows() if s.wire in raw]
 
     def put(self, setting_id, value):
         """Change one setting (range checked first, written, answer and read-back compared); returns get_all()."""
         s, value = check(setting_id, value)
+        if s not in self.rows():
+            raise ValueError('%s needs firmware F-1.16 or newer' % s.code)
         raw = self.raw_all()
         if s.wire not in raw:
             raise card.CardError('the meter does not report %s' % s.code)
-        if s.wire == B20 and (raw[B20] > 15 or (s.code != 'tr' and (raw[B20] >> 1) & 3 == 3)):
+        if s.wire == B20 and (raw[B20] > 31 or (s.code != 'tr' and (raw[B20] >> 1) & 3 == 3)):
             raise card.CardError('%s: the meter reports the value 0x%02X of its shared setting, which it would refuse; '
                                  'set the logging trigger (tr) first' % (s.code, raw[B20]))
         send = merge(s, raw[s.wire], value)
@@ -164,4 +179,4 @@ class Settings:
         if s.wire not in after or field(s, after[s.wire]) != value:
             raise card.CardError('%s: the meter did not keep the value (read back %s)'
                                  % (s.code, field(s, after[s.wire]) if s.wire in after else 'nothing'))
-        return [item(t, after[t.wire]) for t in TABLE if t.wire in after]
+        return [item(t, after[t.wire]) for t in self.rows() if t.wire in after]

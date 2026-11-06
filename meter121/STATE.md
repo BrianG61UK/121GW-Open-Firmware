@@ -72,17 +72,18 @@ omitted = the last one), `card_cancel`.
       locked_reason,                null, or why settings cannot be read / changed now (same reasons as the card)
       error }                       text of the last failed settings command | null
 
-`items` is empty until `settings_get`.  `code` is the SETUP page (`tc dSP bt bL rEL tr CL bH Ch LP Pt BAT r`, and
+`items` is empty until `settings_get`.  `code` is the SETUP page (`tc dSP bt bL rEL tr CL HUnt bH Ch LP Pt BAT r`, and
 `item 0`, `item 2`, `item 3`, `item 4`, `item 10`, `item 11` for the numbered pages of v2.05 that have no letters), `text`
 the value in words (`"30 s"`, `"+1.2 %"`, `"Pt100"`).  `value` is within `min..max`; `choices[value]` is the name.  `id`
 is the firmware's setting id (EEPROM offset: `tc` 0x00F, temperature unit 0x010, `r` 0x011, `dSP` 0x013, `item 10` 0x014,
 `bt` 0x015, `item 2` 0x016, `bL` 0x017 (value 0 off, 1 = 30 s, 2..100 = 1..99 min), `item 4` contrast 0x01A (10..17),
 `item 11` 0x01B, `item 3` 0x01E, `bH` 0x021, `Ch` 0x022, `LP` 0x028, `Pt` 0x029, `BAT` 0x02A (value = trim + 100,
-50..150)), except the firmware's one id 0x020 (value 0..15: bit 0 REL view, bits 2..1 trigger 0..2, bit 3 clock), which
-is shown as THREE rows `rEL`, `tr`, `CL` with the ids 0x120, 0x220, 0x320.  A change of one row is a read-modify-write on
-the host: GET, replace that row's bits, PUT id 0x020 with the whole value, compare the answer, read back.  If the meter
-reports an invalid trigger (3) the other two rows are refused until `tr` is set.  0x018 (logging interval) is not offered
-by the meter and not listed.
+50..150)), except the firmware's one id 0x020 (value 0..31: bit 0 REL view, bits 2..1 trigger 0..2, bit 3 clock, bit 4
+capacitance anti-hunting, F-1.16 and newer), which is shown as FOUR rows `rEL`, `tr`, `CL`, `HUnt` with the ids 0x120,
+0x220, 0x320, 0x420 (`HUnt`: choices off / on; listed and changeable only while the connected firmware is F-1.16 or newer).
+A change of one row is a read-modify-write on the host: GET, replace that row's bits, PUT id 0x020 with the whole value,
+compare the answer, read back.  If the meter reports an invalid trigger (3) the other rows are refused until `tr` is set.
+0x018 (logging interval) is not offered by the meter and not listed.
 Commands (synchronous, page Ld needed): `settings_get` -> `{"ok": true, "items": [...]}`; `settings_put {id, value}` ->
 the same list after the change was written and read back; a value out of range or an id not listed is a 400 without
 anything sent to the meter.
