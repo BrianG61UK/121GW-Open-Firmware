@@ -445,6 +445,7 @@ LFUNC sd_dg_note
     bx lr
 ENDFUNC sd_dg_note
 
+    .if !SD_READ_ONLY                       @ the card write path (not in the read-only bootloader build)
 @ sd_dg_wtimeout - diagnosis: a write wait of sd_wait_write ran out (r0 = 1 the DMA / transfer end, 2 the card's busy;
 @ r3 = the tick when that wait began): its length, and the transfer state as sd_dg_end_state records it for a read
 @ (end flags, DMA flags and CNDTR, DCOUNT, SDIO_STA high half: values 7 .. 11 of the Bluetooth diagnosis); clobbers r0-r3
@@ -498,6 +499,7 @@ FUNC sd_dg_wtimeout
     bl sd_dg_end_state
 9:  pop {r4, pc}
 ENDFUNC sd_dg_wtimeout
+    .endif                                  @ !SD_READ_ONLY
 
 @ sd_dg_start - diagnosis: the status polling of a block begins now (tick counter v_20007FC6); clobbers r0, r1
 LFUNC sd_dg_start
@@ -662,6 +664,7 @@ FUNC disk_read
     .ltorg
 ENDFUNC disk_read
 
+    .if !SD_READ_ONLY                       @ the card write path (not in the read-only bootloader build)
 @ -----------------------------------------------------------------------------
 @ disk_write - write r3 sectors to the SD card (FatFs disk_write)
 @ Replaces  : 0x08023FB8 FUN_08023FB8 (v2.05), called by fat_move_window, fat_f_read, fat_f_write, fat_f_sync, fat_f_lseek, fat_sync_fs
@@ -817,6 +820,7 @@ FUNC disk_write
 .Ldisk_write_402A:                      @ v2.05 0x0802402A, reached from 0x08024022
     pop.w   {r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, pc}@ 0802402A pop {r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, pc}
 ENDFUNC disk_write
+    .endif                                  @ !SD_READ_ONLY
 
 @ -----------------------------------------------------------------------------
 @ sd_copy512 - copy one sector (512 bytes) between any two addresses, byte by byte (OF-66)

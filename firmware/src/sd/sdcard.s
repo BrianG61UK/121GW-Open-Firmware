@@ -1274,6 +1274,7 @@ FUNC sd_read_block
 ENDFUNC sd_read_block
     .ltorg
 
+    .if !SD_READ_ONLY                       @ the card write path (not in the read-only bootloader build)
 @ -----------------------------------------------------------------------------
 @ sd_write_blocks - start a block write by DMA (ST SD_WriteBlock / SD_WriteMultiBlocks)
 @ Replaces  : 0x08023100 FUN_08023100 (v2.05), called by disk_write
@@ -1653,6 +1654,7 @@ FUNC sd_stop_transfer
     pop     {r4, pc}                        @ 08023400 pop {r4, pc}
 ENDFUNC sd_stop_transfer
     .ltorg
+    .endif                                  @ !SD_READ_ONLY
 
 @ -----------------------------------------------------------------------------
 @ sd_send_status - CMD13 SEND_STATUS (ST SD_SendStatus)
@@ -2448,6 +2450,7 @@ FUNC sd_enable_wide_bus
 ENDFUNC sd_enable_wide_bus
     .ltorg
 
+    .if !SD_READ_ONLY                       @ the card write path (not in the read-only bootloader build)
 @ -----------------------------------------------------------------------------
 @ sd_cmd_r1 - send a command with a short response (R1) and check it (sd_cmd_resp1_error, all static flags cleared)
 @ In        : r0 = argument, r1 = command index
@@ -2581,6 +2584,7 @@ FUNC sd_num_wr_blocks
     pop     {r4, r5, r6, r7, r8, pc}
 ENDFUNC sd_num_wr_blocks
     .ltorg
+    .endif                                  @ !SD_READ_ONLY
 
 @ -----------------------------------------------------------------------------
 @ sd_find_scr - read the 8-byte SCR register of the card by polling the FIFO (ST FindSCR)
