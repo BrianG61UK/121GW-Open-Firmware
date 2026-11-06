@@ -80,7 +80,7 @@ class Stats(unittest.TestCase):
         self.assertEqual(bytes(m.data), self.image)
         st = s.stats
         self.assertEqual((st['packets'], st['sends'], st['timeouts']), (self.n + 2, self.n + 2, 0))
-        self.assertGreater(st['seconds'], 0)
+        self.assertGreaterEqual(st['seconds'], 0.0)              # Windows' clock steps are about 15 ms: an instant run is 0.0
 
     def test_bootloader_protocol_lost_last_answer(self):
         s = transfer.BootSender(None)
