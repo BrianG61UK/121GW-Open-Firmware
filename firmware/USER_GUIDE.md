@@ -285,6 +285,9 @@ The fast build also reacts faster, with no setting needed:
 - **DC volts:** twice as many updates as the original, with the same steadiness (each value is still the average of the
   same 16 conversions, just shown twice as often). After a jump of the input the first value is the new level: the
   original could show a value in between once (for example 4.5 V when connecting 9 V).
+- **Capacitance, 100 nF range (experimental):** in auto range the meter now waits 2.5 s for a result on the 100 nF range
+  (original: 2.0 s, 1.5 s on some boards) before it moves to the 1 µF range. Capacitors near 100 nF that measure slowly
+  stay on the 100 nF range and keep its resolution (0.01 nF instead of 1 nF). Reports welcome.
 - **Auto-hold in Ω and diode:** a short (0 Ω, 0 V) is captured like any other value; the original ignored readings below
   1000 digits. Open probes (OL) are still ignored. In the volt and current functions auto-hold still ignores readings
   near zero, because there open probes read about 0.
