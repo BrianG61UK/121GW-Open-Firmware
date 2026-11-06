@@ -20,6 +20,7 @@ import json
 import os
 import re
 import sys
+import ssl
 import urllib.request
 import zipfile
 
@@ -56,9 +57,23 @@ def _version(name, tag):
     return tuple(int(x) for x in m.groups()) if m else None
 
 
+def _ssl_context():
+    """TLS context for the downloads from GitHub: the system's certificates plus certifi's CA list.  The packaged
+    macOS program carries the python.org Python, which does not use the macOS keychain: without a CA file of its own
+    every download failed with "certificate verify failed: unable to get the local issuer certificate" (GitHub
+    issue 13)."""
+    ctx = ssl.create_default_context()
+    try:
+        import certifi
+        ctx.load_verify_locations(cafile=certifi.where())
+    except (ImportError, OSError):
+        pass                                            # the system's certificates alone
+    return ctx
+
+
 def _get(url):
     req = urllib.request.Request(url, headers={'User-Agent': '121GW-Emulator', 'Accept': 'application/vnd.github+json'})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+    with urllib.request.urlopen(req, timeout=TIMEOUT, context=_ssl_context()) as r:
         return r.read()
 
 
