@@ -133,8 +133,12 @@ def run_tests(image):
     if len(fa) == 20:
         hz0, hz, trim, status, steps, fbrr = struct.unpack('<IIbBHH', fa[1:15])
         T.check('C1: FA values = RAM and BRR', (hz0, hz, trim, status, steps, fbrr) ==
-                (s['hz0'], s['hz'], s['trim'], s['status'], s['steps'], brr) and fa[15:19] == b'\0\0\0\0',
-                repr((hz0, hz, trim, status, steps, fbrr)))
+                (s['hz0'], s['hz'], s['trim'], s['status'], s['steps'], brr), repr((hz0, hz, trim, status, steps, fbrr)))
+        cal = e.m.rcc.msical
+        T.check('C1: FA bytes 15, 16 = MSICAL (after the run, now), 17, 18 = 0', fa[15] == fa[16] == cal
+                and fa[17:19] == b'\0\0', '%s MSICAL 0x%02X' % (fa[15:19].hex(' '), cal))
+        T.check('C1: RTC domain left without a clock source by ck_run, LSI selected by the start-up after it',
+                e.m.rcc.rtcsel == 2, 'RTCSEL %d' % e.m.rcc.rtcsel)
     e.m.uc.mem_write(ADDR_ITEM, bytes([21]))
     T.press(e, 'SETUP', gap=0.6)
     T.check('C1: page Ld shown', T.rd(e, ADDR_ITEM) == 39, 'item %d' % T.rd(e, ADDR_ITEM))

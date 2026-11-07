@@ -22,6 +22,7 @@ from collections import namedtuple
 
 T_START, T_DATA, T_END, T_ABORT, T_STATUS, T_ANSWER = 1, 2, 3, 4, 5, 0x81
 T_LIST, T_READ, T_CHUNK, T_DELETE, T_INFO, T_FORMAT, T_GET, T_PUT, T_ANSWER2 = 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x82
+T_UPDMODE, T_LEAVE = 0x18, 0x19                     # restart into update mode; leave the page Ld (firmware F-1.17, IMP-47)
 FORMAT_WORD = b'FORMAT'      # the only payload FORMAT accepts (ble/bftsd.s)
 DIAG_NAMES = ['failed card sessions of the transfer', 'last card failure (step << 8 | FatFs result)',
               'failed disk_read / disk_write since power-on', 'their op | reason << 8', 'SDIO_STA', 'sd_transfer_error',

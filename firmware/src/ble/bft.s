@@ -32,6 +32,7 @@
 @                      the clock measurement, sys/msical.s, IMP-46)
 @     types 0x10 .. 0x15 SD card requests (LIST, READ, CHUNK, DELETE, INFO, FORMAT; ble/bftsd.s, IMP-36, IMP-39) and
 @     0x16 / 0x17 settings (GET, PUT; ble/bftset.s, IMP-37), answered with the type 0x82 answer described in ble/bftsd.s
+@     type 0x19 LEAVE    leave the page Ld as a SETUP press does (next page Fr or rEL), answered with status 0 first (IMP-47)
 @     type 0x18 UPDMODE  restart into the two-part bootloader's update mode (blcmd_update_mode, IMP-42); no answer (the
 @                      meter restarts), status 3 without the two-part bootloader
 @ Answer: B5 5B 81 seq(2) 03 status next(2) crc16(2), seq = the packet answered, next = the packet number expected
@@ -180,6 +181,7 @@ bft_diag_wid:   .byte 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
     .equ BFT_DIAG_N, 56
     .equ BFT_T_UPDMODE, 0x18                @ request: restart into the two-part bootloader's update mode (as key code
                                             @ 0x91, which the page Ld does not take: it owns the link)
+    .equ BFT_T_LEAVE,   0x19                @ request: leave the page Ld as a SETUP press does (IMP-47)
 bft_name_tmp:   .asciz "0:BTLOAD.TMP"
 bft_name_img:   .asciz "0:EEVBlog.bin"
 
@@ -1063,8 +1065,22 @@ LFUNC bft_packet
     bl bfx_request                          @ 0x10 .. 0x17: SD card files and settings, answered with type 0x82
     pop {r4-r7, pc}                         @ (ble/bftsd.s, ble/bftset.s; r0 = type)
 2:  cmp r0, #BFT_T_UPDMODE
-    bne 1f
+    bne 5f
     bl blcmd_update_mode                    @ restart into the bootloader's update mode; returns only with EEVblog's
+    b 1f
+5:  cmp r0, #BFT_T_LEAVE
+    bne 1f
+    @ IMP-47: leave the page Ld from the companion (keys do not reach the meter while the page owns the link): what a
+    @ SETUP short press on the page does (key/short.s .Lsh_setup_next without the beep): the next page (fn_08015410: Fr
+    @ with the two-part bootloader, else rEL) and a redraw of the setup page.  The answer (status 0) is queued first; bft_poll gives the link back on its next
+    @ pass, the queued answer still goes out, then the status frames resume.
+    movs r0, #0
+    bl bft_answer
+    bl fn_08015410
+    movs r0, #1
+    ldr r1, =bft_redraw
+    strb r0, [r1]
+    pop {r4-r7, pc}
 1:  movs r0, #3                             @ unknown type (or 0x18 without the two-part bootloader): not allowed
     b .Lpk_answer
 .Lpk_start:

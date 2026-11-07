@@ -11,9 +11,15 @@
 @ Reference.  The 4.000 MHz crystal X2 (HSE).  The board has no LSE (the clock is the NJU6350; RTC / LCD run on LSI), so
 @ the measurement uses the path RM0038 6.2.14 offers for crystal-less parts: TIM11_OR TI1_RMP = 10 puts HSE_RTC
 @ (HSE / RTCPRE) on TIM11 channel 1 (rm0038.txt:27834..27840).  RTCPRE = 11 gives 250 kHz; input capture 1 with
-@ prescaler 8 captures every 32.000 us; TIM11 counts on PCLK2 = SYSCLK = MSI (APB2 prescaler 1).  n captures span
-@ n * 32 us, so f(MSI) = sum * 31250 / n: n = 256 (8.192 ms) f = sum * 15625 / 128, n = 1024 (32.768 ms)
-@ f = sum * 15625 / 512.  RTCSEL is LSI, so RTCPRE changes nothing for the RTC or the LCD.
+@ prescaler 8 captures every 32.000 us; TIM11 counts on PCLK2 = SYSCLK = MSI (HPRE and PPRE2 /1, checked).  n captures
+@ span n * 32 us, so f(MSI) = sum * 31250 / n: n = 256 (8.192 ms) f = sum * 15625 / 128, n = 1024 (32.768 ms)
+@ f = sum * 15625 / 512.
+@ RTC clock selection: on a meter (2026-11-07, F-1.17 test image) TIM11 counted but captured nothing while RTCSEL was LSI
+@ (as the previous initialisation left it; SR showed UIF, never CC1IF), and captured with RTCSEL = HSE and RTCEN = 1.
+@ RM0038 does not state this condition.  So ck_run resets the RTC domain (RTCRST, backup domain writable), selects HSE as
+@ the RTC clock for the measurement and resets the RTC domain again afterwards.  This loses nothing: the next step of
+@ sys_system_init, rcc_lsi_as_rtc_lcd_clock, resets the RTC domain and selects LSI at every initialisation, as v2.05 does
+@ (0x0801BF92); the LCD (clocked by RTCCLK) is not running yet at either call.
 @
 @ HSE.  sys_clock_select(0) switches HSE off (sys/clock.s), so ck_run always finds HSEON = 0: it writes RTCPRE (only
 @ possible while HSEON = 0, RM0038 6.3.1), starts HSE, measures, and switches HSE off again.  The PLL may still be on
@@ -36,7 +42,9 @@
 @ Nothing is written to the EEPROM or the flash.
 @
 @ Diagnosis: ck_hz0, ck_hz, ck_trim, ck_status, ck_steps (page Ld STATUS 49 .. 54, ble/bft.s; 55 is USART2_BRR) and the
-@ frame FA answered to the key code 0x96 (ck_send, ble/commands.s).
+@ frame FA answered to the key code 0x96 (ck_send, ble/commands.s), which also carries MSICAL (RCC_ICSCR 23:16) as left
+@ by ck_run and at the time of the answer: RM0038 6.3.2 says MSICAL is the factory value plus MSITRIM, and every
+@ sys_clock_select(0) rewrites ICSCR (fn_0801FDCA); the two values show on a meter whether that rewrite moves MSICAL.
 @
 @ Context: main only.
 @ =============================================================================
@@ -77,6 +85,7 @@ ck_status:      .space 1                    @ CK_ST_* (macros.inc)
     .global ck_steps
 ck_steps:       .space 2                    @ measurements of the last run
 ck_frame:       .space CK_FRAME_LEN         @ the frame FA being queued
+ck_cal:         .space 1                    @ MSICAL (RCC_ICSCR 23:16) at the end of ck_run
 
     .section .text.sys.msical, "ax", %progbits
 
@@ -183,8 +192,8 @@ ENDFUNC ck_err
 @ In       : SYSCLK = MSI range 6 (sys_clock_select(0) just ran), HSE off
 @ Out      : ck_hz0, ck_hz, ck_trim, ck_status, ck_steps written; MSITRIM possibly changed; HSE off, TIM11 clock off,
 @            TIM11_OR 0, RTCPRE = 11
-@ Clobbers : r0-r3, r12, flags (r4-r11 saved)
-@ Context  : main (sys_system_init: power-on and STOP wake)
+@ Clobbers : r0-r3, flags (r4-r11 saved)
+@ Context  : main (sys_system_init: power-on and STOP wake, before rcc_lsi_as_rtc_lcd_clock)
 @ Spec     : RM0038 6.2.3 (MSI calibration), 6.2.14, 6.3.1 (RTCPRE, HSEON), 6.3.2 (MSITRIM), 18.5
 @ -----------------------------------------------------------------------------
 FUNC ck_run
@@ -198,10 +207,12 @@ FUNC ck_run
     ldr r1, =RCC_ICSCR_MSITRIM_B
     ldrsb r5, [r1]                          @ r5 = t0, the trim as found
     strb r5, [r4, #8]                       @ ck_trim = t0
-    @ SYSCLK must be MSI (sys_clock_select(0) sets SW without waiting for SWS)
+    @ SYSCLK must be MSI (sys_clock_select(0) sets SW without waiting for SWS), and TIM11 must count on it: HPRE /1 and
+    @ PPRE2 /1 (with PPRE2 /1 the APB2 timer clock is PCLK2, RM0038 6.2)
     ldr r1, =RCC_CFGR
     ldr r0, [r1]
-    tst r0, #RCC_CFGR_SWS_MASK
+    ldr r2, =(RCC_CFGR_SWS_MASK | RCC_CFGR_HPRE_MASK | RCC_CFGR_PPRE2_MASK)
+    tst r0, r2
     mov r0, #CK_ST_NOTMSI                   @ mov without s: the flags of the test stay
     bne .Lcr_status
     @ HSE must be off: RTCPRE can be written only then
@@ -224,7 +235,22 @@ FUNC ck_run
     bne 1b
     movs r0, #CK_ST_NOHSE
     b .Lcr_hse_off
-2:  ldr r1, =RCC_APB2ENR
+2:  @ HSE as the RTC clock for the measurement (see the header): backup domain writable, RTC domain reset, RTCSEL = HSE,
+    @ RTCEN
+    ldr r1, =PWR_CR_DBP_BB
+    movs r0, #1
+    str r0, [r1]
+    ldr r1, =RCC_CSR_RTCRST_BB
+    movs r0, #1
+    str r0, [r1]
+    movs r0, #0
+    str r0, [r1]
+    ldr r0, =(RCC_CSR_RTCSEL_HSE | RCC_CR_RTCPRE_DIV16)
+    bl fn_0801FF34                          @ RTCSEL = HSE (its RTCPRE write is ignored while HSEON = 1: /16 stays)
+    ldr r1, =RCC_CSR_RTCEN_BB
+    movs r0, #1
+    str r0, [r1]
+    ldr r1, =RCC_APB2ENR
     ldr r0, [r1]
     orr r0, r0, #RCC_APB2_TIM11
     str r0, [r1]                            @ TIM11 clock on
@@ -241,7 +267,6 @@ FUNC ck_run
 3:  str r0, [r4]                            @ ck_hz0
     mov r9, r0                              @ r9 = f0
     bl ck_err
-    mov r10, r0                             @ r10 = e0
     ldr r1, =CK_RANGE_HZ
     cmp r0, r1
     bls 4f
@@ -339,6 +364,11 @@ FUNC ck_run
     ldr r2, [r1]
     bic r2, r2, #RCC_APB2_TIM11
     str r2, [r1]                            @ TIM11 clock off
+    ldr r1, =RCC_CSR_RTCRST_BB
+    movs r2, #1
+    str r2, [r1]
+    movs r2, #0
+    str r2, [r1]                            @ RTC domain reset: no RTC clock selected (the caller selects LSI next)
 .Lcr_hse_off:
     mov r6, r0                              @ status across the calls
     movs r0, #0
@@ -353,6 +383,10 @@ FUNC ck_run
 2:  mov r0, r6
 .Lcr_status:
     strb r0, [r4, #9]                       @ ck_status
+    ldr r1, =(RCC_ICSCR + 2)
+    ldrb r1, [r1]
+    ldr r2, =ck_cal
+    strb r1, [r2]                           @ MSICAL now
     CRIT_EXIT r11
     pop {r4, r5, r6, r7, r8, r9, r10, r11, pc}
 ENDFUNC ck_run
@@ -366,7 +400,8 @@ ENDFUNC ck_run
 @ Context  : main only (fn_0800C332, ble/commands.s)
 @ RAM      : reads ck_hz0 .. ck_steps, USART2_BRR; writes ck_frame
 @ Note     : frame FA, 20 bytes: FA, ck_hz0 u32 LE (1..4), ck_hz u32 LE (5..8), ck_trim (9), ck_status (10), ck_steps
-@            u16 LE (11, 12), USART2_BRR u16 LE (13, 14), 0 (15..18), XOR of bytes 0..18 (19).  A frame refused by a full
+@            u16 LE (11, 12), USART2_BRR u16 LE (13, 14), MSICAL at the end of ck_run (15), MSICAL now (16), 0 (17, 18),
+@            XOR of bytes 0..18 (19).  A frame refused by a full
 @            transmit queue is not repeated: the host asks again.
 @ -----------------------------------------------------------------------------
 FUNC ck_send
@@ -386,10 +421,14 @@ FUNC ck_send
     strb r0, [r4, #13]
     lsrs r0, r0, #8
     strb r0, [r4, #14]
+    ldr r1, =ck_cal
+    ldrb r0, [r1]
+    strb r0, [r4, #15]                      @ MSICAL at the end of ck_run
+    ldr r1, =(RCC_ICSCR + 2)
+    ldrb r0, [r1]
+    strb r0, [r4, #16]                      @ MSICAL now
     movs r0, #0
-    strb r0, [r4, #15]                      @ bytes 15 .. 18: 0
-    strb r0, [r4, #16]
-    strb r0, [r4, #17]
+    strb r0, [r4, #17]                      @ bytes 17, 18: 0
     strb r0, [r4, #18]
     movs r1, #0
 2:  ldrb r2, [r4, r1]

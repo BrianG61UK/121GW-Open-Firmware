@@ -665,7 +665,10 @@ class Tim11(Tim):
     subset TIM11 shares with TIM2..TIM4 (CR1, DIER, SR, EGR, CCMR1, CCER, CNT, PSC, ARR, CCR1, OR at the same offsets,
     18.5.14) is the Tim model; the edges of HSE_RTC are delivered as input edges of channel 1 at their real times
     (Machine.elapsed_s), so the captured counts follow the ratio of the timer clock to the HSE crystal.  TI1_RMP = 01
-    (MSI on channel 1) and the GPIO input are not modelled (logged when selected)."""
+    (MSI on channel 1) and the GPIO input are not modelled (logged when selected).
+    Observed on a meter (2026-11-07, firmware F-1.17 test image), not stated in RM0038: with RTCSEL = LSI the timer counted
+    but captured nothing (SR UIF, never CC1IF); with RTCSEL = HSE (and RTCEN = 1) it captured.  The model therefore
+    delivers HSE_RTC edges only while RTCSEL = HSE."""
 
     OR_TI1_RMP = 3
     OR_MASK = 0x0F                      # 18.5.13: TI1_RMP[1:0], ETR_RMP, TI1_RMP_RI
@@ -681,7 +684,7 @@ class Tim11(Tim):
     def _rtc_source(self):
         """HSE_RTC frequency reaching channel 1, 0 when it does not (remap not 10, clock gate off, HSE not ready)."""
         rcc = getattr(self.m, 'rcc', None)
-        if rcc is None or (self.opt & self.OR_TI1_RMP) != 2 or not self._clk_on():
+        if rcc is None or (self.opt & self.OR_TI1_RMP) != 2 or not self._clk_on() or rcc.rtcsel != 3:
             return 0
         return rcc.hse_rtc_hz
 
@@ -705,7 +708,10 @@ class Tim11(Tim):
         if gen != self._edge_gen or not f:
             self._edge_on = False
             return
-        self._edge_k += 1
+        # only the edge that completes the input capture prescaler (IC1PSC: every 1, 2, 4 or 8 edges) captures; the edges
+        # before it only count, so the event is placed on that edge and the count is completed there (_edge)
+        div = 1 << ((self.ccmr[0] >> 2) & 3)
+        self._edge_k += max(1, div - self._icpsc[0])
         due = self._edge_t0 + Fraction(self._edge_k, f)
         delay = (due - self.m.elapsed_s()) * self.m.sysclk_hz
         cycles = max(1, -(-delay.numerator // delay.denominator)) if delay > 0 else 1
@@ -720,6 +726,7 @@ class Tim11(Tim):
         # the counter has moved on by the cycles since `due`.  The hardware latches CNT at the edge (18.3.5): the
         # capture takes the counter value of the due cycle.
         self._late = max(0, self.m.cycles - due)
+        self._icpsc[0] = (1 << ((self.ccmr[0] >> 2) & 3)) - 1      # the skipped edges of the prescaler (_edge_next)
         self.input_edge(0)
         self._late = 0
         self._edge_next(gen)

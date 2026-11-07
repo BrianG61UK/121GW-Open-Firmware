@@ -244,6 +244,18 @@ def run_tests(image):
             'packet are not counted)', a is not None and a[2] == rx_ld + 5, '%r want %d' % (a, rx_ld + 5))
     a = link.send(btft.status_packet(43), timeout=3.0)
     T.check('err_fe unchanged by the 4 framing errors fed while off', a is not None and a[2] == 3, repr(a))
+
+    print('T8 LEAVE (type 0x19): the page Ld is left as with a SETUP press (IMP-47)')
+    a = link.send(btft.packet(btft.T_LEAVE, 0), timeout=3.0)
+    T.check('LEAVE answered with status 0', a is not None and a[1] == 0, repr(a))
+    e.advance(0.5)
+    T.check('next page rEL (item 22; no two-part bootloader here)', T.rd(e, ADDR_ITEM) == 22, 'item %d' % T.rd(e, ADDR_ITEM))
+    n0 = len(e.ble_rx)
+    e.advance(2.0)
+    frames_seen = bytes(e.ble_rx[n0:]).count(b'\xF2')
+    T.check('status frames again (page Ld no longer owns the link)', frames_seen >= 2, '%d F2 bytes in 2 s' % frames_seen)
+    got = ask(e, key_frame(0x90))
+    T.check('keys reach the meter again: 0x90 echoed', got[:5] == key_frame(0x90), 'got %r' % got)
     s = e.snapshot()
     T.check('no unmodelled access, no safety violation', s['unmodelled'] == 0 and not s['safety'])
 
