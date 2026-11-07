@@ -25,10 +25,10 @@ class Table(unittest.TestCase):
             if s.choices:
                 self.assertEqual((s.min, s.max), (0, len(s.choices) - 1), s.code)
             self.assertLessEqual((s.mask << s.shift), 0xFF, s.code)
-        # bftset.s: 17 ids; 0x020 is one id shown as four rows (ids 0x120, 0x220, 0x320, 0x420); 0x018 is not offered
+        # bftset.s: 18 ids; 0x020 is one id shown as four rows (ids 0x120, 0x220, 0x320, 0x420); 0x018 is not offered
         self.assertEqual(sorted(s.wire for s in settings.TABLE),
                          sorted([0x00F, 0x010, 0x011, 0x013, 0x014, 0x015, 0x016, 0x017, 0x01A, 0x01B, 0x01E, 0x020, 0x020,
-                                 0x020, 0x020, 0x021, 0x022, 0x028, 0x029, 0x02A]))
+                                 0x020, 0x020, 0x021, 0x022, 0x028, 0x029, 0x02A, 0x02B]))
         self.assertEqual({s.id for s in settings.TABLE if s.wire == 0x020}, {0x120, 0x220, 0x320, 0x420})
         self.assertEqual({r: (s.min, s.max) for r, s in ((s.wire, s) for s in settings.TABLE if s.wire != 0x020)},
                          {r: v for r, v in RANGES.items() if r != 0x020})
@@ -91,6 +91,17 @@ class OverTheLink(unittest.TestCase):
         self.assertEqual(tc, {'id': 0x00F, 'code': 'tc', 'name': 'Thermocouple type (TEMP)', 'value': 0, 'min': 0, 'max': 5,
                               'choices': ['K', 'J', 'T', 'N', 'R', 'S'], 'text': 'K'})
         self.assertIsNone(next(i for i in items if i['code'] == 'bL')['choices'])
+
+    def test_auto_power_off_time_listed_only_when_reported(self):
+        m = meter()
+        items = settings.Settings(make_client(m)).get_all()
+        apo = next(i for i in items if i['code'] == 'APO')
+        self.assertEqual((apo['id'], apo['choices']), (0x02B, ['30 min', '1 min', '15 min', '60 min']))
+        items = settings.Settings(make_client(m)).put(0x02B, 2)
+        self.assertEqual(m.eeprom[0x02B], 2)
+        self.assertEqual(next(i for i in items if i['code'] == 'APO')['text'], '15 min')
+        del m.eeprom[0x02B]                             # firmware before F-1.18 does not report the id
+        self.assertNotIn('APO', [i['code'] for i in settings.Settings(make_client(m)).get_all()])
 
     def test_put_changes_one_value_and_reads_it_back(self):
         m = meter()

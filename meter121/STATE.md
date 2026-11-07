@@ -78,7 +78,7 @@ the value in words (`"30 s"`, `"+1.2 %"`, `"Pt100"`).  `value` is within `min..m
 is the firmware's setting id (EEPROM offset: `tc` 0x00F, temperature unit 0x010, `r` 0x011, `dSP` 0x013, `item 10` 0x014,
 `bt` 0x015, `item 2` 0x016, `bL` 0x017 (value 0 off, 1 = 30 s, 2..100 = 1..99 min), `item 4` contrast 0x01A (10..17),
 `item 11` 0x01B, `item 3` 0x01E, `bH` 0x021, `Ch` 0x022, `LP` 0x028, `Pt` 0x029, `BAT` 0x02A (value = trim + 100,
-50..150)), except the firmware's one id 0x020 (value 0..31: bit 0 REL view, bits 2..1 trigger 0..2, bit 3 clock, bit 4
+50..150), `APO` 0x02B (auto power-off time: 0 = 30, 1 = 1, 2 = 15, 3 = 60 min; F-1.18 and newer report it)), except the firmware's one id 0x020 (value 0..31: bit 0 REL view, bits 2..1 trigger 0..2, bit 3 clock, bit 4
 capacitance anti-hunting, F-1.16 and newer), which is shown as FOUR rows `rEL`, `tr`, `CL`, `HUnt` with the ids 0x120,
 0x220, 0x320, 0x420 (`HUnt`: choices off / on; listed and changeable only while the connected firmware is F-1.16 or newer).
 A change of one row is a read-modify-write on the host: GET, replace that row's bits, PUT id 0x020 with the whole value,
