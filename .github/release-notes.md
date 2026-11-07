@@ -1,5 +1,7 @@
 121GW Companion: live view, recording and firmware information for the EEVblog 121GW over Bluetooth LE.
 
+New in 1.2.21: firmware and bootloader updates work on meters whose Bluetooth connection stays up while the meter restarts into its update mode (meters with the old BLE112 module): the program now asks the meter on that same connection instead of waiting for it to drop, so the meter no longer gives up after 30 seconds and goes back to the old firmware (GitHub issue 21). On Linux the diagnosis report names the distribution (from /etc/os-release).
+
 New in 1.2.20: careful mode for meters with the old Bluegiga BLE112 Bluetooth module (early meters; recognised by the packet size the link negotiates) and firmware F-1.19 or newer: the meter sends every reading twice and the program keeps the copy that checks out, and the card file list and downloads come in small pieces that are asked for again when damaged (GitHub issues 9 and 14). Newer meters are not affected.
 
 New in 1.2.19: the METER view shows and changes the meter's auto power-off time (off, 1, 15, 30 or 60 minutes; firmware F-1.18 or newer, older firmware does not show the row).

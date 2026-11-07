@@ -56,6 +56,7 @@ LINK_WAIT = 2.5                                  # seconds a command waits for t
 TRACE_UI = os.environ.get('COMPANION_LOG') == '1'     # the page and the window report pointer events (diagnosis)
 UPDATE_ACTIVE = ('downloading', 'waiting_ld', 'restarting', 'sending')      # update states that own the link
 RELEASE_RECHECK = 1800.0                         # seconds between release checks while connected
+RESTART_POLL = 1.0                               # seconds between update-mode probes on a link kept through the restart
 VERSION_WAIT = 2.0                               # seconds to wait for the answer to a version request
 VERSION_RETRY = 10.0                             # seconds between requests while the link is not ready
 VERSION_TRIES = 3                                # version requests answered by the echo alone until the firmware counts as v2.05
@@ -579,7 +580,8 @@ class Companion:
             self._enter_update_mode()
             self._boot_send(data, transfer.KIND_FIRMWARE, None, text)
             self._wait_restart(lambda: self.mode == 'firmware' and self.version == text,
-                               'the meter did not come back with %s' % text, 'it starts %s' % text)
+                               'the meter did not come back with %s' % text, 'it starts %s' % text,
+                               poll=self._version_kept_link)
             u.update(message='')
         else:
             self._sender = transfer.Sender(self.link.send)
@@ -613,7 +615,7 @@ class Companion:
             ver = releases.version_of_bootloader(text)
             self._boot_send(boot, transfer.KIND_BOOTLOADER, ver[0] << 16 | ver[1] << 8 | ver[2], text)
         self._wait_restart(lambda: self.bl == text, 'the meter did not report bootloader %s' % text,
-                           'it starts bootloader %s' % text)
+                           'it starts bootloader %s' % text, poll=self._version_kept_link)
         u.update(message='')
 
     def _wait_ld(self):
@@ -632,15 +634,49 @@ class Companion:
         except Exception:                               # noqa: BLE001 - the meter restarts at once: the write's
             pass                                        # confirmation can be lost with the link (bleak: disconnected)
         self._wait_restart(lambda: self.mode == 'bootloader', 'the meter did not come back in its update mode',
-                           'into its update mode')
+                           'into its update mode', poll=self._probe_kept_link)
 
-    def _wait_restart(self, ready, failure, what, timeout=90.0):
-        """The meter restarts (its Bluetooth module is switched off with it): wait for the link to drop, the link
-        reconnects by itself, then for `ready()` after the version questions.  `what` says where it restarts to (the
-        page shows "the meter restarts: <what>")."""
+    def _probe_kept_link(self):
+        """While the link survives the restart into update mode (the older BLE112 module keeps its connection through
+        the meter's reset; GitHub issue 21: the link dropped only when the bootloader gave up after 30 s): ask the
+        bootloader's status on the same connection.  The firmware answers that request with a refusal (page Ld) or not
+        at all, so only the bootloader's answer sets the mode."""
+        v = self._boot_probe()
+        if v is not None:
+            self.event('update-mode probe on the kept link: bootloader %d.%d.%d' % v)
+            self.bl, self.mode = releases.bootloader_text(v), 'bootloader'
+
+    def _version_kept_link(self):
+        """After an update over a link that survived the restarts (GitHub issue 21): ask the version and the bootloader
+        on the same connection.  Until the new firmware runs nothing answers the version request (the bootloader skips
+        every byte that does not start one of its packets, bootloader/src/bl_ble.s), so the old state stays."""
+        self._ver = None
+        try:
+            self.link.send(frames.VERSION_REQUEST)
+        except (RuntimeError, OSError, TimeoutError):
+            return
+        end = time.time() + VERSION_WAIT
+        while time.time() < end and self._ver is None:
+            time.sleep(0.05)
+        if self._ver is None:
+            return
+        self.event('version question on the kept link: answer %s' % self._ver)
+        self.fw_kind, self.version = 'fast', self._ver
+        self.bl = self._ask_bootloader()
+        self.mode = 'firmware'
+
+    def _wait_restart(self, ready, failure, what, timeout=90.0, poll=None):
+        """The meter restarts: wait for the link to drop, the link reconnects by itself, then for `ready()` after the
+        version questions.  `poll`, called every RESTART_POLL seconds while the link is still up, can find the meter's
+        new state on a connection that survived the restart.  `what` says where it restarts to (the page shows "the
+        meter restarts: <what>")."""
         self.update.update(state='restarting', message=what)
         end = time.time() + timeout
+        next_poll = time.time() + RESTART_POLL
         while time.time() < end and self.link.state == 'connected' and not ready():
+            if poll is not None and time.time() >= next_poll:
+                poll()
+                next_poll = time.time() + RESTART_POLL
             time.sleep(0.2)
         while time.time() < end and not ready():
             if self._cancel:

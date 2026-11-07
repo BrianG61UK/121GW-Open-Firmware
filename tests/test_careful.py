@@ -2,6 +2,7 @@
 chosen by the negotiated MTU (23 = BLE112, 247 = BGM220S), key code 0x97 at the connection, every status frame taken once
 although the meter sends it twice, and the card requests with small answers.  The program's settings file is the test's
 own (AppCase patches app.config_path)."""
+import threading
 import time
 import unittest
 
@@ -148,3 +149,58 @@ class CarefulConnect(AppCase):
         self.app._frame(frames.STATUS, f, t + 1.03)
         self.assertEqual(self.app._st_n - before, 4)
         self.assertEqual(frames.copy_as_status(copy), f)
+
+
+class KeptLinkRestart(AppCase):
+    """GitHub issue 21: with the older BLE112 module the link survives the meter's restart into update mode (it dropped
+    only when the bootloader gave up after 30 s).  The companion asks on the same connection instead of waiting for a
+    drop; a link that drops (BGM220S) still takes the reconnection path."""
+    def setUp(self):
+        super().setUp()
+        old = app_mod.RESTART_POLL
+        app_mod.RESTART_POLL = 0.05
+        self.addCleanup(setattr, app_mod, 'RESTART_POLL', old)
+        self.sent = []
+
+    def test_update_mode_found_on_the_kept_link(self):
+        answers = iter([None, None, (1, 1, 3)])
+        self.app._boot_probe = lambda: next(answers, (1, 1, 3))
+        self.app.link.send = self.sent.append
+        t0 = time.time()
+        self.app._enter_update_mode()
+        self.assertLess(time.time() - t0, 5.0)
+        self.assertEqual((self.app.mode, self.app.bl), ('bootloader', 'B-1.13'))
+        self.assertEqual(self.sent, [frames.UPDATE_MODE_REQUEST])
+        self.assertTrue(any('probe on the kept link' in t for _, t in self.app.events))
+
+    def test_new_firmware_found_on_the_kept_link(self):
+        self.app.mode, self.app.version = 'bootloader', 'F-1.18'
+        calls = []
+
+        def send(data):
+            calls.append(bytes(data))
+            if bytes(data) == bytes(frames.VERSION_REQUEST) and len(calls) >= 3:     # the restart takes a while
+                self.app._ver = 'F-1.19'
+            if bytes(data) == bytes(frames.BL_VERSION_REQUEST):
+                self.app._blver = 'B-1.13'
+        self.app.link.send = send
+        old = app_mod.VERSION_WAIT
+        app_mod.VERSION_WAIT = 0.05
+        self.addCleanup(setattr, app_mod, 'VERSION_WAIT', old)
+        self.app._wait_restart(lambda: self.app.mode == 'firmware' and self.app.version == 'F-1.19', 'failed', 'x',
+                               timeout=5.0, poll=self.app._version_kept_link)
+        self.assertEqual((self.app.mode, self.app.version, self.app.bl), ('firmware', 'F-1.19', 'B-1.13'))
+
+    def test_a_dropped_link_still_reconnects(self):
+        self.app._boot_probe = lambda: None              # no answer on the old connection: it is going away
+        self.app.link.send = self.sent.append
+
+        def drop_and_come_back():
+            time.sleep(0.2)
+            self.app.link.state = 'lost'
+            time.sleep(0.2)
+            self.app.link.state = 'connected'
+            self.app.bl, self.app.mode = 'B-1.13', 'bootloader'      # what _ask_version finds after the reconnection
+        threading.Thread(target=drop_and_come_back, daemon=True).start()
+        self.app._enter_update_mode()
+        self.assertEqual(self.app.mode, 'bootloader')
