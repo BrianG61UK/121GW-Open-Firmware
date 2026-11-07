@@ -149,8 +149,9 @@ jobs:
         if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
         run: |
           set -euo pipefail
+          python3 -I .github/scripts/release_notes.py .github/release-notes.md CHANGELOG.md "$RELEASE_TAG" "https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md" "$RUNNER_TEMP/notes.md"   # only this version (issue 29)
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --verify-tag --title "121GW-Open-Firmware $RELEASE_TAG" --notes-file .github/release-notes.md \
+            gh release create "$RELEASE_TAG" --verify-tag --title "121GW-Open-Firmware $RELEASE_TAG" --notes-file "$RUNNER_TEMP/notes.md" \
               || gh release view "$RELEASE_TAG" >/dev/null
           fi
           python3 -I .github/scripts/check_no_intel_mac.py --dist 121GW-Open-Firmware-Emulator-*
@@ -250,8 +251,9 @@ jobs:
         if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
         run: |
           set -euo pipefail
+          python -I .github/scripts/release_notes.py .github/release-notes.md CHANGELOG.md "$RELEASE_TAG" "https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md" "$RUNNER_TEMP/notes.md"   # only this version (issue 29)
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --verify-tag --title "121GW-Open-Firmware $RELEASE_TAG" --notes-file .github/release-notes.md \
+            gh release create "$RELEASE_TAG" --verify-tag --title "121GW-Open-Firmware $RELEASE_TAG" --notes-file "$RUNNER_TEMP/notes.md" \
               || gh release view "$RELEASE_TAG" >/dev/null
           fi
           gh release upload "$RELEASE_TAG" 121GW-Open-Firmware-Emulator-* --clobber
@@ -335,8 +337,9 @@ jobs:
         if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
         run: |
           set -euo pipefail
+          python3 -I .github/scripts/release_notes.py .github/release-notes.md CHANGELOG.md "$RELEASE_TAG" "https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md" "$RUNNER_TEMP/notes.md"   # only this version (issue 29)
           if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" --verify-tag --title "121GW-Open-Firmware $RELEASE_TAG" --notes-file .github/release-notes.md \
+            gh release create "$RELEASE_TAG" --verify-tag --title "121GW-Open-Firmware $RELEASE_TAG" --notes-file "$RUNNER_TEMP/notes.md" \
               || gh release view "$RELEASE_TAG" >/dev/null
           fi
           gh release upload "$RELEASE_TAG" 121GW-Open-Firmware-Emulator-* --clobber

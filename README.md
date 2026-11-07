@@ -4,7 +4,7 @@
 
 ## Downloads
 
-Everything is on the [**latest release**](../../releases/latest):
+Everything is on the [**latest release**](../../releases/latest) (what each version brought: [CHANGELOG.md](CHANGELOG.md)):
 
 | File | What it is |
 |---|---|

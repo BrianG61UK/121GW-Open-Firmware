@@ -72,9 +72,10 @@ jobs:
       - name: Create the release if it does not exist and attach the files
         run: |
           set -euo pipefail
+          python3 -I .github/scripts/release_notes.py .github/release-notes.md CHANGELOG.md "$TAG" "https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md" "$RUNNER_TEMP/notes.md"   # only this version (issue 29)
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             # the emulator workflow may create the release at the same moment: then the view below succeeds
-            gh release create "$TAG" --verify-tag --title "121GW-Open-Firmware $TAG" --notes-file .github/release-notes.md \
+            gh release create "$TAG" --verify-tag --title "121GW-Open-Firmware $TAG" --notes-file "$RUNNER_TEMP/notes.md" \
               || gh release view "$TAG" >/dev/null
           fi
           gh release upload "$TAG" "firmware-$TAG.zip" "firmware-$TAG.zip.sha256" --clobber
