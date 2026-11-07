@@ -68,6 +68,7 @@ XDIAG_TRIES = 3                                  # tries of a key frame of the e
 XDIAG_WAIT = 2.0                                 # seconds to wait for the answer to each try
 XDIAG_STATUS_FIRST, XDIAG_STATUS_COUNT = 40, 9   # page Ld STATUS indices of the nine values (ble/bft.s bft_diag_tab)
 MCLOCK_MIN_VERSION = (1, 1, 7)                   # firmware F-1.17: key code 0x96 / frame FA, STATUS 49..55 (sys/msical.s)
+LEAVE_MIN_VERSION = (1, 1, 7)                    # firmware F-1.17: the page Ld request LEAVE (type 0x19, ble/bft.s)
 MCLOCK_STATUS_FIRST, MCLOCK_STATUS_COUNT = 49, 7 # page Ld STATUS indices of the clock measurement
 
 # the program's own settings (SETTINGS view), stored in settings.json; the meter's SETUP settings are on the meter
@@ -311,6 +312,22 @@ class Companion:
                     res['clock'] = self._mclock_read()
         self.xdiag = res
         return res
+
+    def _leave_supported(self):
+        """True when the meter (last version answer of this connection, F-1.17 or newer) takes the LEAVE request.  The
+        version is asked before the page Ld is shown, so it is known while the page owns the link."""
+        v = releases.version_of_meter(self.version)
+        return self.fw_kind == 'fast' and v is not None and v >= LEAVE_MIN_VERSION
+
+    def leave_ld(self):
+        """Leave the page Ld from here (keys do not reach the meter while the page owns the link)."""
+        if not self._leave_supported():
+            raise RuntimeError('this firmware (%s) cannot be told to leave the page Ld: press SETUP on the meter '
+                               '(F-1.17 or newer needed)' % (self.version or 'unknown'))
+        with self._ops('leave page Ld', wait=LINK_WAIT) as (sender, _):
+            sender.leave()
+        self.event('page Ld left by the program (LEAVE request)')
+        return {'ok': True}
 
     def _mclock_supported(self):
         """True when the connected meter runs F-1.17 or newer: only that firmware measures its clock (key code 0x96,
@@ -1004,6 +1021,7 @@ class Companion:
                 'recordings': self.recordings(),
                 'derived': self.derived.snapshot(),
                 'desk': self.desk,
+                'can_leave_ld': bool(self.desk and self._leave_supported()),
                 'diag': dict(self.diag),
                 'trace_ui': TRACE_UI,
                 'card': dict(self.card_st, files=list(self.card_st['files']), locked_reason=self._lock_reason()),
@@ -1035,6 +1053,11 @@ class Companion:
         if 'update_later' in c:
             self.update['later'] = True
             return {'ok': True}
+        if 'leave_ld' in c:
+            try:
+                return self.leave_ld()
+            except transfer.TransferError as e:
+                raise RuntimeError(str(e)) from e
         if 'update_now' in c:
             what = c['update_now'] if c['update_now'] in ('firmware', 'bootloader', 'both') else 'both'
             u = self.update

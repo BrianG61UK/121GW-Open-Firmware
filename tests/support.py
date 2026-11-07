@@ -67,7 +67,9 @@ class FakeMeter:
         self.xdiag_values = [1000, 2, 1, 3, 0, 4, 5, 6, 598]    # the nine counters (rx_bytes .. battery_cv)
         self.xdiag_lost = 0                            # F9 answers to swallow (a lost notification)
         self.fast_mclock = False                       # firmware F-1.17: key code 0x96 answered with FA (sys/msical.s)
-        self.mclock = {'hz0': 4187000, 'hz': 4194100, 'trim': -3, 'status': 1, 'steps': 6, 'brr': 218}
+        self.fast_leave = False                        # firmware F-1.17: the page Ld request LEAVE (type 0x19)
+        self.mclock = {'hz0': 4187000, 'hz': 4194100, 'trim': -3, 'status': 1, 'steps': 6, 'brr': 218, 'cal_run': 0x9D,
+                       'cal_now': 0x9D}
 
     # -- the link side
     def _out(self, data):
@@ -105,6 +107,10 @@ class FakeMeter:
         rtype, seq, n = struct.unpack_from('<BHB', pkt, 2)
         payload = pkt[6:6 + n]
         self.sent.append((rtype, payload))
+        if rtype == transfer.T_LEAVE and self.fast_leave:   # F-1.17: answer status 0, then the next SETUP page (ble/bft.s)
+            self._out(transfer.packet(0x81, seq, bytes([0]) + struct.pack('<H', 0)))
+            self.on_ld = False
+            return
         if rtype == transfer.T_STATUS:                 # diagnosis value: type 0x81 answer, value in "next" (ble/bft.s)
             idx = payload[0]
             ok = idx < len(self.diag)
@@ -219,8 +225,9 @@ def xdiag_frame(values):
 
 def mclock_frame(c):
     """The frame FA of the firmware (sys/msical.s ck_send): FA, ck_hz0 u32, ck_hz u32, MSITRIM (signed byte), status,
-    measurements u16, USART2_BRR u16, 4 zero bytes, XOR of the 19 bytes before it."""
-    body = b'\xFA' + struct.pack('<IIbBHH', c['hz0'], c['hz'], c['trim'], c['status'], c['steps'], c['brr']) + bytes(4)
+    measurements u16, USART2_BRR u16, MSICAL after the measurement and now, 2 zero bytes, XOR of the 19 bytes before it."""
+    body = (b'\xFA' + struct.pack('<IIbBHHBB', c['hz0'], c['hz'], c['trim'], c['status'], c['steps'], c['brr'],
+                                  c['cal_run'], c['cal_now']) + bytes(2))
     return body + bytes([frames._xor(body)])
 
 

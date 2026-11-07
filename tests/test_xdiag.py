@@ -567,7 +567,8 @@ class MeterClock(AppCase):
         self.assertEqual(r.dropped, 0)
         v = frames.mclock_values(f)
         self.assertEqual(v, self.meter.mclock)
-        self.assertEqual(frames.mclock_from_status(mclock_status(self.meter.mclock)), self.meter.mclock)
+        st = frames.mclock_from_status(mclock_status(self.meter.mclock))
+        self.assertEqual(st, {k: v for k, v in self.meter.mclock.items() if not k.startswith('cal_')})
         self.assertEqual(frames.MCLOCK_REQUEST, b'\xF4' + b'9696')
 
     def test_frame_fa_in_the_report(self):
@@ -582,6 +583,7 @@ class MeterClock(AppCase):
         self.assertIn('RC clock as found        4187000 Hz (-0.174 % from 4194304)', text)
         self.assertIn('RC clock in use          4194100 Hz (-0.005 %), trim -3, 6 measurements', text)
         self.assertIn('Bluetooth serial baud    19239 (BRR 218; +0.20 % from 19200)', text)
+        self.assertIn('MSICAL                   0x9D after the measurement, 0x9D now', text)
 
     def test_answered_without_counting(self):
         r = self.app.xdiag_collect()                              # counting off: no F9, but FA comes
@@ -593,7 +595,8 @@ class MeterClock(AppCase):
         self.go_desk()
         r = self.app.xdiag_collect()
         self.assertEqual(r['clock']['source'], 'page Ld STATUS 49..55')
-        self.assertEqual({k: r['clock'][k] for k in self.meter.mclock}, self.meter.mclock)
+        self.assertEqual({k: r['clock'][k] for k in self.meter.mclock if not k.startswith('cal_')},
+                         {k: v for k, v in self.meter.mclock.items() if not k.startswith('cal_')})
         self.assertNotIn(frames.MCLOCK_REQUEST, [bytes(k) for k in self.meter.keys])
 
     def test_older_firmware_is_not_asked(self):
@@ -617,3 +620,30 @@ class MeterClock(AppCase):
         lines = frames.mclock_lines(c)
         self.assertIn('crystal did not start', lines[0])
         self.assertTrue(any('BRR 218 (clock not measured)' in s for s in lines), lines)
+
+
+class LeaveLd(AppCase):
+    """The page Ld request LEAVE (type 0x19, firmware F-1.17): the program takes the meter out of Ld-bt."""
+    def setUp(self):
+        super().setUp()
+        self.meter.fast_leave = True
+        self.app.fw_kind, self.app.version, self.app.mode = 'fast', 'F-1.17', 'firmware'
+        self.app._frame_t = 0.0
+        self.go_desk()
+
+    def test_leave(self):
+        self.assertTrue(self.app.state()['can_leave_ld'])
+        r = self.app.command({'leave_ld': True})
+        self.assertEqual(r, {'ok': True})
+        self.assertFalse(self.meter.on_ld)
+        self.assertIn((transfer.T_LEAVE, b''), self.meter.sent)
+        self.assertTrue(any('page Ld left by the program' in t for _, t in self.app.events))
+
+    def test_older_firmware(self):
+        self.app.version = 'F-1.16'
+        self.assertFalse(self.app.state()['can_leave_ld'])
+        with self.assertRaises(RuntimeError) as cm:
+            self.app.command({'leave_ld': True})
+        self.assertIn('press SETUP on the meter', str(cm.exception))
+        self.assertTrue(self.meter.on_ld)
+        self.assertNotIn(transfer.T_LEAVE, [t for t, _ in self.meter.sent])

@@ -15,6 +15,7 @@ import zlib
 from .frames import crc16
 
 T_START, T_DATA, T_END, T_STATUS = 1, 2, 3, 5
+T_LEAVE = 0x19                                   # leave the page Ld as a SETUP press does (firmware F-1.17, ble/bft.s)
 MAX_PAYLOAD = 232
 TIMEOUT_DATA = 20.0
 TIMEOUT_END = 120.0
@@ -138,6 +139,13 @@ class Sender:
         if status:
             raise TransferError('STATUS %d: %s' % (index, STATUS_TEXT.get(status, status)))
         return nxt
+
+    def leave(self, timeout=2.0):
+        """Leave the page Ld (LEAVE request, type 0x19, firmware F-1.17 on): the meter answers status 0 and goes to the next
+        SETUP page, as a SETUP press would; the readings come back."""
+        status, _ = self._ask(packet(T_LEAVE, 0, b''), 0, timeout)
+        if status:
+            raise TransferError('leave page Ld: %s' % STATUS_TEXT.get(status, status))
 
     def run(self, data, kind=None):
         """Send `data` as EEVBlog.bin, or with kind 1 as the first-install file of the two-part bootloader (firmware

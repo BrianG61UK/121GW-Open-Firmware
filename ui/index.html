@@ -354,7 +354,7 @@ footer .r { color: var(--faint); min-width: 160px; }
   <div class="pad" id="cardmain" hidden>
     <div class="cardbar"><button id="c-refresh">Refresh</button>
       <input id="c-folder" class="num" spellcheck="false" aria-label="folder on this computer" placeholder="folder on this computer">
-      <button id="c-sync" class="pri">Sync to folder</button><button id="c-format">Format card</button><span class="warn" id="c-err" hidden>Fault</span><span class="dim" id="c-errtext"></span></div>
+      <button id="c-sync" class="pri">Sync to folder</button><button id="c-format">Format card</button><button id="c-leave" title="the meter leaves the page Ld-bt and shows its readings again (firmware F-1.17 or newer)">Leave Ld-bt</button><span class="warn" id="c-err" hidden>Fault</span><span class="dim" id="c-errtext"></span></div>
     <div class="eng">Space</div>
     <div class="space sbar" id="spacebar"></div>
     <div class="stat num"><span id="sp-used">—</span><span id="sp-free">—</span><span id="sp-total">—</span></div>
@@ -830,6 +830,7 @@ document.querySelectorAll('th.sort').forEach(th => th.onclick = () => {
   sortDir = sortKey === th.dataset.s ? -sortDir : 1; sortKey = th.dataset.s; cardSig = ''; render();
 });
 $('c-refresh').onclick = () => { cardSig = ''; send('card_refresh').catch(fail); };
+$('c-leave').onclick = () => send('leave_ld').catch(fail);        // the meter leaves Ld-bt (F-1.17 on)
 $('c-folder').oninput = () => $('c-folder').dataset.edited = '1';
 $('c-sync').onclick = () => {
   const folder = $('c-folder').value.trim();
@@ -1179,6 +1180,7 @@ function render() {
   const U = state.update || {state: 'none'};
   drawHeader(L, M, S, state.now);
   drawUpdate(U, M);
+  $('c-leave').hidden = !state.can_leave_ld;
   const keysOff = !connected() || desk();
   document.querySelectorAll('#keys button').forEach(b => b.disabled = keysOff);
   $('keynote').replaceChildren(...(desk() ? [h('span', {class: 'warn'}, 'Locked'), h('span', {class: 'cap'}, 'keys off in desk mode')] : !connected() ? [h('span', {class: 'cap'}, 'connect a meter to use the keys')] : []));

@@ -203,10 +203,12 @@ def xdiag_values(frame):
 
 
 def mclock_values(frame):
-    """The values of an FA frame: {'hz0', 'hz', 'trim', 'status', 'steps', 'brr'} (firmware ck_send: FA, ck_hz0 u32,
-    ck_hz u32, MSITRIM as a signed byte, status, measurements u16, USART2_BRR u16, 4 zero bytes, XOR)."""
-    hz0, hz, trim, status, steps, brr = struct.unpack_from('<IIbBHH', frame, 1)
-    return {'hz0': hz0, 'hz': hz, 'trim': trim, 'status': status, 'steps': steps, 'brr': brr}
+    """The values of an FA frame: {'hz0', 'hz', 'trim', 'status', 'steps', 'brr', 'cal_run', 'cal_now'} (firmware
+    ck_send: FA, ck_hz0 u32, ck_hz u32, MSITRIM as a signed byte, status, measurements u16, USART2_BRR u16, MSICAL at the
+    end of the measurement, MSICAL at the answer, 2 zero bytes, XOR)."""
+    hz0, hz, trim, status, steps, brr, cal_run, cal_now = struct.unpack_from('<IIbBHHBB', frame, 1)
+    return {'hz0': hz0, 'hz': hz, 'trim': trim, 'status': status, 'steps': steps, 'brr': brr, 'cal_run': cal_run,
+            'cal_now': cal_now}
 
 
 def mclock_from_status(values):
@@ -236,6 +238,9 @@ def mclock_lines(c):
                                                                   pct(bd, MCLOCK_BAUD), MCLOCK_BAUD))
     elif c['brr']:
         out.append('  %-24s BRR %d (clock not measured)' % ('Bluetooth serial baud', c['brr']))
+    if 'cal_run' in c:
+        out.append('  %-24s 0x%02X after the measurement, 0x%02X now%s' % (
+            'MSICAL', c['cal_run'], c['cal_now'], '' if c['cal_run'] == c['cal_now'] else ' (changed since)'))
     return out
 
 
