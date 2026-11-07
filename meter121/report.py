@@ -63,14 +63,18 @@ def _names():
     return sorted(out, key=len, reverse=True)
 
 
-def anonymise(text, names=None):
-    """The report without addresses, IDs, paths, computer or user names."""
+def anonymise(text, names=None, keep=None):
+    """The report without addresses, IDs, paths, computer or user names.  `keep` (default: the Linux distribution's
+    name) is left as it is although a computer may be named like it ("ubuntu"): it names no one."""
     text = PATH_RE.sub('<path>', text)
     text = UUID_RE.sub('<id>', text)
     text = MAC_RE.sub('<address>', text)
+    keep = linux_distribution()[:-2] if keep is None else keep
+    parts = text.split(keep) if keep else [text]
     for n in (names if names is not None else _names()):
-        text = re.sub(r'(?<![A-Za-z0-9])' + re.escape(n) + r'(?![A-Za-z0-9])', '<name>', text, flags=re.IGNORECASE)
-    return text
+        parts = [re.sub(r'(?<![A-Za-z0-9])' + re.escape(n) + r'(?![A-Za-z0-9])', '<name>', t, flags=re.IGNORECASE)
+                 for t in parts]
+    return keep.join(parts) if keep else parts[0]
 
 
 def system_text():

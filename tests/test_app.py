@@ -455,6 +455,10 @@ class Report(AppCase):
                 mock.patch('platform.release', return_value='6.8.0'), mock.patch('platform.machine', return_value='x86_64'), \
                 mock.patch('platform.freedesktop_os_release', create=True, return_value={'PRETTY_NAME': 'Fedora Linux 41'}):
             self.assertEqual(report.system_text(), 'Fedora Linux 41, Linux 6.8.0 (x86_64)')
+        # a computer named like its distribution: the distribution stays, the computer's name elsewhere is hidden
+        self.assertEqual(report.anonymise('system Ubuntu 24.04.1 LTS, Linux; host ubuntu', ['ubuntu'],
+                                          keep='Ubuntu 24.04.1 LTS'), 'system Ubuntu 24.04.1 LTS, Linux; host <name>')
+        self.assertEqual(report.anonymise('host ubuntu', ['ubuntu'], keep=''), 'host <name>')
 
     def test_version_events(self):
         self.app.event('version question: echo only')
