@@ -465,6 +465,10 @@ send. The numbers show whether the damage happens in the meter, on the radio or 
 </ol>
 <p>The counters live only in the meter's RAM: they start at zero each time counting is switched on, are lost when you
 switch the meter off and are never stored. Counting changes nothing else on the link.</p>
+<p>With firmware F-1.17 or newer the report also has a section <b>meter clock</b>. Each time the meter is switched on
+or wakes up, it measures its own run clock against its crystal, trims the clock and sets the speed of its Bluetooth
+serial line from the measurement. The section shows the clock as found, the clock after the trim and the resulting
+serial speed. Nothing needs to be set and nothing is stored.</p>
 </div></div>
 
 <h3 id="f-backup">Protected calibration backup</h3>
@@ -571,7 +575,8 @@ scale, freeze the picture, and read time, voltage and frequency differences betw
 <li>record to your computer (<b>LOG</b> view): start and stop a recording, see the recordings in the computer's folder,
 and save the trend as a CSV file;</li>
 <li>list, download and delete the card files, copy new log files to a folder, and format the card (<b>CARD</b>
-view);</li>
+view). With firmware F-1.17 or newer the button <b>Leave Ld-bt</b> takes the meter off page <span class="lcd">Ld-bt</span>
+(the next SETUP page, as with a SETUP press), so the readings come back without touching the meter;</li>
 <li>show the meter's versions, set its clock from a time server, update the firmware and the bootloader, and change
 the meter's settings (<b>METER</b> view), with the meter on page <span class="lcd">Ld-bt</span>. Not the logging
 interval, the serial number or the calibration. The capacitance page <span class="lcd">HUnt</span> is among them (firmware
