@@ -453,6 +453,9 @@ class Companion:
                     self._update_bootloader()
             u.update(state='done', step='', message=u.get('message', ''))
             self.event('update done')
+            if self.link.state == 'connected' and self.mode == 'firmware':
+                self._xdiag_connect()                    # the reconnection after the update asked while the update still
+                                                         # owned the link, so the switch was refused (GitHub issue 9)
         except (OSError, ValueError, RuntimeError, releases.ReleaseError, transfer.TransferError) as e:
             u.update(state='error', message=str(e))
             self.event('update stopped: %s' % e)

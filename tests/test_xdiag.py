@@ -270,6 +270,23 @@ class Switching(AppCase):
         self.assertTrue(self.meter.xdiag_counting)
         self.assertTrue(self.app.state()['meter']['xdiag'])
 
+    def test_switched_on_after_an_update(self):
+        """The reconnection after an update asks its questions while the update still owns the link: the switch is
+        refused then and sent once the update is done (GitHub issue 9: F-1.16 installed, the counting never started)."""
+        self.app.settings['ext_diag'] = True
+
+        def update_firmware():                            # the new firmware answers while the state is still 'sending'
+            self.app.update['state'] = 'sending'
+            self.fw('F-1.16')
+            self.app._xdiag_connect()
+            self.assertFalse(self.app.xdiag_on)
+        self.app._update_firmware = update_firmware
+        self.app.update.update(fw=('F-1.16', 'v1.1.6'), bl=None)
+        self.app._run_update('firmware')
+        self.assertEqual(self.app.update['state'], 'done')
+        self.assertTrue(self.app.xdiag_on)
+        self.assertEqual(self.keys(), [frames.XDIAG_ON_REQUEST])
+
     def test_connect_with_the_setting_off_sends_nothing(self):
         self.fw('F-1.15')
         self.app._xdiag_connect()
