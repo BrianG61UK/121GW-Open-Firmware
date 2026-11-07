@@ -647,3 +647,16 @@ class LeaveLd(AppCase):
         self.assertIn('press SETUP on the meter', str(cm.exception))
         self.assertTrue(self.meter.on_ld)
         self.assertNotIn(transfer.T_LEAVE, [t for t, _ in self.meter.sent])
+
+
+class NotFoundText(unittest.TestCase):
+    """GitHub issue 23: on Windows a meter added in Settings > Bluetooth & devices is held connected by Windows and does
+    not advertise; after WINDOWS_HINT_AFTER searches without it the status says so."""
+    def test_windows_hint_after_two_misses(self):
+        self.assertEqual(link_mod.not_found_text(1, 'win32'), link_mod.NOT_FOUND)
+        self.assertEqual(link_mod.not_found_text(2, 'win32'), link_mod.NOT_FOUND_WINDOWS)
+        self.assertIn('Settings > Bluetooth & devices', link_mod.NOT_FOUND_WINDOWS)
+
+    def test_no_hint_elsewhere(self):
+        for platform in ('darwin', 'linux'):
+            self.assertEqual(link_mod.not_found_text(5, platform), link_mod.NOT_FOUND)

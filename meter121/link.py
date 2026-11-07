@@ -12,6 +12,7 @@ connection, so the phone application or another bridge must not be connected.
 import asyncio
 import collections
 import math
+import sys
 import threading
 import time
 
@@ -21,6 +22,20 @@ SERVICE = '0bd51666-e7cb-469b-8e4d-2742f1ba77cc'
 CHAR = 'e7add780-b042-4876-aae1-112855353cc1'
 SCAN_SECONDS = 6.0
 RETRY_SECONDS = 3.0
+WINDOWS_HINT_AFTER = 2                 # searches in a row without the meter before the Windows hint (GitHub issue 23)
+NOT_FOUND = 'no 121GW found: meter on, Bluetooth on (long PEAK), phone app closed?'
+# a meter added in Windows Settings > Bluetooth & devices is kept connected by Windows; connected, the module does not
+# advertise, so no search finds it (the companion needs no pairing)
+NOT_FOUND_WINDOWS = ('no 121GW found: if Windows lists "121GW" as connected in Settings > Bluetooth & devices, remove it '
+                     'there, then switch the meter\'s Bluetooth off and on (long PEAK)')
+
+
+def not_found_text(misses, platform=None):
+    """The status text after `misses` searches in a row without the meter: on Windows, from WINDOWS_HINT_AFTER on,
+    the hint that Windows may be holding the meter."""
+    if (platform or sys.platform) == 'win32' and misses >= WINDOWS_HINT_AFTER:
+        return NOT_FOUND_WINDOWS
+    return NOT_FOUND
 
 
 SIZE_BUCKETS = ((1, 20), (21, 64), (65, 244))     # notification sizes in the report (244 = the largest the meter's MTU 247 gives)
@@ -224,6 +239,7 @@ class MeterLink:
     async def _keep_loop(self):
         from bleak import BleakClient
         lost = False
+        misses = 0                                       # searches in a row without the meter
         while self.want:
             self._set('scanning', 'looking for the meter' + (' again' if lost else ''))
             try:
@@ -234,10 +250,12 @@ class MeterLink:
                 continue
             pick = [f for f in found if self.address is None or f[0] == self.address]
             if not pick:
-                self._set('lost' if lost else 'scanning', 'no 121GW found: meter on, Bluetooth on (long PEAK), phone app closed?')
+                misses += 1
+                self._set('lost' if lost else 'scanning', not_found_text(misses))
                 await asyncio.sleep(RETRY_SECONDS)
                 continue
             address, name, rssi = pick[0]
+            misses = 0
             self.stats.advertised(rssi)                   # the advertisement's signal strength at discovery (dBm)
             self._set('connecting', name)
             gone = asyncio.Event()

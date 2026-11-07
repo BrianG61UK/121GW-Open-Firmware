@@ -1,5 +1,7 @@
 121GW Companion: live view, recording and firmware information for the EEVblog 121GW over Bluetooth LE.
 
+New in 1.2.24: on Windows, when the meter cannot be found, the status line says what usually causes it: a meter added in Windows Settings > Bluetooth & devices is kept connected by Windows, so it cannot be found; remove it there and switch the meter's Bluetooth off and on (long PEAK). The companion needs no pairing (GitHub issue 23).
+
 New in 1.2.23: the METER view shows and changes the meter's new setting CHIrP (diode contact chirp, firmware F-1.21 or newer; idea by @Cecilius): on, the diode beep sounds once per diode contact; off, as before. Older firmware does not show the row.
 
 New in 1.2.22: careful mode (old BLE112 module) adapts the size of the card download pieces to the link: it starts at 32 bytes, halves the size after a piece that was lost and doubles it (up to 128) after four in a row that arrived, and waits for a lost piece about three times the measured answer time instead of 5 seconds, so downloads on a damaging link are faster (GitHub issue 20). The report shows the pieces of the last card read by size and how many were sent again.
