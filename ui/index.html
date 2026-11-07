@@ -41,6 +41,11 @@ input {
   min-width: 0; background: transparent; border: 1px solid var(--rule-hi); color: var(--ink);
   font-size: 12px; line-height: 16px; padding: 3px 8px; border-radius: 0; outline: none; user-select: text;
 }
+select {
+  min-width: 0; max-width: 100%; background: var(--bg); border: 1px solid var(--rule-hi); color: var(--ink);
+  font: 12px/16px var(--mono); padding: 3px 8px; border-radius: 0; outline: none;
+}
+select:focus { border-color: var(--acc); }
 input:focus { border-color: var(--acc); }
 input:disabled { opacity: .3; }
 .seg { display: inline-flex; }
@@ -199,6 +204,8 @@ tr.empty td { color: var(--faint); }
 .confirm .box { background: var(--bg); border: 1px solid var(--acc); padding: 20px; width: 480px; max-width: 92vw; }
 .confirm .box p { margin: 8px 0 12px; }
 .confirm input { width: 100%; margin-bottom: 16px; }
+.confirm .box.wide { width: 640px; }
+.confirm .warntext { margin: 8px 0 12px; max-height: 46vh; overflow-y: auto; white-space: pre-wrap; font: 12px/18px var(--mono); color: var(--ink); user-select: text; }
 
 /* SETTINGS */
 .srow { display: grid; grid-template-columns: 8px 56px minmax(0, 1fr) 176px 64px; gap: 12px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--rule); min-height: 40px; }
@@ -256,6 +263,9 @@ footer .r { color: var(--faint); min-width: 160px; }
   <div class="sbar" id="nprog" hidden></div>
   <button id="nfw" hidden>Firmware only</button><button id="nbl" hidden>Bootloader only</button>
   <button id="nprimary" class="pri"></button><button id="nsecondary"></button></div>
+
+<div class="band" id="cnotice"><span class="cap">program</span><span class="text" id="cntext"></span>
+  <button id="cnopen" class="pri">Open release page</button><button id="cnlater">Later</button></div>
 
 <main>
 <!-- LIVE -->
@@ -381,8 +391,16 @@ footer .r { color: var(--faint); min-width: 160px; }
         <span class="cap">update check</span><span class="v num" id="m-upd">—</span>
         <span class="cap">available</span><span class="v num" id="m-avail">—</span>
         <span class="cap">last transfer</span><span class="v num" id="m-xfer">—</span>
+        <span class="cap">companion</span><span class="v num" id="m-app">—</span>
       </div>
       <div class="sbar" id="m-prog" style="grid-template-columns:repeat(40,1fr);margin-top:12px"></div>
+      <div class="eng" style="margin-top:24px">Install a version <button class="sm" id="rl-load" style="margin-left:8px">List releases</button></div>
+      <div class="cap" style="margin:4px 0 8px">any release of the project, also an older one, or a file of your own; going back and every file ask first</div>
+      <div class="cardbar" style="margin-bottom:8px"><select id="rl-fw" aria-label="firmware release" disabled></select><button id="rl-fw-go" disabled>Install firmware</button></div>
+      <div class="cardbar" style="margin-bottom:8px"><select id="rl-bl" aria-label="bootloader release" disabled></select><button id="rl-bl-go" disabled>Install bootloader</button></div>
+      <div class="cardbar" style="margin-bottom:8px"><input type="file" id="f-file" accept=".bin" aria-label="firmware or bootloader file of your own">
+        <button id="f-fw" disabled>File as firmware</button><button id="f-bl" disabled>File as bootloader</button></div>
+      <div class="path" id="inst-note"></div>
       <div class="eng" style="margin-top:24px">Clock</div>
       <div class="cardbar" style="margin-bottom:8px"><span class="num" id="ntpname"></span><button id="sync">Sync time</button></div>
       <div class="path num" id="clockres"></div>
@@ -442,6 +460,14 @@ footer .r { color: var(--faint); min-width: 160px; }
   <p>Delete <b class="num yel" id="cf-name"></b> from the meter's card? This cannot be undone. Type the name to confirm.</p>
   <input id="cf-input" class="num" spellcheck="false" autocomplete="off" aria-label="type the file name">
   <div class="btns" style="margin-top:0"><button id="cf-ok" disabled>Delete</button><button id="cf-cancel">Cancel</button></div>
+</div></div>
+
+<div class="confirm" id="iconfirm"><div class="box wide">
+  <div class="eng"><span class="warn">Warning</span> <span id="ic-title"></span></div>
+  <div class="warntext" id="ic-text"></div>
+  <p>Type <b class="num yel" id="ic-word"></b> to install it anyway.</p>
+  <input id="ic-input" class="num" spellcheck="false" autocomplete="off" aria-label="type the word to confirm">
+  <div class="btns" style="margin-top:0"><button id="ic-ok" disabled>Install</button><button id="ic-cancel">Cancel</button></div>
 </div></div>
 
 <div class="confirm" id="pconfirm"><div class="box">
@@ -989,7 +1015,7 @@ function drawUpdate(u, M) {
     pr.hidden = false; lit(pr, frac);
   }
   else if (st === 'done' && !u.later) show([u.message ? u.message : 'update finished', ...xferNote()], 'OK');
-  else if (st === 'error' && !u.later) show(['update stopped: ' + u.message, ...xferNote()], 'Try again', 'Close', true);
+  else if (st === 'error' && !u.later) show(['update stopped: ' + u.message, ...xferNote()], u.picked ? null : 'Try again', 'Close', true);
   else n.classList.remove('show');
   if (st !== 'sending') upStart = null;
   lit($('m-prog'), frac);
@@ -1006,6 +1032,70 @@ $('nsecondary').onclick = async () => {
   const st = state && state.update.state;
   try { await api(['waiting_ld', 'sending', 'restarting'].includes(st) ? {update_cancel: true} : {update_later: true}); } catch (e) { fail(e); }
 };
+// ---- install a release of your choice (also an older one) or a file of your own (issue 25)
+// the program decides what is refused and what needs the typed word (install.py make_plan); the page only shows its answer
+let planNow = null;
+const note = t => setText($('inst-note'), t);
+function fillReleases(sel, list) {
+  sel.replaceChildren(...list.map(e => h('option', {value: e.tag},
+    [e.text, e.tag, e.published, e.refusal ? 'refused' : e.relation === 'same' ? 'on the meter' : e.relation === 'older' ? 'older' : e.relation === 'newer' ? 'newer' : ''].filter(Boolean).join('  ·  '))));
+  sel.disabled = !list.length;
+}
+$('rl-load').onclick = async () => {
+  note('reading the list of releases …');
+  try {
+    const j = await send('release_list');
+    fillReleases($('rl-fw'), j.firmware); fillReleases($('rl-bl'), j.bootloader);
+    note(j.firmware.length + ' firmware and ' + j.bootloader.length + ' bootloader releases');
+  } catch (e) { note(''); fail(e); }
+};
+function askInstall(choice) {                           // choice: {kind, tag} or {kind, staged: true}
+  return send('install_plan', choice).then(j => {
+    const p = j.plan;
+    if (p.refusal) { say('not installed: ' + p.refusal, true); note('refused: ' + p.refusal); return; }
+    if (!p.needs_confirm) return go(choice, null);
+    planNow = {choice, word: p.word};
+    $('ic-title').textContent = 'Install ' + p.kind + ' ' + p.label + (p.custom ? ' (file of your own)' : p.relation === 'older' ? ' (older than the meter has)' : '');
+    $('ic-text').textContent = p.warnings.join('\n\n');
+    $('ic-word').textContent = p.word; $('ic-input').value = ''; $('ic-ok').disabled = true;
+    $('iconfirm').classList.add('show'); $('ic-input').focus();
+  }).catch(fail);
+}
+const go = (choice, word) => send('install_chosen', Object.assign({}, choice, word ? {confirm: word} : {}))
+  .then(() => say('installing ' + (choice.tag || 'the file') + ' …')).catch(fail);
+$('ic-input').oninput = () => { $('ic-ok').disabled = !planNow || $('ic-input').value !== planNow.word; };
+$('ic-input').onkeydown = e => { if (e.key === 'Escape') $('ic-cancel').click(); else if (e.key === 'Enter' && !$('ic-ok').disabled) $('ic-ok').click(); };
+$('ic-cancel').onclick = () => { planNow = null; $('iconfirm').classList.remove('show'); };
+$('ic-ok').onclick = () => { const p = planNow; planNow = null; $('iconfirm').classList.remove('show'); if (p) go(p.choice, p.word); };
+$('rl-fw-go').onclick = () => $('rl-fw').value && askInstall({kind: 'firmware', tag: $('rl-fw').value});
+$('rl-bl-go').onclick = () => $('rl-bl').value && askInstall({kind: 'bootloader', tag: $('rl-bl').value});
+async function chooseFile(kind) {
+  const f = $('f-file').files[0];
+  if (!f) return say('choose a .bin file first', true);
+  if (f.size > 0x5A000) return say(f.name + ': ' + f.size + ' bytes; at most ' + 0x5A000, true);
+  note('checking ' + f.name + ' …');
+  try {
+    const r = await fetch('/upload?kind=' + kind + '&name=' + encodeURIComponent(f.name), {method: 'POST', body: f,
+      headers: {'Content-Type': 'application/octet-stream', 'X-121GW-Companion': '1'}});
+    const j = await r.json().catch(() => ({error: 'no answer'}));
+    if (!r.ok) throw new Error(j.error || r.status);
+    note('checked: ' + j.staged.name + ' · ' + grp(j.staged.size) + ' B · SHA-256 ' + j.staged.sha256.slice(0, 16) + ' …');
+    await askInstall({kind, staged: true});
+  } catch (e) { note(''); fail(e); }
+}
+$('f-fw').onclick = () => chooseFile('firmware');
+$('f-bl').onclick = () => chooseFile('bootloader');
+// the program's own newer release (notice with a link; the address is the one the release check found)
+let cnHidden = '';
+$('cnopen').onclick = () => send('open_release_page').then(j => say('release page: ' + j.url)).catch(fail);
+$('cnlater').onclick = () => { cnHidden = (state && state.companion && state.companion.newer && state.companion.newer.tag) || ''; $('cnotice').classList.remove('show'); };
+function drawCompanion(C) {
+  const n = C && C.newer;
+  $('cnotice').classList.toggle('show', !!n && n.tag !== cnHidden);
+  if (n) { setText($('cntext'), 'A newer version of this program is available: ' + n.text + ' (you have ' + C.version + ')'); $('cnopen').title = n.url; }
+  setText($('m-app'), C ? C.version + (n ? ' · newer: ' + n.text : '') : '—');
+}
+
 const UPTXT = {none: 'no information yet', available: 'update available', downloading: 'downloading', waiting_ld: 'waiting for Ld-bt', restarting: 'restarting',
                sending: 'sending', done: 'finished', error: 'stopped'};
 function drawMeter(L, M, u, C) {
@@ -1021,6 +1111,9 @@ function drawMeter(L, M, u, C) {
   $('m-avail').textContent = av.length ? av.join(' · ') : u.state === 'none' ? '—' : 'nothing newer';
   setText($('ntpname'), C ? 'time server ' + (C.server || '—') + ' (SETTINGS)' : '');
   $('sync').disabled = L.state !== 'connected';
+  const busy = ['downloading', 'waiting_ld', 'restarting', 'sending'].includes(u.state), ready = L.state === 'connected' && M.mode !== 'unknown' && !busy;
+  $('rl-fw-go').disabled = !ready || $('rl-fw').disabled; $('rl-bl-go').disabled = !ready || $('rl-bl').disabled;
+  $('f-fw').disabled = $('f-bl').disabled = !ready;
   const X = state.last_transfer;
   setText($('m-xfer'), X ? (X.ok ? '' : 'stopped · ') + X.what + ': ' + X.text : '—');
   if (C && C.last && !syncing) $('clockres').textContent = `set to ${C.last.time} from ${C.server} · offset ${(C.last.offset * 1000).toFixed(0)} ms` + (C.last.note || '');
@@ -1180,6 +1273,7 @@ function render() {
   const U = state.update || {state: 'none'};
   drawHeader(L, M, S, state.now);
   drawUpdate(U, M);
+  drawCompanion(state.companion);
   $('c-leave').hidden = !state.can_leave_ld;
   const keysOff = !connected() || desk();
   document.querySelectorAll('#keys button').forEach(b => b.disabled = keysOff);

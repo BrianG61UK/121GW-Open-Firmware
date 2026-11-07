@@ -11,6 +11,28 @@ A command is an object whose first key names it: `{"connect": address}`.  Parame
 command key, `{"card_download": true, "name": "LOG0001.CSV", "dest": "/path"}`; they are also accepted inside it,
 `{"card_download": {"name": "...", "dest": "..."}}`.
 
+## Installing a chosen version or file (GitHub issue 25), the program's own version (issue 23)
+
+`state.companion`: `{"version": "1.2.24" | "source", "newer": null | {"text", "tag", "url"}}`; `newer` is set by the release
+check when a release `companion-vA.B.C` newer than this program exists (never when run from the source tree).
+`state.staged`: `null` or `{"kind", "name", "size", "sha256"}` of the checked file of the user's own.  `state.update` has two
+more keys: `picked` (the label of a chosen version or file while it is installed, else `""`) and `companion` (as `newer`).
+
+- `{"release_list": true}` answers `{"ok", "firmware": [...], "bootloader": [...], "meter": {...}}`: every published release,
+  newest first, as `{"tag", "text", "published", "relation", "refusal", "needs_confirm"}`; `relation` compares with the
+  meter (`newer`, `same`, `older`, `unknown` when the meter's version is not known).
+- `POST /upload?kind=firmware|bootloader&name=<file name>` with the file as body (header rule as `/api`, at most 368640
+  bytes, a Content-Length): the program checks the file as it checks a release image (`releases.check_image`, for a
+  bootloader `releases.check_bootloader_image`) and keeps it; answers `{"ok", "staged": {...}}` or `400` with the reason.
+- `{"install_plan": true, "kind": "firmware"|"bootloader", "tag": "v1.1.9"}` or `..., "staged": true}` answers
+  `{"ok", "plan": {"kind", "label", "tag", "custom", "relation", "refusal", "needs_confirm", "warnings": [...], "word"}}`;
+  nothing is sent.  `refusal` is the reason when it cannot be installed whatever the user says.
+- `{"install_chosen": true, "kind", "tag" | "staged": true, "confirm": "INSTALL"}` starts the update through the same
+  transfer as `update_now`.  A downgrade, a release that cannot be compared and every file of the user's own need
+  `confirm` to be exactly the word of the plan; without it `400` and nothing is sent.  A refused plan is `400` too.
+- `{"staged_clear": true}` forgets the file; `{"open_release_page": true}` opens the page of the newer program release the
+  check found (no other address).
+
 ## state.derived  (computed here from the decoded reading; `null` = cannot be told)
 
     { rel_pct,        % change against the value when REL went on; null when REL is off, when the program connected with REL

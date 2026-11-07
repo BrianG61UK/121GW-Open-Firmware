@@ -8,6 +8,7 @@ otherwise.
 """
 import argparse
 import collections
+import hashlib
 import json
 import os
 import queue
@@ -17,7 +18,7 @@ import time
 import webbrowser
 from contextlib import contextmanager
 
-from . import card, clock, derived, diag, display, frames, keys, paths, record, releases, report, transfer
+from . import card, clock, derived, diag, display, frames, install, keys, paths, record, releases, report, transfer
 from . import settings as meter_settings
 from .link import MeterLink
 from . import server
@@ -56,6 +57,7 @@ LEAVE_CANCEL_WAIT = 3.0                          # extra seconds Leave waits for
 LINK_WAIT = 2.5                                  # seconds a command waits for the link while the desk watcher's page check has it
 TRACE_UI = os.environ.get('COMPANION_LOG') == '1'     # the page and the window report pointer events (diagnosis)
 UPDATE_ACTIVE = ('downloading', 'waiting_ld', 'restarting', 'sending')      # update states that own the link
+NAME_MAX = 40                                    # characters of a chosen file's name kept for the display
 RELEASE_RECHECK = 1800.0                         # seconds between release checks while connected
 RESTART_POLL = 1.0                               # seconds between update-mode probes on a link kept through the restart
 VERSION_WAIT = 2.0                               # seconds to wait for the answer to a version request
@@ -109,9 +111,13 @@ class Companion:
         # firmware update (FEATURES.md 2.11 stage 4): state none / available / downloading / waiting_ld / sending / done /
         # error; 'later' hides the notice until the next connection
         # 'fw' / 'bl': (meter text, release tag) of a newer firmware / bootloader, or None; 'what' of a running update
+        # 'picked': the label of a version or file the user chose (METER view) instead of the newest release; 'companion':
+        # {'text', 'tag', 'url'} of a newer release of this program, or None
         self.update = {'state': 'none', 'fw': None, 'bl': None, 'checked': None, 'latest': [], 'check_error': '',
                        'what': None, 'step': '', 'later': False, 'done': 0,
-                       'total': 0, 'message': ''}
+                       'total': 0, 'message': '', 'picked': '', 'companion': None}
+        self.staged = None                               # a file of the user's own, checked: {'kind', 'name', 'data', 'size', 'sha256'}
+        self._picks = {}                                 # the chosen version / file of the running update, by kind
         self._sender = None
         self._cancel = False
         self.last_transfer = None                        # statistics of the last firmware / bootloader transfer
@@ -512,7 +518,7 @@ class Companion:
             return
         policy = self.settings.get('update_check', 'connect')
         if policy == 'never':
-            self.update.update(state='none', fw=None, bl=None, checked=None, latest=[],
+            self.update.update(state='none', fw=None, bl=None, checked=None, latest=[], companion=None,
                                check_error='update check off (SETTINGS)')
             return
         last = self.settings.get('release_checked_at')
@@ -538,9 +544,18 @@ class Companion:
                 bl = (releases.bootloader_text(bver), btag)
         except (OSError, ValueError, releases.ReleaseError) as e:
             problems.append('bootloader releases: %s' % e)
+        newer = None
+        try:                                            # a newer release of this program (tag companion-vA.B.C); a failure here
+            cver, ctag = releases.latest_companion()    # is the same fetch as above, already reported
+            have = releases.version_of_companion(report.app_version())
+            if have is not None and cver > have:
+                newer = {'text': releases.companion_text(cver), 'tag': ctag, 'url': releases.page_url(ctag)}
+        except (OSError, ValueError, releases.ReleaseError):
+            pass
         state = 'available' if fw or bl else 'none'
         # checked / latest / check_error: what the UI shows for 'none' (up to date, or why nothing could be checked)
-        self.update.update(state=state, fw=fw, bl=bl, checked=time.time(), latest=latest, check_error='; '.join(problems))
+        self.update.update(state=state, fw=fw, bl=bl, checked=time.time(), latest=latest, check_error='; '.join(problems),
+                           companion=newer)
         if not problems:
             self.settings['release_checked_at'] = time.time()
             save_settings(self.settings)
@@ -550,8 +565,11 @@ class Companion:
         """what: 'firmware', 'bootloader' or 'both'.  With EEVblog's bootloader the firmware goes first (the first
         install needs F-1.03 on the meter); with the two-part bootloader the bootloader goes first (DESIGN.md 5)."""
         u = self.update
-        self.event('update %s started (firmware %s, bootloader %s)' % (what, u['fw'][0] if u['fw'] else '-',
-                                                                       u['bl'][0] if u['bl'] else '-'))
+        fw, bl = (self._picks.get('firmware') or {}).get('text'), (self._picks.get('bootloader') or {}).get('text')
+        u['picked'] = fw or bl or ''                     # what the user chose (METER view), else the newest release is installed
+        self.event('update %s started (firmware %s, bootloader %s)%s' % (
+            what, fw or (u['fw'][0] if u['fw'] else '-'), bl or (u['bl'][0] if u['bl'] else '-'),
+            ' chosen by the user' if self._picks else ''))
         try:
             steps = ['firmware', 'bootloader'] if what == 'both' else [what]
             if what == 'both' and self.bl != 'EEV':
@@ -572,20 +590,29 @@ class Companion:
             self.event('update stopped: %s' % e)
         finally:
             self._sender, self._cancel = None, False
+            self._picks = {}
 
     def _update_firmware(self):
         u = self.update
-        if not u['fw']:
-            return
-        text, tag = u['fw']
-        u.update(state='downloading', what='firmware', step=text, message='getting %s from the releases' % text)
-        data = releases.image(tag)
+        pick = self._picks.get('firmware')
+        if pick is None:
+            if not u['fw']:
+                return
+            pick = {'text': u['fw'][0], 'tag': u['fw'][1], 'data': None, 'expect': u['fw'][0]}
+        text = pick['text']
+        u.update(state='downloading', what='firmware', step=text,
+                 message='getting %s from the releases' % text if pick['data'] is None else 'checking %s' % text)
+        data = pick['data'] if pick['data'] is not None else releases.image(pick['tag'])
         if self.bl is None and self.mode == 'firmware' and self.fw_kind == 'fast' and not self.desk:
             self.bl = self._ask_bootloader()             # not known yet: the route depends on it (issue 10)
         if self.mode == 'bootloader' or releases.version_of_bootloader(self.bl):
+            if len(data) > install.BL_FW_MAX:            # the bootloader would refuse it at START, after the restart
+                raise transfer.TransferError('%s has %d bytes; the two-part bootloader takes firmware images of at most %d '
+                                             'bytes' % (text, len(data), install.BL_FW_MAX))
             self._enter_update_mode()
             self._boot_send(data, transfer.KIND_FIRMWARE, None, text)
-            self._wait_restart(lambda: self.mode == 'firmware' and self.version == text,
+            expect = pick['expect']                      # None: a file of the user's own, whose version is not known
+            self._wait_restart(lambda: self.mode == 'firmware' and (expect is None or self.version == expect),
                                'the meter did not come back with %s' % text, 'it starts %s' % text,
                                poll=self._version_kept_link)
             u.update(message='')
@@ -598,19 +625,25 @@ class Companion:
 
     def _update_bootloader(self):
         u = self.update
-        if not u['bl']:
-            return
-        text, tag = u['bl']
-        u.update(state='downloading', what='bootloader', step=text, message='getting %s from the releases' % text)
-        install, boot = releases.bootloader_files(tag)
+        pick = self._picks.get('bootloader')
+        if pick is None:
+            if not u['bl']:
+                return
+            pick = {'text': u['bl'][0], 'tag': u['bl'][1], 'data': None, 'expect': u['bl'][0]}
+        text = pick['text']
+        u.update(state='downloading', what='bootloader', step=text,
+                 message='getting %s from the releases' % text if pick['data'] is None else 'checking %s' % text)
+        first, boot = (releases.bootloader_files(pick['tag']) if pick['data'] is None else (None, pick['data']))
         if self.bl == 'EEV':
+            if first is None:                            # install.plan refuses it earlier; never reached with a checked plan
+                raise transfer.TransferError('a bootloader file of your own is not sent to EEVblog\'s bootloader')
             if releases.version_of_meter(self.version) is None or releases.version_of_meter(self.version) < (1, 0, 3):
                 raise transfer.TransferError('the first bootloader install needs firmware F-1.03 or newer on the meter: '
                                              'update the firmware first')
             self._sender = transfer.Sender(self.link.send)
             self._wait_ld()
             try:
-                self._send_tracked(lambda: self._sender.run(install, kind=transfer.KIND_INSTALL), len(install), text)
+                self._send_tracked(lambda: self._sender.run(first, kind=transfer.KIND_INSTALL), len(first), text)
             except transfer.TransferError as e:
                 # F-1.03 as first built could restart before its END answer went out (2026-11-04): the meter's own
                 # report after the restart decides
@@ -618,9 +651,11 @@ class Companion:
                     raise
         else:
             self._enter_update_mode()
-            ver = releases.version_of_bootloader(text)
-            self._boot_send(boot, transfer.KIND_BOOTLOADER, ver[0] << 16 | ver[1] << 8 | ver[2], text)
-        self._wait_restart(lambda: self.bl == text, 'the meter did not report bootloader %s' % text,
+            ver = releases.version_of_bootloader(text) if pick['expect'] else None     # a file of the user's own: version word 0
+            self._boot_send(boot, transfer.KIND_BOOTLOADER, ver[0] << 16 | ver[1] << 8 | ver[2] if ver else None, text)
+        expect = pick['expect']
+        self._wait_restart(lambda: self.bl == expect if expect else self.mode == 'firmware',
+                           'the meter did not report bootloader %s' % text if expect else 'the meter did not restart into its firmware',
                            'it starts bootloader %s' % text, poll=self._version_kept_link)
         u.update(message='')
 
@@ -720,6 +755,125 @@ class Companion:
             return job()
         except (OSError, RuntimeError, transfer.TransferError) as e:
             return e
+
+    # ------------------------------------------------------------------ a version or a file of the user's choice (issue 25)
+    def _meter_facts(self):
+        """What install.make_plan needs to know of the meter."""
+        v = releases.version_of_meter(self.version) if self.fw_kind == 'fast' else None
+        return {'fw': v, 'bl': self.bl, 'mode': self.mode}
+
+    @staticmethod
+    def _kind(name):
+        if name not in ('firmware', 'bootloader'):
+            raise ValueError('kind: firmware or bootloader')
+        return name
+
+    @staticmethod
+    def _published(kind):
+        try:
+            return releases.list_releases()[kind]
+        except (OSError, ValueError, releases.ReleaseError) as e:
+            raise RuntimeError('the release list could not be read: %s' % e) from e
+
+    def release_list(self):
+        """Every published release of the firmware and of the bootloader, newest first, each with how it compares to what
+        the meter has and whether it would be refused (the chooser of the METER view)."""
+        rel = {k: self._published(k) for k in ('firmware', 'bootloader')}
+        facts, out = self._meter_facts(), {}
+        for kind, lst in rel.items():
+            newest = lst[0]['version'] if lst else None
+            out[kind] = [{'tag': e['tag'], 'text': e['text'], 'published': e['published'],
+                          **{k: v for k, v in install.make_plan(kind, facts, release=e, newest=newest).items()
+                             if k in ('relation', 'refusal', 'needs_confirm')}} for e in lst]
+        return {'ok': True, 'firmware': out['firmware'], 'bootloader': out['bootloader'],
+                'meter': {'firmware': self.version if self.fw_kind == 'fast' else None, 'bootloader': self.bl, 'mode': self.mode}}
+
+    def stage_file(self, kind, name, data):
+        """Check a file of the user's own and keep it for install; the file is never sent unless it passes the same
+        checks as a release image (releases.check_image / check_bootloader_image).  Returns the summary the page shows."""
+        self._kind(kind)
+        self.staged = None
+        name = ''.join(ch for ch in os.path.basename(str(name).replace('\\', '/')) if ch.isprintable())[:NAME_MAX] or 'file'
+        if not data:
+            raise ValueError('%s: the file is empty' % name)
+        if len(data) > server.UPLOAD_MAX:
+            raise ValueError('%s: %d bytes; at most %d' % (name, len(data), server.UPLOAD_MAX))
+        bad = releases.check_image(data) if kind == 'firmware' else releases.check_bootloader_image(data)
+        if bad and kind == 'bootloader' and releases.check_install(data) is None:
+            bad = ('this is a first-install file (starter and bootloader); only the bootloader image (blimage.bin) of a '
+                   'release can be sent, and only to a meter that has the two-part bootloader already')
+        if bad:
+            raise ValueError('%s is not accepted as a %s: %s' % (name, kind, bad))
+        self.staged = {'kind': kind, 'name': name, 'data': bytes(data), 'size': len(data),
+                       'sha256': hashlib.sha256(data).hexdigest()}
+        self.event('file chosen for %s: %d bytes, SHA-256 %s' % (kind, len(data), self.staged['sha256'][:16]))
+        return {'ok': True, 'staged': self._staged_summary()}
+
+    def _staged_summary(self):
+        s = self.staged
+        return {k: s[k] for k in ('kind', 'name', 'size', 'sha256')} if s else None
+
+    def _plan(self, c):
+        """(plan, pick) for the command's choice: {'kind', 'tag'} a release or {'kind', 'staged': True} the checked file."""
+        kind = self._kind(c.get('kind'))
+        facts = self._meter_facts()
+        if c.get('staged'):
+            s = self.staged
+            if s is None or s['kind'] != kind:
+                raise ValueError('no checked %s file chosen' % kind)
+            plan = install.make_plan(kind, facts, custom={'name': s['name'], 'size': s['size'], 'sha256': s['sha256']})
+            return plan, {'text': s['name'], 'tag': None, 'data': s['data'], 'expect': None}
+        tag = c.get('tag')
+        lst = self._published(kind)
+        found = [e for e in lst if e['tag'] == tag]
+        if not found:
+            raise ValueError('no release %s' % tag)
+        plan = install.make_plan(kind, facts, release=found[0], newest=lst[0]['version'])
+        return plan, {'text': found[0]['text'], 'tag': tag, 'data': None, 'expect': found[0]['text']}
+
+    def install_plan(self, c):
+        """What installing the choice would mean: the plan with its warnings (nothing is sent)."""
+        plan, _ = self._plan(c)
+        return {'ok': True, 'plan': plan}
+
+    def install_chosen(self, c):
+        """Install a release or the checked file: through the update's own transfer (_run_update).  A refused plan is an
+        error; a downgrade or a file of the user's own is sent only when `confirm` is the word the page makes the user type."""
+        plan, pick = self._plan(c)
+        if plan['refusal']:
+            raise ValueError('not installed: %s' % plan['refusal'])
+        if plan['needs_confirm'] and c.get('confirm') != install.CONFIRM_WORD:
+            raise ValueError('not installed: %s needs the confirmation (type %s)' % (plan['label'], install.CONFIRM_WORD))
+        kind, u = plan['kind'], self.update
+        if u['state'] in UPDATE_ACTIVE:
+            raise RuntimeError('an update is running')
+        if self.link.state != 'connected' or self.mode == 'unknown':
+            raise RuntimeError('not connected to a meter')
+        if self.card_st['busy']:
+            raise RuntimeError('a card operation is running: %s' % self.card_st['op'])
+        if not self._bft_lock.acquire(timeout=3.0):
+            raise RuntimeError('the link is busy: %s; try again' % self._bft_what)
+        try:
+            self._cancel = False
+            self._picks = {kind: pick}
+            u.update(later=False, state='downloading')
+            self.event('install chosen: %s %s (%s%s)' % (kind, plan['label'], plan['relation'],
+                                                         ', confirmed' if plan['needs_confirm'] else ''))
+            threading.Thread(target=self._run_update, args=(kind,), name='update', daemon=True).start()
+        finally:
+            self._bft_lock.release()
+        return {'ok': True}
+
+    def open_release_page(self):
+        """Open the page of the newer release of this program in the browser (only the address the release check found)."""
+        n = self.update.get('companion')
+        if not n:
+            raise ValueError('no newer release of this program is known')
+        try:
+            webbrowser.open(n['url'])
+        except Exception:                                # noqa: BLE001 - no browser: the page shows the address
+            pass
+        return {'ok': True, 'url': n['url']}
 
     # ------------------------------------------------------------------ link use outside the update: keys, desk, card
     def _update_active(self):
@@ -1102,6 +1256,8 @@ class Companion:
                 'meter': {'firmware': self.fw_kind, 'version': self.version, 'bootloader': self.bl, 'mode': self.mode,
                           'xdiag': self.xdiag_on},
                 'update': dict(self.update),
+                'companion': {'version': report.app_version(), 'newer': self.update.get('companion')},
+                'staged': self._staged_summary(),
                 'last_transfer': self.last_transfer,
                 'clock': self.clock,
                 'session': self.session.snapshot(since),
@@ -1165,6 +1321,17 @@ class Companion:
             finally:
                 self._bft_lock.release()
             return {'ok': True}
+        if 'release_list' in c:
+            return self.release_list()
+        if 'install_plan' in c:
+            return self.install_plan(c['install_plan'] if isinstance(c['install_plan'], dict) else c)
+        if 'install_chosen' in c:
+            return self.install_chosen(c['install_chosen'] if isinstance(c['install_chosen'], dict) else c)
+        if 'staged_clear' in c:
+            self.staged = None
+            return {'ok': True}
+        if 'open_release_page' in c:
+            return self.open_release_page()
         if 'update_cancel' in c:
             self._cancel = True
             if self._sender is not None:

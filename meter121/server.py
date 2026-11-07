@@ -5,6 +5,9 @@
     GET  /state?since=T    JSON: link, meter, session (statistics, trend points newer than T), update notice, and the
                            derived values, desk mode, diagnosis, SD card and settings of the meter (STATE.md)
     POST /api              JSON command; needs the request header "X-121GW-Companion: 1"
+    POST /upload?kind=firmware|bootloader&name=<file name>
+                           the bytes of a file the user chose (METER view); the program checks it (app.stage_file) and
+                           keeps it for the command install_chosen; at most UPLOAD_MAX bytes; same header rule
 
 Protection: the server binds 127.0.0.1, answers only requests whose Host header names 127.0.0.1 or localhost (a web
 page cannot reach it through a DNS name), and every POST needs the custom header, which a page of another origin cannot
@@ -26,6 +29,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # sys._MEIPASS, because there the package's own folder exists only inside the archive, not on disk
 UI = os.path.join(getattr(sys, '_MEIPASS', None) or os.path.normpath(os.path.join(HERE, '..')), 'ui')
 HEADER = 'X-121GW-Companion'
+UPLOAD_MAX = 0x5A000                             # largest file taken: the largest firmware image the meter accepts
+UPLOAD_TIMEOUT = 30.0                            # seconds the bytes of an uploaded file may take
 
 
 def make_handler(app):
@@ -75,12 +80,35 @@ def make_handler(app):
             with open(p, 'rb') as f:
                 self._send(200, f.read(), ctype)
 
+        def _upload(self, q):
+            """The bytes of a file the user chose: a length is demanded (no waiting for the end of the connection), the
+            read has a time limit, and nothing is kept unless the program's checks pass."""
+            try:
+                n = int(self.headers.get('Content-Length') or -1)
+            except ValueError:
+                n = -1
+            if n < 0:
+                return self._json(400, {'error': 'bad Content-Length'})
+            if n > UPLOAD_MAX:
+                return self._json(413, {'error': 'file too large: at most %d bytes' % UPLOAD_MAX})
+            try:
+                self.connection.settimeout(UPLOAD_TIMEOUT)
+                data = self.rfile.read(n)
+                if len(data) != n:
+                    return self._json(400, {'error': 'the file did not arrive completely'})
+                return self._json(200, app.stage_file((q.get('kind') or [''])[0], (q.get('name') or [''])[0], data))
+            except (ValueError, TypeError, KeyError, RuntimeError, OSError) as e:
+                return self._json(400, {'error': str(e)})
+
         def do_POST(self):
             if not self._host_ok():
                 return self._json(403, {'error': 'wrong host'})
             if self.headers.get(HEADER) != '1':
                 return self._json(403, {'error': 'missing header %s' % HEADER})
-            if urlparse(self.path).path != '/api':
+            u = urlparse(self.path)
+            if u.path == '/upload':
+                return self._upload(parse_qs(u.query))
+            if u.path != '/api':
                 return self._json(404, {'error': 'not found'})
             try:
                 n = int(self.headers.get('Content-Length') or 0)

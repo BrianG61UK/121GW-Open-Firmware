@@ -10,6 +10,10 @@ Releases of the bootloader (branch bootloader) are tagged bl-vA.B.C and carry bo
 (starter and bootloader, for the first install through the firmware) and blimage.bin (the bootloader image, for an
 update through the bootloader), and the zip's SHA-256 in bootloader-<tag>.zip.sha256.  The meter reports the version as
 B-A.BC (firmware ble/blcmd.s, key code 0x92); its bootloader header carries A << 16 | B << 8 | C.
+
+Releases of this program are tagged companion-vA.B.C (any number of digits); they carry the installers, no images.
+list_releases() sorts all published releases into the three kinds, newest first, for the chooser of the METER view (any
+version, also an older one) and for the notice about a newer program.
 """
 import hashlib
 import io
@@ -18,6 +22,7 @@ import os
 import re
 import struct
 import ssl
+import time
 import urllib.request
 import zipfile
 
@@ -28,7 +33,13 @@ API = 'https://api.github.com/repos/%s/releases?per_page=100' % REPO
 ASSET = 'https://github.com/%s/releases/download/%s/%s'
 TAG = re.compile(r'v(\d)\.(\d)\.(\d)')
 BL_TAG = re.compile(r'bl-v(\d)\.(\d)\.(\d)')
+COMPANION_TAG = re.compile(r'companion-v(\d+)\.(\d+)\.(\d+)')
+PAGE_URL = 'https://github.com/%s/releases/tag/%s'
 TIMEOUT = 20
+PER_PAGE, MAX_PAGES = 100, 5                    # the release list is fetched page by page, at most 500 releases
+CACHE_SECONDS = 30.0                            # the lists of firmware, bootloader and program come from one fetch
+BL_BASE, BL_MAX, BL_STACK_TOP = 0x08000400, 0x5B00, 0x2000C000     # bootloader/src/bl.inc, bl_main.s vector table
+BL_VECTORS = 73                                 # words of the two-part bootloader's vector table (bl_main.s)
 
 
 class ReleaseError(Exception):
@@ -69,23 +80,94 @@ def _get(url):
         return r.read()
 
 
-def _latest(pattern, what):
-    rel = json.loads(_get(API))
-    found = [(tuple(int(x) for x in pattern.fullmatch(r['tag_name']).groups()), r['tag_name']) for r in rel
-             if not r.get('draft') and not r.get('prerelease') and pattern.fullmatch(r['tag_name'])]
+_cache = {'at': 0.0, 'data': None}
+
+
+def _fetch():
+    """The releases of the project as the API lists them (newest first), a few pages if need be; kept for
+    CACHE_SECONDS so that the three questions of one release check cost one fetch."""
+    if _cache['data'] is not None and time.monotonic() - _cache['at'] < CACHE_SECONDS:
+        return _cache['data']
+    out = []
+    for page in range(1, MAX_PAGES + 1):
+        part = json.loads(_get(API + '&page=%d' % page))
+        if not isinstance(part, list):
+            raise ReleaseError('the release list is not a list')
+        out.extend(part)
+        if len(part) < PER_PAGE:
+            break
+    _cache.update(at=time.monotonic(), data=out)
+    return out
+
+
+def forget():
+    """Drop the kept release list (the next question fetches again)."""
+    _cache.update(at=0.0, data=None)
+
+
+def companion_text(v):
+    return '%d.%d.%d' % v
+
+
+def parse_releases(rel):
+    """Sort the API's release list into {'firmware': [...], 'bootloader': [...], 'companion': [...]}, each newest
+    first.  An entry is {'version': (A, B, C), 'tag': tag, 'text': 'F-A.BC' / 'B-A.BC' / 'A.B.C', 'published': 'YYYY-MM-DD'
+    or ''}.  Drafts and pre-releases are left out, as are tags of no kind (like205-v1.0.0, ...)."""
+    kinds = (('firmware', TAG, meter_text), ('bootloader', BL_TAG, bootloader_text), ('companion', COMPANION_TAG, companion_text))
+    out = {k: [] for k, _, _ in kinds}
+    for r in rel:
+        if not isinstance(r, dict) or r.get('draft') or r.get('prerelease'):
+            continue
+        tag = r.get('tag_name')
+        if not isinstance(tag, str):
+            continue
+        for kind, pattern, text in kinds:
+            m = pattern.fullmatch(tag)
+            if m:
+                v = tuple(int(x) for x in m.groups())
+                out[kind].append({'version': v, 'tag': tag, 'text': text(v), 'published': str(r.get('published_at') or '')[:10]})
+                break
+    for lst in out.values():
+        lst.sort(key=lambda e: e['version'], reverse=True)
+    return out
+
+
+def list_releases():
+    """All published releases by kind, newest first (parse_releases of the GitHub list)."""
+    return parse_releases(_fetch())
+
+
+def _latest(kind, what):
+    found = list_releases()[kind]
     if not found:
         raise ReleaseError('no %s release found on github.com/%s' % (what, REPO))
-    return max(found)
+    return found[0]['version'], found[0]['tag']
 
 
 def latest():
     """(version tuple, tag) of the newest published fast release."""
-    return _latest(TAG, 'fast firmware')
+    return _latest('firmware', 'fast firmware')
 
 
 def latest_bootloader():
     """(version tuple, tag) of the newest published bootloader release."""
-    return _latest(BL_TAG, 'bootloader')
+    return _latest('bootloader', 'bootloader')
+
+
+def latest_companion():
+    """(version tuple, tag) of the newest published release of this program."""
+    return _latest('companion', 'companion')
+
+
+def version_of_companion(text):
+    """(A, B, C) from the program's own version text ('1.2.24'), or None ('source', 'dev', 'unknown')."""
+    m = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)', text or '')
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def page_url(tag):
+    """The release page of `tag` on GitHub."""
+    return PAGE_URL % (REPO, tag)
 
 
 def version_of_bootloader(text):
@@ -107,6 +189,23 @@ def check_image(data):
         return 'initial stack pointer 0x%08X is not in the RAM' % sp
     if not (reset & 1) or not 0x08006000 <= reset < 0x08060000:
         return 'reset vector 0x%08X is not a Thumb address in 0x08006000 .. 0x0805FFFF' % reset
+    return None
+
+
+def check_bootloader_image(data):
+    """The checks of a bootloader image (blimage.bin; loaded at 0x08000400) for an update through the two-part bootloader:
+    None or the reason.  The bootloader itself checks only length and CRC-32 of this kind (bootloader/src/bl_ble.s
+    bl_end_check), so a wrong file would be installed and started by the starter.  What identifies the two-part
+    bootloader is its vector table (bl_main.s): 73 words, the stack top 0x2000C000, every other word a Thumb address
+    inside the image; EEVblog's bootloaders are 24576 bytes (DESIGN.md 1) against the 23296 bytes at most (BL_MAX)."""
+    if not 4 * BL_VECTORS <= len(data) <= BL_MAX:
+        return 'size %d outside %d .. %d bytes (the vector table alone is %d)' % (len(data), 4 * BL_VECTORS, BL_MAX, 4 * BL_VECTORS)
+    words = struct.unpack_from('<%dI' % BL_VECTORS, data)
+    if words[0] != BL_STACK_TOP:
+        return 'initial stack pointer 0x%08X is not the two-part bootloader\'s 0x%08X' % (words[0], BL_STACK_TOP)
+    for i, w in enumerate(words[1:], 1):
+        if not w & 1 or not BL_BASE <= w < BL_BASE + len(data):
+            return 'vector %d (0x%08X) is not a Thumb address inside the image placed at 0x%08X' % (i, w, BL_BASE)
     return None
 
 
