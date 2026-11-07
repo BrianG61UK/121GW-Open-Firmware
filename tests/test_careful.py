@@ -41,7 +41,7 @@ class CardPieces(unittest.TestCase):
         self.assertEqual(sorted(names), sorted(n for n in m.files if card.Card.is_file(
             {'attr': 0x20, 'cut': False, 'size': 0, 'name': n})))
         lists = [p for t, p in m.sent if t == card.T_LIST]
-        self.assertTrue(lists and all(len(p) == 3 and p[2] == card.CAREFUL_LIST_MAX for p in lists))
+        self.assertTrue(lists and lists[0][2] == card.CAREFUL_LIST_MAX and all(len(p) == 3 and p[2] in (4, 2, 1) for p in lists))
         big = max(m.files, key=lambda n: len(m.files[n][0]))
         got = []
         c.read_file(big, len(m.files[big][0]), got.append)
@@ -82,6 +82,21 @@ class CardPieces(unittest.TestCase):
         got = []
         c.read_file(big, len(m.files[big][0]), got.append)
         self.assertEqual(b''.join(got), m.files[big][0])
+
+    def test_list_pages_shrink_with_long_names(self):
+        """GitHub issue 9: four entries with long names (the folders a Mac writes on a card) fill a whole answer that a
+        damaging link never delivers; the pages shrink until they arrive, and the list is complete."""
+        files = sample_files()
+        for i in range(6):
+            files['.Spotlight-V100-folder-with-a-long-name-%d.txt' % i] = (b'x', files['cal.bin'][1], files['cal.bin'][2])
+        m = FakeMeter(files)
+        m.careful_fw = True
+        m.damage_over = 130                            # an answer above 130 data bytes never arrives intact
+        names = [e['name'] for e in card.Card(make_client(m), careful=True).list_entries()]
+        self.assertEqual(sorted(names), sorted(files))
+        sizes = [p[2] for t, p in m.sent if t == card.T_LIST]
+        self.assertEqual(sizes[0], card.CAREFUL_LIST_MAX)
+        self.assertLess(min(sizes), card.CAREFUL_LIST_MAX)              # the page size came down
 
     def test_request_forms(self):
         self.assertEqual(card.list_request(5), b'\x05\x00')

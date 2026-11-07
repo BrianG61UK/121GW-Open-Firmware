@@ -292,6 +292,7 @@ class Card:
         self.careful = careful
         self._size = CAREFUL_START                     # kept from window to window of one Card
         self._rtts = collections.deque(maxlen=CAREFUL_RTT_KEEP)
+        self._most = CAREFUL_LIST_MAX                  # entries per careful LIST answer, kept from page to page
         if careful:                                    # one Card per operation: its statistics for the report
             LAST_CAREFUL.clear()
             LAST_CAREFUL.update(pieces=0, again=0, sizes={})
@@ -301,7 +302,7 @@ class Card:
         out, start = [], 0
         while True:
             if self.careful:
-                answer = self.c.ok(T_LIST, list_request(start, CAREFUL_LIST_MAX), retries=CAREFUL_RETRIES)
+                answer = self._careful_list_page(start)
             else:
                 answer = self.c.ok(T_LIST, list_request(start))
             entries, end = parse_list(*answer)
@@ -312,6 +313,28 @@ class Card:
             if not entries or len(out) > 0x7FFF:
                 raise CardError('LIST did not advance (%d entries, none new after %d)' % (len(out), start))
             start += len(entries)
+
+    def _careful_list_page(self, start):
+        """(field, data) of one LIST page in careful mode: up to self._most entries (CAREFUL_LIST_MAX at first, halved
+        after an answer that did not arrive, down to 1: four entries with long names, such as the folders a Mac writes on
+        a card, fill a whole 232-byte answer, which a damaging link rarely delivers; GitHub issue 9).  Until a first
+        answer has come the full LIST timeout applies (the meter may be starting the card), then the measured wait."""
+        for _ in range(CAREFUL_RETRIES):
+            t0 = time.monotonic()
+            try:
+                status, field, data = self.c.request(T_LIST, list_request(start, self._most), retries=1,
+                                                     timeout=self._careful_wait() if self._rtts else TIMEOUTS[T_LIST])
+            except CardError:
+                if self.c.cancelled:
+                    raise
+                LAST_CAREFUL['again'] = LAST_CAREFUL.get('again', 0) + 1
+                self._most = max(1, self._most // 2)
+                continue
+            if status:
+                raise CardError(describe(status, field), status)
+            self._rtts.append(time.monotonic() - t0)
+            return field, data
+        raise CardError('no answer from the meter (is "Ld-bt" still shown on it?)')
 
     @staticmethod
     def is_file(e):
