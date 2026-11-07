@@ -1,5 +1,7 @@
 121GW Companion: live view, recording and firmware information for the EEVblog 121GW over Bluetooth LE.
 
+New in 1.2.22: careful mode (old BLE112 module) adapts the size of the card download pieces to the link: it starts at 32 bytes, halves the size after a piece that was lost and doubles it (up to 128) after four in a row that arrived, and waits for a lost piece about three times the measured answer time instead of 5 seconds, so downloads on a damaging link are faster (GitHub issue 20). The report shows the pieces of the last card read by size and how many were sent again.
+
 New in 1.2.21: firmware and bootloader updates work on meters whose Bluetooth connection stays up while the meter restarts into its update mode (meters with the old BLE112 module): the program now asks the meter on that same connection instead of waiting for it to drop, so the meter no longer gives up after 30 seconds and goes back to the old firmware (GitHub issue 21). On Linux the diagnosis report names the distribution (from /etc/os-release).
 
 New in 1.2.20: careful mode for meters with the old Bluegiga BLE112 Bluetooth module (early meters; recognised by the packet size the link negotiates) and firmware F-1.19 or newer: the meter sends every reading twice and the program keeps the copy that checks out, and the card file list and downloads come in small pieces that are asked for again when damaged (GitHub issues 9 and 14). Newer meters are not affected.

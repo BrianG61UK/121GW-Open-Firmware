@@ -19,7 +19,7 @@ import socket
 import sys
 import time
 
-from . import frames
+from . import card, frames
 
 MAC_RE = re.compile(r'\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}\b')
 UUID_RE = re.compile(r'\b[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\b')
@@ -132,6 +132,10 @@ def link_details(app):
                                'wanted, not on' if app.careful_wanted() else
                                'off (MTU %s; careful mode is for the old BLE112 module and firmware F-1.19 or newer)'
                                % (st['mtu'] if st['mtu'] is not None else 'unknown')))
+    cs = card.LAST_CAREFUL
+    if cs.get('pieces') or cs.get('again'):
+        w('careful pieces   last card read: %d pieces, %d sent again; pieces by size: %s' % (
+            cs['pieces'], cs['again'], ', '.join('%d bytes %d' % (k, cs['sizes'][k]) for k in sorted(cs['sizes']))))
     w('disconnects      %d%s' % (st['disconnect_count'], ':' if st['disconnect_count'] else ''))
     for t, user, why in st['disconnects']:
         w('  %s  %s' % (time.strftime('%H:%M:%S', time.localtime(t)), why))

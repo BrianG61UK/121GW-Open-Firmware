@@ -8,6 +8,7 @@ the loop.
 """
 import os
 import queue
+import random
 import struct
 import sys
 import zlib
@@ -70,6 +71,8 @@ class FakeMeter:
         self.fast_leave = False                        # firmware F-1.17: the page Ld request LEAVE (type 0x19)
         self.careful_fw = False                        # firmware F-1.19: LIST max, CHUNK len, key codes 0x97 / 0x98
         self.damage_over = None                        # answers with more data bytes than this never arrive intact
+        self.damage_rate = 0.0                         # chance per answer byte to be damaged (the answer is then lost)
+        self.rng = random.Random(9)                    # fixed seed: the same losses in every run
         self.dup_frames = False                        # 0x97 received: status frames twice
         self.mclock = {'hz0': 4187000, 'hz': 4194100, 'trim': -3, 'status': 1, 'steps': 6, 'brr': 218, 'cal_run': 0x9D,
                        'cal_now': 0x9D}
@@ -127,7 +130,10 @@ class FakeMeter:
             return
         if self.damage_over is not None and len(data) > self.damage_over:
             return                                     # an old BLE112 link: a long answer always arrives damaged
-        self._out(card.answer_packet(seq, status, field, data))
+        pkt = card.answer_packet(seq, status, field, data)
+        if self.damage_rate and self.rng.random() > (1.0 - self.damage_rate) ** len(pkt):
+            return                                     # one byte of it damaged: the reassembler drops the answer
+        self._out(pkt)
 
     # -- the meter side: (status, field, data)
     def _entry(self, name):

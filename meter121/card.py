@@ -39,6 +39,7 @@ same folder).  The sync never deletes anything in the local folder.  Names the c
 names only after check_local_name (the card's name rules, no Windows device names).  Directories, volume labels and
 names the meter cut and sizes of 4 GiB and above are not files the meter can read: list() leaves them out and sync() reports them as skipped.
 """
+import collections
 import json
 import os
 import queue
@@ -216,8 +217,20 @@ WINDOW_TRIES = 3                                   # stagings of one window unti
 # careful mode (old BLE112 module, firmware F-1.19 on; app.py): small answers, more sends (a damaged byte costs one small
 # answer instead of a 232-byte one; GitHub issues 9 and 14)
 CAREFUL_LIST_MAX = 4                               # entries of one LIST answer (about 60 bytes with short names)
-CAREFUL_CHUNK = 48                                 # bytes of one CHUNK answer
 CAREFUL_RETRIES = 12                               # sends of one LIST / CHUNK request
+# adaptive pieces (GitHub issue 20): the meter cuts CHUNK idx(2) len(1) at idx * len, so a size may only change at an
+# offset it divides; each size divides the next.  A piece that does not arrive halves the size, CAREFUL_GROW pieces in
+# a row that arrive double it (once the offset allows).  A damaged answer is dropped by the reassembler, so the wait for
+# it is the main cost: CAREFUL_WAIT_RTT times the slowest of the last answers, within CAREFUL_WAIT_MIN .. the CHUNK
+# timeout.  Every send has its own sequence number, so a late answer to an earlier send is ignored.
+CAREFUL_SIZES = (16, 32, 64, 128)
+CAREFUL_START = 32
+CAREFUL_GROW = 4
+CAREFUL_WAIT_RTT = 3.0
+CAREFUL_WAIT_MIN = 0.5
+CAREFUL_WAIT_START = 2.0
+CAREFUL_RTT_KEEP = 8
+LAST_CAREFUL = {}                                  # the last careful read: pieces, sends again, sizes used (report.py)
 CHUNK_PASSES = 2                                   # fetches of the chunks of one staging
 TIMEOUTS = {T_LIST: 15.0, T_READ: 30.0, T_CHUNK: 5.0, T_DELETE: 20.0, T_INFO: 30.0,    # f_getfree scans the FAT
             T_FORMAT: 180.0}                   # f_mkfs writes the whole file system; the meter answers when done
@@ -274,9 +287,14 @@ def _atomic_json(path, obj):
 class Card:
     def __init__(self, client, careful=False):
         """`careful`: the meter has the old BLE112 module and firmware F-1.19 or newer (app.py): LIST in pages of
-        CAREFUL_LIST_MAX entries and CHUNK in pieces of CAREFUL_CHUNK bytes, each sent up to CAREFUL_RETRIES times."""
+        CAREFUL_LIST_MAX entries and CHUNK in adaptive pieces (CAREFUL_SIZES), each sent up to CAREFUL_RETRIES times."""
         self.c = client
         self.careful = careful
+        self._size = CAREFUL_START                     # kept from window to window of one Card
+        self._rtts = collections.deque(maxlen=CAREFUL_RTT_KEEP)
+        if careful:                                    # one Card per operation: its statistics for the report
+            LAST_CAREFUL.clear()
+            LAST_CAREFUL.update(pieces=0, again=0, sizes={})
 
     def list_entries(self):
         """Every entry of the root directory: [{'name', 'size', 'date', 'time', 'attr', 'cut'}], every page fetched."""
@@ -343,14 +361,15 @@ class Card:
     # -------------------------------------------------------------- reading
     def _chunks(self, n):
         """The n staged bytes, chunk by chunk (each chunk is sent again until an answer of the right length arrives)."""
+        if self.careful:
+            return self._careful_chunks(n)
         buf = bytearray()
-        size = CAREFUL_CHUNK if self.careful else CHUNK
+        size = CHUNK
         for idx in range((n + size - 1) // size):
             want = min(size, n - idx * size)
-            for _ in range(CAREFUL_RETRIES if self.careful else CHUNK_RETRIES):
+            for _ in range(CHUNK_RETRIES):
                 try:
-                    status, field, data = self.c.request(T_CHUNK, chunk_request(idx, size if self.careful else None),
-                                                         retries=1)
+                    status, field, data = self.c.request(T_CHUNK, chunk_request(idx), retries=1)
                 except CardError:
                     if self.c.cancelled:
                         raise
@@ -362,6 +381,54 @@ class Card:
                     break                                      # a wrong index or length is asked for again
             else:
                 raise CardError('chunk %d did not arrive' % idx)
+        return bytes(buf)
+
+    def _careful_wait(self):
+        if not self._rtts:
+            return CAREFUL_WAIT_START
+        return min(TIMEOUTS[T_CHUNK], max(CAREFUL_WAIT_MIN, CAREFUL_WAIT_RTT * max(self._rtts)))
+
+    def _careful_chunks(self, n):
+        """The n staged bytes in adaptive pieces (careful mode): the size halves after a piece that did not arrive and
+        doubles after CAREFUL_GROW pieces in a row, at offsets it divides (the meter's piece idx covers idx * size ..)."""
+        buf = bytearray()
+        st = LAST_CAREFUL
+        good = 0
+        while len(buf) < n:
+            pos = len(buf)
+            size = self._size
+            want = min(size, n - pos)
+            idx = pos // size                                  # pos is a multiple of size (see the doubling below)
+            for attempt in range(CAREFUL_RETRIES):
+                t0 = time.monotonic()
+                try:
+                    status, field, data = self.c.request(T_CHUNK, chunk_request(idx, size), retries=1,
+                                                         timeout=self._careful_wait())
+                except CardError:
+                    if self.c.cancelled:
+                        raise
+                    status = None
+                if status is not None and status != ST_OK:
+                    raise CardError('chunk %d (%d bytes): %s' % (idx, size, describe(status, field)), status)
+                if status == ST_OK and field == idx and len(data) == want:
+                    self._rtts.append(time.monotonic() - t0)
+                    break
+                st['again'] += 1                               # lost, damaged or wrong: smaller pieces from here on
+                good = 0
+                if size > CAREFUL_SIZES[0]:
+                    size = self._size = CAREFUL_SIZES[CAREFUL_SIZES.index(size) - 1]
+                    want = min(size, n - pos)
+                    idx = pos // size                          # pos stays a multiple of the smaller size
+            else:
+                raise CardError('chunk at byte %d (%d bytes) did not arrive' % (pos, size))
+            buf += data
+            st['pieces'] += 1
+            st['sizes'][size] = st['sizes'].get(size, 0) + 1
+            good += 1
+            if good >= CAREFUL_GROW and size < CAREFUL_SIZES[-1]:
+                bigger = CAREFUL_SIZES[CAREFUL_SIZES.index(size) + 1]
+                if len(buf) % bigger == 0:
+                    self._size, good = bigger, 0
         return bytes(buf)
 
     def read_window(self, name, offset, length):

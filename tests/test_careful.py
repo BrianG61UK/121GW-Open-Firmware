@@ -17,6 +17,9 @@ class CardPieces(unittest.TestCase):
         for k in card.TIMEOUTS:
             card.TIMEOUTS[k] = 0.05
         self.addCleanup(card.TIMEOUTS.update, old)
+        for name, value in (('CAREFUL_WAIT_MIN', 0.02), ('CAREFUL_WAIT_START', 0.05)):
+            self.addCleanup(setattr, card, name, getattr(card, name))
+            setattr(card, name, value)
 
     def meter(self):
         m = FakeMeter(sample_files())
@@ -44,7 +47,41 @@ class CardPieces(unittest.TestCase):
         c.read_file(big, len(m.files[big][0]), got.append)
         self.assertEqual(b''.join(got), m.files[big][0])
         chunks = [p for t, p in m.sent if t == card.T_CHUNK]
-        self.assertTrue(chunks and all(len(p) == 3 and p[2] == card.CAREFUL_CHUNK for p in chunks))
+        self.assertTrue(chunks and all(len(p) == 3 and p[2] in card.CAREFUL_SIZES for p in chunks))
+        self.assertGreater(card.LAST_CAREFUL['again'], 0)              # 128-byte answers never arrive (damage_over 100)
+        self.assertIn(64, card.LAST_CAREFUL['sizes'])                   # and the size came down to one that does
+
+    def test_adaptive_pieces_on_random_damage(self):
+        """Per-byte damage as on Excali-bur's link (about a quarter of the bytes in damaged answers): the file arrives
+        intact, the size settles below the largest, and a lost piece costs the short wait, not the 5 s timeout."""
+        m = FakeMeter(sample_files())
+        m.careful_fw = True
+        m.damage_rate = 0.004
+        c = card.Card(make_client(m), careful=True)
+        big = max(m.files, key=lambda n: len(m.files[n][0]))
+        got = []
+        old = dict(card.TIMEOUTS)
+        card.TIMEOUTS[card.T_CHUNK] = 5.0
+        self.addCleanup(card.TIMEOUTS.update, old)
+        t0 = time.monotonic()
+        c.read_file(big, len(m.files[big][0]), got.append)
+        self.assertEqual(b''.join(got), m.files[big][0])
+        st = card.LAST_CAREFUL
+        self.assertGreater(st['again'], 0)
+        self.assertLess(time.monotonic() - t0, 5.0 * st['again'])      # the waits were shorter than the timeout
+        sizes = [p[2] for t, p in m.sent if t == card.T_CHUNK]
+        self.assertGreater(len(set(sizes)), 1)                          # the size moved
+
+    def test_sizes_change_only_at_aligned_offsets(self):
+        """Every CHUNK idx(2) len(1) asks for bytes idx*len .. that follow on the bytes already received."""
+        m = FakeMeter(sample_files())
+        m.careful_fw = True
+        m.damage_rate = 0.006
+        c = card.Card(make_client(m), careful=True)
+        big = max(m.files, key=lambda n: len(m.files[n][0]))
+        got = []
+        c.read_file(big, len(m.files[big][0]), got.append)
+        self.assertEqual(b''.join(got), m.files[big][0])
 
     def test_request_forms(self):
         self.assertEqual(card.list_request(5), b'\x05\x00')
@@ -123,6 +160,13 @@ class CarefulConnect(AppCase):
         self.assertIn(frames.key_frame(0x97), [bytes(k) for k in self.meter.keys])
         self.assertTrue(any('careful mode on' in t for _, t in self.app.events))
         self.assertIn('careful mode     on:', report.build(self.app))
+
+    def test_piece_statistics_in_the_report(self):
+        self.addCleanup(card.LAST_CAREFUL.clear)
+        card.LAST_CAREFUL.clear()
+        card.LAST_CAREFUL.update(pieces=10, again=3, sizes={32: 6, 64: 4})
+        self.assertIn('careful pieces   last card read: 10 pieces, 3 sent again; pieces by size: 32 bytes 6, 64 bytes 4',
+                      report.build(self.app))
 
     def test_not_for_the_newer_module(self):
         self.app.link.stats.mtu = 247
