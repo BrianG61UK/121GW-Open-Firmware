@@ -68,6 +68,9 @@ class FakeMeter:
         self.xdiag_lost = 0                            # F9 answers to swallow (a lost notification)
         self.fast_mclock = False                       # firmware F-1.17: key code 0x96 answered with FA (sys/msical.s)
         self.fast_leave = False                        # firmware F-1.17: the page Ld request LEAVE (type 0x19)
+        self.careful_fw = False                        # firmware F-1.19: LIST max, CHUNK len, key codes 0x97 / 0x98
+        self.damage_over = None                        # answers with more data bytes than this never arrive intact
+        self.dup_frames = False                        # 0x97 received: status frames twice
         self.mclock = {'hz0': 4187000, 'hz': 4194100, 'trim': -3, 'status': 1, 'steps': 6, 'brr': 218, 'cal_run': 0x9D,
                        'cal_now': 0x9D}
 
@@ -99,6 +102,8 @@ class FakeMeter:
                         self._out(xdiag_frame(self.xdiag_values))
             if self.fast_mclock and frames._pair(pkt, 1) == 0x96:
                 self._out(mclock_frame(self.mclock))
+            if self.careful_fw and frames._pair(pkt, 1) in (0x97, 0x98):
+                self.dup_frames = frames._pair(pkt, 1) == 0x97
             return
         if not self.on_ld:
             return
@@ -120,6 +125,8 @@ class FakeMeter:
         if self.drop_next:
             self.drop_next -= 1
             return
+        if self.damage_over is not None and len(data) > self.damage_over:
+            return                                     # an old BLE112 link: a long answer always arrives damaged
         self._out(card.answer_packet(seq, status, field, data))
 
     # -- the meter side: (status, field, data)
@@ -135,12 +142,15 @@ class FakeMeter:
         if self.logging and rtype in (card.T_LIST, card.T_READ, card.T_DELETE, card.T_INFO, card.T_FORMAT, settings.T_PUT):
             return card.ST_NOT_NOW, 0, b''
         if rtype == card.T_LIST:
-            if len(p) != 2:
+            most = self.page
+            if len(p) == 3 and self.careful_fw and p[2]:     # F-1.19: start(2) max(1)
+                most = min(most, p[2])
+            elif len(p) != 2:
                 return card.ST_ARG, 0, b''
-            start = struct.unpack('<H', p)[0]
+            start = struct.unpack_from('<H', p)[0]
             names = sorted(self.files)[start:]
             data, count = b'', 0
-            for n in names[:self.page]:
+            for n in names[:most]:
                 e = self._entry(n)
                 if len(data) + len(e) > 232:
                     break
@@ -163,12 +173,15 @@ class FakeMeter:
             self.staged = self.files[found[0]][0][offset:offset + length]
             return card.ST_OK, len(self.staged), struct.pack('<I', zlib.crc32(self.staged) & 0xFFFFFFFF)
         if rtype == card.T_CHUNK:
-            if len(p) != 2:
+            size = card.CHUNK
+            if len(p) == 3 and self.careful_fw and 1 <= p[2] <= card.CHUNK:   # F-1.19: idx(2) len(1)
+                size = p[2]
+            elif len(p) != 2:
                 return card.ST_ARG, 0, b''
-            idx = struct.unpack('<H', p)[0]
-            if len(self.staged) - idx * card.CHUNK <= 0:
+            idx = struct.unpack_from('<H', p)[0]
+            if len(self.staged) - idx * size <= 0:
                 return card.ST_ARG, 0, b''
-            data = self.staged[idx * card.CHUNK:(idx + 1) * card.CHUNK]
+            data = self.staged[idx * size:(idx + 1) * size]
             if self.corrupt_chunk_once and idx == 0:
                 self.corrupt_chunk_once = False
                 data = bytes([data[0] ^ 0xFF]) + data[1:]

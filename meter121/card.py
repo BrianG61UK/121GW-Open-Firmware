@@ -95,16 +95,18 @@ def _name(name):
     return bytes([len(raw)]) + raw
 
 
-def list_request(start):
-    return struct.pack('<H', start)
+def list_request(start, most=None):
+    """LIST start(2); with `most` (careful mode, firmware F-1.19 on) start(2) max(1): at most that many entries."""
+    return struct.pack('<H', start) if most is None else struct.pack('<HB', start, most)
 
 
 def read_request(name, offset, length):
     return _name(name) + struct.pack('<IH', offset, length)
 
 
-def chunk_request(idx):
-    return struct.pack('<H', idx)
+def chunk_request(idx, size=None):
+    """CHUNK idx(2); with `size` (careful mode, firmware F-1.19 on) idx(2) len(1): the bytes idx*size .. ."""
+    return struct.pack('<H', idx) if size is None else struct.pack('<HB', idx, size)
 
 
 def delete_request(name):
@@ -211,6 +213,11 @@ def check_local_name(name):
 RETRIES = 4                                        # sends of one request without a usable answer
 CHUNK_RETRIES = 8                                  # CHUNK is cheap and idempotent: more sends
 WINDOW_TRIES = 3                                   # stagings of one window until its CRC-32 matches
+# careful mode (old BLE112 module, firmware F-1.19 on; app.py): small answers, more sends (a damaged byte costs one small
+# answer instead of a 232-byte one; GitHub issues 9 and 14)
+CAREFUL_LIST_MAX = 4                               # entries of one LIST answer (about 60 bytes with short names)
+CAREFUL_CHUNK = 48                                 # bytes of one CHUNK answer
+CAREFUL_RETRIES = 12                               # sends of one LIST / CHUNK request
 CHUNK_PASSES = 2                                   # fetches of the chunks of one staging
 TIMEOUTS = {T_LIST: 15.0, T_READ: 30.0, T_CHUNK: 5.0, T_DELETE: 20.0, T_INFO: 30.0,    # f_getfree scans the FAT
             T_FORMAT: 180.0}                   # f_mkfs writes the whole file system; the meter answers when done
@@ -265,14 +272,21 @@ def _atomic_json(path, obj):
 
 
 class Card:
-    def __init__(self, client):
+    def __init__(self, client, careful=False):
+        """`careful`: the meter has the old BLE112 module and firmware F-1.19 or newer (app.py): LIST in pages of
+        CAREFUL_LIST_MAX entries and CHUNK in pieces of CAREFUL_CHUNK bytes, each sent up to CAREFUL_RETRIES times."""
         self.c = client
+        self.careful = careful
 
     def list_entries(self):
         """Every entry of the root directory: [{'name', 'size', 'date', 'time', 'attr', 'cut'}], every page fetched."""
         out, start = [], 0
         while True:
-            entries, end = parse_list(*self.c.ok(T_LIST, list_request(start)))
+            if self.careful:
+                answer = self.c.ok(T_LIST, list_request(start, CAREFUL_LIST_MAX), retries=CAREFUL_RETRIES)
+            else:
+                answer = self.c.ok(T_LIST, list_request(start))
+            entries, end = parse_list(*answer)
             out += [{'name': n, 'size': sz, 'date': fat_date(d), 'time': fat_time(t), 'attr': a, 'cut': cut}
                     for n, sz, d, t, a, cut in entries]
             if end:
@@ -330,11 +344,13 @@ class Card:
     def _chunks(self, n):
         """The n staged bytes, chunk by chunk (each chunk is sent again until an answer of the right length arrives)."""
         buf = bytearray()
-        for idx in range((n + CHUNK - 1) // CHUNK):
-            want = min(CHUNK, n - idx * CHUNK)
-            for _ in range(CHUNK_RETRIES):
+        size = CAREFUL_CHUNK if self.careful else CHUNK
+        for idx in range((n + size - 1) // size):
+            want = min(size, n - idx * size)
+            for _ in range(CAREFUL_RETRIES if self.careful else CHUNK_RETRIES):
                 try:
-                    status, field, data = self.c.request(T_CHUNK, chunk_request(idx), retries=1)
+                    status, field, data = self.c.request(T_CHUNK, chunk_request(idx, size if self.careful else None),
+                                                         retries=1)
                 except CardError:
                     if self.c.cancelled:
                         raise

@@ -67,6 +67,8 @@ XDIAG_MIN_VERSION = (1, 1, 5)                    # firmware F-1.15: key codes 0x
 XDIAG_TRIES = 3                                  # tries of a key frame of the extended diagnosis / of the counters request
 XDIAG_WAIT = 2.0                                 # seconds to wait for the answer to each try
 XDIAG_STATUS_FIRST, XDIAG_STATUS_COUNT = 40, 9   # page Ld STATUS indices of the nine values (ble/bft.s bft_diag_tab)
+CAREFUL_MIN_VERSION = (1, 1, 9)                  # firmware F-1.19: key codes 0x97 / 0x98, LIST max, CHUNK len (IMP-50)
+CAREFUL_MTU = 23                                 # the old BLE112 module negotiates only the minimum (the BGM220S: 247)
 MCLOCK_MIN_VERSION = (1, 1, 7)                   # firmware F-1.17: key code 0x96 / frame FA, STATUS 49..55 (sys/msical.s)
 LEAVE_MIN_VERSION = (1, 1, 7)                    # firmware F-1.17: the page Ld request LEAVE (type 0x19, ble/bft.s)
 MCLOCK_STATUS_FIRST, MCLOCK_STATUS_COUNT = 49, 7 # page Ld STATUS indices of the clock measurement
@@ -135,6 +137,8 @@ class Companion:
         self._xdiag_evt = threading.Event()
         self._mclock_frame = None
         self._mclock_evt = threading.Event()
+        self.careful_on = False                          # careful mode switched on in the meter (0x97) for this connection
+        self._last_status = None                         # the last F2 frame, for its F3 copy (careful mode)
         self.xdiag = {'state': 'not read'}
         self._st_n, self._st_first, self._st_last = 0, None, None   # status frames of this connection (frames per second)
         self.card_st = {'files': [], 'listed': False, 'free_bytes': None, 'total_bytes': None, 'busy': False, 'op': '', 'progress': 0.0,
@@ -147,6 +151,13 @@ class Companion:
         threading.Thread(target=self._recheck_releases, name='releases', daemon=True).start()
 
     def _frame(self, kind, frame, t):
+        if kind == frames.STATUS_COPY:                   # careful mode (F-1.19): the copy of the F2 frame just before
+            prev, self._last_status = self._last_status, None
+            if prev is not None and bytes(prev[1:18]) == bytes(frame[1:18]):
+                return                                   # that F2 frame arrived intact: the copy is not needed
+            kind, frame = frames.STATUS, frames.copy_as_status(frame)   # it was lost: the copy stands in for it
+        elif kind == frames.STATUS:
+            self._last_status = frame
         if kind == frames.STATUS:
             r = display.decode(frame, t)
             self.session.add(r)
@@ -193,6 +204,7 @@ class Companion:
         self.desk = False                                # a new connection or none: the page is not known any more
         self._frame_t = 0.0
         self.xdiag_on = False                            # the counting is told again at each connection
+        self.careful_on = False                           # careful mode is asked for again at each connection
         self._st_n, self._st_first, self._st_last = 0, None, None
         if state == 'connected':
             self.fw_kind, self.version, self.mode = 'unknown', None, 'unknown'
@@ -224,6 +236,7 @@ class Companion:
                     self.bl = self._ask_bootloader()
                     self.mode = 'firmware'
                     self._xdiag_connect()
+                    self._careful_connect()
                     self._check_release()
                     self._clock_on_connect()
                 elif self._echo is not None:
@@ -328,6 +341,38 @@ class Companion:
             sender.leave()
         self.event('page Ld left by the program (LEAVE request)')
         return {'ok': True}
+
+    def careful_wanted(self):
+        """True when the link is to an old BLE112 module (MTU 23) and the firmware knows careful mode (F-1.19 on)."""
+        v = releases.version_of_meter(self.version)
+        return (self.link.stats.mtu == CAREFUL_MTU and self.fw_kind == 'fast' and v is not None
+                and v >= CAREFUL_MIN_VERSION)
+
+    def _careful_connect(self):
+        """After the version question: an old BLE112 module (GitHub issue 9) gets careful mode: key code 0x97, the
+        meter then sends every status frame twice (the copy whose check is right is taken, the other dropped), and the
+        card requests use small answers (card.Card careful)."""
+        if not self.careful_wanted():
+            return
+        frame = frames.key_frame(0x97)
+        try:
+            with self._ops('careful mode', need_desk=False, wait=LINK_WAIT):
+                if self.desk:
+                    raise RuntimeError('page Ld owns the link')
+                for _ in range(XDIAG_TRIES):
+                    self._key_echo = None
+                    self.link.send(frame)
+                    end = time.time() + XDIAG_WAIT
+                    while time.time() < end and self._key_echo != frame:
+                        time.sleep(0.02)
+                    if self._key_echo == frame:
+                        self.careful_on = True
+                        self.event('careful mode on (old BLE112 Bluetooth module, MTU 23): frames twice, small card answers')
+                        return
+        except (RuntimeError, OSError, TimeoutError) as e:
+            self.event('careful mode: not switched on (%s)' % e)
+            return
+        self.event('careful mode: no echo after %d tries' % XDIAG_TRIES)
 
     def _mclock_supported(self):
         """True when the connected meter runs F-1.17 or newer: only that firmware measures its clock (key code 0x96,
@@ -514,6 +559,7 @@ class Companion:
             if self.link.state == 'connected' and self.mode == 'firmware':
                 self._xdiag_connect()                    # the reconnection after the update asked while the update still
                                                          # owned the link, so the switch was refused (GitHub issue 9)
+                self._careful_connect()                  # the same for careful mode
         except (OSError, ValueError, RuntimeError, releases.ReleaseError, transfer.TransferError) as e:
             u.update(state='error', message=str(e))
             self.event('update stopped: %s' % e)
@@ -781,7 +827,7 @@ class Companion:
         def run():
             try:
                 with self._ops(op, wait=LINK_WAIT) as (_, client):
-                    st['result'] = job(card.Card(client), progress)
+                    st['result'] = job(card.Card(client, careful=self.careful_wanted()), progress)
                 st['progress'] = 1.0
             except (RuntimeError, ValueError, OSError, transfer.TransferError) as e:
                 st['error'] = str(e)

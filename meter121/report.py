@@ -113,6 +113,11 @@ def link_details(app):
     w('advertisement signal  %s' % sig)
     w('MTU              %s' % ('%d bytes (bleak client mtu_size)' % st['mtu'] if st['mtu'] is not None else
                                'not available from the Bluetooth backend'))
+    w('careful mode     %s' % ('on: every status frame twice, small card answers (old BLE112 module, MTU 23)'
+                               if getattr(app, 'careful_on', False) else
+                               'wanted, not on' if app.careful_wanted() else
+                               'off (MTU %s; careful mode is for the old BLE112 module and firmware F-1.19 or newer)'
+                               % (st['mtu'] if st['mtu'] is not None else 'unknown')))
     w('disconnects      %d%s' % (st['disconnect_count'], ':' if st['disconnect_count'] else ''))
     for t, user, why in st['disconnects']:
         w('  %s  %s' % (time.strftime('%H:%M:%S', time.localtime(t)), why))

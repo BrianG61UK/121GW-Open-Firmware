@@ -6,6 +6,8 @@ FEATURES.md 2.10 and 2.11):
 
     start  length  frame                                  check
     F2     19      status frame (the reading)             XOR of all 19 bytes = 0
+    F3     19      copy of the status frame before it     XOR of all 19 bytes = 0
+                   (careful mode, firmware F-1.19 on: the same 17 value bytes; used only when that F2 frame was lost)
     F4     5       echo of a key frame                    the two hex pairs equal
     F8     15      echo of a set-clock frame              7th hex pair = XOR of the first six
     F6     7       version answer of the fast build       XOR of all 7 bytes = 0
@@ -28,6 +30,7 @@ import struct
 
 STATUS, KEY_ECHO, CLOCK_ECHO, VERSION, BL_VERSION, BFT = 'status', 'key_echo', 'clock_echo', 'version', 'bl_version', 'bft'
 XDIAG = 'xdiag'
+STATUS_COPY = 'status_copy'
 MCLOCK = 'mclock'
 MCLOCK_LEN = 20
 MCLOCK_NOMINAL_HZ = 4194304             # MSI range 6, the meter's run clock (firmware sys/msical.s)
@@ -86,6 +89,8 @@ class Reassembler:
         self.pieces = pieces if pieces is not None else collections.deque(maxlen=DAMAGED_KEEP)   # (length, first bytes)
         self._run = bytearray()          # the run being skipped: first DAMAGED_BYTES bytes
         self._run_len = 0                # and its real length
+        self._last_kind = None           # kind of the last frame taken
+        self._since_f2 = 0               # skipped bytes since (and including) the last skipped F2 byte, 0 if none
 
     def feed(self, chunk):
         self.buf += chunk
@@ -98,11 +103,16 @@ class Reassembler:
                 if len(self._run) < DAMAGED_BYTES:
                     self._run.append(self.buf[0])
                 self._run_len += 1
+                if self.buf[0] == 0xF2:
+                    self._since_f2 = 1
+                elif self._since_f2:
+                    self._since_f2 += 1
                 del self.buf[0]
                 self.dropped += 1
                 continue
             self._end_run()              # a valid frame ends the run of skipped bytes before it
             kind, n = got
+            self._last_kind, self._since_f2 = kind, 0
             out.append((kind, bytes(self.buf[:n])))
             del self.buf[:n]
         return out
@@ -125,6 +135,15 @@ class Reassembler:
         needed to decide."""
         b = self.buf
         s = b[0]
+        if s == 0xF3:
+            # a copy (careful mode) follows its F2 frame at once: right after an intact F2 frame, or right after the
+            # 19 bytes of a damaged one.  Anywhere else an F3 is not a frame start: a damaged frame's check byte is often
+            # 0xF3, and with the next frame's first 18 bytes it would pass the XOR check (and that frame would be lost)
+            if not ((self._last_kind == STATUS and self._run_len == 0) or self._since_f2 == 19):
+                return None
+            if len(b) < 19:
+                return 'wait'
+            return (STATUS_COPY, 19) if _xor(b[:19]) == 0 else None
         if s == 0xF2:
             if len(b) < 19:
                 return 'wait'
@@ -200,6 +219,12 @@ MCLOCK_REQUEST = key_frame(0x96)               # the clock measurement, answered
 def xdiag_values(frame):
     """The nine u16 values of an F9 frame, in the order of XDIAG_NAMES."""
     return [frame[1 + 2 * i] | frame[2 + 2 * i] << 8 for i in range(9)]
+
+
+def copy_as_status(frame):
+    """The F2 status frame an F3 copy stands for (the same value bytes, the check byte over F2)."""
+    body = b'\xF2' + bytes(frame[1:18])
+    return body + bytes([_xor(body)])
 
 
 def mclock_values(frame):
