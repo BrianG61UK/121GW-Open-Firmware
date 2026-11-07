@@ -4,7 +4,7 @@ history of every version).
 
     python3 -I .github/scripts/release_notes.py HEADER CHANGELOG LABEL URL OUT
 
-HEADER     the introduction (.github/release-notes.md)
+HEADER     the introduction (.github/release-notes.md); "<tag>" in it becomes LABEL
 CHANGELOG  every version's paragraphs, newest first, separated by blank lines (CHANGELOG.md)
 LABEL      the version as the paragraphs name it ("v1.2.3", "1.2.26", "bl-v1.1.4"): the paragraphs that start with
            "New in LABEL" or "Fixed in LABEL" (followed by a space, a colon or a parenthesis) are taken
@@ -25,7 +25,8 @@ def notes(header, changelog, label, url):
     own = [p for p in paragraphs(changelog) if pat.match(p)]
     if not own:
         return None
-    return '%s\n\n%s\n\nEarlier versions: [the whole changelog](%s).\n' % (header.strip(), '\n\n'.join(own), url)
+    head = header.strip().replace('<tag>', label)       # the file names of this release
+    return "%s\n\n### What's new\n\n%s\n\nEarlier versions: [the whole changelog](%s).\n" % (head, '\n\n'.join(own), url)
 
 
 def main(argv):

@@ -1,15 +1,12 @@
-121GW Companion: live view, recording and firmware information for the EEVblog 121GW over Bluetooth LE.
+The 121GW Companion: the computer app for the EEVblog 121GW over Bluetooth (live view, graphs, recording, card files, settings, firmware and bootloader updates).
 
-Updates: it checks this project's releases, updates the meter's firmware (page `Ld-bt` and the card routine with EEVblog's bootloader), sets the meter's clock, installs the two-part bootloader once (releases `bl-vA.B.C`, fresh batteries) and from then on updates the firmware, the bootloader or both over Bluetooth with nothing to press on the meter. How-to: `bootloader/README.md` on the branch `bootloader` of 121GW-Open-Firmware.
+### Downloads
 
-Assets
-- `121GW-Companion-<version>-macos-arm64.dmg`: macOS on Apple chips. Drag the app to Applications; macOS asks once to open an app that is not paid-signed (see "First start - READ ME.txt" in the image) and once for Bluetooth access.
-- `121GW-Companion-<version>-windows-x64.exe`: installer for Windows 10 / 11.
-- `121GW-Companion-<version>-linux-amd64.deb`: Ubuntu, Debian, Mint, Pop!_OS (`sudo apt install ./<file>`).
-- `121GW-Companion-<version>-linux-x86_64.AppImage`: any other 64-bit Linux (make it executable, double-click).
-- `*.sha256`: checksum of the file with the same name.
+| File | For |
+|---|---|
+| `121GW-Companion-<tag>-windows-x64.exe` | Windows 10 / 11 (installer) |
+| `121GW-Companion-<tag>-macos-arm64.dmg` | macOS on Apple chips |
+| `121GW-Companion-<tag>-linux-amd64.deb` | Ubuntu, Debian, Mint (`sudo apt install ./<file>`) |
+| `121GW-Companion-<tag>-linux-x86_64.AppImage` | any other 64-bit Linux |
 
-Everything the program needs is inside each package; nothing else has to be installed. Meter: Bluetooth on (hold PEAK), phone app closed. The firmware version is shown with the fast firmware F-1.02 or later.
-
-Free for individuals, schools and non-profits; companies need written permission (see LICENSE). Third-party licences: THIRD_PARTY_LICENSES.txt in each package.
-
+On the meter: Bluetooth on (hold PEAK), phone app closed. Do not pair the meter in the computer's Bluetooth settings. Free for individuals, schools and non-profits ([licence](https://github.com/zombu4/121GW-Open-Firmware/blob/companion/LICENSE)).
