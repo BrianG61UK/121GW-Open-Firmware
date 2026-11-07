@@ -5,487 +5,606 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>121GW Companion</title>
 <style>
-/* Bench instrument: matte black front panel, hairlines instead of boxes, one accent (the 121GW's yellow).
-   Lit lamps, the active tab and the inverted warning blocks (black on yellow, always with a word) are the only
-   places the accent is filled.  System fonts only: the program works offline and looks native on each system.
-   Spacing is on a 4 px grid; every number is mono with tabular figures and right-aligned in a fixed-width cell. */
+/* The program is the meter's other half.  The 121GW is a charcoal instrument in a yellow holster with a segment LCD, so the
+   page takes those three things: a calm body (charcoal, or warm paper in the light theme) of rounded cards, the holster
+   yellow only where you act or where something is lit, and the reading drawn as the meter's own LCD, unlit segments and
+   all (gold on dark glass in the dark theme, black on light glass in the light theme).  Labels are sentence case; every
+   number is mono with tabular figures.  System fonts only: the program works offline and looks native on each system.
+   The window opens at 1180 x 760 and can be made as small as 860 x 560; the layout follows its width and height. */
 :root {
-  --bg: #0c0c0b; --rule: #262622; --rule-hi: #3a3a34; --ink: #e9e7df; --dim: #8d8a80; --faint: #55534c;
-  --acc: #f2c200; --acc-dim: #7a6200;
-  --on-acc: #0c0c0b;                         /* text on a filled accent area */
-  --scrim: rgba(12, 12, 11, .86);            /* behind the confirm dialogs */
-  --scan: rgba(233, 231, 223, .025);         /* SCOPE / trend: scanlines over the plot */
-  --env: rgba(242, 194, 0, .28);             /* SCOPE / trend: min-max envelope of the trace */
-  color-scheme: dark;
-  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  --body: #121416; --panel: #1a1d20; --panel-2: #212529; --line: #2b3035; --line-2: #3a4047;
+  --ink: #eef0f2; --ink-2: #a7aeb6; --ink-3: #6b737c;
+  --hol: #ffc20e; --hol-ink: #1a1400; --hol-soft: rgba(255, 194, 14, .12); --hol-line: rgba(255, 194, 14, .45);
+  --acc: #ffc20e;                            /* accent text and marks */
+  --trace: #ffc20e;                          /* SCOPE / trend: the trace */
+  --env: rgba(255, 194, 14, .22);            /* SCOPE / trend: min-max envelope of the trace */
+  --scan: rgba(255, 255, 255, 0);            /* SCOPE / trend: no scanlines */
+  --ok: #3ecf8e; --bad: #ff6b5b;
+  --lcd: #0d1210; --lcd-hi: #141b18; --seg: #f0b93a; --seg-off: rgba(240, 185, 58, .06); --lcd-glow: 0 0 16px rgba(240, 185, 58, .18);
+  --lcd-edge: inset 0 2px 8px rgba(0, 0, 0, .35), inset 0 0 0 1px rgba(0, 0, 0, .25);
+  --shadow: 0 1px 0 rgba(255, 255, 255, .03) inset, 0 8px 24px rgba(0, 0, 0, .25);
+  --lift: 0 1px 3px rgba(0, 0, 0, .25);
+  --scrim: rgba(8, 9, 10, .72);
+  /* names the canvases and older rules read */
+  --bg: var(--panel-2); --rule: var(--line); --rule-hi: var(--line-2); --dim: var(--ink-2); --faint: var(--ink-3);
   --sans: -apple-system, "Segoe UI", "Helvetica Neue", Cantarell, "DejaVu Sans", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  color-scheme: dark;
 }
-/* light theme (SETTINGS > Appearance: Light, or System with a light system): the same names, a paper palette.  The page sets
-   data-theme on <html> to the resolved choice (dark or light); the SCOPE / trend canvases read these variables as well. */
 :root[data-theme="light"] {
-  /* owner 2026-11-07: a dimmer paper, near-black text, darker greys (the first palette was hard to read) */
-  --bg: #e2e0d8; --rule: #c2bfb2; --rule-hi: #9c988a; --ink: #0b0b09; --dim: #3a3832; --faint: #66635a;
-  --acc: #7a5a00; --acc-dim: #b8952f;        /* accent text above 4.5:1 on the dimmer paper */
-  --on-acc: #ffffff;
-  --scrim: rgba(226, 224, 216, .9);
-  --scan: rgba(29, 28, 24, .035);
-  --env: rgba(143, 105, 0, .24);
+  --body: #e9e7e1; --panel: #f7f6f2; --panel-2: #efede7; --line: #dcd9d0; --line-2: #c4c0b4;
+  --ink: #15171a; --ink-2: #4a4f56; --ink-3: #74787f;
+  --hol: #f5b800; --hol-ink: #1a1400; --hol-soft: rgba(245, 184, 0, .2); --hol-line: #b88a00;
+  --acc: #8a6500;                            /* accent text above 4.5:1 on the paper */
+  --trace: #d9a000;
+  --env: rgba(245, 184, 0, .28);
+  --ok: #138a55; --bad: #c8321f;
+  --lcd: #e4e2d8; --lcd-hi: #eeede6; --seg: #15171a; --seg-off: rgba(21, 23, 26, .035); --lcd-glow: none;
+  --lcd-edge: inset 0 2px 6px rgba(0, 0, 0, .12), inset 0 0 0 1px rgba(0, 0, 0, .10);
+  --shadow: 0 1px 2px rgba(40, 35, 20, .06), 0 6px 20px rgba(40, 35, 20, .07);
+  --lift: 0 1px 3px rgba(0, 0, 0, .12);
+  --scrim: rgba(60, 56, 46, .35);
   color-scheme: light;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/20px var(--sans); }
-/* light theme: the text one size larger (owner 2026-11-07) */
-:root[data-theme="light"] body { font-size: 14px; line-height: 21px; }
-:root[data-theme="light"] .cap, :root[data-theme="light"] .eng, :root[data-theme="light"] .lamp,
-:root[data-theme="light"] .warn, :root[data-theme="light"] button.sm, :root[data-theme="light"] .seg button { font-size: 11px; }
-:root[data-theme="light"] input, :root[data-theme="light"] select, :root[data-theme="light"] .ident { font-size: 13px; }
-body { display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; user-select: none; overflow: hidden; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--body); color: var(--ink); font: 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased;
+       display: grid; grid-template-columns: 76px minmax(0, 1fr); grid-template-rows: 60px auto minmax(0, 1fr) 30px;
+       overflow: hidden; user-select: none; }
 .num, input, .code { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.cap { font: 600 10px/16px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); white-space: nowrap; }
+.cap { font: 500 12.5px/1.4 var(--sans); color: var(--ink-3); }
 .yel { color: var(--acc); }
-.dim { color: var(--dim); }
+.dim { color: var(--ink-2); }
 .r { text-align: right; }
+.sp { flex: 1; }
 [hidden] { display: none !important; }
 
-/* controls: rectangular outlines; the accent shows on hover, focus and for the active choice */
+/* ---- controls */
 button {
-  font: 600 11px/16px var(--sans); letter-spacing: .12em; text-transform: uppercase; color: var(--ink);
-  background: transparent; border: 1px solid var(--rule-hi); padding: 7px 12px; border-radius: 0; cursor: pointer; position: relative;
+  height: 34px; padding: 0 14px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--panel); color: var(--ink);
+  font: 600 13px/1 var(--sans); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  white-space: nowrap; position: relative; flex: none;
 }
-button:hover:not(:disabled) { border-color: var(--acc); color: var(--acc); }
-button:focus-visible, input:focus-visible { outline: 1px solid var(--acc); outline-offset: 2px; }
-button.pri { border-color: var(--acc); color: var(--acc); }
-button.pri:hover:not(:disabled) { background: var(--acc); color: var(--on-acc); }
-button.on { border-color: var(--acc); color: var(--acc); }
-button:disabled { opacity: .3; cursor: default; }
-button.sm { padding: 3px 8px; font-size: 10px; }
+button:hover:not(:disabled) { border-color: var(--ink-3); background: var(--panel-2); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--hol); outline-offset: 2px; }
+button.pri { background: var(--hol); border-color: var(--hol); color: var(--hol-ink); }
+button.pri:hover:not(:disabled) { background: var(--hol); border-color: var(--hol); filter: brightness(1.07); }
+button.on { border-color: var(--hol-line); background: var(--hol-soft); }
+button:disabled { opacity: .38; cursor: default; }
+button.sm { height: 28px; padding: 0 11px; font-size: 12.5px; border-radius: 8px; }
 input {
-  min-width: 0; background: transparent; border: 1px solid var(--rule-hi); color: var(--ink);
-  font-size: 12px; line-height: 16px; padding: 3px 8px; border-radius: 0; outline: none; user-select: text;
+  min-width: 0; height: 34px; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--ink); border-radius: 9px;
+  font-size: 13px; padding: 0 10px; outline: none; user-select: text;
 }
-select {
-  min-width: 0; max-width: 100%; background: var(--bg); border: 1px solid var(--rule-hi); color: var(--ink);
-  font: 12px/16px var(--mono); padding: 3px 8px; border-radius: 0; outline: none;
-}
-select:focus { border-color: var(--acc); }
-input:focus { border-color: var(--acc); }
-/* light theme: hover and the selected choice as a yellow fill, as visible as the yellow frame on the dark theme
-   (owner 2026-11-07: a 1 px dark amber frame alone could not be seen on the paper) */
-:root[data-theme="light"] button:hover:not(:disabled) { background: #efd98f; border-color: #5c4400; color: #0b0b09; }
-:root[data-theme="light"] button.on, :root[data-theme="light"] .seg button.on { background: #e3bd45; border-color: #5c4400;
-  color: #0b0b09; }
-:root[data-theme="light"] button.pri:hover:not(:disabled) { background: #5c4400; color: #ffffff; }
-:root[data-theme="light"] select:focus, :root[data-theme="light"] input:focus { border-color: #5c4400;
-  box-shadow: 0 0 0 2px #e3bd45; }
-:root[data-theme="light"] nav button.on { border-bottom-width: 3px; }
-input:disabled { opacity: .3; }
-.seg { display: inline-flex; }
-.seg button { margin-left: -1px; padding: 3px 8px; font-size: 10px; color: var(--dim); }
-.seg button.on { z-index: 1; }
-/* inverted warning block: dark (white in the light theme) on the accent, always a word */
-.warn { display: inline-block; background: var(--acc); color: var(--on-acc); font: 700 10px/16px var(--mono); letter-spacing: .14em;
-        padding: 0 8px; text-transform: uppercase; white-space: nowrap; }
-.eng { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; font: 600 10px/16px var(--sans); letter-spacing: .14em;
-       text-transform: uppercase; color: var(--dim); white-space: nowrap; }
-.eng::after { content: ""; flex: 1; height: 1px; background: var(--rule); }
-.eng .warn, .eng .num { letter-spacing: .08em; }
+input:focus { border-color: var(--hol-line); }
+input:disabled { opacity: .45; }
+input::placeholder { color: var(--ink-3); }
+/* segmented choice: a tray with the chosen option raised */
+.seg { display: inline-flex; flex-wrap: wrap; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 2px; gap: 2px; }
+.seg button { height: 28px; border: 0; background: none; color: var(--ink-2); font-size: 12.5px; padding: 0 11px; border-radius: 8px; }
+.seg button:hover:not(:disabled) { background: none; color: var(--ink); }
+.seg button.on { background: var(--panel); color: var(--ink); box-shadow: var(--lift); }
+:root[data-theme="light"] .seg button.on { background: #fff; }
+/* a word on a filled block: Fault, Locked, Overload, Frozen, HI / LO */
+.warn { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 99px; background: var(--hol); color: var(--hol-ink);
+        font: 700 11px/1 var(--sans); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.pill { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 99px; font: 600 11.5px/1 var(--sans); white-space: nowrap;
+        background: var(--panel-2); color: var(--ink-3); }
+.pill.here { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.pill.new { background: var(--hol-soft); color: var(--ink); }
+.pill.no { background: color-mix(in srgb, var(--bad) 14%, transparent); color: var(--bad); }
 
-/* header strip: identity and lamps */
-header { display: flex; align-items: center; gap: 24px; padding: 0 20px; height: 44px; flex: none; border-bottom: 1px solid var(--rule); }
-.mark { font: 700 15px/16px var(--mono); letter-spacing: .32em; }
-.mark b { color: var(--acc); font-weight: 700; }
-.ident { display: flex; gap: 20px; font-size: 12px; }
-.ident .num { display: inline-block; min-width: 88px; }
-.lamps { display: flex; gap: 16px; }
-.lamp { display: flex; align-items: center; gap: 8px; font: 600 10px/16px var(--sans); letter-spacing: .14em; color: var(--dim); }
-.lamp i { width: 8px; height: 8px; border: 1px solid var(--rule-hi); display: block; }
-.lamp.on { color: var(--ink); }
-.lamp.on i { background: var(--acc); border-color: var(--acc); }
-.lamp.busy i { border-color: var(--acc); animation: blink 1s steps(2) infinite; }
-@keyframes blink { 50% { opacity: .2; } }
-.spacer { flex: 1; }
+/* ---- the rail */
+nav { grid-row: 1 / 5; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column;
+      align-items: center; padding: 12px 0; gap: 4px; overflow: hidden; }
+.logo { width: 44px; height: 44px; border-radius: 12px; background: var(--hol); color: var(--hol-ink); display: grid; place-items: center;
+        font: 800 13px/1 var(--sans); letter-spacing: -.02em; margin-bottom: 14px; box-shadow: 0 4px 14px rgba(255, 194, 14, .25); flex: none; }
+.logo small { display: block; font-size: 9px; font-weight: 700; opacity: .7; text-align: center; margin-top: 1px; }
+nav button { width: 60px; height: 58px; border: 0; border-radius: 12px; background: none; flex-direction: column; gap: 5px; padding: 0;
+             color: var(--ink-3); font: 600 11px/1 var(--sans); }
+nav button svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+nav button:hover:not(:disabled) { color: var(--ink); background: var(--panel-2); border: 0; }
+nav button.on { color: var(--ink); background: var(--hol-soft); border: 0; }
+nav button.on svg { stroke: var(--hol); }
+:root[data-theme="light"] nav button.on svg { stroke: #8a6500; }
+nav button.on::before { content: ""; position: absolute; left: -8px; top: 14px; bottom: 14px; width: 3px; border-radius: 0 3px 3px 0; background: var(--hol); }
+nav .grow { flex: 1; }
 
-nav { display: flex; gap: 0; padding: 0 20px; height: 32px; flex: none; border-bottom: 1px solid var(--rule); }
-nav button { border: 0; border-bottom: 2px solid transparent; padding: 0 16px 0 0; margin-right: 8px; color: var(--dim); height: 32px; letter-spacing: .14em; }
-nav button b { font: 400 10px/16px var(--mono); color: var(--faint); margin-right: 6px; letter-spacing: 0; }
-nav button:hover:not(:disabled) { color: var(--ink); border-bottom-color: transparent; }
-nav button.on { color: var(--ink); border-bottom-color: var(--acc); }
-nav button.on b { color: var(--acc); }
+/* ---- the top bar: identity, status chips, Connect */
+header { grid-column: 2; display: flex; align-items: center; gap: 14px; padding: 0 24px; border-bottom: 1px solid var(--line); min-width: 0; overflow: hidden; }
+header h1 { margin: 0; font: 650 17px/1 var(--sans); letter-spacing: -.01em; white-space: nowrap; }
+header h1 span { color: var(--ink-3); font-weight: 500; }
+.chips { display: flex; gap: 8px; min-width: 0; overflow: hidden; }
+.chip { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 11px; border-radius: 99px; background: var(--panel);
+        border: 1px solid var(--line); font: 500 12.5px/1 var(--sans); color: var(--ink-2); white-space: nowrap; flex: none; }
+.chip b { color: var(--ink); font: 600 12.5px/1 var(--mono); }
+/* status lamps: a dot that lights (green for the link, holster yellow for the rest, red while recording) */
+.lamps { display: flex; gap: 6px; }
+.lamp { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 99px; border: 1px solid transparent;
+        font: 600 11.5px/1 var(--sans); color: var(--ink-3); white-space: nowrap; }
+.lamp i { width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); display: block; }
+.lamp.on { color: var(--ink); background: var(--panel); border-color: var(--line); }
+.lamp.on i { background: var(--hol); }
+#l-link.on i { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+#l-log.on i { background: var(--bad); animation: pulse 1.4s ease-in-out infinite; }
+.lamp.busy i { background: var(--hol); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
 
-.band { display: none; align-items: center; gap: 16px; padding: 8px 20px; flex: none; border-bottom: 1px solid var(--rule); min-height: 44px; }
+/* ---- notices under the top bar (meters found, update, newer program) */
+.bands { grid-column: 2; min-width: 0; }
+.band { display: none; align-items: center; gap: 12px; margin: 14px 24px 0; padding: 12px 16px; border-radius: 14px; flex-wrap: wrap;
+        background: linear-gradient(90deg, var(--hol-soft), transparent 70%), var(--panel); border: 1px solid var(--hol-line); }
 .band.show { display: flex; }
-.band .text { flex: 1; min-width: 0; }
-.band .text .num { color: var(--acc); }
+.band > .cap { font-weight: 650; color: var(--ink); }
+.band .text { flex: 1; min-width: 200px; color: var(--ink-2); }
+.band .text .num { color: var(--ink); font-weight: 600; }
 .devs { display: flex; gap: 8px; flex-wrap: wrap; }
-.devs button { text-transform: none; letter-spacing: 0; font: 12px/16px var(--mono); }
+.devs button { font: 500 12.5px/1 var(--mono); }
+/* segmented progress bar, as the meter's bargraph */
+.sbar { display: grid; gap: 3px; height: 10px; }
+.sbar i { background: var(--line); display: block; border-radius: 2px; }
+.sbar i.on { background: var(--hol); }
+.band .sbar { width: 220px; grid-template-columns: repeat(30, 1fr); }
 
-/* segmented bar, as the meter's bargraph */
-.sbar { display: grid; gap: 2px; height: 12px; }
-.sbar i { background: var(--rule); display: block; }
-.sbar i.on { background: var(--acc); }
-.band .sbar { width: 240px; grid-template-columns: repeat(30, 1fr); }
-
-main { flex: 1; min-height: 0; position: relative; }
-.view { display: none; position: absolute; inset: 0; overflow: auto; }
+/* ---- pages and cards */
+main { grid-column: 2; min-height: 0; min-width: 0; position: relative; }
+.view { display: none; position: absolute; inset: 0; overflow: auto; padding: 20px 24px 24px; }
 .view.on { display: block; }
-.pad { padding: 16px 20px; }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) clamp(260px, 24vw, 360px); gap: 16px; align-items: start; }
+.side, .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); min-width: 0; }
+.card > .eng { display: flex; align-items: center; gap: 10px; padding: 14px 18px 0; min-height: 44px; }
+.card > .body { padding: 12px 18px 18px; }
+.eng { font: 600 13px/1.2 var(--sans); color: var(--ink-2); margin: 0; }
+.eng .sp { flex: 1; }
+.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+.kv > span { padding: 9px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.kv > span:nth-last-child(-n+2) { border-bottom: 0; }
+.kv > .cap { font-size: 13px; color: var(--ink-2); padding-right: 16px; }
+.kv .v { text-align: right; font-size: 14px; overflow-wrap: anywhere; }
+.kv.wide .v { text-align: left; font-size: 13px; }
+.big { font: 300 34px/1.1 var(--mono); letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.btns { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.path { color: var(--ink-3); font-size: 12.5px; overflow-wrap: anywhere; margin-top: 8px; min-height: 0; }
+.path:empty { display: none; }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.field { display: flex; gap: 8px; margin: 6px 0 4px; }
+.field input { flex: 1; }
+.lbl { font: 600 13px/1.3 var(--sans); color: var(--ink); margin-top: 16px; }
+.lbl:first-child { margin-top: 0; }
+.hint { font-size: 12.5px; color: var(--ink-3); margin: 2px 0 8px; }
 
-/* LIVE */
-#v-live.on { display: grid; grid-template-columns: minmax(0, 1fr) 248px; }
-.col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.readout { padding: 16px 20px 12px; }
-.flags { display: flex; gap: 12px; align-items: center; min-height: 16px; }
-.flags span[data-f] { font: 600 10px/16px var(--mono); letter-spacing: .08em; color: var(--faint); }
-.flags span.on { color: var(--acc); }
-.flags .warn { margin-left: 8px; }
-.flags .age { margin-left: auto; font: 600 10px/16px var(--mono); letter-spacing: .1em; color: var(--acc); }
-.value { display: flex; align-items: baseline; gap: 16px; margin: 4px 0; min-height: 1em; }
-.digits { font: 200 clamp(64px, min(11vw, 18vh), 148px)/1.05 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: .04em;
-          min-width: 7ch; white-space: nowrap; }
-.digits.blank { color: var(--faint); }
-.digits.ol { color: var(--dim); }
-.unit { font: 300 clamp(20px, 3vw, 32px)/1 var(--mono); color: var(--dim); min-width: 4ch; }
-.sub { display: flex; gap: 12px; align-items: baseline; min-height: 24px; }
-.sub .cap { min-width: 40px; }
-.sub .num { font-size: 18px; min-width: 9ch; text-align: right; }
-.sub .unit2 { font: 12px/20px var(--mono); color: var(--dim); }
-.bar { display: grid; grid-template-columns: 16px repeat(26, 1fr); gap: 3px; height: 12px; margin-top: 12px; max-width: 760px; }
-.bar i { background: var(--rule); }
-.bar i.on { background: var(--acc); }
-.bar .sign { font: 600 13px/12px var(--mono); color: var(--dim); background: none; text-align: center; }
-.scale { max-width: 760px; margin-top: 4px; text-align: right; font: 10px/12px var(--mono); color: var(--faint); min-height: 12px; }
-.stale .digits, .stale .unit, .stale .sub { opacity: .3; }
-
-.derived { display: grid; grid-template-columns: 1fr 1fr 1fr 1.5fr; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); flex: none; }
-.cell { padding: 8px 16px 8px 20px; border-left: 1px solid var(--rule); min-width: 0; }
-.cell:first-child { border-left: 0; }
-.cell .big { font: 300 22px/32px var(--mono); text-align: right; min-width: 8ch; display: block; }
-.cell .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; flex-wrap: wrap; }
-.cell .seg { flex-wrap: wrap; }                         /* the option buttons of a narrow cell go on two lines */
-#v-prefs .cap { white-space: normal; }                  /* long setting labels wrap instead of running out of the column */
-.cell input { width: 7ch; text-align: right; padding: 3px 4px; }
-.verdict { display: inline-flex; align-items: center; gap: 8px; font: 700 11px/16px var(--mono); letter-spacing: .14em; min-width: 7ch; }
-.verdict i { width: 8px; height: 8px; border: 1px solid var(--rule-hi); display: block; }
-.verdict.pass { color: var(--ink); }
-.verdict.pass i { background: var(--acc); border-color: var(--acc); }
-.verdict .warn { padding: 0 8px; }
-
-.keys { display: flex; gap: 8px; align-items: center; padding: 12px 20px; flex: none; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
-.keys button { width: 92px; height: 40px; padding: 0; }
-.keys button small { display: block; font: 400 9px/10px var(--mono); letter-spacing: .1em; color: var(--faint); }
-.keys button::after { content: ""; position: absolute; left: -1px; bottom: -1px; height: 2px; width: 0; background: var(--acc); }
-.keys button.arming::after { width: calc(100% + 2px); transition: width 1s linear; }
-.keys .note { margin-left: 8px; display: flex; gap: 8px; align-items: center; }
-
-.mini { position: relative; flex: 1; min-height: 120px; }
-.mini .cap { position: absolute; left: 20px; top: 8px; z-index: 1; }
+/* ---- LIVE: the LCD */
+.lcdwrap { padding: 14px; }
+.lcd { background: linear-gradient(180deg, var(--lcd-hi), var(--lcd) 60%); border-radius: 12px; padding: 16px 24px 16px; box-shadow: var(--lcd-edge);
+       position: relative; color: var(--seg); }
+.flags { display: flex; gap: 12px; align-items: center; min-height: 16px; flex-wrap: wrap; row-gap: 2px; }
+.flags span[data-f] { font: 700 11px/1 var(--sans); letter-spacing: .04em; color: var(--seg-off); }
+.flags span.on { color: var(--seg); }
+.flags .mode { margin-left: auto; font: 700 11px/1 var(--sans); letter-spacing: .06em; color: var(--seg); opacity: .75; text-transform: uppercase; }
+.flags .age { font: 700 11px/1 var(--sans); letter-spacing: .04em; color: var(--seg); }
+.flags .warn { background: var(--seg); color: var(--lcd); }
+.value { display: flex; align-items: flex-end; gap: 16px; margin: 10px 0 4px; filter: drop-shadow(var(--lcd-glow)); min-width: 0; }
+svg.digits { height: clamp(64px, min(9.5vw, 17vh), 170px); width: auto; max-width: 100%; flex: 0 1 auto; display: block; }
+.unit { font: 300 clamp(26px, min(3.4vw, 6vh), 60px)/1 var(--sans); color: var(--seg); padding-bottom: 6px; min-width: 2ch; white-space: nowrap; }
+.sub { display: flex; align-items: flex-end; gap: 12px; justify-content: flex-end; min-height: 30px; filter: drop-shadow(var(--lcd-glow)); }
+.sub .lab { font: 700 10.5px/1 var(--sans); color: var(--seg); opacity: .7; margin-right: auto; align-self: center; letter-spacing: .06em; text-transform: uppercase; }
+svg.subdig { height: clamp(26px, min(2.8vw, 5vh), 48px); width: auto; display: block; }
+.sub .unit2 { font: 500 18px/1 var(--sans); color: var(--seg); padding-bottom: 2px; min-width: 1ch; }
+.bar { display: grid; grid-template-columns: 14px repeat(26, minmax(0, 1fr)); gap: 3px; margin-top: 12px; align-items: end; }
+.bar i { height: 12px; border-radius: 2px; background: var(--seg-off); }
+.bar i.on { background: var(--seg); }
+.bar i:nth-child(5n+2) { height: 16px; }
+.bar .sign { background: none; height: auto; font: 700 14px/12px var(--mono); color: var(--seg); text-align: center; }
+.scale { margin-top: 6px; text-align: right; font: 600 10.5px/12px var(--mono); color: var(--seg); opacity: .6; min-height: 12px; }
+.stale .value, .stale .sub, .stale .bar { opacity: .3; }
+svg .on { fill: var(--seg); } svg .off { fill: var(--seg-off); }
+svg.digits.blank .on { opacity: .3; }                  /* no reading: the dashes dim */
+svg.digits.ol .on { opacity: .8; }
+/* ---- LIVE: the meter's keys */
+.keys { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; padding: 0 14px 14px; }
+.keys button { height: 44px; padding: 0 4px; border-radius: 10px; background: var(--panel-2); box-shadow: 0 1px 0 var(--line-2); flex-direction: column; gap: 3px;
+               font-size: 12.5px; overflow: hidden; }
+.keys button small { font: 500 10px/1 var(--sans); color: var(--ink-3); }
+.keys button:hover:not(:disabled) { border-color: var(--hol-line); }
+.keys button:active:not(:disabled) { transform: translateY(1px); box-shadow: none; }
+.keys button::after { content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--hol); }
+.keys button.arming::after { width: 100%; transition: width 1s linear; }
+.keynote { display: flex; gap: 8px; align-items: center; padding: 0 18px 14px; margin-top: -4px; }
+.keynote:empty { display: none; }
+/* ---- LIVE: derived values */
+.derived { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-top: 16px; }
+.derived .card > .body { padding-top: 6px; }
+.dv { font: 400 24px/1.25 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.derived .seg { margin-top: 10px; }
+.verdict { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 99px; font: 700 11px/1 var(--sans);
+           letter-spacing: .05em; background: var(--panel-2); color: var(--ink-3); }
+.verdict i { display: none; }
+.verdict.pass { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.verdict .warn { height: 24px; margin: 0 -10px; }
+.lim { display: flex; gap: 6px; margin-top: 8px; }
+.lim input { width: 0; flex: 1; height: 30px; text-align: right; }
+/* ---- LIVE: trend */
+.trendcard { margin-top: 16px; }
+.mini { position: relative; height: clamp(140px, 26vh, 340px); margin: 12px 14px 14px; border-radius: 10px; background: var(--panel-2); overflow: hidden; }
 canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.recline { display: flex; align-items: center; gap: 10px; }
+.recdot { width: 9px; height: 9px; border-radius: 50%; background: var(--line-2); display: block; flex: none; }
+.recdot.on { background: var(--bad); animation: pulse 1.4s ease-in-out infinite; }
 
-aside { border-left: 1px solid var(--rule); overflow: auto; }
-aside .sec { padding: 16px 20px; border-bottom: 1px solid var(--rule); }
-.kv { display: grid; grid-template-columns: auto 1fr; row-gap: 8px; column-gap: 12px; align-items: baseline; }
-.kv .v { text-align: right; font-size: 14px; min-width: 9ch; }
-.kv.wide { grid-template-columns: 160px 1fr; }
-.kv.wide .v { text-align: left; font-size: 12px; }
-.btns { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
-.rec { display: flex; align-items: center; gap: 12px; }
-.recdot { width: 8px; height: 8px; border: 1px solid var(--rule-hi); display: block; flex: none; }
-.recdot.on { background: var(--acc); border-color: var(--acc); animation: blink 1.2s steps(2) infinite; }
-.path { color: var(--dim); font-size: 11px; word-break: break-all; margin-top: 8px; min-height: 16px; }
-
-/* SCOPE */
-#v-scope.on { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
-.tools { display: flex; gap: 16px; align-items: center; padding: 8px 20px; border-bottom: 1px solid var(--rule); flex-wrap: wrap; }
+/* ---- SCOPE */
+#v-scope.on { display: flex; flex-direction: column; }
+#v-scope > .card { flex: 1; display: flex; flex-direction: column; min-height: 320px; }
+.tools { display: flex; gap: 16px; align-items: center; padding: 12px 14px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
 .tools .grp { display: flex; gap: 8px; align-items: center; }
-.tools input { width: 9ch; text-align: right; }
-.plot { position: relative; min-height: 120px; }
+.tools input { width: 10ch; text-align: right; height: 30px; }
+.plot { position: relative; flex: 1; min-height: 160px; margin: 12px 14px; border-radius: 10px; background: var(--panel-2); overflow: hidden; }
 .plot canvas { cursor: crosshair; touch-action: none; }
-.cur { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-top: 1px solid var(--rule); }
-.cur > div { padding: 8px 16px 8px 20px; border-left: 1px solid var(--rule); }
+.cur { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-top: 1px solid var(--line); }
+.cur > div { padding: 10px 14px; border-left: 1px solid var(--line); min-width: 0; }
 .cur > div:first-child { border-left: 0; }
-.cur .num { display: block; font-size: 15px; text-align: right; }
+.cur .num { display: block; font-size: 15px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* tables */
+/* ---- tables */
 table { border-collapse: collapse; width: 100%; }
-th { font: 600 10px/16px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); text-align: left;
-     padding: 4px 8px; border-bottom: 1px solid var(--rule-hi); white-space: nowrap; }
+th { font: 600 12px/1 var(--sans); color: var(--ink-3); text-align: left; padding: 10px 18px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 th.r, td.r { text-align: right; }
 th.sort { cursor: pointer; }
-th.sort:hover, th.sorted { color: var(--acc); }
-td { padding: 4px 8px; border-bottom: 1px solid var(--rule); font: 12px/16px var(--mono); font-variant-numeric: tabular-nums; vertical-align: middle; }
+th.sort:hover, th.sorted { color: var(--ink); }
+td { padding: 10px 18px; border-bottom: 1px solid var(--line); font: 13px/1.3 var(--mono); font-variant-numeric: tabular-nums; vertical-align: middle; overflow-wrap: anywhere; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover td { background: var(--panel-2); }
 td.act { text-align: right; white-space: nowrap; width: 1%; }
-tr.empty td { color: var(--faint); }
-.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; }
-.two > div { padding: 16px 20px; min-width: 0; }
-.two > div + div { border-left: 1px solid var(--rule); }
-.bigtime { font: 200 48px/56px var(--mono); letter-spacing: .04em; }
+td.act button + button, td.act button + .warn { margin-left: 6px; }
+tr.empty td { color: var(--ink-3); font-family: var(--sans); }
+tr.empty:hover td { background: none; }
 
-/* CARD */
-.desk { max-width: 640px; margin: 48px auto; padding: 0 20px; }
-.desk .page { font: 200 72px/80px var(--mono); color: var(--acc); letter-spacing: .08em; margin: 16px 0; }
-.desk p { margin: 8px 0; color: var(--dim); }
-.desk ol { margin: 8px 0; padding-left: 24px; color: var(--dim); }
-.space { display: grid; grid-template-columns: repeat(60, 1fr); }
-.space i { height: 16px; }
-.cardbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
-.cardbar input { width: 340px; max-width: 100%; }
-.stat { display: flex; justify-content: space-between; font-size: 12px; margin-top: 8px; }
-.confirm { position: fixed; inset: 0; background: var(--scrim); display: none; align-items: center; justify-content: center; z-index: 5; }
+/* ---- LOG */
+.bigtime { font: 300 44px/1.1 var(--mono); letter-spacing: -.02em; }
+/* ---- CARD */
+.desk { max-width: 560px; margin: 32px auto; padding: 28px 32px; text-align: left; }
+.desk .page { font: 300 64px/1.1 var(--mono); color: var(--acc); letter-spacing: .04em; margin: 12px 0; }
+.desk > .eng { padding: 0; min-height: 0; font-size: 15px; color: var(--ink); }
+.desk p { margin: 8px 0; color: var(--ink-2); }
+.desk ol { margin: 8px 0; padding-left: 22px; color: var(--ink-2); }
+.cardbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cardbar input { flex: 1 1 260px; }
+.stat { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; margin-top: 8px; color: var(--ink-2); flex-wrap: wrap; }
+.space { grid-template-columns: repeat(60, 1fr); }
+.space i { height: 14px; }
+/* ---- METER */
+.meterhead { display: flex; gap: 22px; align-items: center; padding: 20px 22px; }
+.meterpic { width: 66px; height: 100px; border-radius: 14px; background: var(--hol); position: relative; flex: none; box-shadow: inset 0 0 0 4px rgba(0, 0, 0, .08); }
+.meterpic::before { content: ""; position: absolute; inset: 8px; border-radius: 9px; background: #23272b; }
+.meterpic::after { content: ""; position: absolute; left: 14px; right: 14px; top: 15px; height: 25px; border-radius: 4px; background: #c7cfc2; }
+.meterpic i { position: absolute; left: 50%; bottom: 17px; width: 28px; height: 28px; margin-left: -14px; border-radius: 50%; background: #3a4047; border: 3px solid #2b3035; z-index: 1; }
+.meterhead h2 { margin: 0 0 2px; font: 650 21px/1.2 var(--sans); letter-spacing: -.01em; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, max-content)); gap: 6px 28px; margin-top: 10px; }
+.facts span { color: var(--ink-3); font-size: 12px; display: block; }
+.facts b { display: block; font: 600 14px/1.3 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.facts > div { min-width: 0; }
+.rltabs { margin-left: auto; }
+#rl-table td:first-child { font-weight: 600; white-space: nowrap; }
+#rl-table td.when { color: var(--ink-3); font-family: var(--sans); white-space: nowrap; }
+.drop { margin: 4px 18px 18px; border: 1.5px dashed var(--line-2); border-radius: 12px; padding: 14px 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.drop svg { width: 26px; height: 26px; stroke: var(--ink-3); fill: none; stroke-width: 1.6; flex: none; }
+.drop .t { flex: 1; min-width: 180px; }
+.drop .t b { display: block; }
+.drop input[type=file] { display: none; }
+.drop label.fbtn { height: 28px; padding: 0 11px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--panel); font: 600 12.5px/26px var(--sans); cursor: pointer; white-space: nowrap; }
+.drop label.fbtn:hover { border-color: var(--ink-3); }
+.drop.over { border-color: var(--hol); background: var(--hol-soft); }
+.instnote { padding: 0 18px 14px; margin: 0; }
+/* meter settings rows */
+.srow { display: grid; grid-template-columns: 6px 44px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); min-height: 44px; }
+.srow:last-child { border-bottom: 0; }
+.srow .mk { width: 6px; height: 6px; border-radius: 50%; background: transparent; }
+.srow.pend .mk { background: var(--hol); }
+.srow .code { color: var(--acc); font-size: 13px; font-weight: 600; }
+.srow .name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.srow .ctl { display: flex; align-items: center; background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+.srow .ctl button { height: 26px; width: 26px; padding: 0; border: 0; background: none; border-radius: 7px; font-size: 15px; }
+.srow .ctl button:hover:not(:disabled) { background: var(--panel); border: 0; }
+.srow .ctl input, .srow .ctl .choice { width: 84px; height: 26px; text-align: center; border: 0; background: none; padding: 0 4px; border-radius: 0; }
+.srow .ctl .choice { font: 13px/26px var(--mono); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.srow .ctl .choice.off { opacity: .4; }
+.srow.pend .ctl { border-color: var(--hol-line); }
+.srow.pend .ctl input, .srow.pend .ctl .choice { color: var(--acc); }
+.diag { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 16px; }
+.diag div { display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); padding: 4px 0; font: 12.5px/16px var(--mono); }
+.diag div span:first-child { color: var(--ink-3); }
+pre { margin: 12px 0 0; font: 12px/17px var(--mono); color: var(--ink-2); white-space: pre-wrap; user-select: text; }
+/* ---- confirm windows */
+.confirm { position: fixed; inset: 0; background: var(--scrim); display: none; align-items: center; justify-content: center; z-index: 5; backdrop-filter: blur(3px); }
 .confirm.show { display: flex; }
-.confirm .box { background: var(--bg); border: 1px solid var(--acc); padding: 20px; width: 480px; max-width: 92vw; }
-.confirm .box p { margin: 8px 0 12px; }
+.confirm .box { background: var(--panel); border: 1px solid var(--line-2); border-radius: 16px; box-shadow: 0 20px 60px rgba(0, 0, 0, .35); padding: 22px; width: 480px; max-width: 92vw; }
+.confirm .box .eng { font-size: 16px; color: var(--ink); display: flex; gap: 10px; align-items: center; }
+.confirm .box p { margin: 10px 0 14px; color: var(--ink-2); }
+.confirm .box p b { color: var(--ink); }
 .confirm input { width: 100%; margin-bottom: 16px; }
 .confirm .box.wide { width: 640px; }
-.confirm .warntext { margin: 8px 0 12px; max-height: 46vh; overflow-y: auto; white-space: pre-wrap; font: 12px/18px var(--mono); color: var(--ink); user-select: text; }
-
-/* SETTINGS */
-.srow { display: grid; grid-template-columns: 8px 56px minmax(0, 1fr) 176px 64px; gap: 12px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--rule); min-height: 40px; }
-.srow .mk { width: 8px; height: 8px; border: 1px solid var(--rule); }
-.srow.pend .mk { background: var(--acc); border-color: var(--acc); }
-.srow .code { color: var(--acc); font-size: 14px; font-weight: 600; }
-.srow .name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.srow .ctl { display: flex; align-items: center; gap: 0; }
-.srow .ctl button { padding: 3px 0; width: 28px; text-align: center; font-size: 13px; letter-spacing: 0; }
-.srow .ctl input, .srow .ctl .choice { width: 88px; text-align: center; margin: 0 -1px; height: 26px; padding: 3px 4px; }
-.srow .ctl .choice { border: 1px solid var(--rule-hi); font: 12px/18px var(--mono); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.srow .ctl .choice.off { opacity: .3; }
-.srow.pend .ctl input, .srow.pend .ctl .choice { border-color: var(--acc); color: var(--acc); }
-.diag { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 16px; }
-.diag div { display: flex; justify-content: space-between; border-bottom: 1px solid var(--rule); padding: 2px 0; font: 12px/16px var(--mono); }
-.diag div span:first-child { color: var(--faint); }
-pre { margin: 12px 0 0; font: 11px/16px var(--mono); color: var(--dim); white-space: pre-wrap; user-select: text; }   /* full length: the column has room (GitHub issue 12) */
-
-/* status line */
-footer { display: flex; align-items: center; gap: 16px; padding: 0 20px; height: 28px; flex: none; border-top: 1px solid var(--rule); font: 12px/16px var(--mono); }
-#msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
-#msg::before { content: "> "; color: var(--faint); }
+.confirm .warntext { margin: 10px 0 12px; max-height: 46vh; overflow-y: auto; white-space: pre-wrap; font: 12.5px/18px var(--mono); color: var(--ink); user-select: text; }
+/* ---- status line */
+footer { grid-column: 2; display: flex; align-items: center; gap: 16px; padding: 0 24px; border-top: 1px solid var(--line); font: 12px/16px var(--mono); min-width: 0; }
+#msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
 #msg.bad { color: var(--ink); }
-#msg .warn { margin-right: 8px; }
-footer .r { color: var(--faint); min-width: 160px; }
-@media (max-width: 1000px) {
-  header { gap: 12px; padding: 0 12px; }
-  .ident { gap: 8px; } .ident .num { min-width: 64px; } .lamps { gap: 10px; } .mark { letter-spacing: .2em; }
-  .two { grid-template-columns: minmax(0, 1fr); } .two > div + div { border-left: 0; border-top: 1px solid var(--rule); }
+#msg .warn { margin-right: 8px; height: 18px; }
+footer .r { color: var(--ink-3); white-space: nowrap; }
+/* ---- window sizes */
+@media (max-width: 1240px) { header h1 span { display: none; } }
+@media (max-width: 1000px) { .lamp span { display: none; } .lamp { padding: 0 8px; } .chip { padding: 0 9px; } }
+@media (max-width: 1100px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .side { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .view { padding: 16px; } .band { margin: 12px 16px 0; } header { padding: 0 16px; } footer { padding: 0 16px; }
 }
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: var(--rule-hi); }
+@media (max-width: 960px) {
+  .keys button { font-size: 11.5px; } .keys button small { display: none; }
+  .flags { gap: 8px; } .flags span[data-f] { font-size: 10px; }
+  .lcd { padding: 14px 16px; }
+  th, td { padding-left: 12px; padding-right: 12px; }
+  .cur { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .diag { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-height: 640px) { nav button { height: 50px; } .logo { margin-bottom: 6px; } }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 10px; border: 2px solid var(--body); }
 ::-webkit-scrollbar-track { background: transparent; }
 </style>
 </head>
 <body>
+<nav id="tabs">
+  <div class="logo"><div>121<small>GW</small></div></div>
+  <button data-v="live" title="Live (1)"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M7 21h10M9 9v4M13 8v5M17 10v3"/></svg>Live</button>
+  <button data-v="scope" title="Scope (2)"><svg viewBox="0 0 24 24"><path d="M3 12h3l2-6 4 12 3-9 2 3h4"/></svg>Scope</button>
+  <button data-v="log" title="Log (3)"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h3"/></svg>Log</button>
+  <button data-v="card" title="Card (4)"><svg viewBox="0 0 24 24"><path d="M7 3h8l4 4v14H7z M10 7v3M13 7v3M16 9v1"/></svg>Card</button>
+  <button data-v="meter" title="Meter (5)"><svg viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><rect x="8.5" y="5" width="7" height="4" rx=".8"/><circle cx="12" cy="15" r="2.6"/></svg>Meter</button>
+  <div class="grow"></div>
+  <button data-v="prefs" title="Settings (6)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.3 14H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9 4.6V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>Settings</button>
+</nav>
+
 <header>
-  <div class="mark">121<b>GW</b></div>
-  <div class="ident"><div><span class="cap">firmware&nbsp;</span><span class="num" id="fw">F-—</span></div>
-    <div><span class="cap">boot&nbsp;</span><span class="num" id="bl">B-—</span></div></div>
-  <div class="lamps" id="lamps">
-    <span class="lamp" id="l-link"><i></i>LINK</span><span class="lamp" id="l-live"><i></i>LIVE</span>
-    <span class="lamp" id="l-desk"><i></i>DESK</span><span class="lamp" id="l-log"><i></i>LOG</span>
-    <span class="lamp" id="l-sd"><i></i>SD</span>
+  <h1>121GW <span>Companion</span></h1>
+  <div class="chips">
+    <span class="chip">Firmware <b id="fw">F-—</b></span><span class="chip">Bootloader <b id="bl">B-—</b></span>
+    <div class="lamps" id="lamps">
+      <span class="lamp" id="l-link" title="link to the meter"><i></i><span>Link</span></span>
+      <span class="lamp" id="l-live" title="readings arriving"><i></i><span>Live</span></span>
+      <span class="lamp" id="l-desk" title="desk mode (page Ld-bt)"><i></i><span>Desk</span></span>
+      <span class="lamp" id="l-log" title="recording"><i></i><span>Rec</span></span>
+      <span class="lamp" id="l-sd" title="memory card read"><i></i><span>SD</span></span>
+    </div>
   </div>
-  <div class="spacer"></div>
+  <div class="sp"></div>
   <button id="connect" class="pri">Connect</button>
 </header>
-<nav id="tabs">
-  <button data-v="live"><b>1</b>LIVE</button><button data-v="scope"><b>2</b>SCOPE</button><button data-v="log"><b>3</b>LOG</button>
-  <button data-v="card"><b>4</b>CARD</button><button data-v="meter"><b>5</b>METER</button><button data-v="prefs"><b>6</b>SETTINGS</button>
-</nav>
-<div class="band" id="devband"><span class="cap">meters found</span><div class="devs" id="devs"></div></div>
-<div class="band" id="notice"><span class="cap">update</span><span class="text" id="ntext"></span>
+
+<div class="bands">
+<div class="band" id="devband"><span class="cap">Meters found</span><div class="devs" id="devs"></div></div>
+<div class="band" id="notice"><span class="cap">Update</span><span class="text" id="ntext"></span>
   <div class="sbar" id="nprog" hidden></div>
   <button id="nfw" hidden>Firmware only</button><button id="nbl" hidden>Bootloader only</button>
-  <button id="nprimary" class="pri"></button><button id="nsecondary"></button></div>
-
-<div class="band" id="cnotice"><span class="cap">program</span><span class="text" id="cntext"></span>
-  <button id="cnopen" class="pri">Open release page</button><button id="cnlater">Later</button></div>
+  <button id="nsecondary"></button><button id="nprimary" class="pri"></button></div>
+<div class="band" id="cnotice"><span class="cap">Companion</span><span class="text" id="cntext"></span>
+  <button id="cnlater">Later</button><button id="cnopen" class="pri">Open release page</button></div>
+</div>
 
 <main>
 <!-- LIVE -->
 <section class="view" id="v-live">
-  <div class="col">
-    <div class="readout" id="readout">
-      <div class="eng">Reading <span class="num dim" id="modename"></span></div>
-      <div class="flags" id="flags"><span class="age" id="age"></span><span class="warn" id="olwarn" hidden>Overload</span></div>
-      <div class="value"><span class="digits blank" id="digits">-----</span><span class="unit" id="unit"></span></div>
-      <div class="sub"><span class="cap" id="sublabel"></span><span class="num" id="subval"></span><span class="unit2" id="subunit"></span></div>
-      <div class="bar" id="bar"></div>
-      <div class="scale" id="scale"></div>
-    </div>
-    <div class="derived">
-      <div class="cell"><div class="eng">Rel %</div><span class="big num" id="d-rel">—</span><div class="row"><span class="cap">of reference</span></div></div>
-      <div class="cell"><div class="eng">Loop %</div><span class="big num" id="d-loop">—</span>
-        <div class="row"><span class="seg" id="s-loop"><button data-v="4-20">4-20</button><button data-v="0-20">0-20</button></span></div></div>
-      <div class="cell"><div class="eng">Pt °C</div><span class="big num" id="d-pt">—</span>
-        <div class="row"><span class="seg" id="s-pt"><button data-v="Pt100">Pt100</button><button data-v="Pt1000">Pt1000</button></span></div></div>
-      <div class="cell"><div class="eng">Limit</div>
-        <div class="row"><span class="verdict" id="d-verdict"><i></i><span>—</span></span>
-          <span class="row"><input id="lim-lo" class="num" placeholder="lo" aria-label="limit low" spellcheck="false"><input id="lim-hi" class="num" placeholder="hi" aria-label="limit high" spellcheck="false"></span></div>
-        <div class="row"><span class="cap">verdict</span><span class="cap" id="lim-unit">lo · hi</span></div></div>
-    </div>
-    <div class="keys" id="keys">
-      <button data-k="RANGE">Range</button><button data-k="HOLD">Hold</button><button data-k="REL">Rel</button>
-      <button data-k="PEAK">Peak</button><button data-k="MODE">Mode</button><button data-k="MIN/MAX">Min/Max</button>
-      <button data-k="MEM" data-long="1">Mem<small>LONG</small></button>
-      <span class="note" id="keynote"></span>
-    </div>
-    <div class="mini" id="minitrend"><div class="cap" id="trendlabel">trend</div><canvas id="trend"></canvas></div>
-  </div>
-  <aside>
-    <div class="sec"><div class="eng">Statistics</div>
-      <div class="kv">
-        <span class="cap">min</span><span class="v num" id="smin">—</span>
-        <span class="cap">max</span><span class="v num" id="smax">—</span>
-        <span class="cap">mean</span><span class="v num" id="smean">—</span>
-        <span class="cap">count</span><span class="v num" id="sn">0</span>
-        <span class="cap">std dev</span><span class="v num" id="ssd">—</span>
+  <div class="grid">
+    <div class="stack" style="gap:0">
+      <div class="card">
+        <div class="lcdwrap"><div class="lcd" id="readout">
+          <div class="flags" id="flags"><span class="age" id="age"></span><span class="warn" id="olwarn" hidden>Overload</span><span class="mode" id="modename"></span></div>
+          <div class="value"><svg class="digits" id="digits" role="img" aria-label="reading"></svg><span class="unit" id="unit"></span></div>
+          <div class="sub"><span class="lab" id="sublabel"></span><svg class="subdig" id="subval" role="img" aria-label="sub display"></svg><span class="unit2" id="subunit"></span></div>
+          <div class="bar" id="bar"></div>
+          <div class="scale" id="scale"></div>
+        </div></div>
+        <div class="keys" id="keys">
+          <button data-k="RANGE">Range</button><button data-k="HOLD">Hold</button><button data-k="REL">Rel</button>
+          <button data-k="PEAK">Peak</button><button data-k="MODE">Mode</button><button data-k="MIN/MAX">Min/Max</button>
+          <button data-k="MEM" data-long="1">Mem<small>long press</small></button>
+        </div>
+        <div class="keynote" id="keynote"></div>
       </div>
-      <div class="btns"><button id="sreset">Reset</button></div>
+      <div class="derived">
+        <div class="card"><div class="eng">Relative</div><div class="body"><span class="dv" id="d-rel">—</span><span class="cap">% of the reference</span></div></div>
+        <div class="card"><div class="eng">Loop</div><div class="body"><span class="dv" id="d-loop">—</span>
+          <span class="seg" id="s-loop"><button data-v="4-20">4–20 mA</button><button data-v="0-20">0–20</button></span></div></div>
+        <div class="card"><div class="eng">Temperature</div><div class="body"><span class="dv" id="d-pt">—</span>
+          <span class="seg" id="s-pt"><button data-v="Pt100">Pt100</button><button data-v="Pt1000">Pt1000</button></span></div></div>
+        <div class="card"><div class="eng">Limit<span class="sp"></span><span class="verdict" id="d-verdict"><i></i><span>—</span></span></div>
+          <div class="body"><div class="lim"><input id="lim-lo" class="num" placeholder="low" aria-label="limit low" spellcheck="false"><input id="lim-hi" class="num" placeholder="high" aria-label="limit high" spellcheck="false"></div>
+          <span class="cap" id="lim-unit">lo · hi</span></div></div>
+      </div>
+      <div class="card trendcard"><div class="eng" id="trendlabel">Trend</div>
+        <div class="mini" id="minitrend"><canvas id="trend"></canvas></div></div>
     </div>
-    <div class="sec"><div class="eng">Recording</div>
-      <div class="rec"><i class="recdot" id="recdot"></i><span class="num" id="rectime">00:00:00</span><span class="dim num" id="recrows"></span></div>
-      <div class="btns"><button id="rec2">Record</button></div>
+    <div class="side">
+      <div class="card"><div class="eng">Statistics<span class="sp"></span><button class="sm" id="sreset">Reset</button></div>
+        <div class="body">
+          <div class="big"><span class="num" id="smean">—</span> <span class="cap">mean</span></div>
+          <div class="kv" style="margin-top:8px">
+            <span class="cap">Minimum</span><span class="v num" id="smin">—</span>
+            <span class="cap">Maximum</span><span class="v num" id="smax">—</span>
+            <span class="cap">Std. deviation</span><span class="v num" id="ssd">—</span>
+            <span class="cap">Readings</span><span class="v num" id="sn">0</span>
+          </div></div></div>
+      <div class="card"><div class="eng">Recording</div>
+        <div class="body">
+          <div class="recline"><i class="recdot" id="recdot"></i><span class="big" id="rectime" style="font-size:28px">00:00:00</span></div>
+          <div class="path num" id="recrows"></div>
+          <div class="btns"><button id="rec2" style="flex:1">Record</button></div>
+        </div></div>
     </div>
-  </aside>
+  </div>
 </section>
 
 <!-- SCOPE -->
 <section class="view" id="v-scope">
-  <div class="tools">
-    <div class="grp"><span class="cap">time</span><span class="seg" id="s-win"></span></div>
-    <div class="grp"><span class="cap">vertical</span><span class="seg" id="s-auto"><button data-v="auto">Auto</button><button data-v="fixed">Fixed</button></span>
-      <input id="sc-lo" class="num" aria-label="scale low" spellcheck="false"><input id="sc-hi" class="num" aria-label="scale high" spellcheck="false"></div>
-    <div class="grp"><button id="sc-cur">Cursors</button><button id="sc-frz">Freeze <span class="dim">space</span></button><span class="warn" id="sc-frzmark" hidden>Frozen</span></div>
-    <div class="spacer"></div>
-    <div class="num dim" id="sc-div"></div>
-  </div>
-  <div class="plot" id="plot"><canvas id="scope"></canvas></div>
-  <div class="cur">
-    <div><span class="cap">A  t</span><span class="num" id="c-ta">—</span></div>
-    <div><span class="cap">B  t</span><span class="num" id="c-tb">—</span></div>
-    <div><span class="cap">Δt</span><span class="num" id="c-dt">—</span></div>
-    <div><span class="cap">ΔV</span><span class="num" id="c-dv">—</span></div>
-    <div><span class="cap">1/Δt</span><span class="num" id="c-hz">—</span></div>
-    <div><span class="cap">A · B</span><span class="num" id="c-v">—</span></div>
+  <div class="card">
+    <div class="tools">
+      <div class="grp"><span class="cap">Time</span><span class="seg" id="s-win"></span></div>
+      <div class="grp"><span class="cap">Vertical</span><span class="seg" id="s-auto"><button data-v="auto">Auto</button><button data-v="fixed">Fixed</button></span>
+        <input id="sc-lo" class="num" aria-label="scale low" spellcheck="false"><input id="sc-hi" class="num" aria-label="scale high" spellcheck="false"></div>
+      <div class="grp"><button id="sc-cur">Cursors</button><button id="sc-frz">Freeze <span class="cap">space</span></button><span class="warn" id="sc-frzmark" hidden>Frozen</span></div>
+      <div class="sp"></div>
+      <div class="num dim" id="sc-div"></div>
+    </div>
+    <div class="plot" id="plot"><canvas id="scope"></canvas></div>
+    <div class="cur">
+      <div><span class="cap">A  t</span><span class="num" id="c-ta">—</span></div>
+      <div><span class="cap">B  t</span><span class="num" id="c-tb">—</span></div>
+      <div><span class="cap">Δt</span><span class="num" id="c-dt">—</span></div>
+      <div><span class="cap">ΔV</span><span class="num" id="c-dv">—</span></div>
+      <div><span class="cap">1/Δt</span><span class="num" id="c-hz">—</span></div>
+      <div><span class="cap">A · B</span><span class="num" id="c-v">—</span></div>
+    </div>
   </div>
 </section>
 
 <!-- LOG -->
 <section class="view" id="v-log">
-  <div class="two">
-    <div><div class="eng">Recording</div>
-      <div class="rec"><i class="recdot" id="recdot2"></i><span class="bigtime num" id="rectime2">00:00:00</span></div>
-      <div class="kv" style="margin-top:8px"><span class="cap">rows</span><span class="v num" id="recrows2" style="text-align:left">—</span>
-        <span class="cap">file</span><span class="v num" id="recpath" style="text-align:left;word-break:break-all">—</span>
-        <span class="cap">folder</span><span class="v num" id="recfolder" style="text-align:left;word-break:break-all">—</span></div>
-      <div class="btns"><button id="rec" class="pri">Record</button><button id="export">Export trend CSV</button></div>
+  <div class="grid">
+    <div class="card"><div class="eng">Recordings in the computer folder</div>
+      <div class="body" style="padding:6px 0 6px"><table><thead><tr><th>Name</th><th class="r">Size</th><th>Date</th></tr></thead><tbody id="reclist"></tbody></table></div></div>
+    <div class="side">
+      <div class="card"><div class="eng">Recording</div>
+        <div class="body">
+          <div class="recline"><i class="recdot" id="recdot2"></i><span class="bigtime num" id="rectime2">00:00:00</span></div>
+          <div class="kv wide" style="margin-top:10px"><span class="cap">Rows</span><span class="v num" id="recrows2">—</span>
+            <span class="cap">File</span><span class="v num" id="recpath">—</span>
+            <span class="cap">Folder</span><span class="v num" id="recfolder">—</span></div>
+          <div class="btns"><button id="rec" class="pri">Record</button><button id="export">Export trend CSV</button></div>
+        </div></div>
     </div>
-    <div><div class="eng">Recordings in the computer folder</div>
-      <table><thead><tr><th>Name</th><th class="r">Size</th><th>Date</th></tr></thead><tbody id="reclist"></tbody></table></div>
   </div>
 </section>
 
 <!-- CARD -->
 <section class="view" id="v-card">
-  <div class="desk" id="deskinfo">
-    <div class="eng">Card <span class="warn">Locked</span></div>
+  <div class="card desk" id="deskinfo">
+    <div class="eng" style="display:flex;gap:10px;align-items:center">Memory card <span class="warn">Locked</span></div>
     <p>The memory card is reached only while the meter is in desk mode.</p>
     <div class="page num">Ld-bt</div>
     <p><b style="color:var(--ink)">On the meter: SETUP to page Ld-bt.</b></p>
-    <ol><li>Meter on and connected to this program.</li><li>Press SETUP until the display shows Ld-bt.</li><li>The DESK lamp lights; this view then lists the card.</li></ol>
+    <ol><li>Meter on and connected to this program.</li><li>Press SETUP until the display shows Ld-bt.</li><li>The Desk lamp lights; this page then lists the card.</li></ol>
   </div>
-  <div class="pad" id="cardmain" hidden>
-    <div class="cardbar"><button id="c-refresh">Refresh</button>
-      <input id="c-folder" class="num" spellcheck="false" aria-label="folder on this computer" placeholder="folder on this computer">
-      <button id="c-sync" class="pri">Sync to folder</button><button id="c-format">Format card</button><button id="c-leave" title="the meter leaves the page Ld-bt and shows its readings again (firmware F-1.17 or newer)">Leave Ld-bt</button><span class="warn" id="c-err" hidden>Fault</span><span class="dim" id="c-errtext"></span></div>
-    <div class="eng">Space</div>
-    <div class="space sbar" id="spacebar"></div>
-    <div class="stat num"><span id="sp-used">—</span><span id="sp-free">—</span><span id="sp-total">—</span></div>
-    <div class="eng" style="margin-top:20px">Transfer <span class="num" id="c-op">idle</span></div>
-    <div class="sbar" id="progbar" style="grid-template-columns:repeat(60,1fr)"></div>
-    <div class="stat num"><span id="pg-bytes">—</span><span id="pg-rate">—</span></div>
-    <div class="stat num dim" style="margin-bottom:20px"><span id="sy-info">Sync: —</span><span id="sy-last"></span></div>
-    <div class="eng">Files <span class="num" id="c-count"></span></div>
-    <table><thead><tr><th class="sort" data-s="name">Name</th><th class="sort r" data-s="size">Size B</th><th class="sort" data-s="when">Date / time</th><th></th></tr></thead>
-      <tbody id="files"></tbody></table>
+  <div class="stack" id="cardmain" hidden>
+    <div class="card"><div class="body">
+      <div class="cardbar"><button id="c-refresh">Refresh</button>
+        <input id="c-folder" class="num" spellcheck="false" aria-label="folder on this computer" placeholder="folder on this computer">
+        <button id="c-sync" class="pri">Sync to folder</button><button id="c-format">Format card</button><button id="c-leave" title="the meter leaves the page Ld-bt and shows its readings again (firmware F-1.17 or newer)">Leave Ld-bt</button></div>
+      <div class="row" style="margin-top:8px"><span class="warn" id="c-err" hidden>Fault</span><span class="dim" id="c-errtext"></span></div>
+    </div></div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr))">
+      <div class="card"><div class="eng">Space</div><div class="body">
+        <div class="sbar space" id="spacebar"></div>
+        <div class="stat num"><span id="sp-used">—</span><span id="sp-free">—</span><span id="sp-total">—</span></div></div></div>
+      <div class="card"><div class="eng">Transfer <span class="num dim" id="c-op">idle</span></div><div class="body">
+        <div class="sbar" id="progbar"></div>
+        <div class="stat num"><span id="pg-bytes">—</span><span id="pg-rate">—</span></div>
+        <div class="stat num"><span id="sy-info">Sync: —</span><span id="sy-last"></span></div></div></div>
+    </div>
+    <div class="card"><div class="eng">Files <span class="num dim" id="c-count"></span></div>
+      <div class="body" style="padding:6px 0 6px"><table><thead><tr><th class="sort" data-s="name">Name</th><th class="sort r" data-s="size">Size B</th><th class="sort" data-s="when">Date / time</th><th></th></tr></thead>
+        <tbody id="files"></tbody></table></div></div>
   </div>
 </section>
 
 <!-- METER -->
 <section class="view" id="v-meter">
-  <div class="two">
-    <div>
-      <div class="eng">Meter</div>
-      <div class="kv wide">
-        <span class="cap">firmware</span><span class="v num" id="m-fw">—</span>
-        <span class="cap">bootloader</span><span class="v num" id="m-bl">—</span>
-        <span class="cap">device</span><span class="v num" id="m-dev">—</span>
-        <span class="cap">link</span><span class="v num" id="m-link">—</span>
-        <span class="cap">update check</span><span class="v num" id="m-upd">—</span>
-        <span class="cap">available</span><span class="v num" id="m-avail">—</span>
-        <span class="cap">last transfer</span><span class="v num" id="m-xfer">—</span>
-        <span class="cap">companion</span><span class="v num" id="m-app">—</span>
+  <div class="grid">
+    <div class="stack">
+      <div class="card"><div class="meterhead"><div class="meterpic"><i></i></div>
+        <div style="min-width:0;flex:1"><h2>EEVblog 121GW</h2><div class="cap" id="m-link">—</div>
+          <div class="facts">
+            <div><span>Firmware</span><b id="m-fw">—</b></div><div><span>Bootloader</span><b id="m-bl">—</b></div>
+            <div><span>Device</span><b id="m-dev">—</b></div><div><span>Companion</span><b id="m-app">—</b></div>
+          </div></div></div>
+        <div class="body" style="padding-top:0">
+          <div class="kv wide">
+            <span class="cap">Update check</span><span class="v" id="m-upd">—</span>
+            <span class="cap">Available</span><span class="v num" id="m-avail">—</span>
+            <span class="cap">Last transfer</span><span class="v" id="m-xfer">—</span>
+          </div>
+          <div class="sbar" id="m-prog" style="margin-top:10px"></div>
+        </div></div>
+      <div class="card">
+        <div class="eng">Install a version<span class="sp"></span><button class="sm" id="rl-load">Refresh list</button>
+          <span class="seg rltabs" id="rl-kind"><button data-v="firmware" class="on">Firmware</button><button data-v="bootloader">Bootloader</button></span></div>
+        <div class="hint" style="padding:6px 18px 0">Any release of the project, also an older one, or a file of your own. Going back and every file of your own ask first.</div>
+        <div class="body" style="padding:6px 0 0"><table id="rl-table"><thead><tr><th>Version</th><th>Released</th><th>On this meter</th><th></th></tr></thead>
+          <tbody id="rl-rows"></tbody></table></div>
+        <div class="drop" id="f-drop"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z M14 3v5h5 M12 12v6 M9 15l3-3 3 3"/></svg>
+          <div class="t"><b>Install a file of your own</b><span class="cap" id="f-name">Drop a .bin here or choose one; it is checked before anything is sent.</span></div>
+          <input type="file" id="f-file" accept=".bin" aria-label="firmware or bootloader file of your own"><label class="fbtn" for="f-file">Choose file…</label>
+          <button class="sm" id="f-fw" disabled>As firmware</button><button class="sm" id="f-bl" disabled>As bootloader</button></div>
+        <div class="path instnote" id="inst-note"></div>
       </div>
-      <div class="sbar" id="m-prog" style="grid-template-columns:repeat(40,1fr);margin-top:12px"></div>
-      <div class="eng" style="margin-top:24px">Install a version <button class="sm" id="rl-load" style="margin-left:8px">List releases</button></div>
-      <div class="cap" style="margin:4px 0 8px">any release of the project, also an older one, or a file of your own; going back and every file ask first</div>
-      <div class="cardbar" style="margin-bottom:8px"><select id="rl-fw" aria-label="firmware release" disabled></select><button id="rl-fw-go" disabled>Install firmware</button></div>
-      <div class="cardbar" style="margin-bottom:8px"><select id="rl-bl" aria-label="bootloader release" disabled></select><button id="rl-bl-go" disabled>Install bootloader</button></div>
-      <div class="cardbar" style="margin-bottom:8px"><input type="file" id="f-file" accept=".bin" aria-label="firmware or bootloader file of your own">
-        <button id="f-fw" disabled>File as firmware</button><button id="f-bl" disabled>File as bootloader</button></div>
-      <div class="path" id="inst-note"></div>
-      <div class="eng" style="margin-top:24px">Clock</div>
-      <div class="cardbar" style="margin-bottom:8px"><span class="num" id="ntpname"></span><button id="sync">Sync time</button></div>
-      <div class="path num" id="clockres"></div>
-      <div class="eng" style="margin-top:24px">Diagnostics <button class="sm" id="diag-read" style="margin-left:8px">Read</button><button class="sm" id="diag-save" style="margin-left:8px">Save report</button></div>
-      <div class="path" id="diag-file" style="margin:0 0 8px"></div>
-      <div class="diag" id="diagvals"></div>
-      <pre id="diagtext">—</pre>
+      <div class="card"><div class="eng">Diagnostics<span class="sp"></span><button class="sm" id="diag-read">Read</button><button class="sm" id="diag-save">Save report</button></div>
+        <div class="body"><div class="path" id="diag-file" style="margin:0 0 8px"></div>
+          <div class="diag" id="diagvals"></div>
+          <pre id="diagtext">—</pre></div></div>
     </div>
-    <div>
-      <div class="eng">Settings <span id="set-lock" class="warn" hidden>Locked</span><button class="sm" id="set-read" style="margin-left:8px">Read</button></div>
-      <div class="path" id="set-reason" style="margin:0 0 8px;color:var(--ink);min-height:0"></div>
-      <div id="setlist"></div>
+    <div class="side">
+      <div class="card"><div class="eng">Meter settings<span id="set-lock" class="warn" hidden>Locked</span><span class="sp"></span><button class="sm" id="set-read">Read</button></div>
+        <div class="body"><div class="path" id="set-reason" style="margin:0 0 8px;color:var(--ink)"></div>
+          <div id="setlist"></div></div></div>
+      <div class="card"><div class="eng">Clock</div>
+        <div class="body"><div class="cap" id="ntpname"></div>
+          <div class="path num" id="clockres"></div>
+          <div class="btns"><button id="sync" style="flex:1">Sync time</button></div></div></div>
     </div>
   </div>
 </section>
 
-<!-- SETTINGS: the program's own settings (the meter's SETUP settings are on the METER view) -->
+<!-- SETTINGS: the program's own settings (the meter's SETUP settings are on the METER page) -->
 <section class="view" id="v-prefs">
-  <div class="two">
-    <div>
-      <div class="eng">This program</div>
-      <div class="row" style="margin:4px 0 24px"><span class="num" id="p-app">121GW Companion</span></div>
-      <div class="eng">Files</div>
-      <div class="cap">recordings folder</div>
-      <div class="cardbar" style="margin:4px 0 4px"><input id="p-folder" class="num" spellcheck="false" aria-label="recordings folder" style="flex:1"><button id="p-folder-save">Save</button></div>
-      <div class="path" id="p-folder-note" style="margin:0 0 12px"></div>
-      <div class="cap">card sync folder</div>
-      <div class="cardbar" style="margin:4px 0 12px"><input id="p-sync" class="num" spellcheck="false" aria-label="card sync folder" style="flex:1"><button id="p-sync-save">Save</button></div>
-      <div class="cap">recordings: CSV format</div>
-      <div class="row" style="margin:4px 0 24px"><span class="seg" id="p-csv"><button data-v="comma">1.5 , separated</button><button data-v="semicolon">1,5 ; separated</button></span></div>
-      <div class="eng">Clock</div>
-      <div class="cap">time server</div>
-      <div class="cardbar" style="margin:4px 0 12px"><input id="p-ntp" class="num" spellcheck="false" aria-label="time server" style="flex:1"><button id="p-ntp-save">Save</button></div>
-      <div class="cap">set the meter's clock after connecting</div>
-      <div class="row" style="margin:4px 0 4px"><span class="seg" id="p-clock"><button data-v="on">On</button><button data-v="off">Off</button></span></div>
-      <div class="path" id="p-clock-note" style="margin:0 0 12px"></div>
+  <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+    <div class="stack">
+      <div class="card"><div class="eng">This program</div><div class="body"><span class="num" id="p-app">121GW Companion</span></div></div>
+      <div class="card"><div class="eng">Files</div><div class="body">
+        <div class="lbl">Recordings folder</div>
+        <div class="field"><input id="p-folder" class="num" spellcheck="false" aria-label="recordings folder"><button id="p-folder-save">Save</button></div>
+        <div class="path" id="p-folder-note"></div>
+        <div class="lbl">Card sync folder</div>
+        <div class="field"><input id="p-sync" class="num" spellcheck="false" aria-label="card sync folder"><button id="p-sync-save">Save</button></div>
+        <div class="lbl">Recordings: CSV format</div>
+        <div class="row" style="margin-top:6px"><span class="seg" id="p-csv"><button data-v="comma">1.5 , separated</button><button data-v="semicolon">1,5 ; separated</button></span></div>
+      </div></div>
+      <div class="card"><div class="eng">Clock</div><div class="body">
+        <div class="lbl">Time server</div>
+        <div class="field"><input id="p-ntp" class="num" spellcheck="false" aria-label="time server"><button id="p-ntp-save">Save</button></div>
+        <div class="lbl">Set the meter's clock after connecting</div>
+        <div class="row" style="margin-top:6px"><span class="seg" id="p-clock"><button data-v="on">On</button><button data-v="off">Off</button></span></div>
+        <div class="path" id="p-clock-note"></div>
+      </div></div>
     </div>
-    <div>
-      <div class="eng">Appearance</div>
-      <div class="cap">colours (System follows the light or dark choice of the computer)</div>
-      <div class="row" style="margin:4px 0 24px"><span class="seg" id="p-theme"><button data-v="dark">Dark</button><button data-v="light">Light</button><button data-v="system">System</button></span></div>
-      <div class="eng">Updates</div>
-      <div class="cap">look for new firmware and bootloader releases</div>
-      <div class="row" style="margin:4px 0 24px"><span class="seg" id="p-upd"><button data-v="connect">On connect</button><button data-v="daily">Daily</button><button data-v="never">Never</button></span></div>
-      <div class="eng">Diagnosis</div>
-      <div class="cap">diagnostic logging (clicks and commands to the terminal; from the next start)</div>
-      <div class="row" style="margin:4px 0 4px"><span class="seg" id="p-diag"><button data-v="on">On</button><button data-v="off">Off</button></span></div>
-      <div class="path" id="p-diag-note" style="margin:0 0 12px"></div>
-      <div class="cap">extended diagnosis (the meter counts link errors inside; needs firmware F-1.15 or newer; the report shows the counts)</div>
-      <div class="row" style="margin:4px 0 4px"><span class="seg" id="p-xdiag"><button data-v="on">On</button><button data-v="off">Off</button></span></div>
-      <div class="path" id="p-xdiag-note" style="margin:0 0 24px"></div>
-      <div class="eng">Reset</div>
-      <div class="cardbar" style="margin:4px 0 4px"><button id="p-reset">Reset all settings</button></div>
-      <div class="path" id="p-file"></div>
+    <div class="stack">
+      <div class="card"><div class="eng">Appearance</div><div class="body">
+        <div class="lbl">Colours</div><div class="hint">System follows the light or dark choice of the computer.</div>
+        <span class="seg" id="p-theme"><button data-v="dark">Dark</button><button data-v="light">Light</button><button data-v="system">System</button></span>
+      </div></div>
+      <div class="card"><div class="eng">Updates</div><div class="body">
+        <div class="lbl">Look for new firmware and bootloader releases</div>
+        <div class="row" style="margin-top:6px"><span class="seg" id="p-upd"><button data-v="connect">On connect</button><button data-v="daily">Daily</button><button data-v="never">Never</button></span></div>
+      </div></div>
+      <div class="card"><div class="eng">Diagnosis</div><div class="body">
+        <div class="lbl">Diagnostic logging</div><div class="hint">Clicks and commands to the terminal; from the next start.</div>
+        <span class="seg" id="p-diag"><button data-v="on">On</button><button data-v="off">Off</button></span>
+        <div class="path" id="p-diag-note"></div>
+        <div class="lbl">Extended diagnosis</div><div class="hint">The meter counts link errors inside; needs firmware F-1.15 or newer; the report shows the counts.</div>
+        <span class="seg" id="p-xdiag"><button data-v="on">On</button><button data-v="off">Off</button></span>
+        <div class="path" id="p-xdiag-note"></div>
+      </div></div>
+      <div class="card"><div class="eng">Reset</div><div class="body">
+        <button id="p-reset">Reset all settings</button>
+        <div class="path" id="p-file"></div>
+      </div></div>
     </div>
   </div>
 </section>
@@ -495,7 +614,7 @@ footer .r { color: var(--faint); min-width: 160px; }
   <div class="eng">Delete file</div>
   <p>Delete <b class="num yel" id="cf-name"></b> from the meter's card? This cannot be undone. Type the name to confirm.</p>
   <input id="cf-input" class="num" spellcheck="false" autocomplete="off" aria-label="type the file name">
-  <div class="btns" style="margin-top:0"><button id="cf-ok" disabled>Delete</button><button id="cf-cancel">Cancel</button></div>
+  <div class="btns" style="margin-top:0;justify-content:flex-end"><button id="cf-cancel">Cancel</button><button id="cf-ok" class="pri" disabled>Delete</button></div>
 </div></div>
 
 <div class="confirm" id="iconfirm"><div class="box wide">
@@ -503,14 +622,14 @@ footer .r { color: var(--faint); min-width: 160px; }
   <div class="warntext" id="ic-text"></div>
   <p>Type <b class="num yel" id="ic-word"></b> to install it anyway.</p>
   <input id="ic-input" class="num" spellcheck="false" autocomplete="off" aria-label="type the word to confirm">
-  <div class="btns" style="margin-top:0"><button id="ic-ok" disabled>Install</button><button id="ic-cancel">Cancel</button></div>
+  <div class="btns" style="margin-top:0;justify-content:flex-end"><button id="ic-cancel">Cancel</button><button id="ic-ok" class="pri" disabled>Install</button></div>
 </div></div>
 
 <div class="confirm" id="pconfirm"><div class="box">
   <div class="eng">Reset all settings</div>
   <p>Every setting of this program goes back to its default: folders, CSV format, time server, update check, diagnosis
   and the derived-value options. The meter's own settings and your files are not touched.</p>
-  <div class="btns" style="margin-top:0"><button id="pc-ok">Reset</button><button id="pc-cancel">Cancel</button></div>
+  <div class="btns" style="margin-top:0;justify-content:flex-end"><button id="pc-cancel">Cancel</button><button id="pc-ok" class="pri">Reset</button></div>
 </div></div>
 
 <div class="confirm" id="fconfirm"><div class="box">
@@ -519,16 +638,15 @@ footer .r { color: var(--faint); min-width: 160px; }
   one afterwards: MEM while switching on, REL, MODE). The card becomes exFAT. This needs the two-part bootloader.
   Type <b class="num yel">FORMAT</b> to confirm.</p>
   <input id="fc-input" class="num" spellcheck="false" autocomplete="off" aria-label="type FORMAT">
-  <div class="btns" style="margin-top:0"><button id="fc-ok" disabled>Format</button><button id="fc-cancel">Cancel</button></div>
+  <div class="btns" style="margin-top:0;justify-content:flex-end"><button id="fc-cancel">Cancel</button><button id="fc-ok" class="pri" disabled>Format</button></div>
 </div></div>
 <div class="confirm" id="fprog"><div class="box">
   <div class="eng">Formatting the SD card</div>
   <p id="fp-text"></p>
-  <div class="btns" style="margin-top:0"><button id="fp-ok" disabled>OK</button></div>
+  <div class="btns" style="margin-top:0;justify-content:flex-end"><button id="fp-ok" class="pri" disabled>OK</button></div>
 </div></div>
 
 <footer><span id="msg">Meter on, Bluetooth on (hold PEAK), phone app closed.</span><span class="r num" id="sline"></span></footer>
-
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -607,6 +725,57 @@ document.addEventListener('keydown', e => {
   else if (e.key === ' ' && view === 'scope') { e.preventDefault(); toggleFreeze(); }
 });
 
+// ---------------------------------------------------------------- LIVE: the LCD (seven-segment cells in SVG)
+// Every segment of every cell is always drawn, the lit ones solid and the rest faint, as on the meter's glass.  A text with
+// a character no seven-segment cell can show is written in the page's font instead (nothing is guessed into segments).
+const SEG7 = {'0': 'abcdef', '1': 'bc', '2': 'abged', '3': 'abgcd', '4': 'fgbc', '5': 'afgcd', '6': 'afgedc', '7': 'abc',
+  '8': 'abcdefg', '9': 'abcdfg', '-': 'g', ' ': '', '_': 'd', '°': 'abfg', 'A': 'abcefg', 'b': 'cdefg', 'C': 'adef', 'c': 'deg',
+  'd': 'bcdeg', 'E': 'adefg', 'F': 'aefg', 'G': 'acdef', 'H': 'bcefg', 'h': 'cefg', 'I': 'ef', 'i': 'e', 'J': 'bcde', 'L': 'def',
+  'n': 'ceg', 'N': 'abcef', 'o': 'cdeg', 'O': 'abcdef', 'P': 'abefg', 'r': 'eg', 'S': 'afgcd', 't': 'defg', 'U': 'bcdef',
+  'u': 'cde', 'Y': 'bcdfg'};
+const segOf = ch => SEG7[ch] !== undefined ? SEG7[ch] : SEG7[ch.toUpperCase()] !== undefined ? SEG7[ch.toUpperCase()]
+  : SEG7[ch.toLowerCase()] !== undefined ? SEG7[ch.toLowerCase()] : null;
+function segPoly(seg, x) {                             // hexagon segments, a small gap at every joint, slanted a little
+  const w = 56, hh = 100, t = 12, g = 1.6, sk = 5, m = t / 2;
+  const hz = cy => [[m + g, cy], [t + g, cy - m], [w - t - g, cy - m], [w - m - g, cy], [w - t - g, cy + m], [t + g, cy + m]];
+  const vt = (cx, y0, y1) => [[cx, y0 + g], [cx + m, y0 + m + g], [cx + m, y1 - m - g], [cx, y1 - g], [cx - m, y1 - m - g], [cx - m, y0 + m + g]];
+  const P = {a: hz(m), g: hz(hh / 2), d: hz(hh - m), f: vt(m, m, hh / 2), b: vt(w - m, m, hh / 2), e: vt(m, hh / 2, hh - m), c: vt(w - m, hh / 2, hh - m)}[seg];
+  return P.map(([px, py]) => (x + px + sk * (1 - py / hh)).toFixed(1) + ',' + py.toFixed(1)).join(' ');
+}
+const lcdSig = new WeakMap();
+function lcdDraw(svg, text, ndig, sign) {               // text right-aligned in at least ndig cells; sign: a minus cell of its own
+  text = text === null || text === undefined ? '' : String(text);
+  const sig = text + '|' + ndig;
+  if (lcdSig.get(svg) === sig) return;
+  lcdSig.set(svg, sig);
+  let neg = false;
+  if (sign && text[0] === '-' && /[0-9]/.test(text[1] || '')) { neg = true; text = text.slice(1); }
+  const cells = [];
+  for (const ch of text) {
+    if ((ch === '.' || ch === ':') && cells.length) { cells[cells.length - 1][ch === '.' ? 'dp' : 'col'] = true; continue; }
+    cells.push({c: ch, dp: false, col: false});
+  }
+  const pitch = 72, sx = sign ? 46 : 0, H = 104;
+  if (cells.some(x => segOf(x.c) === null)) {          // not a seven-segment text: the font
+    const w = Math.max(ndig, text.length) * pitch * .62 + sx;
+    svg.setAttribute('viewBox', `0 0 ${w} ${H}`); svg.style.aspectRatio = w + ' / ' + H;
+    svg.innerHTML = `<text x="${w}" y="88" text-anchor="end" class="on" style="font: 300 92px var(--sans)"></text>`;
+    svg.firstChild.textContent = (neg ? '-' : '') + text;
+    return;
+  }
+  while (cells.length < ndig) cells.unshift({c: ' ', dp: false, col: false});
+  let s = sign ? `<rect x="2" y="45" width="34" height="11" rx="2" class="${neg ? 'on' : 'off'}"/>` : '';
+  cells.forEach((cell, i) => {
+    const x = sx + i * pitch, on = segOf(cell.c);
+    for (const sg of 'abcdefg') s += `<polygon points="${segPoly(sg, x)}" class="${on.includes(sg) ? 'on' : 'off'}"/>`;
+    s += `<rect x="${x + 58}" y="90" width="9" height="9" class="${cell.dp ? 'on' : 'off'}"/>`;
+    if (cell.col) s += `<rect x="${x + 62}" y="28" width="8" height="8" class="on"/><rect x="${x + 60}" y="64" width="8" height="8" class="on"/>`;
+  });
+  const w = sx + cells.length * pitch;
+  svg.setAttribute('viewBox', `-2 -2 ${w} ${H}`); svg.style.aspectRatio = w + ' / ' + H;
+  svg.innerHTML = s;
+}
+
 // ---------------------------------------------------------------- LIVE: reading, sub display, bargraph
 const bar = $('bar');
 bar.innerHTML = '<i class="sign" id="barsign"></i>' + '<i></i>'.repeat(26);
@@ -618,21 +787,22 @@ const flagEls = [...$('flags').querySelectorAll('span[data-f]')];
 function drawReading(r, now) {
   const d = $('digits'), ro = $('readout');
   if (!r) {
-    d.textContent = '-----'; d.className = 'digits blank'; $('unit').textContent = ''; $('age').textContent = '';
-    $('olwarn').hidden = true; $('modename').textContent = ''; $('sublabel').textContent = $('subval').textContent = $('subunit').textContent = '';
+    lcdDraw(d, '-----', 5, true); d.setAttribute('class', 'digits blank'); $('unit').textContent = ''; $('age').textContent = '';
+    $('olwarn').hidden = true; $('modename').textContent = ''; $('sublabel').textContent = $('subunit').textContent = '';
+    lcdDraw($('subval'), '', 4, false);
     flagEls.forEach(e => e.classList.remove('on')); barSegs.forEach(e => e.classList.remove('on'));
     bar.style.visibility = 'hidden'; $('scale').textContent = ''; ro.classList.remove('stale'); return;
   }
   const age = now - r.t;                               // the meter sends nothing while its digits are blank (OF-34)
   ro.classList.toggle('stale', age > 3);
-  $('age').textContent = age > 3 ? 'NO NEW READING · ' + Math.round(age) + ' S' : '';
-  d.textContent = r.text === undefined ? '-----' : r.text;
-  d.className = 'digits' + (r.overload ? ' ol' : r.value === null || r.value === undefined ? ' blank' : '');
+  $('age').textContent = age > 3 ? 'No new reading · ' + Math.round(age) + ' s' : '';
+  lcdDraw(d, r.text === undefined ? '-----' : r.overload ? ' OFL ' : r.text, 5, true);
+  d.setAttribute('class', 'digits' + (r.overload ? ' ol' : r.value === null || r.value === undefined ? ' blank' : ''));
   $('olwarn').hidden = !r.overload;
   $('modename').textContent = r.mode_name || '';
   $('unit').textContent = r.unit || '';
   $('sublabel').textContent = r.sub_label || '';
-  $('subval').textContent = r.sub_text || '';
+  lcdDraw($('subval'), r.sub_text || '', 4, false);
   $('subunit').textContent = r.sub_unit || '';
   const on = new Set(r.symbols || []);
   flagEls.forEach(e => e.classList.toggle('on', on.has(e.dataset.f)));
@@ -740,7 +910,7 @@ function applyTheme(pref) {                              // true when the colour
   root.dataset.theme = shown;
   const css = getComputedStyle(root), v = n => css.getPropertyValue(n).trim();
   PAL = {rule: v('--rule'), ruleHi: v('--rule-hi'), ink: v('--ink'), dim: v('--dim'), acc: v('--acc'), bg: v('--bg'),
-         scan: v('--scan'), env: v('--env')};
+         scan: v('--scan'), env: v('--env'), trace: v('--trace')};
   return true;
 }
 try { applyTheme(localStorage.getItem('theme') || 'system'); } catch (e) { applyTheme('system'); }   // default: the system's choice
@@ -802,7 +972,7 @@ function drawTrace(c, o) {
     for (let k = 0; k < n; k++) if (mn[k] !== null) { const y1 = Y(mx[k]), y2 = Y(mn[k]); g.fillRect(L + k, y1, 1, Math.max(1, y2 - y1)); }
   }
   // the trace breaks where there was no value (overload, another mode / unit / range, a pause of the frames)
-  g.strokeStyle = PAL.acc; g.lineWidth = 1.25; g.lineJoin = 'round'; g.beginPath();
+  g.strokeStyle = PAL.trace; g.lineWidth = 1.75; g.lineJoin = 'round'; g.beginPath();
   let pen = false, tp = null;
   for (const p of pts) {
     if (p[1] === null || (tp !== null && p[0] - tp > 1.5)) pen = false;
@@ -1084,7 +1254,7 @@ function drawUpdate(u, M) {
   else if (st === 'error' && !u.later) show(['update stopped: ' + u.message, ...xferNote()], u.picked ? null : 'Try again', 'Close', true);
   else n.classList.remove('show');
   if (st !== 'sending') upStart = null;
-  lit($('m-prog'), frac);
+  lit($('m-prog'), frac); $('m-prog').hidden = st !== 'sending';
 }
 async function startUpdate(what) { try { await api({update_now: what}); } catch (e) { fail(e); } }
 $('nprimary').onclick = async () => {
@@ -1102,19 +1272,44 @@ $('nsecondary').onclick = async () => {
 // the program decides what is refused and what needs the typed word (install.py make_plan); the page only shows its answer
 let planNow = null;
 const note = t => setText($('inst-note'), t);
-function fillReleases(sel, list) {
-  sel.replaceChildren(...list.map(e => h('option', {value: e.tag},
-    [e.text, e.tag, e.published, e.needs_meter ? 'connect the meter' : e.refusal ? 'refused' : e.relation === 'same' ? 'on the meter' : e.relation === 'older' ? 'older' : e.relation === 'newer' ? 'newer' : ''].filter(Boolean).join('  ·  '))));
-  sel.disabled = !list.length;
+// the list is read by itself while a meter is connected, the METER page is shown and SETTINGS "Updates" is not Never (once,
+// and again when the meter it was judged against changes: another firmware, bootloader or mode), and with Refresh at any
+// time; each entry carries the program's verdict for this meter.  Without a meter, or with Never, nothing goes online by itself.
+let rlData = null, rlKind = 'firmware', rlSig = '', rlReady = false, rlLoading = false, rlFactsAt = null;
+const rlFacts = () => { const L = state && state.link || {}, M = state && state.meter || {}; return JSON.stringify([L.state, M.mode, M.firmware, M.version, M.bootloader]); };
+const PILL = e => e.needs_meter ? ['', 'connect the meter'] : e.refusal ? ['no', 'refused'] : e.relation === 'same' ? ['here', 'installed']
+  : e.relation === 'newer' ? ['new', 'newer'] : e.relation === 'older' ? ['', 'older'] : null;
+function drawReleases() {
+  const list = rlData ? rlData[rlKind] || [] : null;
+  const sig = JSON.stringify([list, rlReady, rlKind, rlLoading]);
+  if (sig === rlSig) return;
+  rlSig = sig;
+  seg($('rl-kind'), rlKind);
+  const tb = $('rl-rows');
+  if (!list || !list.length) {
+    tb.replaceChildren(h('tr', {class: 'empty'}, h('td', {colspan: 4}, rlLoading ? 'reading the list of releases …' : list ? 'no releases' : 'not read yet: Refresh list')));
+    return;
+  }
+  tb.replaceChildren(...list.map(e => {
+    const p = PILL(e), older = e.relation === 'older', same = e.relation === 'same';
+    const b = h('button', {class: 'sm' + (!older && !same && !e.refusal ? ' pri' : ''), disabled: !rlReady || rlLoading || !!e.refusal,
+      title: e.refusal || undefined, onclick: () => askInstall({kind: rlKind, tag: e.tag})}, older ? 'Go back…' : same ? 'Reinstall' : 'Install');
+    return h('tr', {title: e.refusal || undefined}, h('td', {}, e.text), h('td', {class: 'when'}, e.published || ''),
+      h('td', {}, p ? h('span', {class: 'pill ' + p[0]}, p[1]) : ''), h('td', {class: 'act'}, b));
+  }));
 }
-$('rl-load').onclick = async () => {
-  note('reading the list of releases …');
+async function loadReleases() {
+  if (rlLoading) return;
+  rlLoading = true; rlFactsAt = rlFacts(); drawReleases();
   try {
     const j = await send('release_list');
-    fillReleases($('rl-fw'), j.firmware); fillReleases($('rl-bl'), j.bootloader);
-    note(j.firmware.length + ' firmware and ' + j.bootloader.length + ' bootloader releases');
-  } catch (e) { note(''); fail(e); }
-};
+    rlData = {firmware: j.firmware, bootloader: j.bootloader};
+    if ($('inst-note').textContent.startsWith('the list of releases')) note('');   // a staged file's note stays
+  } catch (e) { fail(e); note('the list of releases could not be read: ' + (e && e.message ? e.message : e)); }
+  rlLoading = false; rlSig = ''; drawReleases();
+}
+$('rl-load').onclick = loadReleases;
+$('rl-kind').onclick = e => { const b = e.target.closest('button'); if (b) { rlKind = b.dataset.v; drawReleases(); } };
 function askInstall(choice) {                           // choice: {kind, tag} or {kind, staged: true}
   return send('install_plan', choice).then(j => {
     const p = j.plan;
@@ -1133,8 +1328,16 @@ $('ic-input').oninput = () => { $('ic-ok').disabled = !planNow || $('ic-input').
 $('ic-input').onkeydown = e => { if (e.key === 'Escape') $('ic-cancel').click(); else if (e.key === 'Enter' && !$('ic-ok').disabled) $('ic-ok').click(); };
 $('ic-cancel').onclick = () => { planNow = null; $('iconfirm').classList.remove('show'); };
 $('ic-ok').onclick = () => { const p = planNow; planNow = null; $('iconfirm').classList.remove('show'); if (p) go(p.choice, p.word); };
-$('rl-fw-go').onclick = () => $('rl-fw').value && askInstall({kind: 'firmware', tag: $('rl-fw').value});
-$('rl-bl-go').onclick = () => $('rl-bl').value && askInstall({kind: 'bootloader', tag: $('rl-bl').value});
+// a file of your own: chosen with the button or dropped on the box
+const showFile = () => { const f = $('f-file').files[0]; setText($('f-name'), f ? f.name + ' · ' + grp(f.size) + ' B' : 'Drop a .bin here or choose one; it is checked before anything is sent.'); };
+$('f-file').onchange = showFile;
+const drop = $('f-drop');
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => {
+  e.preventDefault(); drop.classList.remove('over');
+  if (e.dataTransfer && e.dataTransfer.files.length) { $('f-file').files = e.dataTransfer.files; showFile(); }
+};
 async function chooseFile(kind) {
   const f = $('f-file').files[0];
   if (!f) return say('choose a .bin file first', true);
@@ -1167,8 +1370,8 @@ const UPTXT = {none: 'no information yet', available: 'update available', downlo
                sending: 'sending', done: 'finished', error: 'stopped'};
 function drawMeter(L, M, u, C) {
   $('m-fw').textContent = $('fw').textContent; $('m-bl').textContent = $('bl').textContent;
-  $('m-dev').textContent = L.device ? L.device[1] + '  ' + L.device[0] : '—';
-  $('m-link').textContent = L.state === 'connected' ? 'connected · ' + (L.detail || '') : L.state;
+  setText($('m-dev'), L.device ? L.device[1] : '—'); $('m-dev').title = L.device ? L.device[0] : '';
+  setText($('m-link'), L.state === 'connected' ? 'Connected' + (L.detail ? ' · ' + L.detail : '') : L.state === 'idle' ? 'Not connected' : L.state);
   const hhmm = t => new Date(t * 1000).toTimeString().slice(0, 5);
   $('m-upd').textContent = u.state !== 'none' ? (UPTXT[u.state] || nz(u.state))
     : u.check_error ? 'check failed: ' + u.check_error + (u.checked ? ' · ' + hhmm(u.checked) : '')
@@ -1176,11 +1379,14 @@ function drawMeter(L, M, u, C) {
     : L.state === 'connected' ? 'checking…' : 'checked when a meter is connected';
   const av = [u.fw ? 'firmware ' + u.fw[0] : null, u.bl ? 'bootloader ' + u.bl[0] : null].filter(Boolean);
   $('m-avail').textContent = av.length ? av.join(' · ') : u.state === 'none' ? '—' : 'nothing newer';
-  setText($('ntpname'), C ? 'time server ' + (C.server || '—') + ' (SETTINGS)' : '');
+  setText($('ntpname'), C ? 'Time server ' + (C.server || '—') + ' (set on the Settings page)' : '');
   $('sync').disabled = L.state !== 'connected';
   const busy = ['downloading', 'waiting_ld', 'restarting', 'sending'].includes(u.state), ready = L.state === 'connected' && M.mode !== 'unknown' && !busy;
-  $('rl-fw-go').disabled = !ready || $('rl-fw').disabled; $('rl-bl-go').disabled = !ready || $('rl-bl').disabled;
-  $('f-fw').disabled = $('f-bl').disabled = !ready;
+  rlReady = ready;
+  const auto = connected() && !(state.prefs && state.prefs.update_check === 'never');
+  if (auto && rlFactsAt !== rlFacts() && !rlLoading) loadReleases();   // first time, or the verdicts were for another meter state
+  drawReleases();
+  $('f-fw').disabled = $('f-bl').disabled = !ready || !$('f-file').files.length;
   const X = state.last_transfer;
   setText($('m-xfer'), X ? (X.ok ? '' : 'stopped · ') + X.what + ': ' + X.text : '—');
   if (C && C.last && !syncing) $('clockres').textContent = `set to ${C.last.time} from ${C.server} · offset ${(C.last.offset * 1000).toFixed(0)} ms` + (C.last.note || '');
@@ -1358,10 +1564,10 @@ function render() {
     const fx = (v, extra) => v === null || v === undefined ? '—' : dp === null ? fmt(v) : v.toFixed(dp + extra);
     $('smin').textContent = fx(st.min, 0); $('smax').textContent = fx(st.max, 0);
     $('smean').textContent = fx(st.mean, 1); $('ssd').textContent = fx(st.sd, 1); $('sn').textContent = nz(st.n === undefined ? 0 : st.n);
-    $('trendlabel').textContent = 'trend · last 10 min' + (S.stats_unit ? ' · ' + S.stats_unit : '');
+    setText($('trendlabel'), 'Trend · last 10 minutes' + (S.stats_unit ? ' · ' + S.stats_unit : ''));
     $('recdot').className = 'recdot' + (S.recording ? ' on' : '');
     $('rectime').textContent = S.recording ? hms(state.now - S.rec_start) : '00:00:00';
-    $('recrows').textContent = S.recording ? S.rec_rows + ' rows' : '';
+    setText($('recrows'), S.recording ? S.rec_rows + ' rows · ' + (S.rec_path || '') : '');
     setText($('rec2'), S.recording ? 'Stop' : 'Record');
     drawTrace($('trend'), {data: trend, t1: state.now, win: 600, auto: true, mini: true});
   }
