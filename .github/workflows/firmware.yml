@@ -86,8 +86,15 @@ jobs:
           cp firmware/docs/manual/manual.pdf "121GW-User-Manual-$TAG.pdf"
           python3 -I .github/scripts/sha256sum.py "121GW-User-Manual-$TAG.pdf" > "121GW-User-Manual-$TAG.pdf.sha256"
           gh release upload "$TAG" "121GW-User-Manual-$TAG.pdf" "121GW-User-Manual-$TAG.pdf.sha256" --clobber
-          comp=$(gh release list --limit 100 --json tagName,publishedAt \
-                 -q '[.[] | select(.tagName | startswith("companion-v"))] | sort_by(.publishedAt) | last | .tagName')
+          # the newest companion by version whose release has all 8 files (a companion tag pushed at the same time may
+          # still be building; its own workflow then puts it on this release when it is complete)
+          comp=""
+          for t in $(gh release list --limit 100 --exclude-drafts --json tagName -q '.[].tagName | select(startswith("companion-v"))' \
+                     | sed 's/^companion-v//' | sort -rV | sed 's/^/companion-v/'); do
+            n=$(gh release view "$t" --json assets -q "[.assets[].name | select(startswith(\"121GW-Companion-${t#companion-v}-\"))] | length")
+            if [ "$n" -eq 8 ]; then comp="$t"; break; fi
+            echo "$t has $n of 8 files: skipped"
+          done
           test -n "$comp"
           mkdir companion
           gh release download "$comp" --dir companion --pattern '121GW-Companion-*'
