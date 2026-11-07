@@ -22,10 +22,14 @@
   :root { --page:#16181b; --ink:#dfe3e6; --panel:#1f2327; --panel-line:#2c3237; --h3:#9fb4c6; --log:#c7d0d6;
           --ctl:#2b3238; --ctl-ink:#e6eaee; --ctl-line:#3a434a; --led:#333; --led-on:#ffd23f; --led-glow:#ffd23f;
           --bad:#ff9b6b; --good:#8fdc8f; --stop:#ff6b6b; color-scheme:dark; }
-  :root[data-theme="light"] { --page:#f2f4f6; --ink:#1c2126; --panel:#ffffff; --panel-line:#cfd6dc; --h3:#3b5f7d; --log:#26303a;
-          --ctl:#e8ecef; --ctl-ink:#1c2126; --ctl-line:#b9c2c9; --led:#b8bec4; --led-on:#ffb800; --led-glow:#ffb800;
+  :root[data-theme="light"] { --page:#d9dde1; --ink:#0b0e11; --panel:#e6e9ec; --panel-line:#b3bcc4; --h3:#23425c; --log:#0f151b;
+          --ctl:#d7dce0; --ctl-ink:#0b0e11; --ctl-line:#9aa5ae; --led:#b8bec4; --led-on:#ffb800; --led-glow:#ffb800;
           --bad:#b3411a; --good:#1f7a2e; --stop:#b3261e; color-scheme:light; }
   html, body { height:100%; } body { margin:0; box-sizing:border-box; height:100vh; overflow:hidden; background:var(--page); color:var(--ink); font:13px/1.35 -apple-system, Helvetica, Arial, sans-serif; display:flex; gap:18px; padding:16px; }
+  /* light theme: a dimmer page, near-black text, one size larger (owner 2026-11-07) */
+  :root[data-theme="light"] body { font-size:14px; }
+  :root[data-theme="light"] .panel h3 { font-size:14px; }
+  :root[data-theme="light"] #log { font-size:12px; line-height:15px; }
   /* Front panel: the meter drawing (695 x 1338 px) with live elements placed in its pixel coordinates. */
   #panel { position:relative; height:min(calc(100vh - 32px), calc((100vw - 470px) * 1338 / 695)); width:auto; aspect-ratio:695/1338; flex:none; background:url(/assets/panel.png) center/100% 100% no-repeat; }
   .abs { position:absolute; }
