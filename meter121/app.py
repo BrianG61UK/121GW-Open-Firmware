@@ -762,7 +762,7 @@ class Companion:
     def _meter_facts(self):
         """What install.make_plan needs to know of the meter."""
         v = releases.version_of_meter(self.version) if self.fw_kind == 'fast' else None
-        return {'fw': v, 'bl': self.bl, 'mode': self.mode}
+        return {'fw': v, 'bl': self.bl, 'mode': self.mode, 'connected': self.link.state == 'connected'}
 
     @staticmethod
     def _kind(name):
@@ -842,6 +842,8 @@ class Companion:
         """Install a release or the checked file: through the update's own transfer (_run_update).  A refused plan is an
         error; a downgrade or a file of the user's own is sent only when `confirm` is the word the page makes the user type."""
         plan, pick = self._plan(c)
+        if plan.get('needs_meter'):
+            raise RuntimeError('not connected to a meter')
         if plan['refusal']:
             raise ValueError('not installed: %s' % plan['refusal'])
         if plan['needs_confirm'] and c.get('confirm') != install.CONFIRM_WORD:

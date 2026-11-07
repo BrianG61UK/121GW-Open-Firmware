@@ -1104,7 +1104,7 @@ let planNow = null;
 const note = t => setText($('inst-note'), t);
 function fillReleases(sel, list) {
   sel.replaceChildren(...list.map(e => h('option', {value: e.tag},
-    [e.text, e.tag, e.published, e.refusal ? 'refused' : e.relation === 'same' ? 'on the meter' : e.relation === 'older' ? 'older' : e.relation === 'newer' ? 'newer' : ''].filter(Boolean).join('  ·  '))));
+    [e.text, e.tag, e.published, e.needs_meter ? 'connect the meter' : e.refusal ? 'refused' : e.relation === 'same' ? 'on the meter' : e.relation === 'older' ? 'older' : e.relation === 'newer' ? 'newer' : ''].filter(Boolean).join('  ·  '))));
   sel.disabled = !list.length;
 }
 $('rl-load').onclick = async () => {

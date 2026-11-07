@@ -117,6 +117,16 @@ class Checks(unittest.TestCase):
 
 
 class Plan(unittest.TestCase):
+    def test_no_meter_asks_for_the_meter_instead_of_refusing(self):
+        # without a meter the list said "refused" for every bootloader; it now asks for the meter, and still sends nothing
+        for kind, tag in (('bootloader', 'B-1.13'), ('firmware', 'F-1.21')):
+            f = dict(facts(fw=None, bl=None, mode='unknown'), connected=False)
+            p = install.make_plan(kind, f, release=entry(kind, tag))
+            self.assertTrue(p['needs_meter'], kind)
+            self.assertIn('connect the meter', p['refusal'])
+        p = install.make_plan('firmware', dict(facts(), connected=True), release=entry('firmware', 'F-1.21'))
+        self.assertNotIn('needs_meter', p)
+
     def test_upgrade_and_same_version_need_no_confirmation(self):
         for fw, tag in (('F-1.15', 'F-1.21'), ('F-1.21', 'F-1.21')):
             p = install.make_plan('firmware', facts(fw=fw), release=entry('firmware', tag), newest=(1, 2, 2))

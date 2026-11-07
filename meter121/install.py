@@ -106,6 +106,12 @@ def make_plan(kind, meter, release=None, custom=None, newest=None):
         else:
             plan['relation'] = 'newer' if target > current else 'same' if target == current else 'older'
 
+    # ---- no meter: nothing can be decided or sent yet (the list shows "connect the meter", not a refusal)
+    if meter.get('connected') is False:
+        plan['needs_meter'] = True
+        plan['refusal'] = 'no meter connected: connect the meter (its firmware and bootloader decide what can be installed)'
+        return plan
+
     # ---- what is refused, whatever the user says
     if kind == 'firmware':
         if custom and route(meter) == 'bluetooth' and custom['size'] > BL_FW_MAX:
