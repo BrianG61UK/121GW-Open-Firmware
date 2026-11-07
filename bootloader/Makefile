@@ -31,7 +31,8 @@ FF_SRCS := $(addprefix $(FW)/src/ff16/,ff16_low.s ff16_dir1.s ff16_dir2.s ff16_f
 FF_OBJS := $(patsubst $(FW)/src/ff16/%.s,$(BUILD)/ro_%.o,$(FF_SRCS))
 BL_SRCS := $(wildcard src/bl_*.s)
 BL_OBJS := $(patsubst src/%.s,$(BUILD)/%.o,$(BL_SRCS))
-BL_VERSION ?= 0x00010103
+# the version stamped into install.bin: src/bl.inc BL_VERSION (one place; the release workflow reads it there too)
+BL_VERSION ?= 0x$(shell sed -n 's/^ *\.equ BL_VERSION, *0x\([0-9A-Fa-f]*\).*/\1/p' src/bl.inc)
 PY      := $(PYTHON) -I
 
 all: $(BUILD)/starter.bin $(BUILD)/bootloader.bin $(BUILD)/install.bin

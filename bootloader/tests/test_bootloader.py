@@ -13,6 +13,8 @@
   B8 card file that is not a firmware image: " FAIL", nothing erased, the old firmware still starts
   B9 bootloader update over Bluetooth (kind 2): slot, INSTALL record, the starter installs it, the new bootloader
      confirms itself (control record OK) and starts the firmware
+  6.5.1 (B3, B6, B7, B9): after an update over Bluetooth the release firmware starts with Bluetooth on (the note in
+     RTC_BKP1R relayed by the bootloader); after the 30 s timeout start and a card update it stays off
 The data EEPROM must be unchanged after every test.
 """
 import os
@@ -114,6 +116,12 @@ def app_running(e):
         if 0x08006000 <= e.m.pc < 0x08052000:
             hits += 1
     return hits >= 8
+
+
+def ble_on(e):
+    """The firmware's Bluetooth switch (RAM 0x2000802B, ble_enable): 1 = on.  The image is a release build
+    (BLE_AT_POWERUP 0), so a plain start leaves it 0."""
+    return T.rd(e, 0x2000802B) == 1
 
 
 def texts(e):
@@ -221,6 +229,7 @@ def b3(ee0):
     T.check('flash holds the new image', flash(e, 0x08006000, len(new)) == new)
     T.check('firmware mark: length and CRC', flash(e, B.FW_MARK, 20) == fw_mark(new))
     T.check('the new firmware runs', app_running(e))
+    T.check('6.5.1: Bluetooth on after the update over Bluetooth (the note relayed)', ble_on(e))
     check_ee(e, ee0)
 
 
@@ -271,6 +280,7 @@ def b6(ee0):
     T.check('still in update mode after 28 s', texts(e) == ('-1AP-', '-1AP-'), repr(texts(e)))
     e.advance(4.0)
     T.check('the firmware starts after 30 s', app_running(e))
+    T.check('6.5.1: no note (no transfer): Bluetooth off', not ble_on(e))
 
 
 
@@ -294,6 +304,7 @@ def b7(ee0):
     T.check('flash and firmware mark of the card file', flash(e, 0x08006000, len(new)) == new
             and flash(e, B.FW_MARK, 20) == fw_mark(new))
     T.check('the new firmware runs', app_running(e))
+    T.check('6.5.1: no note after a card update: Bluetooth off', not ble_on(e))
     check_ee(e, ee0)
 
 
@@ -332,6 +343,7 @@ def b9(ee0):
     T.check('bootloader mark: version 1.0.1', B.parse_header(flash(e, B.MARK, 20)) == (len(BOOT), B.crc32(BOOT),
                                                                                          0x00010001))
     T.check('the firmware runs', app_running(e))
+    T.check('6.5.1: the new bootloader relays the note: Bluetooth on', ble_on(e))
     check_ee(e, ee0)
 
 

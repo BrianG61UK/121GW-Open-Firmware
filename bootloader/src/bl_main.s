@@ -60,8 +60,16 @@ bl_vectors:
     .balign 4
 bl_ticks:       .space 4                    @ 10 ms ticks (SysTick COUNTFLAG, polled)
 bl_bkp:         .space 4                    @ RTC_BKP0R at the start
+bl_bkp1:        .space 4                    @ RTC_BKP1R at the start (6.5.1); cleared by bl_update
 bl_idle:        .space 4                    @ tick of the last activity
 bl_done_tick:   .space 4
+@ ck_status, ck_hz: the firmware's clock measurement (firmware sys/msical.s, IMP-46), read by fn_0801FE2A in the linked
+@ firmware object sys/clock.o.  The bootloader does not measure its clock: both stay 0 from the RAM zeroing (CK_ST_NONE,
+@ "not run since reset"), so fn_0801FE2A gives the nominal MSI frequency, as before IMP-46; the bootloader itself does not
+@ call it (its USART2 divider is its own, bl_ble.s).
+    .global ck_status, ck_hz
+ck_hz:          .space 4
+ck_status:      .space 1
 
     .section .text.bl_main, "ax", %progbits
 
@@ -81,6 +89,8 @@ bl_reset:
     str r1, [r0]
     ldr r0, =RTC_BKP0R
     ldr r4, [r0]
+    ldr r0, =RTC_BKP1R                      @ 6.5.1: the note "Bluetooth update ended", read before the same reset
+    ldr r5, [r0]
     ldr r0, =0x20000000                     @ RAM below the stack: zero (the SD driver's variables start at 0 as in the
     ldr r1, =__bss_end                      @ firmware), then the RAM code
     movs r2, #0
@@ -89,6 +99,8 @@ bl_reset:
     blo 1b
     ldr r0, =bl_bkp
     str r4, [r0]
+    ldr r0, =bl_bkp1
+    str r5, [r0]
     ldr r0, =__ram_lma
     ldr r1, =__ram_vma
     ldr r2, =__ram_lma_end
@@ -124,7 +136,13 @@ bl_reset:
 @ -----------------------------------------------------------------------------
     .thumb_func
 bl_start_app:
-    cpsid i
+    ldr r0, =bl_bkp1                        @ 6.5.1: relay the note of a finished Bluetooth update to the firmware
+    ldr r0, [r0]                            @ (the RTC domain reset of bl_lcd_init cleared RTC_BKP1R)
+    ldr r1, =BKP_BT_MAGIC
+    cmp r0, r1
+    bne 1f
+    bl bl_bt_note
+1:  cpsid i
     ldr r0, =SYST_CSR
     movs r1, #0
     str r1, [r0]
@@ -149,6 +167,9 @@ bl_start_app:
 @ -----------------------------------------------------------------------------
     .thumb_func
 bl_update:
+    ldr r0, =bl_bkp1                        @ 6.5.1: update mode relays no older note (key, card, timeout start)
+    movs r1, #0
+    str r1, [r0]
     ldr r0, =NVIC_ISER1                     @ the SD driver's interrupts (card update)
     ldr r1, =IRQ45_53_BITS
     str r1, [r0]
@@ -190,6 +211,7 @@ bl_update:
     subs r1, r4, r1
     cmp r1, #RESET_DELAY
     blo 2f
+    bl bl_bt_note                           @ 6.5.1: the transfer ended with END accepted: note for the firmware
     b bl_sysreset
 2:  ldr r0, =GPIOG_BASE                     @ keys
     ldr r0, [r0, #GPIO_IDR]
@@ -279,6 +301,21 @@ LFUNC bl_now
     str r0, [r1]
     bx lr
 ENDFUNC bl_now
+
+@ -----------------------------------------------------------------------------
+@ bl_bt_note - RTC_BKP1R = BKP_BT_MAGIC (DESIGN.md 6.5.1): PWR_CR DBP set (write access to the RTC domain; PWREN is
+@ on since bl_reset), then the store.  Clobbers r0, r1.
+@ -----------------------------------------------------------------------------
+    .thumb_func
+bl_bt_note:
+    ldr r0, =PWR_CR
+    ldr r1, [r0]
+    orr r1, r1, #PWR_CR_DBP
+    str r1, [r0]
+    ldr r0, =RTC_BKP1R
+    ldr r1, =BKP_BT_MAGIC
+    str r1, [r0]
+    bx lr
 
 @ -----------------------------------------------------------------------------
 @ bl_sysreset - system reset (PM0056 4.4.5); the starter runs, then the bootloader, then the firmware

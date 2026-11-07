@@ -251,6 +251,36 @@ time before the companion can connect is to be measured.  The block size of bft 
 programmed in 128-byte half-pages.  After 10 minutes in update mode without a connection, BLE is switched off and the
 meter stays in update mode, waiting for keys or a card (battery protection); a key press switches BLE on again.
 
+### 6.5.1 Bluetooth on after an update over Bluetooth (B-1.14, firmware F-1.22; GitHub issue 23; owner decision 2026-11-07)
+
+A release firmware starts with Bluetooth off (config.inc BLE_AT_POWERUP 0), so after an update over Bluetooth the
+companion could not reconnect to confirm it: the user had to hold PEAK.  The firmware cannot leave itself a note across
+the update: the bootloader resets the RTC domain at every start (bl_lcd.s, rcc_lsi_as_rtc_lcd_clock: RTCRST) after
+reading RTC_BKP0R, and the firmware resets it twice in sys_system_init (firmware sys/main.s: ck_run, sys/msical.s
+RTCRST pulses, then rcc_lsi_as_rtc_lcd_clock).
+So the note is relayed in RTC_BKP1R (0x40002854, not used by either before):
+1. When a Bluetooth transfer has ended with END accepted (bl_reset_due, the restart after RESET_DELAY), the bootloader
+   writes BKP_BT_MAGIC to RTC_BKP1R (DBP set) right before the system reset.  No other path writes it (card update, key
+   update, an aborted transfer, a timeout start).  The firmware's own end of the first install (ble/bft.s,
+   bft_sysreset) writes it in the same way (PWREN, DBP, store, as blcmd_update_mode does for RTC_BKP0R), so the
+   bootloader just installed relays it.
+2. At every start the bootloader reads RTC_BKP1R together with RTC_BKP0R, before the RTC domain reset, and keeps it
+   (a second word beside bl_bkp, stored after the RAM zeroing).  Entering update mode (bl_update) clears the kept value,
+   so a key or card update, or a 30 s timeout start, never relays an older note.
+3. bl_start_app writes BKP_BT_MAGIC back to RTC_BKP1R (DBP set; the RTC domain is set up by then) when the value read in
+   step 2 was BKP_BT_MAGIC, right before the jump to the firmware.  A bootloader update passes through the starter,
+   which does not touch the RTC domain, and the new bootloader relays the note in the same way.
+4. The firmware reads RTC_BKP1R in sys_system_init after sys_clock_select (PWREN on, clock.s) and before ck_run (the
+   first RTCRST), keeps the result in a port RAM byte (.bss is zeroed before sys_main) and, when it was BKP_BT_MAGIC,
+   switches Bluetooth on after the start, as a long PEAK does (blcmd_ble_on, the place of the BLE_AT_POWERUP call).  The
+   RTC domain reset that follows clears the register, so the note acts once.  Emulator: the backup registers, DBP
+   gating, RTCRST and their survival of a system reset are modelled (emulator rtc.py, rcc.py); access is not gated by
+   PWREN or RTCEN there, so the PWREN precondition is checked on the meter.
+RTC_BKPxR are reset by a power-on reset, not by a system reset (RM0038 20.3.13, as noted in firmware
+ble/blcmd.s), so a note does not outlive a power cycle; it also lives only from step 1 to step 4.  An older bootloader
+writes no note: the firmware then starts as before (Bluetooth off).  The update that installs B-1.14 is done by the
+older bootloader, so after that one update Bluetooth still starts off.
+
 ### 6.6 Size
 
 Starter 1024.  Bootloader (23296 bytes available): section 3 budget about 12900 + Bluetooth about 3000 (application's
