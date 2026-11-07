@@ -1,9 +1,5 @@
 121GW two-part bootloader: firmware and bootloader updates over Bluetooth from the 121GW Companion, no card and no keys needed; the card update (MEM + HOLD, then SETUP) keeps working, now with a 30 s window and from FAT or exFAT cards.
 
-New in bl-v1.1.4 (B-1.14): after an update over Bluetooth the meter starts with Bluetooth on, so the 121GW Companion reconnects and confirms the update without a key press (GitHub issue 23; needs firmware v1.2.2 or newer, which reads the note the bootloader leaves; bootloader DESIGN.md 6.5.1). The update that installs this bootloader is done by the older one, so after that one update hold PEAK once. Verified working on a meter (B-1.14 installed over Bluetooth by B-1.13, then a firmware update over Bluetooth came back with Bluetooth on).
-
-New in bl-v1.1.3 (B-1.13): the card update reads the SD card at the firmware's card-session clock (32 MHz, as the processor's reference manual requires for the SD interface; firmware v1.1.2, GitHub issue 5) instead of 4 MHz.
-
 Assets of this release
 - `bootloader-<tag>.zip`: `install.bin` (the first install, sent by the companion to firmware F-1.04 (v1.0.4) or newer on the page Ld), `blimage.bin` (the bootloader image the companion sends to an installed bootloader), `starter.bin`, `README.md` (what it does, how to install and update, what the display shows), `LICENSE` and `SHA256SUMS`.
 - `*.sha256`: checksum of the file with the same name.
@@ -11,3 +7,4 @@ Assets of this release
 Install it with the companion: it offers the bootloader when the meter reports EEVblog's original one, and checks the meter, the battery (at least 4.80 V) and the file before anything is written. See `README.md` in the zip or `bootloader/README.md` on the branch `bootloader`.
 
 Never writes the data EEPROM (calibration, serial number, settings) or the option bytes. Verified working on a meter. Flashing is at your own risk (see `LICENSE`).
+

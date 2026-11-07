@@ -104,6 +104,7 @@ jobs:
       - name: Create the release and attach the files
         run: |
           set -euo pipefail
+          python3 -I .github/scripts/release_notes.py .github/release-notes-bootloader.md bootloader/CHANGELOG.md "$TAG" "https://github.com/${{ github.repository }}/blob/bootloader/bootloader/CHANGELOG.md" "$RUNNER_TEMP/notes.md"   # only this version (issue 29)
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag \
-            --title "121GW two-part bootloader $TAG" --notes-file .github/release-notes-bootloader.md --latest=false
+            --title "121GW two-part bootloader $TAG" --notes-file "$RUNNER_TEMP/notes.md" --latest=false
           gh release upload "$TAG" "bootloader-$TAG.zip" "bootloader-$TAG.zip.sha256" --clobber
