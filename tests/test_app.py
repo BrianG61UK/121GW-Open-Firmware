@@ -441,6 +441,21 @@ class Report(AppCase):
         self.assertIn('<path>', text)
         self.assertEqual(report.anonymise('random dom', ['dom']), 'random <name>')
 
+    def test_linux_distribution(self):
+        from unittest import mock
+        from meter121 import report
+        with mock.patch('platform.freedesktop_os_release', create=True,
+                        return_value={'NAME': 'Ubuntu', 'PRETTY_NAME': 'Ubuntu 24.04.1 LTS'}):
+            self.assertEqual(report.linux_distribution(), 'Ubuntu 24.04.1 LTS, ')
+        with mock.patch('platform.freedesktop_os_release', create=True, side_effect=OSError('no os-release')):
+            self.assertEqual(report.linux_distribution(), '')
+        with mock.patch('platform.freedesktop_os_release', create=True, return_value={'NAME': 'Linux'}):
+            self.assertEqual(report.linux_distribution(), '')
+        with mock.patch('sys.platform', 'linux'), mock.patch('platform.system', return_value='Linux'), \
+                mock.patch('platform.release', return_value='6.8.0'), mock.patch('platform.machine', return_value='x86_64'), \
+                mock.patch('platform.freedesktop_os_release', create=True, return_value={'PRETTY_NAME': 'Fedora Linux 41'}):
+            self.assertEqual(report.system_text(), 'Fedora Linux 41, Linux 6.8.0 (x86_64)')
+
     def test_version_events(self):
         self.app.event('version question: echo only')
         self.assertEqual(self.app.events[-1][1], 'version question: echo only')

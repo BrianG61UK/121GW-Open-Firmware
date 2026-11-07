@@ -78,7 +78,17 @@ def system_text():
         return 'macOS %s (%s)' % (platform.mac_ver()[0] or '?', platform.machine())
     if sys.platform == 'win32':
         return 'Windows %s (%s)' % (platform.version(), platform.machine())
-    return '%s %s (%s)' % (platform.system(), platform.release(), platform.machine())
+    return '%s%s %s (%s)' % (linux_distribution(), platform.system(), platform.release(), platform.machine())
+
+
+def linux_distribution():
+    """'<PRETTY_NAME>, ' from /etc/os-release (platform.freedesktop_os_release, Python 3.10 on), or '' when the file or
+    the function is missing: the kernel version alone does not tell the distribution (GitHub issue 21)."""
+    try:
+        name = platform.freedesktop_os_release().get('PRETTY_NAME', '')
+    except (AttributeError, OSError):
+        return ''
+    return name + ', ' if name else ''
 
 
 def _ms(seconds):
