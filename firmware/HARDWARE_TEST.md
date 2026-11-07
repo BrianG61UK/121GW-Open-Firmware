@@ -177,7 +177,7 @@ These checks confirm on hardware what the emulator cannot.
    touch a diode: the double beep as v2.05.  Long SETUP, REL (`on`), long SETUP (saved; dump: only EEPROM 0x02C = 1
    changed).  Touch a diode: one double beep; hold it: no more; lift: nothing; touch again: one; open leads and a
    reversed diode: nothing; short the probes: the continuous tone as before, then a diode: one double beep.
-40. Two SETUP walks (F-1.22, IMP-52): DCV, SETUP repeatedly: temperature, `rEL`, `dSP`, `LtOFF`, `Lo`, `HI`, `tr`,
+40. Two SETUP walks (F-1.22, IMP-52; verified working on a meter 2026-11-07 by the frames' sub display codes: 9 presses from the temperature page back to it in the measurement walk, the meter walk from SEt in order through Ld-bt, Fr, CL to the temperature page): DCV, SETUP repeatedly: temperature, `rEL`, `dSP`, `LtOFF`, `Lo`, `HI`, `tr`,
    `In`, `SEt`, temperature.  On `SEt` hold SETUP (long beep): the battery page; SETUP: APO, buzzer, contrast, year,
    month-day, hour-minute, ID, `bL`, `bt`, `Ld-bt`, (`Fr`), `CL`, temperature.  Edit one page in each walk (long
    SETUP, REL, long SETUP) as before.  Turn the dial: SETUP starts with the measurement pages again.
