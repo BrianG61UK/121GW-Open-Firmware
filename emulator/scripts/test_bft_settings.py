@@ -7,8 +7,9 @@ Two emulated meters, both with the bundled synthetic EEPROM.  The reference mete
 with the keys (item poked, long SETUP = edit, REL until the page's RAM variable has the wanted value, long SETUP = save);
 for every setting the EEPROM byte and the RAM variable it ends with are recorded.  The second meter shows the page Ld
 (Bluetooth on) and takes PUT requests over the emulated USART2 (host side emulator/tools/btft.py).
-  T1 reference: the 16 pages (the four pages of EEPROM 0x020 together) give the recorded EEPROM byte and RAM value.
-  T2 GET: the 17 ids in table order with the values of the synthetic EEPROM as the pages show them.
+  T1 reference: the 17 pages (the four pages of EEPROM 0x020 together; the page APO for 0x016 and for the time 0x02B)
+     give the recorded EEPROM byte and RAM value.
+  T2 GET: the 18 ids in table order with the values of the synthetic EEPROM as the pages show them.
   T3 round trip: every id with 2 .. 4 values (the first is the one the reference meter's page gave): status 0, the answer
      names the id and the value now in effect, the EEPROM byte and the RAM variable equal the reference's for the first
      value and the page's rules for the others (byte = value, RAM = value - bias), and no other EEPROM byte changed (the
@@ -63,9 +64,13 @@ SPEC = [
     (0x028, 'current loop', 'set_lp_code', 0, 0, 2, [1, 2, 0], 37, None, 0),
     (0x029, 'RTD', 'set_rtd_code', 0, 0, 2, [2, 1, 0], 38, None, 0),
     (0x02A, 'battery trim', 'set_btrim', 100, 50, 150, [105, 50, 150, 100], 1, None, 100),
+    (0x02B, 'auto power-off time', 'pwr_apo_code', 0, 0, 3, [3, 1, 0], 2, None, 0),
 ]
+# EEPROM bytes a page's save writes: the page APO (item 2) saves its on / off byte 0x016 and its time 0x02B together
+SAVES = {s[0]: {s[0]} for s in SPEC}
+SAVES[0x016] = SAVES[0x02B] = {0x016, 0x02B}
 NOT_SETTINGS = [0x000, 0x001, 0x003, 0x007, 0x008, 0x009, 0x00A, 0x00B, 0x00C, 0x00D, 0x00E, 0x012, 0x018, 0x019, 0x01F, 0x023,
-                0x026, 0x02B, 0x030, 0x2D0, 0x2E0, 0x4D0, 0x4F8, 0x500, 0xFFFF]
+                0x026, 0x02C, 0x030, 0x2D0, 0x2E0, 0x4D0, 0x4F8, 0x500, 0xFFFF]
 B20_VARS = ('set_relp', 'log_trig', 'set_clk12', 'set_hunt_on')
 
 
@@ -132,7 +137,8 @@ def reference(m, spec_list):
             target = (spec[6][0] - spec[3]) & 0xFF
             page(spec, spec[7], spec[8], target, ram, EDIT_BUF.get(spec[0]))
         diff = {i for i in range(len(before)) if before[i] != e.m.eeprom[i]}
-        T.check('%s: the pages changed only EEPROM 0x%03X' % (spec[1], spec[0]), diff <= {spec[0]}, 'diff %r' % sorted(diff))
+        T.check('%s: the pages changed only EEPROM %s' % (spec[1], ', '.join('0x%03X' % i for i in sorted(SAVES[spec[0]]))),
+                diff <= SAVES[spec[0]], 'diff %r' % sorted(diff))
         out[spec[0]] = (e.m.eeprom[spec[0]], m.ram(e, spec))
     return out
 
@@ -170,7 +176,8 @@ def run_tests(image):
             ok = F.status_of(a) == 0 and a.field == sid and a.data == bytes([value])
             T.check('PUT 0x%03X %s = %d: status 0, id and value in the answer' % (sid, spec[1], value), ok, repr(a))
             diff = {i for i in range(len(before)) if before[i] != e.m.eeprom[i]}
-            T.check('  only EEPROM 0x%03X may change' % sid, diff <= {sid}, 'diff %r' % sorted(diff))
+            T.check('  only EEPROM %s may change' % ', '.join('0x%03X' % i for i in sorted(SAVES[sid])), diff <= SAVES[sid],
+                    'diff %r' % sorted(diff))
             T.check('  EEPROM byte = %d' % value, e.m.eeprom[sid] == value, 'byte %d' % e.m.eeprom[sid])
             T.check('  RAM %r' % (want_ram(spec, value),), m.ram(e, spec) == want_ram(spec, value), 'RAM %r' % (m.ram(e, spec),))
             if n == 0:

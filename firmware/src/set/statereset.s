@@ -65,6 +65,7 @@ FUNC fn_08024DE0
     bl fn_08011218                          @ 08024DFE  load the logging interval
     bl fn_08011258                          @ 08024E02  load the contrast
     bl fn_080112A4                          @ 08024E06  load the APO setting
+    bl set_apot_load                        @ IMP-49: the auto power-off time (EEPROM 0x02B)
     bl fn_080112FC                          @ 08024E0A  load the temperature unit
     bl fn_08011340                          @ 08024E0E  load the DIODE 15 V flag
     bl fn_08011394                          @ 08024E12  load the continuity threshold code

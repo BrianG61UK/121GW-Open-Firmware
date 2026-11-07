@@ -161,9 +161,13 @@ These checks confirm on hardware what the emulator cannot.
 35. Leave page Ld (F-1.17, IMP-47; verified working on a meter 2026-11-07): with the meter on `Ld-bt`, the Companion's
    button "Leave Ld-bt" (CARD view): the meter shows the next SETUP page and the readings come back.
 36. Wake from auto power-off (F-1.18, OF-73, IMP-48; the wake by a key verified working on a meter 2026-11-07 with a test
-   image whose auto power-off came after 70 s; Bluetooth after the wake not yet tested on a meter): Bluetooth on, let the meter switch itself off ("-oFF-", blank display), press HOLD:
+   image whose auto power-off came after 70 s; Bluetooth on again after the wake verified the same day): Bluetooth on, let the meter switch itself off ("-oFF-", blank display), press HOLD:
    the meter shows its reading again and Bluetooth is on; again with the dial turned to another position instead of a
    key.
+37. Auto power-off time (F-1.18, IMP-49; verified working on a meter 2026-11-07: the page, APO. 1 saved, the warning, the
+   power-off after one minute and the key wake): page APO, REL steps APO.60, APO.oF, APO. 1, APO.15, APO.30; save APO. 1 and
+   wait: five warning beeps about 15 s before the meter switches off one minute after the last key press; a key wakes it
+   (item 36). Dump the EEPROM: only 0x016 and 0x02B changed.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

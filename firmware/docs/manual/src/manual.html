@@ -129,9 +129,9 @@ running.</p>
 <h3>Switch on</h3>
 <p>Turn the dial to a function. The small display shows the firmware version (<span class="lcd">{{FW_VERSION}}</span>) for a
 moment, then the meter measures.</p>
-<p>After 30 minutes without a key press the meter switches itself off (it beeps five times in its last minute; press any
-key to keep it on). Press any key or turn the dial to switch it on again; Bluetooth comes back on if it was on (firmware
-F-1.18 or newer). It never switches off while logging or during MIN/MAX. You can turn this off in the settings: page <span class="lcd">APOoF</span>.</p>
+<p>After 30 minutes without a key press the meter switches itself off (1, 15 or 60 minutes, or never: SETUP page
+<span class="lcd">APO.30</span>). It beeps five times before; press any key to keep it on, or to switch it on again.
+It never switches off while logging or during MIN/MAX.</p>
 <h3>Your first measurement</h3>
 <ol class="steps">
   <li>Black lead into <b>COM</b>, red lead into <b>V Ω</b>.</li>
@@ -502,7 +502,7 @@ menu is locked while logging and while you look at stored readings.</p>
 <tbody>
 <tr><td><span class="lcd">25.0c</span></td><td>Temperature inside the meter; °C (<span class="lcd">c</span>) or °F (<span class="lcd">F</span>)</td><td>all</td><td></td></tr>
 <tr><td><span class="lcd">BAT5.0</span></td><td>Battery voltage, trim</td><td>all</td><td><a class="pg" href="#f-bat"></a></td></tr>
-<tr><td><span class="lcd">APOoN</span></td><td>Auto power-off on / off</td><td>all</td><td></td></tr>
+<tr><td><span class="lcd">APO.30</span></td><td>Auto power-off: off, 1, 15, 30, 60 min</td><td>all</td><td></td></tr>
 <tr><td><span class="lcd">b-On</span></td><td>Buzzer on / off</td><td>all</td><td><a class="pg" href="#f-quiet"></a></td></tr>
 <tr><td><span class="lcd">Lcd-4</span></td><td>Display contrast</td><td>all</td><td></td></tr>
 <tr><td><span class="lcd">2026</span>, <span class="lcd">11-05</span>, <span class="lcd">14-30</span></td><td>Year; month and day; hour and minute</td><td>all</td><td></td></tr>
@@ -528,7 +528,7 @@ menu is locked while logging and while you look at stored readings.</p>
 </tbody>
 </table>
 <div class="grid3">
-<figure><img src="../img/setup_02_AP0_oN.png" alt=""><figcaption>Auto power-off</figcaption></figure>
+<figure><img src="../img/setup_02_AP0_30.png" alt=""><figcaption>Auto power-off time</figcaption></figure>
 <figure><img src="../img/setup_03_B_0n.png" alt=""><figcaption>Buzzer</figcaption></figure>
 <figure><img src="../img/setup_04_LcD_4.png" alt=""><figcaption>Contrast</figcaption></figure>
 <figure><img src="../img/setup_05_2026.png" alt=""><figcaption>Year</figcaption></figure>
@@ -678,7 +678,7 @@ work, and you can format the card on the meter. It never touches your calibratio
 <tr><td><span class="lcd">OFL</span></td><td>Input too big for the range or the sensor</td><td>Higher range or smaller input</td></tr>
 <tr><td><span class="lcd">LEAd</span> + beeping</td><td>A lead is in a current socket, the dial is on something else</td><td>Move the lead to V Ω, or turn the dial to current</td></tr>
 <tr><td><span class="lcd">-----</span></td><td>No value yet</td><td>Wait or measure</td></tr>
-<tr><td><span class="lcd">-oFF-</span></td><td>Auto power-off</td><td>Press any key or turn the dial (F-1.18 or newer; before that: switch the dial off and on again)</td></tr>
+<tr><td><span class="lcd">-oFF-</span></td><td>Auto power-off</td><td>Press any key or turn the dial</td></tr>
 <tr><td><span class="lcd">LoBAt</span></td><td>Batteries too low for logging</td><td>New batteries</td></tr>
 <tr><td><span class="lcd">SdEnd</span></td><td>The log file is full</td><td>Start a new recording</td></tr>
 <tr><td><span class="lcd">SdE03</span> etc.</td><td>SD card problem while logging</td><td>Check the card, its space and that it sits right</td></tr>

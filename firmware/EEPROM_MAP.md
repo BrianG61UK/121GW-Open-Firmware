@@ -212,6 +212,7 @@ reads nor writes these bytes and its `nvm_allow` table does not allow them. The 
 | 0x028 | current-loop percent view of DCmA (SETUP page LP in DCmA, SET/UI, FEATURES.md 2.14) | 0 = off (the current, v2.05), 1 = 4..20 mA, 2 = 0..20 mA | off (a value above 2, 0xFF included, is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
 | 0x02A | battery voltage trim (SETUP battery page, item 1, SET/PWR, FEATURES.md 2.16) | byte = t + 100, t = -50..+50: the battery value is scaled by (1000 + 2 t) / 1000 (0.2 % steps, +-10 %) | no trim (a value outside 50..150, 0x00 and 0xFF included, reads as t = 0 and the byte is left as found) | SETTINGS |
 | 0x029 | RTD temperature view of OHM (SETUP page Pt in OHM, SET/UI, FEATURES.md 2.15) | 0 = off (the resistance, v2.05), 1 = Pt100, 2 = Pt1000 | off (a value above 2, 0xFF included, is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
+| 0x02B | auto power-off time (SETUP page APO, item 2, SET/PWR, FEATURES.md 2.23; on / off stays in 0x016) | 0 = 30 min (v2.05), 1 = 1 min, 2 = 15 min, 3 = 60 min; doubled while MIN/MAX is on | 30 min (a value above 3, 0xFF included, is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
 
 Owner decision for 0x017: approved (2026-11-02). Why this byte: the word 0x014..0x017 holds the continuity code 0x014
 and the APO flag 0x016, both SETTINGS; v2.05's own setting saves already rewrite this word (0x014 at 0x080113D6, 0x016 at
@@ -224,7 +225,7 @@ them is allowed until it appears in the table above. Owner decision (2026-11-02)
 0x020, 0x021, 0x022 and 0x028..0x02F are approved for the features of FEATURES.md 3; each enters the table above (and
 `nvm_allow`) only with the code that uses it. The limits of FEATURES.md 2.1 are not kept over a power-off (owner, same day),
 so 0x021 holds the continuity hold time of FEATURES.md 2.13 instead; 0x028 holds the current-loop view of FEATURES.md 2.14
-(owner request 2026-11-03), 0x029 the RTD view of FEATURES.md 2.15 (owner request 2026-11-03), 0x02A the battery trim of FEATURES.md 2.16 (owner request 2026-11-03, GitHub issue 2), 0x02B..0x02F stay unused.
+(owner request 2026-11-03), 0x029 the RTD view of FEATURES.md 2.15 (owner request 2026-11-03), 0x02A the battery trim of FEATURES.md 2.16 (owner request 2026-11-03, GitHub issue 2), 0x02B the auto power-off time of FEATURES.md 2.23 (owner request 2026-11-07; its word 0x028..0x02B holds settings bytes only), 0x02C..0x02F stay unused.
 
 ## 5. Calibration records
 
@@ -458,7 +459,7 @@ table in flash, `nvm_allow`, generated at build time from this section (`firmwar
 
 | Class | Bytes allowed | Additional condition checked inside NVM |
 |---|---|---|
-| SETTINGS | 0x008..0x00E, 0x010, 0x014, 0x016, 0x018..0x01A, 0x01B, 0x01E, and in the production image only the port-only settings of 4.1: 0x00F, 0x011, 0x013, 0x015, 0x017, 0x020, 0x021, 0x022, 0x028, 0x029, 0x02A | none beyond the class (user actions of 7.1; for 0x02A the SETUP battery page; for 0x029 the SETUP page Pt; for 0x028 the SETUP page LP; for 0x022 the SETUP page Ch; for 0x021 the SETUP page bH; for 0x013 the SETUP page dSP, for 0x020 the SETUP pages rEL, CL and tr, for 0x00F the SETUP page tc, for 0x011 the save of the ACV page 11, for 0x015 the SETUP page bt, for 0x017 the SETUP page bL) |
+| SETTINGS | 0x008..0x00E, 0x010, 0x014, 0x016, 0x018..0x01A, 0x01B, 0x01E, and in the production image only the port-only settings of 4.1: 0x00F, 0x011, 0x013, 0x015, 0x017, 0x020, 0x021, 0x022, 0x028, 0x029, 0x02A, 0x02B | none beyond the class (user actions of 7.1; for 0x02B the SETUP page APO; for 0x02A the SETUP battery page; for 0x029 the SETUP page Pt; for 0x028 the SETUP page LP; for 0x022 the SETUP page Ch; for 0x021 the SETUP page bH; for 0x013 the SETUP page dSP, for 0x020 the SETUP pages rEL, CL and tr, for 0x00F the SETUP page tc, for 0x011 the save of the ACV page 11, for 0x015 the SETUP page bt, for 0x017 the SETUP page bL) |
 | IDENT | 0x001..0x002 (date code), 0x003..0x006 (serial) | exactly length 2 at 0x001, only while RAM 0x2000808B != 0 (v2.05 gate 0x08015F46..0x08015F4E); exactly length 4 at 0x003 (setup item 8 save, 0x08015F90) |
 | USERZERO | 0x4D0..0x4D4, 0x4D8..0x4DC, 0x4E0..0x4E4, 0x4E8..0x4EC, 0x4F0..0x4F4, 0x4F8..0x4FC | length 5 at a record base, first byte 0xA5 |
 | CAL | 0x01F, 0x026, 0x104..0x107, 0x178..0x17B, 0x2E0..0x2E1, and the bytes R+0..R+7 of every (mode, range) record of section 5.3, R+8..R+0xF of the AC-word records (modes 2, 4, 16, 18, 20 per ac_words_base) and of the VA records, 0x2D0..0x2D7 | RAM 0x2000808A == 1 (calibration mode), and the target matches the (kind, mode, range) rule of 7.3 recomputed inside NVM from meter_mode and meter_range, with the section 10 refusals |

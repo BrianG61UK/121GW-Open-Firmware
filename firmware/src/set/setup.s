@@ -633,8 +633,9 @@ ENDFUNC fn_08015410
 @ Context  : main only (fn_080165F4)
 @ RAM      : writes set_apo_disable, set_redraw
 @ Spec     : analysis/keys_setup.md 4 (SETUP menu)
-@ Note     : Up or down toggles set_apo_disable and updates the APO annunciator (fn_08019C5C); save writes EEPROM
-@            0x016 (fn_080112EC).
+@ Note     : Up or down steps through APO.oF, APO. 1, APO.15, APO.30, APO.60 (IMP-49, set/apot.s set_apot_step; v2.05
+@            toggles set_apo_disable) and updates the APO annunciator (fn_08019C5C); save writes EEPROM 0x016
+@            (fn_080112EC) and the time code 0x02B (set_apot_store).
 @ -----------------------------------------------------------------------------
 FUNC fn_08015A22
     push {r4, lr}                           @ 08015A22
@@ -646,18 +647,8 @@ FUNC fn_08015A22
     cmp r4, #0x2                            @ 08015A2E  compare r4 with 2
     bne .L08015A58                          @ 08015A30  if r4 != 2
 .L08015A32:  @ reached from 08015A2A beq (r4 == 1)
-    ldr.w r0, =set_apo_disable              @ 08015A32
-    ldrb r0, [r0, #0x0]                     @ 08015A36  r0 = set_apo_disable
-    teq r0, #0x1                            @ 08015A38  test set_apo_disable ^ 1
-    beq .L08015A48                          @ 08015A3C  if set_apo_disable == 1
-    movs r0, #0x1                           @ 08015A3E
-    ldr.w r1, =set_apo_disable              @ 08015A40
-    strb r0, [r1, #0x0]                     @ 08015A44  set_apo_disable = 1
-    b .L08015A50                            @ 08015A46
-.L08015A48:  @ reached from 08015A3C beq (set_apo_disable == 1)
-    movs r0, #0x0                           @ 08015A48
-    ldr.w r1, =set_apo_disable              @ 08015A4A
-    strb r0, [r1, #0x0]                     @ 08015A4E  set_apo_disable = 0
+    mov r0, r4                              @ IMP-49: 1 next, 2 previous of the five values (v2.05 0x08015A32..0x08015A4E
+    bl set_apot_step                        @ toggled set_apo_disable)
 .L08015A50:  @ reached from 08015A46 b
     movs r0, #0x1                           @ 08015A50
     bl fn_08019C5C                          @ 08015A52  APO annunciator update [r0=1]
@@ -666,6 +657,7 @@ FUNC fn_08015A22
     ldr.w r0, =set_apo_disable              @ 08015A58
     ldrb r0, [r0, #0x0]                     @ 08015A5C  r0 = set_apo_disable
     bl fn_080112EC                          @ 08015A5E  save the APO setting [r0=set_apo_disable]
+    bl set_apot_store                       @ IMP-49: and the time code (EEPROM 0x02B)
 .L08015A62:  @ reached from 08015A56 b
     movs r0, #0x1                           @ 08015A62
     ldr.w r1, =set_redraw                   @ 08015A64
@@ -3067,7 +3059,7 @@ ENDFUNC fn_08018410
     .ltorg
 
 @ -----------------------------------------------------------------------------
-@ fn_08018460 - draw the APO state, "APOoN" or "APOoF" (item 2)
+@ fn_08018460 - draw the APO state, "APO.oF" or the time "APO. 1" / "APO.15" / "APO.30" / "APO.60" (item 2, IMP-49)
 @ Replaces : 0x08018460 FUN_08018460 (v2.05)
 @ In       : r0 = set_apo_disable
 @ Out      : -
@@ -3084,7 +3076,8 @@ FUNC fn_08018460
     uxtb r4, r4                             @ 0801846A
     cmp r4, #0x0                            @ 0801846C  compare r4 with 0
     bne .L0801847C                          @ 0801846E  if r4 != 0
-    ldr.w r1, =v205_tab_080291B8            @ 08018470
+    bl set_apot_text                        @ IMP-49: "APO30", "APO 1", "APO15" or "APO60" (v2.05 0x08018470: "APOoN")
+    mov r1, r0
     movs r0, #0x1                           @ 08018474
     bl lcd_draw_5char                       @ 08018476  draw 5 characters, r0 = 0 main (positions 5..9) or 1 secondary (0..4), r1 = text [r0=1]
     b .L08018486                            @ 0801847A

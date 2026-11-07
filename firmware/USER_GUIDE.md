@@ -59,6 +59,11 @@ Check: 1.000 V reads 2.218 dBm (600 ohm), 13.01 dBm (50 ohm), 11.25 dBm (75 ohm)
 ## Bluetooth speed
 
 - **Bluetooth on / off:** hold **1ms PEAK** until **BT** shows / disappears, as on the original firmware.
+- **Auto power-off time (F-1.18 or newer):** the SETUP page APO (the second page, as on the original firmware) offers
+  `APO.oF` (off), `APO. 1`, `APO.15`, `APO.30` (the default) and `APO.60` minutes: hold SETUP until the value blinks,
+  REL / PEAK to change, hold SETUP to save.  While MIN/MAX is on the time is doubled (as the original doubles 30 to 60
+  minutes).  The five warning beeps come in the last minute, with the 1-minute time in the last 15 seconds.  The time
+  is stored in EEPROM byte 0x02B; on / off stays in the original byte 0x016.
 - **After an auto power-off (F-1.18 or newer):** any key press or a dial turn switches the meter on again, and Bluetooth
   comes back on if it was on before the power-off. (F-1.17 and older did not wake from a key: only the dial off and on
   again started them, OF-73.)

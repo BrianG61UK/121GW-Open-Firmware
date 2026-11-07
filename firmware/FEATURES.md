@@ -536,9 +536,15 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - What it does: the page Ld takes a request LEAVE (type 0x19): the meter answers and goes to the next SETUP page, as a SETUP
   press does; the readings and the keys work again. The companion (1.2.18) offers it as "Leave Ld-bt" on the CARD view.
 
-### 2.22 Wake from auto power-off with a key, Bluetooth kept (OF-73 fixed, IMP-48, F-1.18; the wake verified working on a meter 2026-11-07, the Bluetooth part not yet)
+### 2.22 Wake from auto power-off with a key, Bluetooth kept (OF-73 fixed, IMP-48, F-1.18; verified working on a meter 2026-11-07)
 - After "-oFF-" a key press or a dial turn switches the meter on again (F-1.17 and v2.05: the restart hung, only the dial
   off and on started the meter, OF-73), and Bluetooth comes back on when it was on before the power-off (IMP-48).
+
+### 2.23 Auto power-off time (implemented, IMP-49, F-1.18; verified working on a meter 2026-11-07)
+- Request (owner, 2026-11-07): the auto power-off after 1, 15, 30 or 60 minutes instead of always 30.
+- What it does: the SETUP page APO steps through `APO.oF`, `APO. 1`, `APO.15`, `APO.30`, `APO.60`; the time is doubled
+  while MIN/MAX is on; the warning beeps start 60 s before the power-off (15 s with the 1-minute time). EEPROM 0x016 keeps
+  on / off as v2.05 stores it, 0x02B the time (EEPROM_MAP.md 4.1). The companion (1.2.19) shows and changes it.
 
 ## 3. EEPROM bytes the features need
 

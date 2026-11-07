@@ -611,6 +611,7 @@ FUNC fn_0800D190
     cmp r0, #0x2                            @ 0800D240  compare set_item with 2
     bne .L0800D24A                          @ 0800D242  if set_item != 2
     bl fn_080112A4                          @ 0800D244  load the APO setting [r0=set_item]
+    bl set_apot_load                        @ IMP-49: and the time
     b .L0800D280                            @ 0800D248
 .L0800D24A:  @ reached from 0800D242 bne (set_item != 2)
     ldr.w r0, =set_item                     @ 0800D24A
