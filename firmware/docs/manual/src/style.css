@@ -1,7 +1,8 @@
 /* 121GW Open Firmware user manual - print layout (A4, Chromium print to PDF, tools/build_pdf.py) */
 @page { size: A4; }
 :root { --ink: #1b1b1a; --dim: #5d5c57; --rule: #d9d7cf; --accent: #b88f00; --soft: #f6f4ec; --warn: #a33a1a; }
-html { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.45; }
+html { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; color: var(--ink); font-size: 11.5pt; line-height: 1.5; }
+p { margin: 0 0 2.5mm; }
 body { margin: 0; }
 
 /* cover */
@@ -11,20 +12,21 @@ body { margin: 0; }
 .cover .sub { font-size: 14pt; color: var(--dim); }
 .cover .bar { height: 3mm; background: var(--accent); width: 40mm; margin: 8mm 0; }
 .cover img { width: 92mm; align-self: center; }
-.cover .meta { font-size: 9pt; color: var(--dim); }
+.cover .meta { font-size: 10pt; color: var(--dim); }
 
-/* headings: every chapter (h2) starts a new page */
-h2 { font-size: 19pt; font-weight: 600; margin: 0 0 4mm; padding-bottom: 2mm; border-bottom: 2px solid var(--accent);
-     page-break-before: always; }
-h3 { font-size: 13pt; font-weight: 600; margin: 7mm 0 2mm; page-break-after: avoid; }
-h4 { font-size: 10.5pt; font-weight: 700; margin: 4mm 0 1mm; page-break-after: avoid; }
+/* headings: a chapter (h2) continues on the page before when there is room (no half-empty pages); a heading never
+   stays alone at the foot of a page (break-after: avoid) */
+h2 { font-size: 21pt; font-weight: 600; margin: 10mm 0 4mm; padding-bottom: 2mm; border-bottom: 2px solid var(--accent);
+     page-break-before: auto; page-break-after: avoid; }
+h3 { font-size: 14.5pt; font-weight: 600; margin: 7mm 0 2.5mm; page-break-after: avoid; }
+h4 { font-size: 12pt; font-weight: 700; margin: 4.5mm 0 1.5mm; page-break-after: avoid; }
 p, li { orphans: 3; widows: 3; }
-.lead { font-size: 11.5pt; color: var(--dim); }
+.lead { font-size: 12.5pt; color: var(--dim); }
 
 /* table of contents */
-ol.toc { list-style: none; padding: 0; margin: 0; column-count: 2; column-gap: 10mm; font-size: 9.5pt; }
-ol.toc li { margin: 0; padding: .35mm 0; break-inside: avoid; }
-ol.toc li.toc2 { font-weight: 600; margin-top: 2mm; font-size: 10pt; }
+ol.toc { list-style: none; padding: 0; margin: 0; column-count: 2; column-gap: 10mm; font-size: 10.5pt; }
+ol.toc li { margin: 0; padding: .5mm 0; break-inside: avoid; }
+ol.toc li.toc2 { font-weight: 600; margin-top: 2.5mm; font-size: 11pt; }
 ol.toc li.toc3 { padding-left: 4mm; color: var(--dim); }
 ol.toc a { color: inherit; text-decoration: none; display: flex; align-items: baseline; }
 ol.toc a .t { flex: 0 1 auto; }
@@ -34,38 +36,38 @@ a.pg { color: var(--accent); text-decoration: none; white-space: nowrap; font-we
 a.go { color: inherit; }
 
 /* keys and display texts */
-kbd { font-family: inherit; font-size: 8.5pt; font-weight: 700; letter-spacing: .04em; border: 1px solid #9a988f;
+kbd { font-family: inherit; font-size: 9.5pt; font-weight: 700; letter-spacing: .04em; border: 1px solid #9a988f;
       border-bottom-width: 2px; border-radius: 3px; padding: 0 1.4mm; background: #fff; white-space: nowrap; }
 kbd.long::after { content: " long"; font-weight: 400; color: var(--dim); }
 .lcd { font-family: "SF Mono", Menlo, Consolas, monospace; background: #c9d4c0; color: #111; padding: 0 1.2mm;
-       border-radius: 2px; white-space: nowrap; font-size: 9.5pt; }
+       border-radius: 2px; white-space: nowrap; font-size: 10.5pt; }
 
 /* figures */
-figure { margin: 3mm 0 4mm; page-break-inside: avoid; text-align: center; }
+figure { margin: 3mm 0 4.5mm; page-break-inside: avoid; text-align: center; }
 figure img { max-width: 100%; }
-figure.small img { width: 52mm; }
-figure.panel img { width: 78mm; }
-figcaption { font-size: 8.5pt; color: var(--dim); margin-top: 1.2mm; }
+figure.small img { width: 60mm; }
+figure.panel img { width: 90mm; }
+figcaption { font-size: 9.5pt; color: var(--dim); margin-top: 1.5mm; }
 .pair { display: flex; gap: 6mm; justify-content: center; page-break-inside: avoid; }
 .pair figure { flex: 1; margin: 2mm 0; }
-.pair figure img { width: auto; max-width: 62mm; max-height: 70mm; }
-figure.small img[src*="dial_"] { width: auto; max-height: 70mm; }   /* full front panel (tall) */
+.pair figure img { width: auto; max-width: 72mm; max-height: 80mm; }
+figure.small img[src*="dial_"] { width: auto; max-height: 80mm; }   /* full front panel (tall) */
 
 /* a setup page entry: picture left, facts right */
-.page-entry { display: flex; gap: 6mm; align-items: flex-start; border-top: 1px solid var(--rule); padding: 3mm 0;
+.page-entry { display: flex; gap: 7mm; align-items: flex-start; border-top: 1px solid var(--rule); padding: 3.5mm 0;
               page-break-inside: avoid; }
-.page-entry figure { flex: 0 0 52mm; margin: 0; }
-.page-entry figure img { width: 52mm; }
+.page-entry figure { flex: 0 0 60mm; margin: 0; }
+.page-entry figure img { width: 60mm; }
 .page-entry .facts { flex: 1; }
 .page-entry h4 { margin-top: 0; }
 
 /* a feature: text left, pictures right */
-.feat { display: flex; gap: 6mm; align-items: flex-start; page-break-inside: avoid; margin-bottom: 3mm; }
+.feat { display: flex; gap: 7mm; align-items: flex-start; page-break-inside: avoid; margin-bottom: 4mm; }
 .feat .txt { flex: 1; }
-.feat .pics { flex: 0 0 40mm; display: flex; flex-direction: column; gap: 2mm; }
+.feat .pics { flex: 0 0 48mm; display: flex; flex-direction: column; gap: 2mm; }
 .feat .pics figure { margin: 0; }
-.feat .pics img { width: 40mm; }
-.where { font-size: 9pt; color: var(--dim); margin: 0 0 1.5mm; }
+.feat .pics img { width: 48mm; }
+.where { font-size: 10pt; color: var(--dim); margin: 0 0 2mm; }
 .where b { color: var(--ink); }
 .grid3 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm 5mm; margin: 2mm 0 4mm; }
 .grid3 figure { margin: 0; }
@@ -74,19 +76,19 @@ table.feats td:first-child { font-weight: 600; white-space: nowrap; }
 
 /* steps */
 ol.steps { padding-left: 6mm; }
-ol.steps > li { margin: 1.2mm 0; }
+ol.steps > li { margin: 1.5mm 0; }
 
 /* tables */
-table { border-collapse: collapse; width: 100%; margin: 2mm 0 4mm; font-size: 9.5pt; page-break-inside: auto; }
-th { text-align: left; font-weight: 600; border-bottom: 1.5px solid var(--ink); padding: 1.2mm 2mm; }
-td { border-bottom: 1px solid var(--rule); padding: 1.2mm 2mm; vertical-align: top; }
+table { border-collapse: collapse; width: 100%; margin: 2.5mm 0 4.5mm; font-size: 10.5pt; page-break-inside: auto; }
+th { text-align: left; font-weight: 600; border-bottom: 1.5px solid var(--ink); padding: 1.5mm 2mm; }
+td { border-bottom: 1px solid var(--rule); padding: 1.5mm 2mm; vertical-align: top; }
 tr { page-break-inside: avoid; }
 
 /* callouts */
-.note, .tip, .warning { border-left: 3px solid var(--accent); background: var(--soft); padding: 2mm 3mm; margin: 3mm 0;
+.note, .tip, .warning { border-left: 3px solid var(--accent); background: var(--soft); padding: 2.5mm 3.5mm; margin: 3.5mm 0;
                         page-break-inside: avoid; }
 .warning { border-left-color: var(--warn); background: #f8ece6; }
 .note b:first-child, .tip b:first-child, .warning b:first-child { text-transform: uppercase; letter-spacing: .06em;
-                        font-size: 8.5pt; margin-right: 1.5mm; }
+                        font-size: 9.5pt; margin-right: 1.5mm; }
 .warning b:first-child { color: var(--warn); }
-h2.cont { page-break-before: auto; margin-top: 9mm; }   /* short chapter: may continue on the page before */
+h2.cont { page-break-before: auto; margin-top: 10mm; }  /* (all chapters may continue on the page before now) */
