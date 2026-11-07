@@ -67,6 +67,8 @@ XDIAG_MIN_VERSION = (1, 1, 5)                    # firmware F-1.15: key codes 0x
 XDIAG_TRIES = 3                                  # tries of a key frame of the extended diagnosis / of the counters request
 XDIAG_WAIT = 2.0                                 # seconds to wait for the answer to each try
 XDIAG_STATUS_FIRST, XDIAG_STATUS_COUNT = 40, 9   # page Ld STATUS indices of the nine values (ble/bft.s bft_diag_tab)
+MCLOCK_MIN_VERSION = (1, 1, 7)                   # firmware F-1.17: key code 0x96 / frame FA, STATUS 49..55 (sys/msical.s)
+MCLOCK_STATUS_FIRST, MCLOCK_STATUS_COUNT = 49, 7 # page Ld STATUS indices of the clock measurement
 
 # the program's own settings (SETTINGS view), stored in settings.json; the meter's SETUP settings are on the meter
 PREF_DEFAULTS = {'recordings_folder': None,      # None: <Documents>/121GW
@@ -130,6 +132,8 @@ class Companion:
         self.xdiag_on = False
         self._xdiag_frame = None
         self._xdiag_evt = threading.Event()
+        self._mclock_frame = None
+        self._mclock_evt = threading.Event()
         self.xdiag = {'state': 'not read'}
         self._st_n, self._st_first, self._st_last = 0, None, None   # status frames of this connection (frames per second)
         self.card_st = {'files': [], 'listed': False, 'free_bytes': None, 'total_bytes': None, 'busy': False, 'op': '', 'progress': 0.0,
@@ -157,6 +161,9 @@ class Companion:
         elif kind == frames.XDIAG:
             self._xdiag_frame = frame
             self._xdiag_evt.set()
+        elif kind == frames.MCLOCK:
+            self._mclock_frame = frame
+            self._mclock_evt.set()
         elif kind == frames.KEY_ECHO:
             self._key_echo = frame
             if frame == frames.VERSION_REQUEST:
@@ -300,8 +307,42 @@ class Companion:
                        'text': 'not supported by this firmware (%s; F-1.15 or newer needed)' % (self.version or 'v2.05')}
             else:
                 res = self._xdiag_read()
+                if self._mclock_supported():
+                    res['clock'] = self._mclock_read()
         self.xdiag = res
         return res
+
+    def _mclock_supported(self):
+        """True when the connected meter runs F-1.17 or newer: only that firmware measures its clock (key code 0x96,
+        frame FA, STATUS 49..55)."""
+        v = releases.version_of_meter(self.version)
+        return self.fw_kind == 'fast' and v is not None and v >= MCLOCK_MIN_VERSION
+
+    def _mclock_read(self):
+        """The meter's clock measurement for the report: on the page Ld the STATUS values 49..55, else the request
+        0x96 (answered with FA whether or not the counting is on), up to XDIAG_TRIES tries of XDIAG_WAIT seconds.
+        Returns the values (frames.mclock_values) with 'source', or {'text': why not}."""
+        try:
+            if self.desk:
+                with self._ops('clock measurement', wait=LINK_WAIT) as (sender, _):
+                    v = [sender.status_value(i) for i in range(MCLOCK_STATUS_FIRST, MCLOCK_STATUS_FIRST + MCLOCK_STATUS_COUNT)]
+                c = frames.mclock_from_status(v)
+                c['source'] = 'page Ld STATUS %d..%d' % (MCLOCK_STATUS_FIRST, MCLOCK_STATUS_FIRST + MCLOCK_STATUS_COUNT - 1)
+                return c
+            with self._ops('clock measurement', need_desk=False, wait=LINK_WAIT):
+                if self.desk:
+                    raise RuntimeError('page Ld owns the link')
+                for _ in range(XDIAG_TRIES):
+                    self._mclock_frame = None
+                    self._mclock_evt.clear()
+                    self.link.send(frames.MCLOCK_REQUEST)
+                    if self._mclock_evt.wait(XDIAG_WAIT) and self._mclock_frame is not None:
+                        c = frames.mclock_values(self._mclock_frame)
+                        c['source'] = 'frame FA'
+                        return c
+            return {'text': 'no answer to the clock request after %d tries of %.0f s' % (XDIAG_TRIES, XDIAG_WAIT)}
+        except (RuntimeError, OSError, TimeoutError, transfer.TransferError) as e:
+            return {'text': 'not read: %s' % e}
 
     def _xdiag_read(self):
         counting = self.xdiag_on

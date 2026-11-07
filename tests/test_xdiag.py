@@ -7,7 +7,7 @@ import struct
 import time
 import unittest
 
-from support import FakeMeter, frames, xdiag_frame
+from support import FakeMeter, frames, mclock_frame, mclock_status, xdiag_frame
 from test_app import AppCase, status_frame, wait
 from meter121 import app as app_mod, link as link_mod, report, transfer
 
@@ -542,3 +542,78 @@ class LinkDetails(AppCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class MeterClock(AppCase):
+    """The clock measurement of firmware F-1.17 (sys/msical.s): key code 0x96 answered with FA, or STATUS 49..55 on page
+    Ld; asked only with the setting on and only from F-1.17."""
+    def setUp(self):
+        super().setUp()
+        self.meter.fast_xdiag = self.meter.fast_mclock = True
+        self.meter.diag = (list(range(100, 121)) + [0] * 19 + self.meter.xdiag_values
+                           + mclock_status(self.meter.mclock))
+        self.app._frame_t = time.time() + 3600
+        self.app.fw_kind, self.app.version, self.app.mode = 'fast', 'F-1.17', 'firmware'
+        self.app.settings['ext_diag'] = True
+        old = app_mod.XDIAG_WAIT
+        app_mod.XDIAG_WAIT = 0.2
+        self.addCleanup(setattr, app_mod, 'XDIAG_WAIT', old)
+
+    def test_frame_layout(self):
+        f = mclock_frame(self.meter.mclock)
+        self.assertEqual((len(f), f[0], frames._xor(f)), (20, 0xFA, 0))
+        r, out = split(f + status_bytes(), 3)
+        self.assertEqual([k for k, _ in out], [frames.MCLOCK, frames.STATUS])
+        self.assertEqual(r.dropped, 0)
+        v = frames.mclock_values(f)
+        self.assertEqual(v, self.meter.mclock)
+        self.assertEqual(frames.mclock_from_status(mclock_status(self.meter.mclock)), self.meter.mclock)
+        self.assertEqual(frames.MCLOCK_REQUEST, b'\xF4' + b'9696')
+
+    def test_frame_fa_in_the_report(self):
+        self.app._xdiag_switch(True)
+        r = self.app.xdiag_collect()
+        c = r['clock']
+        self.assertEqual(c['source'], 'frame FA')
+        self.assertEqual({k: c[k] for k in self.meter.mclock}, self.meter.mclock)
+        self.assertIn(frames.MCLOCK_REQUEST, [bytes(k) for k in self.meter.keys])
+        text = report.build(self.app)
+        self.assertIn('meter clock      frame FA', text)
+        self.assertIn('RC clock as found        4187000 Hz (-0.174 % from 4194304)', text)
+        self.assertIn('RC clock in use          4194100 Hz (-0.005 %), trim -3, 6 measurements', text)
+        self.assertIn('Bluetooth serial baud    19239 (BRR 218; +0.20 % from 19200)', text)
+
+    def test_answered_without_counting(self):
+        r = self.app.xdiag_collect()                              # counting off: no F9, but FA comes
+        self.assertEqual(r['state'], 'error')
+        self.assertEqual(r['clock']['hz'], self.meter.mclock['hz'])
+
+    def test_page_ld_reads_status_49_to_55(self):
+        self.app._frame_t = 0.0
+        self.go_desk()
+        r = self.app.xdiag_collect()
+        self.assertEqual(r['clock']['source'], 'page Ld STATUS 49..55')
+        self.assertEqual({k: r['clock'][k] for k in self.meter.mclock}, self.meter.mclock)
+        self.assertNotIn(frames.MCLOCK_REQUEST, [bytes(k) for k in self.meter.keys])
+
+    def test_older_firmware_is_not_asked(self):
+        self.app.version = 'F-1.16'
+        r = self.app.xdiag_collect()
+        self.assertNotIn('clock', r)
+        self.assertNotIn(frames.MCLOCK_REQUEST, [bytes(k) for k in self.meter.keys])
+
+    def test_no_answer(self):
+        self.meter.fast_mclock = False
+        r = self.app.xdiag_collect()
+        self.assertIn('no answer to the clock request after 3 tries', r['clock']['text'])
+
+    def test_lines_for_failures(self):
+        c = dict(self.meter.mclock, status=6, hz=0, hz0=4488000)
+        lines = frames.mclock_lines(c)
+        self.assertIn('more than 6 % off', lines[0])
+        self.assertTrue(any('RC clock as found' in s and '+7.0' in s for s in lines), lines)
+        self.assertFalse(any('in use' in s for s in lines))
+        c = dict(self.meter.mclock, status=4, hz=0, hz0=0)
+        lines = frames.mclock_lines(c)
+        self.assertIn('crystal did not start', lines[0])
+        self.assertTrue(any('BRR 218 (clock not measured)' in s for s in lines), lines)

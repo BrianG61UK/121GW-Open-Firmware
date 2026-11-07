@@ -12,6 +12,8 @@ FEATURES.md 2.10 and 2.11):
     F7     7       bootloader version answer (F-1.03 on)  XOR of all 7 bytes = 0
     F9     20      extended link diagnosis (F-1.15 on):   XOR of all 20 bytes = 0
                    the nine u16 counters of the meter, little-endian (answer to key code 0x95, xdiag_values())
+    FA     20      clock measurement (F-1.17 on):         XOR of all 20 bytes = 0
+                   the meter's RC run clock measured against its crystal (answer to key code 0x96, mclock_values())
     B5 5B  8+n     answer of the file transfer (2.10)     CRC-16/CCITT-FALSE; type 0x81 = transfer / status answer
                    (transfer.py), type 0x82 = answer of the card and settings requests (card.py, settings.py); the
                    length byte [5] gives n, so both are taken the same way
@@ -22,9 +24,19 @@ after a frame the meter abandoned part way).  The bytes skipped in one run are k
 "damaged pieces").  Standard library only.
 """
 import collections
+import struct
 
 STATUS, KEY_ECHO, CLOCK_ECHO, VERSION, BL_VERSION, BFT = 'status', 'key_echo', 'clock_echo', 'version', 'bl_version', 'bft'
 XDIAG = 'xdiag'
+MCLOCK = 'mclock'
+MCLOCK_LEN = 20
+MCLOCK_NOMINAL_HZ = 4194304             # MSI range 6, the meter's run clock (firmware sys/msical.s)
+MCLOCK_BAUD = 19200                     # the meter's serial line to its Bluetooth module
+# ck_status of the firmware (macros.inc CK_ST_*): what the last measurement at power-on / wake came to
+MCLOCK_STATUS = {0: 'not measured since the meter was switched on', 1: 'measured', 2: 'not measured (the meter was not '
+                 'on its RC clock)', 3: 'not measured (the crystal was already running)', 4: 'not measured (the crystal '
+                 'did not start)', 5: 'not measured (no signal from the crystal on the timer)', 6: 'measured, but more than '
+                 '6 % off: not used', 7: 'measured; the trimmed clock measured worse, the trim was taken back'}
 DAMAGED_KEEP = 20                       # skipped runs kept
 DAMAGED_BYTES = 32                      # bytes kept of one run (its real length is kept too)
 XDIAG_LEN = 20
@@ -126,6 +138,10 @@ class Reassembler:
             if len(b) < XDIAG_LEN:
                 return 'wait'
             return (XDIAG, XDIAG_LEN) if _xor(b[:XDIAG_LEN]) == 0 else None
+        if s == 0xFA:
+            if len(b) < MCLOCK_LEN:
+                return 'wait'
+            return (MCLOCK, MCLOCK_LEN) if _xor(b[:MCLOCK_LEN]) == 0 else None
         if s == 0xF4:
             if len(b) < 5:
                 return 'wait'
@@ -178,11 +194,49 @@ def bl_version_text(frame):
 XDIAG_ON_REQUEST = key_frame(0x93)             # extended diagnosis on, counters cleared (firmware F-1.15 on, ble/xdiag.s)
 XDIAG_OFF_REQUEST = key_frame(0x94)            # extended diagnosis off
 XDIAG_REQUEST = key_frame(0x95)                # the counters, answered with F9 while the diagnosis is on
+MCLOCK_REQUEST = key_frame(0x96)               # the clock measurement, answered with FA (firmware F-1.17 on, sys/msical.s)
 
 
 def xdiag_values(frame):
     """The nine u16 values of an F9 frame, in the order of XDIAG_NAMES."""
     return [frame[1 + 2 * i] | frame[2 + 2 * i] << 8 for i in range(9)]
+
+
+def mclock_values(frame):
+    """The values of an FA frame: {'hz0', 'hz', 'trim', 'status', 'steps', 'brr'} (firmware ck_send: FA, ck_hz0 u32,
+    ck_hz u32, MSITRIM as a signed byte, status, measurements u16, USART2_BRR u16, 4 zero bytes, XOR)."""
+    hz0, hz, trim, status, steps, brr = struct.unpack_from('<IIbBHH', frame, 1)
+    return {'hz0': hz0, 'hz': hz, 'trim': trim, 'status': status, 'steps': steps, 'brr': brr}
+
+
+def mclock_from_status(values):
+    """The same values from the page Ld STATUS 49 .. 55 (u16 each: ck_hz0 low / high, ck_hz low / high, MSITRIM |
+    status << 8, measurements, USART2_BRR; firmware ble/bft.s bft_diag_tab)."""
+    v = list(values)
+    trim = v[4] & 0xFF
+    return {'hz0': v[0] | v[1] << 16, 'hz': v[2] | v[3] << 16, 'trim': trim - 256 if trim & 0x80 else trim,
+            'status': v[4] >> 8, 'steps': v[5], 'brr': v[6]}
+
+
+def mclock_lines(c):
+    """Report lines for the clock values.  The baud on the line is the meter's clock in use / BRR (oversampling by 16):
+    the measured clock when there is one, else the nominal value the firmware then computes the BRR from."""
+    pct = lambda f, ref: (f - ref) * 100.0 / ref
+    out = ['  %-24s %s' % ('result', MCLOCK_STATUS.get(c['status'], 'unknown status %d' % c['status']))]
+    if c['hz0']:
+        out.append('  %-24s %d Hz (%+.3f %% from %d)' % ('RC clock as found', c['hz0'], pct(c['hz0'], MCLOCK_NOMINAL_HZ),
+                                                        MCLOCK_NOMINAL_HZ))
+    if c['status'] in (1, 7) and c['hz']:
+        out.append('  %-24s %d Hz (%+.3f %%), trim %d, %d measurements' % ('RC clock in use', c['hz'],
+                                                                          pct(c['hz'], MCLOCK_NOMINAL_HZ), c['trim'], c['steps']))
+    clk = c['hz'] if c['status'] in (1, 7) and c['hz'] else (c['hz0'] or 0)
+    if c['brr'] and clk:
+        bd = clk / c['brr']
+        out.append('  %-24s %.0f (BRR %d; %+.2f %% from %d)' % ('Bluetooth serial baud', bd, c['brr'],
+                                                                  pct(bd, MCLOCK_BAUD), MCLOCK_BAUD))
+    elif c['brr']:
+        out.append('  %-24s BRR %d (clock not measured)' % ('Bluetooth serial baud', c['brr']))
+    return out
 
 
 def hex_spaced(data):

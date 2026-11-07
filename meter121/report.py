@@ -133,6 +133,14 @@ def link_details(app):
                                  ' (65535 = the counter is full)' if v == 0xFFFF else ''))
     else:
         w('meter counters   %s' % (x.get('text') or 'not read'))
+    c = x.get('clock')
+    if c is not None:
+        if 'status' in c:
+            w('meter clock      %s; the RC clock measured against the crystal at the last power-on or wake' % c['source'])
+            for line in frames.mclock_lines(c):
+                w(line)
+        else:
+            w('meter clock      %s' % c.get('text', 'not read'))
     return out
 
 

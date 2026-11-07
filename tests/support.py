@@ -66,6 +66,8 @@ class FakeMeter:
         self.xdiag_counting = False
         self.xdiag_values = [1000, 2, 1, 3, 0, 4, 5, 6, 598]    # the nine counters (rx_bytes .. battery_cv)
         self.xdiag_lost = 0                            # F9 answers to swallow (a lost notification)
+        self.fast_mclock = False                       # firmware F-1.17: key code 0x96 answered with FA (sys/msical.s)
+        self.mclock = {'hz0': 4187000, 'hz': 4194100, 'trim': -3, 'status': 1, 'steps': 6, 'brr': 218}
 
     # -- the link side
     def _out(self, data):
@@ -93,6 +95,8 @@ class FakeMeter:
                         self.xdiag_lost -= 1
                     else:
                         self._out(xdiag_frame(self.xdiag_values))
+            if self.fast_mclock and frames._pair(pkt, 1) == 0x96:
+                self._out(mclock_frame(self.mclock))
             return
         if not self.on_ld:
             return
@@ -213,6 +217,19 @@ def xdiag_frame(values):
     return body + bytes([frames._xor(body)])
 
 
+def mclock_frame(c):
+    """The frame FA of the firmware (sys/msical.s ck_send): FA, ck_hz0 u32, ck_hz u32, MSITRIM (signed byte), status,
+    measurements u16, USART2_BRR u16, 4 zero bytes, XOR of the 19 bytes before it."""
+    body = b'\xFA' + struct.pack('<IIbBHH', c['hz0'], c['hz'], c['trim'], c['status'], c['steps'], c['brr']) + bytes(4)
+    return body + bytes([frames._xor(body)])
+
+
+def mclock_status(c):
+    """The page Ld STATUS values 49 .. 55 of the same measurement (ble/bft.s bft_diag_tab)."""
+    return [c['hz0'] & 0xFFFF, c['hz0'] >> 16, c['hz'] & 0xFFFF, c['hz'] >> 16, (c['trim'] & 0xFF) | c['status'] << 8,
+            c['steps'], c['brr']]
+
+
 def make_client(meter):
     return card.Client(meter.send, meter.answers)
 
@@ -227,4 +244,4 @@ def sample_files():
             'EEVBlog.bin': (b'\x00' * 300, fat_date(2026, 10, 1), fat_time(0, 0, 0))}
 
 
-__all__ = ['FakeMeter', 'make_client', 'xdiag_frame', 'sample_files', 'fat_date', 'fat_time', 'card', 'frames', 'settings', 'transfer']
+__all__ = ['FakeMeter', 'make_client', 'xdiag_frame', 'mclock_frame', 'mclock_status', 'sample_files', 'fat_date', 'fat_time', 'card', 'frames', 'settings', 'transfer']
