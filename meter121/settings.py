@@ -11,7 +11,7 @@ edited and saved (RAM variable, side effect, store to the EEPROM), so the compan
 
 The id is the offset of the setting's byte in the data EEPROM and the value is the value of the setup page, which is the
 stored byte for every id but 0x017 and 0x020.  Not offered by the meter: 0x018 (logging interval) and every byte of the
-rotary memory, identity, calibration, restore and user zero; the table lists exactly the 17 ids of the firmware (id 0x020 as four rows).
+rotary memory, identity, calibration, restore and user zero; the table lists exactly the 19 ids of the firmware (id 0x020 as four rows).
 
 The id 0x020 is ONE id with a value 0..31 (0..15 before firmware F-1.16): bit 0 the REL view, bits 2..1 the logging
 trigger 0..2 (3 is refused), bit 3 the clock, bit 4 the capacitance anti-hunting (SETUP page HUnt, firmware F-1.16 and
@@ -77,6 +77,7 @@ TABLE = [
     _s(0x015, 'bt', 'Bluetooth frame rate', 0, 3, ['2 per second', '4 per second', '10 per second', '20 per second']),
     _s(0x016, 'item 2', 'Auto power-off disabled', 0, 1, ['no', 'yes']),
     _s(0x02B, 'APO', 'Auto power-off time', 0, 3, ['30 min', '1 min', '15 min', '60 min']),   # F-1.18 on (EEPROM 0x02B; older firmware does not report it, so the row is not listed)
+    _s(0x02C, 'CHIrP', 'Diode contact chirp (DIODE)', 0, 1, ['off', 'on']),   # F-1.21 on (EEPROM 0x02C; older firmware does not report it, so the row is not listed)
     _s(0x017, 'bL', 'Backlight auto-off', 0, 100, None),                    # 0 off, 1 = 30 s, 2..100 = 1..99 min
     _s(0x01A, 'item 4', 'LCD contrast', 10, 17, None),
     _s(0x01B, 'item 11', 'VA burden "bd"', 0, 1, ['off', 'on']),
