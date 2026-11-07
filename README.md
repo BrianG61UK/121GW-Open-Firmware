@@ -4,6 +4,7 @@ A program for Windows, macOS and Linux that connects to an EEVblog 121GW multime
 
 This is the branch `companion` of [121GW-Open-Firmware](https://github.com/zombu4/121GW-Open-Firmware): only the companion
 program lives here.  The firmware and the emulator are on `main`, the build that behaves like v2.05 on `like-v2.05`.
+What each version brought: [CHANGELOG.md](CHANGELOG.md).
 
 <p align="center"><img src="docs/companion_live.gif" alt="LIVE view: the meter's reading, symbols, statistics and trend; MODE, HOLD and MIN/MAX pressed from the computer" width="760"></p>
 

@@ -1,61 +1,5 @@
 121GW Companion: live view, recording and firmware information for the EEVblog 121GW over Bluetooth LE.
 
-New in 1.2.26: a light theme (GitHub issue 26). SETTINGS has a new choice "Appearance": Dark (as before, the default), Light, or System, which follows the light or dark choice of the computer and changes with it while the program runs. The scope and trend graphs change colours with the page. The choice is kept in the program's settings file and "Reset all settings" returns it to Dark.
-
-New in 1.2.25: the button "Leave Ld-bt" also works while a card operation keeps retrying: it stops that operation first, then takes the meter off the page (before it only said "the link is busy"; GitHub issue 9). The METER view can install any release of the firmware or bootloader, also an older one than the meter has ("Install a version"), and a firmware or bootloader file of your own (GitHub issue 25): going back to an older release and every file of your own first show what can break (the features the newer version added, taken from the project's documents) and need you to type INSTALL; a file is checked like a release image and refused with the reason when it fails (a bootloader file must have the vector table of the two-part bootloader and is sent only to a meter that has it already, because the starter is written once and never again); the transfer is the update's own. The program also shows its own version on the METER view and, at the release check, a notice with a button to the release page when a newer program release exists (GitHub issue 23).
-
-New in 1.2.24: careful mode (old BLE112 module) also adapts the card file list: after an answer that did not arrive it asks for fewer entries per answer (4, 2, then 1) and waits for a lost answer about three times the measured answer time instead of 15 seconds. Four entries with long names, such as the folders a Mac writes on a card, filled a whole answer that a damaging link never delivered, so the list never appeared (GitHub issue 9). Also: on Windows, when the meter cannot be found, the status line says what usually causes it: a meter added in Windows Settings > Bluetooth & devices is kept connected by Windows, so it cannot be found; remove it there and switch the meter's Bluetooth off and on (long PEAK). The companion needs no pairing (GitHub issue 23).
-
-New in 1.2.23: the METER view shows and changes the meter's new setting CHIrP (diode contact chirp, firmware F-1.21 or newer; idea by @Cecilius): on, the diode beep sounds once per diode contact; off, as before. Older firmware does not show the row.
-
-New in 1.2.22: careful mode (old BLE112 module) adapts the size of the card download pieces to the link: it starts at 32 bytes, halves the size after a piece that was lost and doubles it (up to 128) after four in a row that arrived, and waits for a lost piece about three times the measured answer time instead of 5 seconds, so downloads on a damaging link are faster (GitHub issue 20). The report shows the pieces of the last card read by size and how many were sent again.
-
-New in 1.2.21: firmware and bootloader updates work on meters whose Bluetooth connection stays up while the meter restarts into its update mode (meters with the old BLE112 module): the program now asks the meter on that same connection instead of waiting for it to drop, so the meter no longer gives up after 30 seconds and goes back to the old firmware (GitHub issue 21). On Linux the diagnosis report names the distribution (from /etc/os-release).
-
-New in 1.2.20: careful mode for meters with the old Bluegiga BLE112 Bluetooth module (early meters; recognised by the packet size the link negotiates) and firmware F-1.19 or newer: the meter sends every reading twice and the program keeps the copy that checks out, and the card file list and downloads come in small pieces that are asked for again when damaged (GitHub issues 9 and 14). Newer meters are not affected.
-
-New in 1.2.19: the METER view shows and changes the meter's auto power-off time (off, 1, 15, 30 or 60 minutes; firmware F-1.18 or newer, older firmware does not show the row).
-
-New in 1.2.18: with SETTINGS "Extended diagnosis" on and firmware F-1.17 or newer, the report has a section "meter clock": the meter's RC run clock as the meter measured it against its crystal at the last start or wake, after its trim, and the resulting Bluetooth serial speed (GitHub issue 9). The CARD view has a button "Leave Ld-bt" that takes a meter with F-1.17 or newer off page Ld-bt, so the readings come back without touching the meter.
-
-New in 1.2.17: with "Extended diagnosis" on, the meter's link counting is now also switched on after a firmware update (it was refused while the update was finishing, so the report of that connection showed only zeros; GitHub issue 9).
-
-New in 1.2.16: the METER view shows and changes the new meter setting "HUnt" (capacitance anti-hunting) of firmware F-1.16 or newer: with some ceramic capacitors of about 100 nF the capacitance range keeps changing, the digits stay blank and only the decimal point moves; with HUnt on the meter stays on the 1 uF range after two timeouts and shows the value. Off by default; older firmware does not show the row.
-
-New in 1.2.15: more in the diagnosis report (GitHub issue 9: a slow link that damaged data could not be traced). The report has a new section "link details": the last pieces of data the program had to skip as damaged (as hex), how many Bluetooth notifications came, their sizes and the time between them, how long the meter took to confirm what the program sent, the signal strength when the meter was found, the negotiated packet size, why and how often the connection was lost, and how many status frames per second really arrive. Behind a new setting "Extended diagnosis" (SETTINGS, off by default) the program also asks a meter with firmware F-1.15 or newer to count what happens on its own Bluetooth serial line (bytes received, lost bytes, noise, framing errors, rejected commands, battery voltage) and prints the numbers in the report, so the damage can be placed in the meter, on the radio or in the computer. Older firmware is never sent the new commands. The report stays anonymised.
-
-New in 1.2.14: the update check works on macOS again: the program now carries its own list of trusted certificates, so the check no longer fails with "certificate verify failed: unable to get the local issuer certificate" (GitHub issue 13).
-
-New in 1.2.13: "Save report" on the METER view writes a diagnosis report (a text file in the recordings folder) to attach to a GitHub issue instead of a screenshot: versions, the link, the last transfer, the firmware's diagnosis, the meter's settings and a log of what happened since the companion started (connections, version and bootloader questions, page Ld, updates, card operations). It is anonymised: no Bluetooth ID or address, no computer or user name, no file paths, no time zone.
-
-New in 1.2.12: the diagnosis text on the METER view is shown in full instead of in a short box that had to be scrolled (GitHub issue 12).
-
-New in 1.2.11: the firmware version is asked up to three times after connecting before a meter is taken for EEVblog's v2.05 (a lost answer showed "F-2.05 / LIKE" for a meter with F-1.12, and the CARD view, the meter's settings and the update check were off for that connection).
-
-New in 1.2.10: the same as 1.2.9 (whose Windows build stopped at a test that assumed a finer clock than Windows has).
-
-New in 1.2.9: after a firmware or bootloader transfer the companion shows what the time went on: packets sent again, answers that did not come and the time waited for them, damaged packets, the slowest answer (in the update notice and as "last transfer" on the METER view; GitHub issue 9). An update through the two-part bootloader no longer stops with "packet N: accepted" when one answer of the meter was lost (GitHub issue 11).
-
-New in 1.2.8: the bootloader of the meter is asked up to three times after connecting, and again before an update chooses its route (one lost answer showed "B-—" for the whole connection, so the bootloader update was not offered and a firmware update could take the card route; GitHub issue 10); the local server answers a malformed request at once instead of holding a thread (GitHub issue 8).
-
-New in 1.2.7: a SETTINGS view (key 6) for the program's own settings: the recordings and card sync folders, the CSV format of recordings (comma-separated with a decimal point, or semicolon-separated with a decimal comma for spreadsheets that expect one), the time server and setting the meter's clock after each connection, how often to look for new firmware and bootloader releases (on connect, daily, never), diagnostic logging, and a reset of all of them. The time server moved there from the METER view, where "Sync time" stays.
-
-New in 1.2.6: the CARD view says "no files on the card" only once the meter has answered the listing; until then it shows "reading the card…" (GitHub issue 7: an unanswered listing looked like an empty card).
-
-New in 1.2.5: the METER view's diagnosis shows the write-timeout values of firmware F-1.11 (which part of a card write timed out, for how long, what the card answered); older firmware shows the values it has.
-
-Fixed in 1.2.4: a format refused by a meter whose firmware is older than F-1.09 says so (it said "not allowed now"); formatting a large card works with firmware F-1.10 (a slow card write stopped the format).
-
-New in 1.2.3: "Format card" in the CARD view (meter on the page Ld-bt, firmware F-1.09 or newer with the two-part bootloader): type FORMAT to confirm, a window stays open until the meter has formatted the card.
-
-Fixed in 1.2.3: buttons answer the first click on macOS (Connect needed up to ten clicks, the update notice's button did not answer: the page rewrote the button text on every redraw, and WebKit drops a click whose pressed text was replaced); the CARD view shows the card's space (two requests sent together refused the second); the LOG view lists the recordings folder with size and date; the update notice says where the meter restarts to.
-
-Fixed in 1.2.2: the Windows installer asks for administrator rights at start and installs for all users into Program Files (before it installed into the user's AppData folder and could fail); an earlier per-user copy is removed first. Without administrator rights, start the installer with /CURRENTUSER. The .sha256 file of the Windows installer ends its line with LF, so sha256sum -c / shasum -c accept it.
-
-Fixed in 1.2.1: Connect works on the first click (macOS: the window is brought to the front at start; a Connect right after a Disconnect starts a new search; a search stopped half-way leaves no half-open connection behind, which kept the meter from being found); the button shows Connect / Stop searching / Disconnect; the update check shows "up to date" with the newest releases and the time of the check, or why it failed; versions shown once (F-1.05, not F-F-1.05).
-
-New in 1.2.0: five views (LIVE, SCOPE, LOG, CARD, METER) in a new bench-instrument design; derived values (REL %, loop %, Pt100 / Pt1000, own limit test); the meter's keys from the computer; the SD card from the computer (list, download, delete, sync to a folder) and the meter's settings, both with firmware F-1.05 or newer on the page Ld-bt; the diagnosis values.  Verified working on a meter: card list, a 169 KB download equal to the file on the card, settings read and changed.
-
 Updates: it checks this project's releases, updates the meter's firmware (page `Ld-bt` and the card routine with EEVblog's bootloader), sets the meter's clock, installs the two-part bootloader once (releases `bl-vA.B.C`, fresh batteries) and from then on updates the firmware, the bootloader or both over Bluetooth with nothing to press on the meter. How-to: `bootloader/README.md` on the branch `bootloader` of 121GW-Open-Firmware.
 
 Assets
@@ -68,3 +12,4 @@ Assets
 Everything the program needs is inside each package; nothing else has to be installed. Meter: Bluetooth on (hold PEAK), phone app closed. The firmware version is shown with the fast firmware F-1.02 or later.
 
 Free for individuals, schools and non-profits; companies need written permission (see LICENSE). Third-party licences: THIRD_PARTY_LICENSES.txt in each package.
+
