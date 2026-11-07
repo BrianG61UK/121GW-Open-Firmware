@@ -10,9 +10,11 @@
 @ parser and a request is not seen at all (no answer).  Types 0x16 / 0x17 (settings) are in ble/bftset.s.
 @
 @ Requests (payload):
-@     0x10 LIST    start(2)                          root directory, entries start .. , as many as fit in 232 bytes
+@     0x10 LIST    start(2) [max(1)]                 root directory, entries start .. , as many as fit in 232 bytes
+@                                                    (IMP-50: at most max entries, 1..255, when the byte is given)
 @     0x11 READ    namelen(1) name offset(4) len(2)  len 1 .. 8192: read into the staging buffer (log_buf, 8 KiB)
-@     0x12 CHUNK   idx(2)                            bytes idx*232 .. of the staged data (RAM only, no card access)
+@     0x12 CHUNK   idx(2) [len(1)]                   bytes idx*232 .. of the staged data (RAM only, no card access);
+@                                                    IMP-50: with len (1..232) the bytes idx*len .., len at most
 @     0x13 DELETE  namelen(1) name                   f_unlink of one root file (or empty directory)
 @     0x14 INFO    -                                 free and total clusters, cluster size
 @     0x15 FORMAT  "FORMAT"(6)                       format the card as exFAT (f_mkfs, as the SETUP page Fr, set/fmt.s);
@@ -320,7 +322,7 @@ ENDFUNC bfx_put32
 
 @ -----------------------------------------------------------------------------
 @ bfx_list - LIST: entries of the root directory
-@ In       : bft_pkt (payload: start(2))
+@ In       : bft_pkt (payload: start(2), or IMP-50 start(2) max(1))
 @ Out      : r0 = status, r1 = field, r2 = length of the data (at bfx_ans + 9)
 @ Clobbers : r0-r3, r12, flags (r4-r7 saved)
 @ Note     : the entries before start are read and dropped (a directory has no random access in FatFs without a seek
@@ -331,8 +333,15 @@ LFUNC bfx_list
     sub sp, sp, #8                          @ [sp] end flag
     ldr r4, =bft_pkt
     ldrb r0, [r4, #5]
+    movs r1, #255                           @ no limit beyond the 232 bytes (at most 232 / 11 = 21 entries fit)
     cmp r0, #2
-    bne .Lls_arg                            @ the payload is start(2)
+    beq 1f
+    cmp r0, #3
+    bne .Lls_arg                            @ the payload is start(2) or, IMP-50, start(2) max(1)
+    ldrb r1, [r4, #8]
+    cmp r1, #0
+    beq .Lls_arg                            @ max 0 is refused
+1:  str r1, [sp, #4]                        @ [sp + 4] = most entries in this answer
     ldrh r5, [r4, #6]                       @ r5 = entries to skip
     movs r6, #0                             @ r6 = entries packed
     movs r7, #0                             @ r7 = bytes packed
@@ -358,6 +367,9 @@ LFUNC bfx_list
     subs r5, r5, #1
     b .Lls_skip
 .Lls_next:
+    ldr r0, [sp, #4]
+    cmp r6, r0
+    bhs .Lls_done                           @ IMP-50: max entries packed (not the end: the next LIST continues)
     ldr r0, =bfx_dir
     ldr r1, =bfx_finfo
     bl fat_f_readdir
@@ -561,8 +573,8 @@ LFUNC bfx_read
 ENDFUNC bfx_read
 
 @ -----------------------------------------------------------------------------
-@ bfx_chunk - CHUNK: 232 bytes of the staged data
-@ In       : bft_pkt (payload: idx(2))
+@ bfx_chunk - CHUNK: 232 bytes of the staged data, or len bytes (IMP-50)
+@ In       : bft_pkt (payload: idx(2), or idx(2) len(1))
 @ Out      : r0 = status, r1 = field (idx), r2 = length of the data (copied to bfx_ans + 9)
 @ Clobbers : r0-r3, r12, flags (r4 saved)
 @ -----------------------------------------------------------------------------
@@ -570,18 +582,25 @@ LFUNC bfx_chunk
     push {r4, lr}
     ldr r3, =bft_pkt
     ldrb r0, [r3, #5]
+    movs r12, #BFX_MAXDATA                  @ r12 = chunk size: 232, or IMP-50 the len byte
     cmp r0, #2
-    bne .Lch_arg                            @ the payload is idx(2)
-    ldrh r1, [r3, #6]                       @ r1 = idx
-    movs r0, #BFX_MAXDATA
-    muls r0, r1, r0                         @ r0 = offset of the chunk (<= 65535 * 232)
+    beq 1f
+    cmp r0, #3
+    bne .Lch_arg                            @ the payload is idx(2) or idx(2) len(1)
+    ldrb r12, [r3, #8]
+    cmp r12, #0
+    beq .Lch_arg                            @ len 0 is refused
+    cmp r12, #BFX_MAXDATA
+    bhi .Lch_arg                            @ above 232 is refused
+1:  ldrh r1, [r3, #6]                       @ r1 = idx
+    mul r0, r1, r12                         @ r0 = offset of the chunk (<= 65535 * 232)
     ldr r2, =bfx_staged
     ldrh r2, [r2]
     subs r2, r2, r0                         @ bytes staged beyond the offset
     ble .Lch_arg                            @ nothing there (or nothing staged)
-    cmp r2, #BFX_MAXDATA
+    cmp r2, r12
     it hi
-    movhi r2, #BFX_MAXDATA                  @ r2 = length of this chunk
+    movhi r2, r12                           @ r2 = length of this chunk
     mov r4, r2
     ldr r3, =bfx_stage
     adds r3, r3, r0                         @ source

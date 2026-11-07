@@ -109,12 +109,19 @@ class RCC(Periph):
     base = 0x40023800
 
     def __init__(self, hse_hz=4_000_000, hse_startup_us=HSE_STARTUP_US_DEFAULT,
-                 lse_startup_us=LSE_STARTUP_US_DEFAULT, hsical=0, msical=0):
+                 lse_startup_us=LSE_STARTUP_US_DEFAULT, hsical=0, msical=0, msi_error_ppm=0, msi_trim_ppm=0):
         """hse_hz: crystal/clock fitted on the board.  hsical / msical: factory calibration values
-        loaded into RCC_ICSCR at reset (6.2.2 / 6.2.3); their factory value is not in RM0038."""
+        loaded into RCC_ICSCR at reset (6.2.2 / 6.2.3); their factory value is not in RM0038.
+        msi_error_ppm / msi_trim_ppm: MODEL SETTINGS, not data sheet values.  msi_error_ppm is the deviation of this
+        part's MSI from its nominal frequency after factory calibration (DS Table 32: ACCMSI +-0.5 %, drift +-3 % over
+        temperature, 2.5 %/V); msi_trim_ppm is the change of the MSI frequency per MSITRIM code (two's complement view of
+        the 8-bit field).  Neither RM0038 nor the data sheet gives the MSI trim step or its sign, so tests choose it
+        (negative = a higher code lowers the frequency); 0 = MSITRIM has no effect on the frequency."""
         self._m = None
         super().__init__()
         self.hse_freq = hse_hz
+        self.msi_error_ppm = msi_error_ppm
+        self.msi_trim_ppm = msi_trim_ppm
         self.hse_startup_us = hse_startup_us
         self.lse_startup_us = lse_startup_us
         self.factory_hsical = hsical & 0xFF
@@ -255,7 +262,21 @@ class RCC(Periph):
     # ------------------------------------------------------------------ clock computation
     @property
     def msi_hz(self):
-        return MSI_BASE_HZ << self.msirange
+        """MSI frequency: the nominal range value (6.2.3) with this part's error and the MSITRIM effect (model settings,
+        see __init__)."""
+        nominal = MSI_BASE_HZ << self.msirange
+        if not self.msi_error_ppm and not self.msi_trim_ppm:
+            return nominal
+        trim = self.msitrim - 256 if self.msitrim & 0x80 else self.msitrim
+        return nominal * (1_000_000 + self.msi_error_ppm) * (1_000_000 + self.msi_trim_ppm * trim) // 10 ** 12
+
+    @property
+    def hse_rtc_hz(self):
+        """HSE_RTC: HSE divided by RTCPRE (6.3.1: /2, /4, /8, /16), 0 while HSE is not ready.  Besides the RTC / LCD
+        clock mux it goes to TIM11 channel 1 when TIM11_OR TI1_RMP = 10 (6.2.14, 18.5.13)."""
+        if not self._osc['HSE']['rdy']:
+            return 0
+        return self.hse_freq // (2 << self.rtcpre)
 
     def _pll_params_valid(self):
         return self.pllmul in PLL_MUL and self.plldiv in PLL_DIV
@@ -674,6 +695,8 @@ class RCC(Periph):
         if msitrim != self.msitrim:
             self.msitrim = msitrim
             self.msical = (self.factory_msical + msitrim) & 0xFF      # MSICAL = factory + MSITRIM
+            if self.sws == 0 and self.msi_trim_ppm:
+                self._recalc_clock()                                   # the trim moves the MSI frequency (model)
         if hsitrim != self.hsitrim:
             self.hsitrim = hsitrim
             self.hsical = (self.factory_hsical + hsitrim) & 0xFF      # HSICAL = factory + HSITRIM

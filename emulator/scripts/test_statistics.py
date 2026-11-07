@@ -7,8 +7,8 @@ recorded from the meter (func_stats_n polled every 10 ms; DCV publishes a value 
 sample standard deviation computed here with Python's statistics module from that list must equal the meter's binary64
 mean, m2 and the shown standard deviation.  Checks: page n shown when MIN/MAX is switched on, its text (count, and the
 thousands form with the k sign), page Sd on the sub display and the standard deviation on the main digits (one more
-decimal than the reading, rounded to nearest), "-----" with fewer than two readings, the navigation tr -> n -> Sd -> tHI
-while MIN/MAX is on (tr, the logging trigger page with tr-In, is the last page before the statistics) and tr -> item 0
+decimal than the reading, rounded to nearest), "-----" with fewer than two readings, the navigation In -> n -> Sd -> tHI
+while MIN/MAX is on (In, the log interval page, is the last page before the statistics, IMP-52) and In -> SEt -> item 0
 while it is off, the return to item 0 when MIN/MAX ends, HOLD freezing the
 statistics, and no change of the BLE value (0x20007D70 keeps the MIN/MAX value).
 The helpers are those of test_backlight_timer.py.
@@ -136,10 +136,13 @@ def run_tests(image, sym):
         e.advance(0.01)
         if u32(e, a_n) == 1:
             break
-    e.advance(0.01)
+    for _ in range(5):                               # the page is redrawn by the refresh pass that follows the new result
+        e.advance(0.01)                              # (10 .. 20 ms after the count in the 2026-11-07 build); the next reading
+        if main_text(e).strip() == '-----':          # comes 100 ms after the first, so n is still 1 here
+            break
     T.check('one reading: page Sd shows "-----", no minus, no decimal point', u32(e, a_n) == 1
             and main_text(e).strip() == '-----' and (e.snapshot()['lcd'][3] >> 7 & 1) == 0,
-            'n=%d main=%r' % (u32(e, a_n), main_text(e)))
+            'n=%d main=%r item=%d sub=%r' % (u32(e, a_n), main_text(e), T.rd(e, ADDR_ITEM), T.sub_text(e)))
     e.m.uc.mem_write(ADDR_ITEM, bytes([0]))
 
     print('T4 HOLD freezes, navigation, MIN/MAX off')
@@ -150,16 +153,18 @@ def run_tests(image, sym):
     T.check('HOLD: no reading added', u32(e, a_n) == n0, 'n %d -> %d' % (n0, u32(e, a_n)))
     T.press(e, 'HOLD', gap=0.3)                      # with MIN/MAX on the second HOLD press switches HOLD off
     T.check('HOLD off again', T.rd(e, 0x2000804F) == 0)
-    e.m.uc.mem_write(ADDR_ITEM, bytes([30]))         # the logging trigger page tr (IMP-21, tr-In) before the statistics
+    e.m.uc.mem_write(ADDR_ITEM, bytes([9]))          # the log interval page In (IMP-52), the last page before the statistics
     T.press(e, 'SETUP', gap=0.3)
-    T.check('MIN/MAX on: SETUP short on tr shows n', T.rd(e, ADDR_ITEM) == 32, 'item=%d' % T.rd(e, ADDR_ITEM))
+    T.check('MIN/MAX on: SETUP short on In shows n', T.rd(e, ADDR_ITEM) == 32, 'item=%d' % T.rd(e, ADDR_ITEM))
     T.long_press(e, 'MINMAX')
     e.advance(0.5)
     T.check('MIN/MAX off: page n left for item 0', T.rd(e, ADDR_MM_STATE) == 0 and T.rd(e, ADDR_ITEM) == 0,
             'state=%d item=%d' % (T.rd(e, ADDR_MM_STATE), T.rd(e, ADDR_ITEM)))
-    e.m.uc.mem_write(ADDR_ITEM, bytes([30]))
+    e.m.uc.mem_write(ADDR_ITEM, bytes([9]))
     T.press(e, 'SETUP', gap=0.3)
-    T.check('MIN/MAX off: SETUP short on tr goes to item 0', T.rd(e, ADDR_ITEM) == 0)
+    T.check('MIN/MAX off: SETUP short on In goes to SEt (item 43)', T.rd(e, ADDR_ITEM) == 43)
+    T.press(e, 'SETUP', gap=0.3)
+    T.check('SEt goes to item 0', T.rd(e, ADDR_ITEM) == 0)
     T.press(e, 'MINMAX', gap=0.3)
     T.check('MIN/MAX on again: statistics restarted', T.rd(e, ADDR_MM_STATE) == 1 and u32(e, a_n) <= 5,
             'n=%d' % u32(e, a_n))                    # 0.45 s at up to 10 readings per second (DCV, IMP-23)

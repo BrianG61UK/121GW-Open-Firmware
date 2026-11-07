@@ -1,6 +1,6 @@
 # Display pictures for the user manual
 
-Made by `tools/make_screens.py` from the emulator running the production firmware (`firmware/build/EEVBlog.bin`; F-1.06, special_version.png F-1.16) with the synthetic EEPROM; every picture shows the display words the firmware wrote, drawn with the emulator page's glass layers.  Pictures that show the whole front panel (695 x 1338 px) include the dial position and the plugged jacks; the others are cut off below the keys (695 x 665 px).  "main" and "sub" are the decoded text of the main and sub display (the font draws S like 5, b like B, I like 1).  Keys: "long" = held 1 s.  In the edit state of a SETUP page (SETUP held 1 s) the value blinks; an edit picture is made only where the lit phase differs from the normal page, otherwise the normal page picture shows it.  The emulator runs without measurement noise, so every run gives the same readings.
+Made by `tools/make_screens.py` from the emulator running the production firmware (`firmware/build/EEVBlog.bin`; F-1.06, special_version.png F-1.22) with the synthetic EEPROM; every picture shows the display words the firmware wrote, drawn with the emulator page's glass layers.  Pictures that show the whole front panel (695 x 1338 px) include the dial position and the plugged jacks; the others are cut off below the keys (695 x 665 px).  "main" and "sub" are the decoded text of the main and sub display (the font draws S like 5, b like B, I like 1).  Keys: "long" = held 1 s.  In the edit state of a SETUP page (SETUP held 1 s) the value blinks; an edit picture is made only where the lit phase differs from the normal page, otherwise the normal page picture shows it.  The emulator runs without measurement noise, so every run gives the same readings.
 
 The repository keeps only the pictures the manual uses (src/manual.html), reduced for print to 560 px (display) or
 420 px (whole panel) wide with 96 colours; the other pictures listed below are made again by running make_screens.py.
@@ -71,7 +71,7 @@ The repository keeps only the pictures the manual uses (src/manual.html), reduce
 | setup_00_25_0c.png | SETUP page 25.0c (item 0) - main display "1.2340", sub display "25.0c", lit: DC SegV apo auto, bar graph 7 segments | dial 2 (V), DCV; input V 1.234 V; SETUP pressed 0 x |
 | setup_01_BAT6_0.png | SETUP page BAT6.0 (item 1) - main display "1.2340", sub display "BAT6.0", lit: DC SegV SubV apo auto, bar graph 7 segments | dial 2 (V), DCV; input V 1.234 V; SETUP pressed 1 x |
 | setup_01_BAT6_0_edit.png | Edit state of page BAT6.0: the value changes look and blinks (the picture shows the phase with the value lit) - main display "1.2340", sub display "BA6.00", lit: DC SegV SubV apo auto, bar graph 7 segments | dial 2 (V), DCV; input V 1.234 V; SETUP pressed 1 x, then held 1 s |
-| setup_02_AP0_oN.png | SETUP page AP0.oN (item 2) - main display "1.2340", sub display "AP0.oN", lit: DC SegV apo auto, bar graph 7 segments | dial 2 (V), DCV; input V 1.234 V; SETUP pressed 2 x |
+| setup_02_AP0_30.png | SETUP page AP0.30 (item 2, F-1.18) - main display "1.2340", sub display "AP0.30", lit: DC SegV apo auto, bar graph 7 segments | dial 2 (V), DCV; input V 1.234 V; SETUP pressed 2 x |
 | setup_03_B_0n.png | SETUP page B-0n (item 3) - main display "1.2340", sub display "B-0n", lit: DC SegV apo auto, bar graph 7 segments | dial 2 (V), DCV; input V 1.234 V; SETUP pressed 3 x |
 | setup_04_LcD_4.png | SETUP page LcD-4 (item 4) - main display "1.2340", sub display "LcD-4", lit: DC SegV apo auto, bar graph 7 segments | dial 2 (V), DCV; input V 1.234 V; SETUP pressed 4 x |
 | setup_05_2026.png | SETUP page 2026 (item 5) - main display "1.2340", sub display "2026", lit: DC SegV apo auto, bar graph 7 segments | dial 2 (V), DCV; input V 1.234 V; SETUP pressed 5 x |
@@ -117,6 +117,7 @@ Not made:
 | setup_BEEP_10_DN_30.png | SETUP page DN 30 (item 10) - main display "10.00", sub display "DN 30", lit: Beep SegR SubR apo, bar graph 1 segments | dial 5 (Ohm / beep / diode / cap), MODE pressed 1 x; input ohm 10 ohm; SETUP pressed 10 x |
 | setup_BEEP_26_BH100.png | SETUP page BH100 (item 26) - main display "10.00", sub display "BH100", lit: Beep SegR apo, bar graph 1 segments | dial 5 (Ohm / beep / diode / cap), MODE pressed 1 x; input ohm 10 ohm; SETUP pressed 16 x |
 | setup_DIODE_10_3.png | SETUP page 3 (item 10) - main display "0.6500", sub display "3", lit: Diode SegV SubV apo, bar graph 4 segments | dial 5 (Ohm / beep / diode / cap), MODE pressed 2 x; input diode 0.65 V; SETUP pressed 10 x |
+| setup_DIODE_42_CH1rP.png | SETUP page CH1rP (item 42) - main display "oFF", sub display "CH1rP", lit: Diode SegV apo, bar graph 4 segments | dial 5 (Ohm / beep / diode / cap), MODE pressed 2 x; input diode 0.65 V; SETUP pressed 16 x |
 
 ## SETUP pages of mVA / VA and uA / uVA that differ from DCV
 
@@ -142,7 +143,7 @@ Not made:
 
 | File | What it shows | How it was made |
 |---|---|---|
-| special_version.png | Power-on: the firmware version on the sub display (the main display is still blank) - main display ".", sub display "F-1.16", bar graph 1 segments | dial 2 (V); power cycle, display after 0.10 s |
+| special_version.png | Power-on: the firmware version on the sub display (the main display is still blank) - main display "", sub display "F-1.22", bar graph 1 segments | dial 2 (V); power cycle, display after 0.10 s |
 | special_lamptest.png | Lamp test of the power-on window: every segment on | power cycle, RANGE pressed 0.5 s later and held |
 | msg_oFF.png | Power-off screen "-oFF-" (auto power-off, shown for the last beep) - main display "-oFF-", sub display "" | dial 2 (V); auto power-off countdown (RAM 0x20000230) set to 2 s and run out |
 | msg_SdCAL.png | cal.bin menu "SdCAL" (MEM held at power-on) - main display "5D.CAL", sub display "" | power cycle with MEM held, released after 0.5 s |

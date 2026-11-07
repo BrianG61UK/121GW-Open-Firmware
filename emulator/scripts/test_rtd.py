@@ -13,7 +13,7 @@ the nominal temperature of the applied resistance.
   T4 REL: 100.20 ohm, REL (lead zeroing; the range is fixed), then 138.71 ohm: D = 38.51 ohm is converted (view kept).
   T5 MIN/MAX page Sd (item 33): the standard deviation keeps the ohm sign (no degC mask).
   T6 page Pt: SETUP short from dSP (item 24) goes to Pt (item 38, "PtOFF", decoded as "PT0FF"); REL steps, long SETUP saves and changes only
-     EEPROM 0x029; Pt -> CL (item 25).
+     EEPROM 0x029; Pt -> Lt (item 27).
 The helpers are those of test_backlight_timer.py.
 """
 import os
@@ -148,7 +148,7 @@ def run_tests(image):
     T.check('REL then save: "Pt100", only EEPROM 0x029 changed to 1', diff == {0x29: (0, 1)} and T.sub_text(e) == 'PT100',
             'diff %r sub %r' % (diff, T.sub_text(e)))
     T.press(e, 'SETUP', gap=0.4)
-    T.check('Pt -> CL (item 25)', T.rd(e, ADDR_ITEM) == 25)
+    T.check('Pt -> Lt (item 27)', T.rd(e, ADDR_ITEM) == 27)
     s = e.snapshot()
     T.check('no unmodelled access, no safety violation', s['unmodelled'] == 0 and not s['safety'])
 

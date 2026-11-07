@@ -64,7 +64,7 @@ def build_html(pages):
 
 def render(page_html, out):
     from playwright.sync_api import sync_playwright
-    footer = ('<div style="font-size:8px;width:100%;padding:0 14mm;color:#666;display:flex;justify-content:space-between;'
+    footer = ('<div style="font-size:13px;width:100%;padding:0 15mm;color:#666;display:flex;justify-content:space-between;'
               'font-family:Helvetica,Arial,sans-serif"><span>121GW Open Firmware ' + fw_version() + ' - User Manual</span>'
               '<span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>')
     with sync_playwright() as p:
@@ -74,7 +74,7 @@ def render(page_html, out):
         pg.wait_for_load_state('networkidle')
         pg.pdf(path=out, format='A4', print_background=True, display_header_footer=True,
                header_template='<span></span>', footer_template=footer,
-               margin={'top': '14mm', 'bottom': '16mm', 'left': '14mm', 'right': '14mm'})
+               margin={'top': '15mm', 'bottom': '16mm', 'left': '15mm', 'right': '15mm'})
         b.close()
 
 

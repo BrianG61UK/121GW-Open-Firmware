@@ -79,8 +79,8 @@
     .equ SET_ITEM_BL, 20                    @ IMP-07: setup item of the backlight auto-off page bL (v2.05 uses 0..12 and 100)
     .equ SET_ITEM_BT, 21                    @ IMP-09: setup item of the Bluetooth frame rate page bt (after bL)
     .equ SET_ITEM_RELP, 22                  @ IMP-11: setup item of the REL view page rEL (after bt)
-    .equ SET_ITEM_DSP, 24                   @ IMP-12: setup item of the display level page dSP (the last port page)
-    .equ SET_ITEM_CLK, 25                   @ IMP-13: setup item of the clock page CL (the last port page)
+    .equ SET_ITEM_DSP, 24                   @ IMP-12: setup item of the display level page dSP (after rEL, or tc in TEMP)
+    .equ SET_ITEM_CLK, 25                   @ IMP-13: setup item of the clock page CL (after dSP, or bH, LP, Pt, HUnt)
     .equ SET_ITEM_ST_N, 32                  @ IMP-14: statistics page n (only while MIN/MAX is on)
     .equ SET_ITEM_ST_SD, 33                 @ IMP-14: statistics page Sd (only while MIN/MAX is on)
     .equ SET_ITEM_T_HI, 34                  @ IMP-21: time of the MIN/MAX maximum, page tHI (only while MIN/MAX is on)
@@ -89,8 +89,11 @@
     .equ SET_ITEM_LP, 37                    @ IMP-24: current-loop percent page LP (DCmA only, between dSP and CL)
     .equ SET_ITEM_RTD, 38                   @ IMP-25: RTD temperature page Pt (OHM only, between dSP and CL)
     .equ SET_ITEM_BFT, 39                   @ IMP-28: Bluetooth file transfer page Ld (between bt and rEL)
-    .equ SET_ITEM_FMT, 40                   @ IMP-32: card format page For (between Ld and rEL, two-part bootloader only)
+    .equ SET_ITEM_FMT, 40                   @ IMP-32: card format page Fr (between Ld and rEL, two-part bootloader only)
     .equ SET_ITEM_HUNT, 41                  @ IMP-45: capacitance anti-hunting page HUnt (CAP only, between dSP and CL)
+    .equ SET_ITEM_CHIRP, 42                 @ IMP-51: DIODE contact chirp page CHIrP (DIODE only, between dSP and Lt)
+    .equ SET_ITEM_SET, 43                   @ IMP-52: page SEt, the end of the measurement walk (long SETUP: the meter walk)
+    .equ SET_ITEM_IN, 9                     @ v2.05's log interval page In; IMP-52: in the measurement walk after tr / Ch
     .equ SET_ITEM_LT, 27                    @ IMP-20: limit test pages Lt (27), Lo (28), HI (29), verdict (36)
     .equ SET_ITEM_LO, 28
     .equ SET_ITEM_HI, 29
@@ -123,16 +126,38 @@
 @ -----------------------------------------------------------------------------
 FUNC fn_08015410
     push {r7, lr}                           @ 08015410
-    @ IMP-07, IMP-09, IMP-11, IMP-10, IMP-12: SETUP short on the page bL (item 20, the page after the last v2.05 item) goes
-    @ to the page bt (item 21), on bt to the page Ld (item 39, IMP-28), on Ld to the page rEL (item 22); on rEL to the page tc (item 23) in TEMP (mode 5), else to
-    @ the page dSP (item 24); on tc to dSP; on dSP to the page bH (item 26, IMP-16) in BEEP (mode 10), to the page LP
-    @ (item 37, IMP-24) in DCmA (mode 19), to the page Pt (item 38, IMP-25) in OHM (mode 9), to the page HUnt (item 41, IMP-45)
-    @ in CAP (mode 12), else to the page CL (item 25); on bH, LP, Pt and HUnt to CL; on CL to the limit pages Lt, Lo, HI (27..29, IMP-20); on HI to the verdict page (36) while
-    @ the test is on; then to the logging pages tr (30) and, with tr-Ch, Ch (31) (IMP-21); then, while MIN/MAX is on, to
-    @ the statistics page n (item 32, IMP-14); on n to Sd (item 33); on Sd to the time pages tHI (34) and tLo (35)
-    @ (IMP-21); on tLo to item 0.  Each step ends an edit.
+    @ IMP-52 (GitHub issue 24): two walks (set/menu.s).  Measurement walk: item 0 goes to v2.05's function pages 10..12
+    @ (v2.05's own sequence, entered as if from item 9, so their entry actions run; a mode without them wraps), a wrap goes
+    @ to the page rEL (item 22); on rEL to the page tc (item 23) in TEMP (mode 5), else to the page dSP (item 24); on tc to
+    @ dSP; on dSP to the page bH (item 26, IMP-16) in BEEP (mode 10), LP (item 37, IMP-24) in DCmA (mode 19), Pt (item 38,
+    @ IMP-25) in OHM (mode 9), HUnt (item 41, IMP-45) in CAP (mode 12), CHIrP (item 42, IMP-51) in DIODE (mode 11), else to
+    @ the limit pages Lt, Lo, HI (27..29, IMP-20); on bH, LP, Pt, HUnt and CHIrP to Lt; on HI to the verdict page (36)
+    @ while the test is on; then the logging pages tr (30) and, with tr-Ch, Ch (31) (IMP-21), then In (v2.05 item 9, its
+    @ edit buffer loaded as v2.05 does); then, while MIN/MAX is on, the statistics page n (item 32, IMP-14), Sd (33), the
+    @ time pages tHI (34) and tLo (35) (IMP-21); then the page SEt (item 43); on SEt to item 0.  Meter walk (from SEt by a
+    @ long SETUP, key/long.s): v2.05's items 1..8 in v2.05's sequence (the ID cursor of item 8 included), on 8 to the page
+    @ bL (item 20, IMP-07), on bL to bt (21, IMP-09), on bt to Ld (39, IMP-28), on Ld to Fr (40, IMP-32, two-part
+    @ bootloader only) or CL (25, IMP-13), on Fr to CL, on CL to item 0.  Each step ends an edit.
     ldr.w r0, =set_item
     ldrb r0, [r0, #0x0]
+    cmp r0, #SET_ITEM_SET
+    beq .Lsn_to0                            @ SEt: next is item 0 (IMP-52)
+    cmp r0, #0
+    bne 11f
+    movs r0, #SET_ITEM_IN                   @ item 0: v2.05's sequence from item 9, so the next is 10 (with its entry actions)
+    ldr.w r1, =set_item                     @ in the modes that have it, else a wrap to rEL (IMP-52)
+    strb r0, [r1, #0x0]
+    b .Lsn_not_bl
+11: cmp r0, #8
+    bne 12f
+    ldr.w r1, =set_edit
+    ldrb r1, [r1, #0x0]
+    cmp r1, #0
+    bne .Lsn_not_bl                         @ item 8 in edit: v2.05's ID digit cursor
+    movs r0, #SET_ITEM_BL                   @ item 8: next is bL, the meter walk goes on (IMP-52; v2.05: item 9)
+    b .Lsn_port_set
+12: cmp r0, #SET_ITEM_IN
+    beq .Lsn_after_lt                       @ In: the statistics or SEt (IMP-52)
     cmp r0, #SET_ITEM_BL
     beq .Lsn_bl
     cmp r0, #SET_ITEM_BT
@@ -142,7 +167,7 @@ FUNC fn_08015410
     cmp r0, #SET_ITEM_FMT
     beq .Lsn_fmt
     cmp r0, #SET_ITEM_T_LO
-    beq .Lsn_to0                            @ tLo: next is item 0
+    beq .Lsn_to_set                         @ tLo: next is SEt (IMP-52)
     cmp r0, #SET_ITEM_T_HI
     bne 5f
     movs r0, #SET_ITEM_T_LO                 @ tHI: next is tLo
@@ -156,8 +181,7 @@ FUNC fn_08015410
     beq .Lsn_to_sd                          @ n: next is Sd
     cmp r0, #SET_ITEM_CLK
     bne .Lsn_not_clk
-    movs r0, #SET_ITEM_LT                   @ CL: next is Lt
-    b .Lsn_port_set
+    b .Lsn_to0                              @ CL: the end of the meter walk, item 0 (IMP-52)
 .Lsn_not_clk:
     cmp r0, #SET_ITEM_LT
     bne 1f
@@ -183,26 +207,30 @@ FUNC fn_08015410
     ldr.w r0, =log_trig
     ldrb r0, [r0, #0x0]
     cmp r0, #1
-    bne .Lsn_after_lt                       @ tr, not tr-Ch: the statistics or item 0
+    bne .Lsn_to_in                          @ tr, not tr-Ch: the page In (IMP-52)
     movs r0, #SET_ITEM_CH                   @ tr-Ch: the page Ch
     b .Lsn_port_set
 4:  cmp r0, #SET_ITEM_CH
-    bne .Lsn_not_lt
+    beq .Lsn_to_in                          @ Ch: the page In (IMP-52)
+    b .Lsn_not_lt
 .Lsn_after_lt:
     ldr.w r0, =minmax_state
     ldrb r0, [r0, #0x0]
-    cbz r0, .Lsn_to0                        @ MIN/MAX off: next is item 0
+    cmp r0, #0
+    beq .Lsn_to_set                         @ MIN/MAX off: next is SEt (IMP-52)
     movs r0, #SET_ITEM_ST_N                 @ MIN/MAX on: next is n
     b .Lsn_port_set
 .Lsn_not_lt:
     cmp r0, #SET_ITEM_BH
-    beq .Lsn_to_clk                         @ bH: next is CL
+    beq .Lsn_to_lt                          @ bH: next is Lt
     cmp r0, #SET_ITEM_LP
-    beq .Lsn_to_clk                         @ LP: next is CL
+    beq .Lsn_to_lt                          @ LP: next is Lt
     cmp r0, #SET_ITEM_RTD
-    beq .Lsn_to_clk                         @ Pt: next is CL
+    beq .Lsn_to_lt                          @ Pt: next is Lt
     cmp r0, #SET_ITEM_HUNT
-    beq .Lsn_to_clk                         @ HUnt: next is CL
+    beq .Lsn_to_lt                          @ HUnt: next is Lt
+    cmp r0, #SET_ITEM_CHIRP
+    beq .Lsn_to_lt                          @ CHIrP: next is Lt
     cmp r0, #SET_ITEM_DSP
     bne .Lsn_not_dsp
     ldr.w r0, =meter_mode
@@ -219,8 +247,12 @@ FUNC fn_08015410
     bne 9f
     movs r0, #SET_ITEM_HUNT                 @ dSP in CAP: next is HUnt (IMP-45)
     b .Lsn_port_set
-9:  cmp r0, #0xa
-    bne .Lsn_to_clk                         @ dSP outside BEEP, DCmA, OHM and CAP: next is CL
+9:  cmp r0, #11
+    bne 10f
+    movs r0, #SET_ITEM_CHIRP                @ dSP in DIODE: next is CHIrP (IMP-51)
+    b .Lsn_port_set
+10: cmp r0, #0xa
+    bne .Lsn_to_lt                          @ dSP outside BEEP, DCmA, OHM, CAP and DIODE: next is Lt
     movs r0, #SET_ITEM_BH                   @ dSP in BEEP: next is bH
     b .Lsn_port_set
 .Lsn_not_dsp:
@@ -237,9 +269,20 @@ FUNC fn_08015410
 .Lsn_to_dsp:
     movs r0, #SET_ITEM_DSP
     b .Lsn_port_set
-.Lsn_to_clk:
-    movs r0, #SET_ITEM_CLK
+.Lsn_to_lt:
+    movs r0, #SET_ITEM_LT
     b .Lsn_port_set
+.Lsn_to_set:
+    movs r0, #SET_ITEM_SET
+    b .Lsn_port_set
+.Lsn_to_in:
+    movs r0, #SET_ITEM_IN                   @ In: set_item = 9, no edit, then v2.05's entry action of item 9 below (its
+    ldr.w r1, =set_item                     @ edit buffer set_interval_edit = set_log_interval, 0x0801571A)
+    strb r0, [r1, #0x0]
+    movs r0, #0x0
+    ldr.w r1, =set_edit
+    strb r0, [r1, #0x0]
+    b .Lsn_no_wrap
 .Lsn_to_sd:
     movs r0, #SET_ITEM_ST_SD
     b .Lsn_port_set
@@ -256,7 +299,7 @@ FUNC fn_08015410
     movs r0, #SET_ITEM_FMT
     b .Lsn_port_set
 .Lsn_fmt:
-    movs r0, #SET_ITEM_RELP                 @ Ld (or For): next is rEL
+    movs r0, #SET_ITEM_CLK                  @ Ld (or Fr): next is CL, the last page of the meter walk (IMP-52)
     b .Lsn_port_set
 .Lsn_to0:
     movs r0, #0x0
@@ -264,13 +307,17 @@ FUNC fn_08015410
 .Lsn_bl:
     movs r0, #SET_ITEM_BT                   @ bL: next is bt
 .Lsn_port_set:
-    @ IMP-45: the page HUnt shows its value on the main display, so entering or leaving it asks for a redraw of that display
-    @ (CAP results can be 2.5 s apart): r0 = the new item, the old one is still in set_item
+    @ IMP-45, IMP-51: the pages HUnt and CHIrP show their value on the main display, so entering or leaving one asks for a
+    @ redraw of that display (CAP results can be 2.5 s apart): r0 = the new item, the old one is still in set_item
     ldr.w r1, =set_item
     ldrb r1, [r1, #0x0]
     cmp r1, #SET_ITEM_HUNT
     beq 1f
+    cmp r1, #SET_ITEM_CHIRP
+    beq 1f
     cmp r0, #SET_ITEM_HUNT
+    beq 1f
+    cmp r0, #SET_ITEM_CHIRP
     bne 2f
 1:  push {r0}
     movs r0, #0x1
@@ -278,7 +325,7 @@ FUNC fn_08015410
     strb r0, [r1, #0x0]                     @ main value redraw request
     pop {r0}
 2:  ldr.w r1, =set_item
-    strb r0, [r1, #0x0]                     @ set_item = 21..41 or 0
+    strb r0, [r1, #0x0]                     @ set_item = 20..43 or 0
     movs r0, #0x0
     ldr.w r1, =set_edit
     strb r0, [r1, #0x0]                     @ set_edit = 0 (v2.05 clears it at 0x08015422 for every item but 8)
@@ -545,13 +592,15 @@ FUNC fn_08015410
     ldr.w r1, =set_item                     @ 0801567A
     strb r0, [r1, #0x0]                     @ 0801567E  set_item = 0
 .L08015680:  @ reached from 08015462 b, 0801548E blt (set_item <s 12 (0xC)), 0801549A b, 08015544 bne (set_item != 12 (0xC)), 08015550 b, 08015594 b, 0801559E blt (set_item <s 12 (0xC)), 080155A8 b, 080155EC b, 08015600 blt (set_item <s 12 (0xC)), 0801560A b, 08015614 blt (set_item <s 11 (0xB)), 0801561E b, 08015654 blt (set_item <s 11 (0xB)), 0801565E b, 08015676 blt (set_item <s 10 (0xA))
-    @ IMP-07: a wrap of the item to 0 (set_item + 1 reached the mode's limit) lands on the page bL instead; an item that is
-    @ already 0 here can only come from a wrap, because the item-8 digit cursor path keeps 8 and every other path adds 1
+    @ IMP-07, IMP-52: a wrap of the item to 0 (set_item + 1 reached the mode's limit) lands on the page rEL, the next page
+    @ of the measurement walk (the sequence runs here only for item 0 and the function pages 10..12 of that walk and for
+    @ items 1..7 of the meter walk, which do not wrap); an item that is already 0 here can only come from a wrap, because
+    @ the item-8 digit cursor path keeps 8 and every other path adds 1
     ldr.w r0, =set_item
     ldrb r1, [r0, #0x0]
     cbnz r1, .Lsn_no_wrap
-    movs r1, #SET_ITEM_BL
-    strb r1, [r0, #0x0]                     @ set_item = 20
+    movs r1, #SET_ITEM_RELP
+    strb r1, [r0, #0x0]                     @ set_item = 22
 .Lsn_no_wrap:
     ldr.w r0, =set_item                     @ 08015680
     ldrb r0, [r0, #0x0]                     @ 08015684  r0 = set_item
@@ -633,8 +682,9 @@ ENDFUNC fn_08015410
 @ Context  : main only (fn_080165F4)
 @ RAM      : writes set_apo_disable, set_redraw
 @ Spec     : analysis/keys_setup.md 4 (SETUP menu)
-@ Note     : Up or down toggles set_apo_disable and updates the APO annunciator (fn_08019C5C); save writes EEPROM
-@            0x016 (fn_080112EC).
+@ Note     : Up or down steps through APO.oF, APO. 1, APO.15, APO.30, APO.60 (IMP-49, set/apot.s set_apot_step; v2.05
+@            toggles set_apo_disable) and updates the APO annunciator (fn_08019C5C); save writes EEPROM 0x016
+@            (fn_080112EC) and the time code 0x02B (set_apot_store).
 @ -----------------------------------------------------------------------------
 FUNC fn_08015A22
     push {r4, lr}                           @ 08015A22
@@ -646,18 +696,8 @@ FUNC fn_08015A22
     cmp r4, #0x2                            @ 08015A2E  compare r4 with 2
     bne .L08015A58                          @ 08015A30  if r4 != 2
 .L08015A32:  @ reached from 08015A2A beq (r4 == 1)
-    ldr.w r0, =set_apo_disable              @ 08015A32
-    ldrb r0, [r0, #0x0]                     @ 08015A36  r0 = set_apo_disable
-    teq r0, #0x1                            @ 08015A38  test set_apo_disable ^ 1
-    beq .L08015A48                          @ 08015A3C  if set_apo_disable == 1
-    movs r0, #0x1                           @ 08015A3E
-    ldr.w r1, =set_apo_disable              @ 08015A40
-    strb r0, [r1, #0x0]                     @ 08015A44  set_apo_disable = 1
-    b .L08015A50                            @ 08015A46
-.L08015A48:  @ reached from 08015A3C beq (set_apo_disable == 1)
-    movs r0, #0x0                           @ 08015A48
-    ldr.w r1, =set_apo_disable              @ 08015A4A
-    strb r0, [r1, #0x0]                     @ 08015A4E  set_apo_disable = 0
+    mov r0, r4                              @ IMP-49: 1 next, 2 previous of the five values (v2.05 0x08015A32..0x08015A4E
+    bl set_apot_step                        @ toggled set_apo_disable)
 .L08015A50:  @ reached from 08015A46 b
     movs r0, #0x1                           @ 08015A50
     bl fn_08019C5C                          @ 08015A52  APO annunciator update [r0=1]
@@ -666,6 +706,7 @@ FUNC fn_08015A22
     ldr.w r0, =set_apo_disable              @ 08015A58
     ldrb r0, [r0, #0x0]                     @ 08015A5C  r0 = set_apo_disable
     bl fn_080112EC                          @ 08015A5E  save the APO setting [r0=set_apo_disable]
+    bl set_apot_store                       @ IMP-49: and the time code (EEPROM 0x02B)
 .L08015A62:  @ reached from 08015A56 b
     movs r0, #0x1                           @ 08015A62
     ldr.w r1, =set_redraw                   @ 08015A64
@@ -1636,6 +1677,20 @@ FUNC fn_080165F4
     bl set_hunt_edit                        @ up, down or save of the anti-hunting setting
     b .L08016800
 .Lse_not_hunt:
+    cmp r0, #SET_ITEM_CHIRP                 @ IMP-51: the DIODE chirp page CHIrP (item 42)
+    bne .Lse_not_chirp
+    uxtb r4, r4
+    cmp r4, #0x0                            @ query?
+    bne .Lse_chirp_act
+    movs r0, #0x1
+    movs r5, r0                             @ query result: editable
+    b .L08016800
+.Lse_chirp_act:
+    movs r0, r4
+    uxtb r0, r0
+    bl set_chirp_edit                       @ up, down or save of the chirp setting
+    b .L08016800
+.Lse_not_chirp:
     sub r1, r0, #SET_ITEM_LT                @ IMP-20: the limit pages Lt, Lo, HI (27..29)
     cmp r1, #2
     bhi .Lse_not_lt
@@ -2424,6 +2479,16 @@ FUNC fn_0801797C
     bl set_hunt_draw
     b .L08017F26
 .Lsd_not_hunt:
+    cmp r0, #SET_ITEM_CHIRP                 @ IMP-51: the DIODE chirp page CHIrP (item 42)
+    bne .Lsd_not_chirp
+    bl set_chirp_draw
+    b .L08017F26
+.Lsd_not_chirp:
+    cmp r0, #SET_ITEM_SET                   @ IMP-52: the page SEt (item 43)
+    bne .Lsd_not_set
+    bl set_menu_draw
+    b .L08017F26
+.Lsd_not_set:
     cmp r0, #SET_ITEM_BFT                   @ IMP-28: the Bluetooth file transfer page Ld (item 39)
     bne .Lsd_not_bft
     bl set_bft_draw
@@ -3067,7 +3132,7 @@ ENDFUNC fn_08018410
     .ltorg
 
 @ -----------------------------------------------------------------------------
-@ fn_08018460 - draw the APO state, "APOoN" or "APOoF" (item 2)
+@ fn_08018460 - draw the APO state, "APO.oF" or the time "APO. 1" / "APO.15" / "APO.30" / "APO.60" (item 2, IMP-49)
 @ Replaces : 0x08018460 FUN_08018460 (v2.05)
 @ In       : r0 = set_apo_disable
 @ Out      : -
@@ -3084,7 +3149,8 @@ FUNC fn_08018460
     uxtb r4, r4                             @ 0801846A
     cmp r4, #0x0                            @ 0801846C  compare r4 with 0
     bne .L0801847C                          @ 0801846E  if r4 != 0
-    ldr.w r1, =v205_tab_080291B8            @ 08018470
+    bl set_apot_text                        @ IMP-49: "APO30", "APO 1", "APO15" or "APO60" (v2.05 0x08018470: "APOoN")
+    mov r1, r0
     movs r0, #0x1                           @ 08018474
     bl lcd_draw_5char                       @ 08018476  draw 5 characters, r0 = 0 main (positions 5..9) or 1 secondary (0..4), r1 = text [r0=1]
     b .L08018486                            @ 0801847A

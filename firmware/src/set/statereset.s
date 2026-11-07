@@ -35,7 +35,8 @@
 @            minmax_state, peak_hold, rel_active, set_bat_low, set_cal_mode, set_date_edit_en, set_diode_15v,
 @            set_key_remote_code, set_key_remote_req, v_20007FE0, v_20008065, v_20008066, v_20008072, v_20008073,
 @            v_20008087, v_200080B1, v_200080B2, v_200080C5, va_channel; the anti-hunting state and setting (ah_reset,
-@            set_relp_load: set_hunt_on; IMP-45); strict image: v_2000807B = 0 (OF-55)
+@            set_relp_load: set_hunt_on; IMP-45); the DIODE chirp setting and contact state (set_chirp_load, IMP-51);
+@            strict image: v_2000807B = 0 (OF-55)
 @ Spec     : EEPROM_MAP.md 6 (boot reads, order of the calls); analysis/keys_setup.md 3; DESIGN.md 3.2 step 5
 @ Note     : Order as v2.05: read the NJU6350 (fn_0800FF18); markers 0x26 and 0x1F (fn_08010F10, fn_080104BC); board
 @            temperature offset (load_cal_record_from_eeprom(0xC8, 0)); interval, contrast, APO, temperature unit,
@@ -65,6 +66,7 @@ FUNC fn_08024DE0
     bl fn_08011218                          @ 08024DFE  load the logging interval
     bl fn_08011258                          @ 08024E02  load the contrast
     bl fn_080112A4                          @ 08024E06  load the APO setting
+    bl set_apot_load                        @ IMP-49: the auto power-off time (EEPROM 0x02B)
     bl fn_080112FC                          @ 08024E0A  load the temperature unit
     bl fn_08011340                          @ 08024E0E  load the DIODE 15 V flag
     bl fn_08011394                          @ 08024E12  load the continuity threshold code
@@ -83,6 +85,7 @@ FUNC fn_08024DE0
     bl set_lp_load                          @ IMP-24: current-loop percent view of DCmA (EEPROM 0x028)
     bl set_rtd_load                         @ IMP-25: RTD temperature view of OHM (EEPROM 0x029)
     bl set_btrim_load                       @ IMP-27: battery voltage trim (EEPROM 0x02A)
+    bl set_chirp_load                       @ IMP-51: DIODE contact chirp (EEPROM 0x02C); no contact state survives a STOP wake
     bl fn_08010F4C                          @ 08024E1E  load the date code from EEPROM 0x001
     bl fn_08010F8C                          @ 08024E22  load the ID number from EEPROM 0x003
     bl fn_08010BE8                          @ 08024E26  logging state reset at boot

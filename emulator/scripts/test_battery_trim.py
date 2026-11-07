@@ -4,7 +4,7 @@
 
 B+ = 5.00 V (command 'battery').  T1: no trim (EEPROM 0x02A = 0x00 and 0xFF): the battery page shows "BAT5.0" and
 pwr_bat_cv is the untrimmed value.  T2: EEPROM 0x02A = 115 (t = +15, +3.0 %): the value is round(v x 1.030).  T3: on the
-battery page long SETUP starts the edit ("bA" and the voltage in 0.01 V), five PEAK steps lower the value by 1.0 %, long
+battery page (the first page of the meter walk: SETUP short to SEt, long SETUP) long SETUP starts the edit ("bA" and the voltage in 0.01 V), five PEAK steps lower the value by 1.0 %, long
 SETUP saves and only EEPROM 0x02A changes (to 95); the trim stops at -50 (no wrap); SETUP short leaves an edit unsaved
 and the saved trim acts again; the next edit starts from the saved trim.  T4: an unsaved edit is undone by the
 edit timeout (induced: the counter 0x20008070 set one tick before its end).  T5: the low-battery symbol follows the
@@ -39,7 +39,8 @@ def cv(e, sym):
 
 def to_bat_page(e):
     e.m.uc.mem_write(ADDR_ITEM, bytes([0]))
-    T.press(e, 'SETUP', gap=0.6)                     # item 0 -> item 1
+    T.check('the meter walk opens at the battery page (item 1)', T.to_meter_walk(e))   # SETUP short to SEt, long SETUP (IMP-52)
+    e.advance(0.6)
 
 
 def run_tests(image, a_cv):

@@ -83,6 +83,7 @@
     .equ RCC_CFGR_SW_PLL,     0x00000003
     .equ RCC_CFGR_SWS_MASK,   0x0000000C
     .equ RCC_CFGR_HPRE_MASK,  0x000000F0      @ AHB prescaler HPRE[3:0] (RM0038 6.3.3)
+    .equ RCC_CFGR_PPRE2_MASK, 0x00003800      @ APB2 prescaler PPRE2[2:0] (RM0038 6.3.3; IMP-46)
     .equ RCC_CFGR_HPRE_DIV2,  0x00000080      @ HPRE = 1000b: HCLK = SYSCLK / 2
     .equ RCC_CFGR_SWS_MSI,    0x00000000
     .equ RCC_CFGR_SWS_PLL,    0x0000000C
@@ -105,6 +106,7 @@
     .equ RCC_APB2_SYSCFG,     0x00000001
     .equ RCC_APB2_ADC1,       0x00000200
     .equ RCC_APB2_SDIO,       0x00000800
+    .equ RCC_APB2_TIM11,      0x00000010      @ TIM11EN, bit 4 (6.3.9, rm0038.txt:8136; IMP-46)
 
     @ RCC_APB1ENR (6.3.10)
     .equ RCC_APB1_TIM2,       0x00000001
@@ -121,6 +123,8 @@
     .equ RCC_CSR_RTCSEL_LSI,  0x00020000      @ v2.05 0x0801BFBC
     .equ RCC_CSR_RTCSEL_HSE,  0x00030000      @ the RTCPRE path of RCC_RTCCLKConfig (v2.05 0x0801FF36)
     .equ RCC_CR_RTCPRE_MASK,  0x60000000
+    .equ RCC_CR_RTCPRE_DIV16, 0x60000000      @ HSE_RTC = HSE / 16; writable only while HSEON = 0 (6.3.1; IMP-46)
+    .equ RCC_ICSCR_MSITRIM_B, 0x40023807      @ byte 3 of RCC_ICSCR: MSITRIM[7:0] (6.3.2, byte access allowed; IMP-46)
     .equ RCC_CSR_RTCEN,       0x00400000
     .equ RCC_CSR_RTCRST,      0x00800000
     BB_EQU RCC_CSR_LSION_BB,  0x40023834, 0   @ 0x42470680, v2.05 0x0801FDFC (RCC_LSICmd)
@@ -276,6 +280,20 @@
     .equ TIM_DIER_UIE,        0x0001
     .equ TIM_SR_UIF,          0x0001
     .equ TIM_EGR_UG,          0x0001
+
+@ -----------------------------------------------------------------------------
+@ TIM11 (RM0038 18.5; base 0x40011000, APB2), used only by sys/msical.s (IMP-46) to measure MSI against HSE_RTC
+@ -----------------------------------------------------------------------------
+    .equ TIM11_BASE,          0x40011000      @ rm0038.txt:2279
+    .equ TIM_CCMR1,           0x18            @ 18.5.6
+    .equ TIM_CCER,            0x20            @ 18.5.7
+    .equ TIM_CCR1,            0x34            @ 18.5.11
+    .equ TIM11_OR,            0x50            @ 18.5.13
+    .equ TIM_SR_CC1IF,        0x0002          @ 18.5.4 bit 1: capture 1 occurred (cleared by reading CCR1)
+    .equ TIM_SR_CC1OF,        0x0200          @ 18.5.4 bit 9: a capture came while CC1IF was still set
+    .equ TIM_CCMR1_IC1_PSC8,  0x000D          @ CC1S = 01 (IC1 on TI1), IC1PSC = 11 (every 8 events), IC1F = 0
+    .equ TIM_CCER_CC1E,       0x0001          @ capture enabled, CC1P = 0 (rising edge)
+    .equ TIM11_OR_HSE_RTC,    0x0002          @ TI1_RMP = 10: HSE_RTC on TIM11_CH1 (rm0038.txt:27834..27840)
 
 @ -----------------------------------------------------------------------------
 @ LCD controller (RM0038 16.5; base 0x40002400)

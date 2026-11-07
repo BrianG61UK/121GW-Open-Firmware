@@ -45,6 +45,12 @@
     .equ BLE_SWS_HSE,   0x08            @ RCC_CFGR SWS = 10b: HSE is the system clock (RM0038 6.3.3)
 
     .section .bss_port.ble, "aw", %nobits
+@ IMP-50: careful mode of the link (old BLE112 module): each status frame sent twice, back to back, the copy marked by
+@ the first byte 0xF3 (its XOR byte adjusted to match) so it can be told from a new frame with the same values; RAM only, set and
+@ cleared by the key codes 0x97 / 0x98 (ble/commands.s), cleared when Bluetooth is switched on (ble_link_reset)
+    .global ble_dup_on
+ble_dup_on:     .space 1                    @ 1 = send each status frame twice
+ble_dup_sent:   .space 1                    @ 1 = the second copy of the current frame is in transmission
     .balign 4
 @ BLE port RAM (owner BLE; DESIGN.md 5.1 .bss_port).  The v2.05 frame buffer ble_tx_frame (0x20007AE0) keeps its
 @ address; the builder works in ble_frame_b and the transmit side copies it (OF-10).
@@ -120,6 +126,10 @@ FUNC ble_link_reset
     strb r0, [r1]                           @ no expected length (v2.05 0x2000802E)
     ldr r1, =ble_rx_ready
     strb r0, [r1]                           @ no command waiting (v2.05 0x20008030)
+    ldr r1, =ble_dup_on
+    strb r0, [r1]                           @ IMP-50: frames once, until the companion asks again
+    ldr r1, =ble_dup_sent
+    strb r0, [r1]
     msr primask, r3                         @ restore the interrupt mask
     bx lr
 ENDFUNC ble_link_reset
@@ -296,9 +306,28 @@ FUNC ble_tx_pump
     bhs .Lpump_framedone                    @ idx >= 19: the frame is complete (v2.05 0x08024800)
     ldr r1, =ble_tx_frame
     ldrb r1, [r1, r3]                       @ next byte of the frame (v2.05 0x08024812..0x08024818)
+    cmp r3, #(BLE_FRAME_LEN - 1)
+    bne .Lpump_send
+    ldr r0, =ble_dup_sent                   @ IMP-50: the copy's check byte: XOR over F3 instead of F2 (one bit apart)
+    ldrb r0, [r0]
+    cmp r0, #0
+    beq .Lpump_send
+    eor r1, r1, #(0xF2 ^ 0xF3)
     b .Lpump_send
 .Lpump_framedone:
-    movs r0, #BLE_TX_IDLE
+    ldr r0, =ble_dup_on                     @ IMP-50: careful mode: the same frame once more, from byte 0
+    ldrb r0, [r0]
+    cbz r0, 1f
+    ldr r1, =ble_dup_sent
+    ldrb r0, [r1]
+    cbnz r0, 1f                             @ the second copy is done
+    movs r0, #1
+    strb r0, [r1]
+    movs r0, #0
+    strb r0, [r2]                           @ ble_tx_idx = 0 (r2 still points at it)
+    movs r1, #0xF3                          @ the copy starts with 0xF3: the companion takes it only when the F2 frame
+    b .Lpump_send                           @ before it was lost (its check byte is adjusted at byte 18)
+1:  movs r0, #BLE_TX_IDLE
     strb r0, [r5]                           @ the frame is finished
 .Lpump_idle_echo:
     ldrb r0, [r5]
@@ -324,6 +353,8 @@ FUNC ble_tx_pump
     subs r3, r3, #1
     bne .Lpump_copy
     movs r0, #0
+    ldr r2, =ble_dup_sent
+    strb r0, [r2]                           @ IMP-50: the first copy of this frame
     ldr r2, =ble_tx_idx
     strb r0, [r2]                           @ v2.05 0x08024638: transmit index = 0
     movs r0, #BLE_TX_FRAME
@@ -703,16 +734,23 @@ FUNC fn_0801CAEC
     adds r0, #0x32                          @ 0801CBA4  r0 = ((r7 - 100 (0x64) * (((r7 / 100 (0x64)) << 4) >> 4)) << 3) + 50 (0x32)
     movs r1, #0x64                          @ 0801CBA6
     udiv r0, r0, r1                         @ 0801CBA8  r0 = (((r7 - 100 (0x64) * (((r7 / 100 (0x64)) << 4) >> 4)) << 3) + 50 (0x32)) / 100 (0x64)
-    ands r0, r0, #0x7                       @ 0801CBAC  r0 = ((((r7 - 100 (0x64) * (((r7 / 100 (0x64)) << 4) >> 4)) << 3) + 50 (0x32)) / 100 (0x64)) & 7
-    orrs r9, r0, r9                         @ 0801CBB0  r9 = (((((r7 - 100 (0x64) * (((r7 / 100 (0x64)) << 4) >> 4)) << 3) + 50 (0x32)) / 100 (0x64)) & 7) | ((r7 / 100 (0x64)) << 4)
+    @ OF-72: v2.05 masks the rounded fraction with & 7 (0x0801CBAC) and loses the carry when it rounds up to 8:
+    @ BRR is then one mantissa step (16) too low.  The fraction 8 is a carry into the mantissa (BRR bit 3 stays 0
+    @ with OVER8, RM0038 27.6.3).
+    cmp r0, #8
+    it eq
+    moveq r0, #0x10                         @ fraction 8 = mantissa + 1, fraction 0
+    add r9, r9, r0
     b .L0801CBCA                            @ 0801CBB4
 .L0801CBB6:  @ reached from 0801CB9E bpl (bit 15 of r0 is clear)
     lsls r0, r8, #0x4                       @ 0801CBB6  r0 = r8 << 4
     adds r0, #0x32                          @ 0801CBBA  r0 = (r8 << 4) + 50 (0x32)
     movs r1, #0x64                          @ 0801CBBC
     udiv r0, r0, r1                         @ 0801CBBE  r0 = ((r8 << 4) + 50 (0x32)) / 100 (0x64)
-    ands r0, r0, #0xf                       @ 0801CBC2  r0 = (((r8 << 4) + 50 (0x32)) / 100 (0x64)) & 15 (0xF)
-    orrs r9, r0, r9                         @ 0801CBC6  r9 = ((((r8 << 4) + 50 (0x32)) / 100 (0x64)) & 15 (0xF)) | r9
+    @ OF-72: v2.05 masks the rounded fraction with & 15 (0x0801CBC2) and loses the carry when it rounds up to 16
+    @ (PCLK1 4.2916 .. 4.3008 MHz at 19200): BRR 16 too low, the baud 7 % too high.  Adding it carries into the
+    @ mantissa (fraction 0 .. 16, mantissa in bits 15:4).
+    add r9, r9, r0
 .L0801CBCA:  @ reached from 0801CBB4 b
     strh r9, [r4, #0x8]                     @ 0801CBCA  [r4+8] = r9
     add sp, #0x14                           @ 0801CBCE

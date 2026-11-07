@@ -9,6 +9,8 @@
 @
 @ IMP-04 (production, ARS 8.2): the tone decision is made on the calibrated per-sample value, which must be inside the window for two
 @ consecutive conversions (K = 2, port RAM mres_diode_k); the mean-based tone call is dropped.  The chirp is unchanged.
+@ IMP-51 (production): with the SETUP page CHIrP on (set_chirp_on, EEPROM 0x02C) the contact chirp of mres/chirp.s
+@ takes the place of the jump chirp; off (default) the jump chirp runs as in v2.05.
 @ OF-23: the RANGE key no longer writes the 3 V / 15 V choice to EEPROM 0x12 (it was never restored, Q6).
 @ =============================================================================
 
@@ -30,13 +32,17 @@
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main only
-@ RAM      : reads  mres_diode_k, 0x20007CD4, 0x20007D64, 0x20007D68, 0x20007FDF, 0x20008081, 0x2000808A, 0x200080B3,
-@            0x200080B4
-@            writes mres_diode_k, 0x20007CD4, 0x20007D64, 0x20007D68, 0x2000805D, 0x200080B4
+@ RAM      : reads  mres_diode_k, set_chirp_on, 0x20007CD4, 0x20007D64, 0x20007D68, 0x20007FDF, 0x20008081, 0x2000808A,
+@            0x200080B3, 0x200080B4
+@            writes mres_diode_k, 0x20007CD4, 0x20007D64, 0x20007D68, 0x2000805D, 0x200080B4 (the last two with
+@            set_chirp_on = 0); with set_chirp_on = 1 mres_chirp_mean reads 0x20007D60 and writes its chirp_state
 @ Spec     : analysis/hy3131_modes_misc.md 6.3 (DIODE); autorange_and_scheduler.md 8.2
-@ Deviation: IMP-04
+@ Deviation: IMP-04, IMP-51 (set_chirp_on = 1: mres_chirp_mean instead of the jump chirp)
 @ Mean branch: D = fn_08006418(mean), divided by 10 in 15 V (0x200080B3 = 1), smoothed (2, 2); 15 V on units with 0x20007FDF = 1 (PF8 strap):
-@ D > 14000 gets +500 (not in calibration mode); window -999..999: 0x20007CD4 = D (tone in baseline); else the chirp rule; 0x2000805D = 1.
+@ D > 14000 gets +500 (not in calibration mode); set_chirp_on = 1: mres_chirp_mean (IMP-51); else window -999..999:
+@ 0x20007CD4 = D (tone in baseline), outside it the jump chirp rule; then 0x2000805D = 1.  While the contact chirp is on,
+@ 0x20007CD4 and 0x200080B4 are not kept up: switched back off, the first mean compares against the old reference (at most
+@ one beep more, as after any long pause of the rule).
 @ Per sample: fn_080064D6, divided by 10 in 15 V.
 @ -----------------------------------------------------------------------------
 FUNC fn_08007E84
@@ -92,6 +98,14 @@ FUNC fn_08007E84
     ldr r1, =v_20007D64                @ 0x08007EF2 pool 0x08007F94 = 0x20007D64
     str r0, [r1, #0]                   @ 0x08007EF4
 .L08007EF6:                              @ reached from 0x08007EDC bne, 0x08007EE8 blt
+    @ IMP-51: with the page CHIrP on, the contact chirp (mres/chirp.s) takes the place of the jump rule below; off
+    @ (default) runs v2.05's rule unchanged
+    ldr r0, =set_chirp_on
+    ldrb r0, [r0]
+    cbz r0, 1f
+    bl mres_chirp_mean
+    b .L08007F64
+1:
     @ short-circuit window -999 .. 999: tone (baseline) and the reference 0x20007CD4 = D
     ldr r0, =v_20007D64                @ 0x08007EF6 pool 0x08007F94 = 0x20007D64
     ldr r0, [r0, #0]                   @ 0x08007EF8

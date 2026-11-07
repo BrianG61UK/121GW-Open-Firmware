@@ -13,9 +13,8 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .equ PWR_APO_SECONDS,        1800       @ 30 min (v2.05 0x0800ED3C mov.w #0x708)
-    .equ PWR_APO_SECONDS_MINMAX, 3600       @ 60 min while MIN/MAX is active (0x0800ED30 mov.w #0xe10)
-    .equ PWR_APO_WARN_AT,        60         @ warning beeps start at 60 s left (0x08024CE4)
+    @ the times (v2.05: 1800 s, 3600 s in MIN/MAX, 0x0800ED3C / 0x0800ED30) and the warning start (v2.05 60 s left,
+    @ 0x08024CE4) come from the page APO (IMP-49, set/apot.s)
     .equ PWR_APO_WARN_BEEPS,     5          @ number of warning beeps (0x08024CFC)
     .equ PWR_APO_BEEP_TICKS,     500        @ 0.5 s beep in TIM3 ticks (0x08024D0A)
 
@@ -25,18 +24,14 @@
 @ fn_0800ED26 - reload the APO counter and clear the APO warning state
 @ Replaces : 0x0800ED26 FUN_0800ED26 (v2.05)
 @ In/Out   : - / -
-@ Clobbers : r0, r1
+@ Clobbers : r0, r1 (r2 saved: set_apot_seconds uses it)
 @ Context  : main
-@ RAM      : reads 0x2000804E (MIN/MAX state); writes 0x20000230 (APO counter, u16), 0x200080E8, 0x200080E9,
+@ RAM      : reads 0x2000804E (MIN/MAX state), pwr_apo_code (IMP-49); writes 0x20000230 (APO counter, u16), 0x200080E8, 0x200080E9,
 @            0x200080E6
 @ -----------------------------------------------------------------------------
 FUNC fn_0800ED26
-    ldr r0, =minmax_state
-    ldrb r0, [r0]
-    cmp r0, #0
-    ite ne                                  @ reload value
-    movne r0, #PWR_APO_SECONDS_MINMAX       @ MIN/MAX active: 3600 s
-    moveq r0, #PWR_APO_SECONDS              @ otherwise: 1800 s
+    push {r2, lr}
+    bl set_apot_seconds                     @ IMP-49: the time of the page APO, doubled in MIN/MAX (v2.05: 1800 s, 3600 s)
     ldr r1, =apo_countdown
     strh r0, [r1]                           @ 0x0800ED38 / 0x0800ED44
     movs r0, #0
@@ -46,7 +41,7 @@ FUNC fn_0800ED26
     strb r0, [r1]                           @ 0x0800ED54
     ldr r1, =v_200080E6
     strb r0, [r1]                           @ 0x0800ED5C
-    bx lr
+    pop {r2, pc}
 ENDFUNC fn_0800ED26
 
 @ -----------------------------------------------------------------------------
@@ -82,7 +77,9 @@ FUNC pwr_apo_second
     strb r0, [r1]                           @ counter reached 0: power-off request (0x08024CDC)
     b .Lpas_warn
 .Lpas_at60:
-    cmp r0, #PWR_APO_WARN_AT
+    mov r2, r0
+    bl set_apot_warn_at                     @ IMP-49: 15 s with the 1-minute time, else 60 s (v2.05 0x08024CE4)
+    cmp r2, r0
     bne .Lpas_warn
     movs r0, #1
     ldr r1, =v_200080E8

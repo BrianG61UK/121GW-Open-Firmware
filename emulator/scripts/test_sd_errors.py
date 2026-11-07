@@ -1,6 +1,10 @@
 """Induced emulator test of SD transfer errors during logging (both images, ORIGINAL_FIRMWARE_ISSUES.md OF-59).
 
-    python -I emulator/scripts/test_sd_errors.py [image]      default firmware/build/EEVBlog.bin
+    python -I emulator/scripts/test_sd_errors.py [--cases a,b,...] [image]      default every case, firmware/build/EEVBlog.bin
+
+Cases (each boots its own emulator): write, read, burst20, forced, burst_all.  CI runs two jobs of this script at the
+same time, one per case group (.github/workflows/emulator.yml): all five in one job took 22 .. 38 minutes on a hosted
+runner, past the job limit on slow runners.
 
 A 64 MiB FAT32 card image; DCV 1 V, interval 1 s, logging started with MEM long.  The card model's test faults
 (emu/sdcard.py SDCard.faults) disturb single data blocks on the bus: 'write_crc' (the card sees a CRC error in a block it
@@ -164,13 +168,25 @@ def run_forced(image):
     os.rmdir(d)
 
 
+CASES = {'write': lambda img: run_case(img, 'write', 'write_crc', 1),
+         'read': lambda img: run_case(img, 'read', 'read_crc', 1),
+         'burst20': lambda img: run_burst(img, 20),
+         'forced': run_forced,
+         'burst_all': lambda img: run_burst(img, 10 ** 9)}
+
+
 def main(argv):
+    argv = list(argv)
+    names = list(CASES)
+    if argv and argv[0] == '--cases':
+        names = argv[1].split(',')
+        argv = argv[2:]
+        unknown = [n for n in names if n not in CASES]
+        if unknown:
+            raise SystemExit('unknown case(s) %s; cases: %s' % (', '.join(unknown), ', '.join(CASES)))
     image = argv[0] if argv else os.path.join(T.ROOT, 'firmware', 'build', 'EEVBlog.bin')
-    run_case(image, 'write', 'write_crc', 1)
-    run_case(image, 'read', 'read_crc', 1)
-    run_burst(image, 20)
-    run_forced(image)
-    run_burst(image, 10 ** 9)
+    for n in names:
+        CASES[n](image)
     print('RESULT', ('FAIL: ' + ', '.join(T.fails)) if T.fails else 'ALL PASS', flush=True)
     return 1 if T.fails else 0
 

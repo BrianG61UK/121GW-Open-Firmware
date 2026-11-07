@@ -10,7 +10,7 @@ physical cause of such a capacitor is UNPROVEN).  With 95 nF and cap_slow_ranges
   T1 setting off (the default): the range alternates 1 / 2 for 20 s, the digits stay blank, nothing is counted or locked.
   T2 the SETUP page HUnt reached with the SETUP key (item 41, after dSP): sub display "HUnt", main display "oFF" (steady
      although the range jumps); long SETUP, REL: "on"; long SETUP saves exactly EEPROM 0x020 = 0x10 and RAM set_hunt_on = 1;
-     SETUP short goes on to the page CL (item 25).
+     SETUP short goes on to the page Lt (item 27).
   T3 setting on: after two counted range-1 timeouts range 2 stays and the value (about 0.095 uF) is shown, 10 s steady.
   T3b manual range (RANGE key) ends the lock and clears the count; back in auto range the hunting capacitor is locked again.
   T4 another capacitor (470 nF): the lock ends, normal ranging; then 20 nF measured normally on range 1, no lock.
@@ -138,7 +138,7 @@ def main(argv):
     T.check('edit ended', T.rd(e, ADDR_EDIT) == 0)
     T.press(e, 'SETUP', gap=0.5)
     e.advance(0.6)
-    T.check('SETUP short on HUnt goes to the page CL (item 25)', T.rd(e, ADDR_ITEM) == 25, repr(T.rd(e, ADDR_ITEM)))
+    T.check('SETUP short on HUnt goes to the page Lt (item 27)', T.rd(e, ADDR_ITEM) == 27, repr(T.rd(e, ADDR_ITEM)))
     T.check('the live reading is back on the main display', w.state()['main'].strip().upper() not in ('ON', 'OFF'))
 
     print('T3 setting on: two counted timeouts lock range 2')

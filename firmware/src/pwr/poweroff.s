@@ -18,6 +18,10 @@
     .equ PWR_EXTI_NVIC1, (1 << (IRQ_EXTI15_10 - 32))
     .equ PWR_TIMER_NVIC0, ((1 << IRQ_TIM2) | (1 << IRQ_TIM3))
 
+    .section .bss_port.pwroff, "aw", %nobits
+@ pwr_ble_was_on: 0x2000802B (Bluetooth on) at the power-off, read after the wake (IMP-48; owner PWR)
+pwr_ble_was_on: .space 1
+
     .section .text.pwr.poweroff, "ax", %progbits
 
 @ -----------------------------------------------------------------------------
@@ -26,13 +30,14 @@
 @ In/Out   : - / -
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main (loop step 14, request 0x2000803A)
-@ RAM      : writes 0x2000803A = 0, 0x2000802B = 0, 0x20008038 = 1 (woken from STOP)
+@ RAM      : writes 0x2000803A = 0, 0x2000802B = 0, 0x20008038 = 1 (woken from STOP), pwr_ble_was_on (IMP-48)
 @ Spec     : DESIGN.md 3.6
 @ Deviation: HW-08 (TIM2/TIM3 update interrupts off and buzzer silenced before the power-down; v2.05 stops the
 @            timers only at 0x0801C92E, after power_down_peripherals cleared PE7 at 0x0801C58C), NF-05 (in
 @            fn_080207CC), NF-06 (EXTI lines and their NVIC enables off after the wake-up; v2.05 leaves them on),
 @            IMP-06 (production: the 1 s beep as a state machine stepped with WFI between the steps; PWR_CR LPSDSR
-@            cleared after the wake so the production WFI sleep is the normal Sleep mode)
+@            cleared after the wake so the production WFI sleep is the normal Sleep mode), IMP-48 (Bluetooth on again
+@            after the wake when it was on before the power-off; v2.05 leaves it off)
 @ -----------------------------------------------------------------------------
 FUNC enter_stop_and_reinit
     push {r4, lr}
@@ -46,6 +51,10 @@ FUNC enter_stop_and_reinit
     bl bzb_off_beep_step                    @ r0 = 1 after 100 ticks, PE7 low again
     cmp r0, #0
     beq .Lesr_beep
+    ldr r1, =v_2000802B
+    ldrb r0, [r1]
+    ldr r1, =pwr_ble_was_on
+    strb r0, [r1]                           @ IMP-48: Bluetooth state before the power-off, for the wake
     movs r0, #0
     ldr r1, =v_2000803A
     strb r0, [r1]                           @ power-off request consumed (0x08024ED4)
@@ -100,7 +109,11 @@ FUNC enter_stop_and_reinit
     ldrb r0, [r0]
     bl lcd_init                             @ 0x08024EFC
     bl sys_bootwin_begin                    @ power-on window (FUN_0800EA3A at 0x08024F00)
-    pop {r4, pc}
+    ldr r1, =pwr_ble_was_on                 @ IMP-48: Bluetooth was on before the power-off: on again, as a long PEAK
+    ldrb r0, [r1]                           @ switches it on (the RAM kept its value: the MCU supply VDD_P stays on in
+    cbz r0, 1f                              @ STOP; a power-up clears it with the rest of .bss_port)
+    bl blcmd_ble_on
+1:  pop {r4, pc}
 ENDFUNC enter_stop_and_reinit
 
     .ltorg

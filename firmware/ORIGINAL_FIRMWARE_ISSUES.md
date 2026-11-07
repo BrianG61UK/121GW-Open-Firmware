@@ -84,8 +84,40 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-69 | SD card | Card sessions run the CPU on the 4 MHz crystal with the PLL at a 48 MHz VCO, where the reference manual requires 96 MHz for the SDIO; on a meter block writes stopped with a transmit underrun | medium | fixed |
 | OF-70 | Clock | The reset clock set-up raises the CPU clock 7.6-fold in one step; the reference manual allows less than 4-fold per step | low | fixed |
 | OF-71 | Bluetooth | The USART2 receive interrupt returns without reading USART_DR when RXNE is clear; an overrun flag (ORE) that is set with RXNE = 0 also raises this interrupt and is then never cleared, so the interrupt repeats for ever | medium | fixed |
+| OF-73 | Power | After auto power-off the meter wakes from STOP on a key or dial turn but hangs in the restart: a timer interrupt left asserted with the timer's clock off is entered again for ever | high (the meter could only be restarted with the dial) | fixed |
+| OF-72 | Bluetooth | The baud computation of USART_Init drops the carry of the rounded fraction: for a clock 2.3 .. 2.5 % above nominal the Bluetooth serial line runs 7 % too fast | low (reachable only with the measured clock) | fixed |
+| OF-74 | Display | In the DIODE 15 V range with open leads the bargraph flashes 16 segments over the 8 of the open-circuit value once per reading: the overload flag that forces a full bar is set once per reading and cleared by the OFL drawing that follows the bargraph | low | fixed |
+| OF-75 | Display | The DIODE 15 V range shows the bargraph label "5" (full bar 5 V) where full bar is 50 V: the label is taken from the range number, which the 15 V selection does not change | low | fixed |
+| OF-76 | Display | The VA modes (uVA, mVA, VA, AC and DC) never set the bargraph label: the "0" of 50 / 500 stays as the mode before left it (from DCuA "50", from DCmA "5") | low | fixed |
 
 ## Details
+### OF-74 — DIODE 15 V: the bargraph flashes full once per reading
+`FUN_08018FA8` (bargraph count) sets the count to 25 when the overload flag 0x20008046 is set and MIN/MAX is off
+(0x080190BC..0x08019100); in DIODE the count is then limited to 15 (0x08019114), 16 segments with segment 0.  The flag is
+set once per new mean by the autorange step (0x0800E08C, 0x0800E12E) and cleared by the OFL drawing of the main value
+(0x0801702A), which `FUN_08016D34` calls after the bargraph (0x08016D4A, then 0x08016D62).  The bargraph is also redrawn
+on every sample, when the flag is already 0, from the per-sample value: 15400 counts with open leads on the 15 V range,
+8 segments.  So the bar shows 8 segments with a 16-segment flash once per reading (GitHub issue 19; emulator, v2.05 and
+the port alike: 26 and 39 of 400 samples at 10 ms).  On the 3 V range the open-circuit value already gives 15 segments.
+Port (F-1.20): in DIODE the overload does not force the bar; it follows the value (a steady 8 segments).
+
+### OF-75 — DIODE 15 V: the bargraph label says 5 instead of 50
+`FUN_0801912C` takes the label index from the range for DIODE (0x080191C4); the 15 V selection (`FUN_080159C8`) changes
+the flag 0x200080B3 and the digits (`FUN_0800D920`: 4 on 3 V, 3 on 15 V) but not the range, so the label stays "5"
+(index 0).  With 3 digits a full bar (50000 counts) is 50 V; the open 15 V source (8 segments) reads as about 1.5 V
+against the "5" label (GitHub issue 19).  Port (F-1.20): index 1 ("50") when 0x200080B3 is set, else 0.
+
+### OF-76 — VA modes: the bargraph label is left from the mode before
+`FUN_0801912C` sets the label for modes 1..4, 9..11 and 16..21 and ends with no change for every other mode
+(0x080191D6); the VA modes 13..15 and 22..24 have a bargraph (`FUN_08018F14` calls the count with scale 0) but get no
+label: the "5" is set, the zeros of 50 and 500 stay as the previous mode left them.  At the uA position DCuA range 0
+shows "50" (correct, 3 digits); MODE to DCuVA kept it, and after the A / mA position (DCmA, "5") the uA position's
+DCuVA showed "5" (GitHub issue 17; emulator, v2.05 and the port alike).  In these modes the per-sample value is in
+counts of the main display (measured in the emulator for every range), so the label follows its digits as in the other
+modes: index = 4 - digits.  With 1 or 0 digits (uVA ranges 1..3, mVA range 3, VA ranges 0, 1) a full bar is 5000 or
+50000 of the unit shown and no label fits.  Port (F-1.20): the label by the digits; where none fits the "5" and both
+zeros are off and the scale byte is 0 (owner decision 2026-11-07).
+
 
 ### OF-01 — stale index when a table search fails
 `FUN_08007D1E`: the index register r7 is only set when the search hits (`0x08007D5E movs r7,r6`).
@@ -1072,3 +1104,29 @@ ORE = 1 and RXNEIE = 1 it reads DR once (the sequence that clears ORE), drops th
 the extended link diagnosis (IMP-44); every other path is unchanged. Emulator `test_ble_overrun.py` puts the state
 RXNE = 0, ORE = 1 in place with the USART model (a byte arriving between the SR read and the DR read) and checks that ORE
 is clear 50 ms after the interrupt is enabled (F-1.14: it stays set).
+
+### OF-72 — the USART_Init fraction loses its carry
+`fn_0801CAEC` (USART_Init of the StdPeriph library, 0x0801CAEC..0x0801CBD0) computes r7 = 25 x PCLK / (4 x baud)
+(0x0801CB74..0x0801CB7E, 100 x USARTDIV), the mantissa r7 / 100 shifted into bits 15:4 (0x0801CB84..0x0801CB8C), then the
+fraction ((r7 mod 100) x 16 + 50) / 100 (0x0801CBB6..0x0801CBBE) and masks it with `ands r0, r0, #0xf` (0x0801CBC2) before
+the `orrs` into BRR (0x0801CBC6); with OVER8 the same with x 8 and `& 7` (0x0801CBA0..0x0801CBB0). When the fraction rounds
+up to 16 (8 with OVER8) the mask makes it 0 and the mantissa is not raised: BRR is one mantissa step too low. RM0038 27.6.3
+defines BRR as DIV_Mantissa[11:0] in bits 15:4 and DIV_Fraction[3:0] in bits 3:0 (USARTDIV = mantissa + fraction / 16), so
+the rounded value 16 / 16 belongs to the mantissa. For 19200 baud the case is PCLK1 = 4.2916 .. 4.3008 MHz: BRR 208 instead
+of 224, 20649 baud instead of 19174 (+7.5 %). v2.05 always passes the nominal MSI value 4.194304 MHz (fn_0801FE2A, BRR 218),
+so the case cannot happen there; the port's measured clock (IMP-46) can be in that window (MSI +2.3 .. +2.5 %, inside the
+data sheet's temperature drift). Port: the fraction is added to the mantissa field instead of masked and or-ed (a fraction of
+16 carries into bit 4; with OVER8 a fraction of 8 becomes mantissa + 1, BRR bit 3 stays 0). Emulator `test_msical.py` C5.
+
+### OF-73 — after auto power-off the restart hangs in a timer interrupt
+`FUN_0801C92E` (0x0801C92E, called by the STOP preparation `FUN_0801C522` at 0x0801C528) disables TIM2 and TIM3
+(TIM_Cmd) and then their clocks (RCC_APB1PeriphClockCmd), but leaves DIER.UIE set and does not clear SR.UIF.  An update
+flag that is set at that moment keeps the timer's interrupt request asserted through STOP.  After the EXTI wake the
+restart (`FUN_0801BE76`, called at 0x08024EEE) enables IRQ28 / IRQ29 in the NVIC (`FUN_0801BFDE`) while interrupts are
+not masked (v2.05 never masks them); the handler clears UIF by a write to TIMx_SR, which has no effect while the timer's
+clock is gated, so the level request stays and the handler is entered again at once, for ever.  The timers' clocks are
+switched on only later in the restart (0x0801BF0C, 0x0801BF10).  On a meter with the port (F-1.17, the same sequence),
+2026-11-07: a beep placed right after the STOP exit sounded on a key press, beeps after each restart step stopped
+inside the NVIC set-up, and only the dial off and on restarted the meter (a power-up: the dial OFF position removes the
+battery supply).  Not tested with v2.05 on a meter.  Port (F-1.18): `fn_0801C92E` clears DIER and SR of both timers
+while their clocks still run.  Emulator `test_apo_wake.py`.

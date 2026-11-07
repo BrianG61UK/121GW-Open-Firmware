@@ -301,6 +301,11 @@ IMP-05  gpio          setup_beep_threshold  build == production and pin == buzze
 # the final frame differ in the sub display only; the main display is "0.0000" in both.  The EEPROM is not written.
 IMP-07  lcd        setup_navigate_dcv  build == production and step == 24 and since in 0.0..1.0
 IMP-07  lcd_final  setup_navigate_dcv  build == production and main == "0.0000"
+# IMP-52 (DESIGN 10, FEATURES.md 2.26): the production image walks two SETUP walks; in DCV the first press already goes
+# from item 0 to rEL (v2.05: item 1), so every LCD event of setup_navigate_dcv after its first SETUP press (line 6) and
+# its final frame differ in the sub display; the main display and the EEPROM are as in v2.05.
+IMP-52  lcd        setup_navigate_dcv  build == production and step >= 6
+IMP-52  lcd_final  setup_navigate_dcv  build == production
 
 # OPT-01 (DESIGN 3.2 step 4, 11): the RAM image is copied instead of lz77-unpacked, so the port's start-up takes another
 # path to the same state.  Measured on boot_v with the Cortex-M3 cycle costs (2026-11-01): the TIM2 interrupts come

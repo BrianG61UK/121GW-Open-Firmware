@@ -4,7 +4,7 @@
 
 On the time page (setup item 7) the hour edit buffer (0x200080E0) is stepped with REL through all 24 hours, and the shown
 hour is checked: 24-hour "00".."23" as v2.05; 12-hour 0 -> "12", 1..12 -> " 1".."12" (leading zero blank), 13..23 ->
-" 1".."11".  Checks the page CL (dSP -> CL -> item 0), that its save changes only bit 3 of EEPROM 0x020 and the save of
+" 1".."11".  Checks the page CL (the meter walk: Ld -> CL -> item 0), that its save changes only bit 3 of EEPROM 0x020 and the save of
 rEL only bit 0, the setting after a power cycle and the undo of an unsaved edit by the edit timeout.
 The helpers are those of test_backlight_timer.py.
 """
@@ -20,10 +20,7 @@ ADDR_HOUR_EDIT = 0x200080E0                          # hour edit buffer of item 
 
 
 def to_item(e, want):
-    for _ in range(20):
-        if T.rd(e, ADDR_ITEM) == want:
-            break
-        T.press(e, 'SETUP', gap=0.5)
+    T.to_item(e, want)                               # the pages 7 (time) and CL 25 are on the meter walk (SEt, long SETUP, IMP-52)
     e.advance(0.6)
 
 
@@ -70,11 +67,11 @@ def run_tests(image, a_clk):
     e.command({'dial': 2})
     e.advance(3.0)
     T.check('0x020 = 0x07 loads 24-hour', T.rd(e, a_clk) == 0)
-    to_item(e, 24)
+    to_item(e, 39)                                   # the page Ld, before CL on the meter walk (no Fr in the emulator)
     T.press(e, 'SETUP', gap=0.5)
     e.advance(0.6)
     texts = T.sample_texts(e)
-    T.check('SETUP short on dSP shows CL: "CL 24"', T.rd(e, ADDR_ITEM) == 25 and 'CL 24' in texts, 'samples=%r' % (texts,))
+    T.check('SETUP short on Ld shows CL: "CL 24"', T.rd(e, ADDR_ITEM) == 25 and 'CL 24' in texts, 'samples=%r' % (texts,))
     before = bytes(e.m.eeprom)
     T.long_press(e, 'SETUP')
     T.press(e, 'REL', gap=0.5)
@@ -86,7 +83,7 @@ def run_tests(image, a_clk):
     diff = {i: (before[i], e.m.eeprom[i]) for i in range(len(before)) if before[i] != e.m.eeprom[i]}
     T.check('save wrote only bit 3 of 0x020: 0x07 -> 0x0F', diff == {0x20: (0x07, 0x0F)}, 'diff=%r' % (diff,))
     T.press(e, 'SETUP', gap=0.5)
-    T.check('SETUP short on CL goes to the limit page Lt (item 27)', T.rd(e, ADDR_ITEM) == 27)
+    T.check('SETUP short on CL ends the meter walk: item 0', T.rd(e, ADDR_ITEM) == 0)
     to_item(e, 22)                                   # rEL: save difference, bit 3 must stay
     T.long_press(e, 'SETUP')
     T.press(e, 'REL', gap=0.5)

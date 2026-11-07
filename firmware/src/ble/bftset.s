@@ -41,6 +41,10 @@
 @     0x029 RTD view              0..2    set_rtd_code       -                        set_rtd_edit     (page Pt)
 @     0x02A battery trim          50..150 set_btrim (= v - 100, signed)  -            set_btrim_edit   (battery page; v is the
 @                                                            EEPROM byte = trim + 100, as the page stores it)
+@     0x02B auto power-off time   0..3    pwr_apo_code       -                        fn_08015A22      (page 2; 0 = 30 min,
+@                                                            1 = 1, 2 = 15, 3 = 60 min; its save also rewrites 0x016)
+@     0x02C DIODE contact chirp   0..1    set_chirp_on       mres_chirp_reset         set_chirp_edit   (page CHIrP in DIODE,
+@                                                            IMP-51; 0 = off, v2.05's jump chirp, 1 = on)
 @ 0x020 holds four settings: bit 0 the REL view (page rEL), bits 2..1 the logging trigger 0..2 (page tr; 3 is refused),
 @ bit 3 the clock (page CL), bit 4 the capacitance anti-hunting (page HUnt, IMP-45; 1 = on); bits 7..5 must be 0.  PUT sets
 @ the four RAM variables (switching the anti-hunting off also clears its state, as the page does) and calls set_b20_store
@@ -61,7 +65,7 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .equ BFS_N,             17              @ entries of bfs_tab
+    .equ BFS_N,             19              @ entries of bfs_tab (checked against the table below)
     .equ BFS_REC,           24              @ bytes of one entry
     .equ BFS_ST_NOTALLOWED, 3
     .equ BFS_ST_ARG,        0x22
@@ -106,7 +110,12 @@ bfs_tab:
     BFS_ENTRY 0x028, 0,   2,   0,   0,             0, set_lp_code,       set_lp_code,      0,               set_lp_edit
     BFS_ENTRY 0x029, 0,   2,   0,   0,             0, set_rtd_code,      set_rtd_code,     0,               set_rtd_edit
     BFS_ENTRY 0x02A, 50,  150, 100, 0,             0, set_btrim,         set_btrim,        0,               set_btrim_edit
+    BFS_ENTRY 0x02B, 0,   3,   0,   0,             0, pwr_apo_code,      pwr_apo_code,     0,               fn_08015A22
+    BFS_ENTRY 0x02C, 0,   1,   0,   0,             0, set_chirp_on,      set_chirp_on,     mres_chirp_reset, set_chirp_edit
     .size bfs_tab, . - bfs_tab
+    .if (. - bfs_tab) != BFS_N * BFS_REC
+    .error "BFS_N does not match the entries of bfs_tab"
+    .endif
 
     .section .text.bftset, "ax", %progbits
 

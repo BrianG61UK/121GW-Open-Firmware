@@ -163,9 +163,22 @@ ENDFUNC fn_0801C908
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags (calls other routines)
 @ Context  : main, sys_fault_safe (STOP preparation)
+@ Deviation: OF-73: v2.05 stops the timers and gates their clocks with DIER.UIE and SR.UIF as they are.  An update
+@            flag left set keeps the timer's interrupt request asserted; after the wake sys_nvic_init enables IRQ28 /
+@            IRQ29 with interrupts unmasked, the handler's SR write is ignored while the timer's clock is off, and the
+@            handler is entered again for ever (the meter beeps the wake marker, then stays dark; on a meter
+@            2026-11-07, TIM3 in the emulator).  Here DIER and SR are cleared first, while the clocks still run;
+@            sys_tim2_init / sys_tim3_init set them again after the wake.
 @ -----------------------------------------------------------------------------
 LFUNC fn_0801C92E
     push {r3, lr}
+    movs r0, #0
+    ldr r1, =TIM2_BASE
+    strh r0, [r1, #TIM_DIER]                @ OF-73: no update interrupt request left behind
+    strh r0, [r1, #TIM_SR]
+    ldr r1, =TIM3_BASE
+    strh r0, [r1, #TIM_DIER]
+    strh r0, [r1, #TIM_SR]
     movs r1, #0
     mov r0, #TIM2_BASE
     bl fn_0802096C                          @ 0x0801C936

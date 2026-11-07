@@ -620,6 +620,7 @@ ENDFUNC fn_08018F14
 @ RAM      : reads meter_mode, 0x20007D68 (per-sample value), 0x20007D60 (full scale), 0x20008046 (OL), minmax_state;
 @            writes 0x20008041, lcd_shadow words 0, 2, 4
 @ Spec     : analysis/lcd_map.md 3
+@ Deviation: OF-74 (DIODE: the overload flag does not force the full bar)
 @ Clobbers : r0, r1, r2 (v2.05 regeffects.txt)
 @ -----------------------------------------------------------------------------
 FUNC bargraph_count_from_value
@@ -741,6 +742,13 @@ FUNC bargraph_count_from_value
     ldrb r0, [r0, #0]                        @ 080190BE
     cmp r0, #0                               @ 080190C0 branch if overload (OL) flag == 0
     beq .L08019102                           @ 080190C2
+    @ OF-74: not in mode 11 (DIODE).  The flag is set once per new mean and cleared by the OFL draw that follows the
+    @ bargraph in the same pass, so the full bar showed in one pass per mean only (16 segments flashing over the 8 of
+    @ an open 15 V source, GitHub issue 19); the bar follows the value instead
+    ldr r0, =meter_mode
+    ldrb r0, [r0]
+    cmp r0, #11
+    beq .L08019102
     ldr r0, =minmax_state                    @ 080190C4 &minmax_state
     ldrb r0, [r0, #0]                        @ 080190C8
     cmp r0, #0                               @ 080190CA branch if minmax_state == 0
@@ -855,8 +863,11 @@ ENDFUNC lcd_bar_zero_sign
 @ In       : r0 = 1 the "1000" label scale (0x2000804D = 3), 0 the "5/50/500" label scale chosen by mode and range
 @ Out      : -
 @ Context  : main only
-@ RAM      : reads meter_mode, meter_range; writes 0x2000804D (scale 0..3 as sent in BLE byte 13), lcd_shadow words 2, 4, 6
+@ RAM      : reads meter_mode, meter_range, 0x200080B3 (DIODE 15 V); writes 0x2000804D (scale 0..3 as sent in BLE byte
+@            13), lcd_shadow words 2, 4, 6
 @ Spec     : analysis/lcd_map.md 3 (labels), ble_packet.md (bscale)
+@ Deviation: OF-75 (DIODE: index by the 15 V flag), OF-76 (VA modes 13..15, 22..24: index = 4 - digits of the main
+@            display via decimal_position_for_mode_range; no label where none fits)
 @ Clobbers : r0, r1, r2 (v2.05 regeffects.txt)
 @ -----------------------------------------------------------------------------
 FUNC fn_0801912C
@@ -921,9 +932,13 @@ FUNC fn_0801912C
     @ mode 10 (BEEP): index 2
     subs r0, r0, #1                          @ 080191BE
     beq .L0801920E                           @ 080191C0
-    @ mode 11 (DIODE): index = range
+    @ mode 11 (DIODE): index 0 ("5") on the 3 V range, 1 ("50") on the 15 V range (OF-75; v2.05: index = range)
     subs r0, r0, #1                          @ 080191C2
-    beq .L080191F2                           @ 080191C4
+    beq .Lbl_diode                           @ 080191C4
+    @ modes 13..15 (uVA, mVA, VA): OF-76
+    sub r1, r0, #2                           @ r0 = mode - 11
+    cmp r1, #2
+    bls .Lbl_va
     @ modes 16, 17: index = range + 1
     subs r0, r0, #5                          @ 080191C6
     cmp r0, #1                               @ 080191C8
@@ -936,7 +951,7 @@ FUNC fn_0801912C
 
     subs r0, r0, #2                          @ 080191D2
     cmp r0, #1                               @ 080191D4
-    bhi .L08019258                           @ 080191D6
+    bhi .Lbl_va_dc                           @ 080191D6 (v2.05: no label change; OF-76 adds modes 22..24)
     ldr r0, =meter_range                     @ 080191D8 &meter_range
     ldrb r0, [r0, #0]                        @ 080191DC
     cmp r0, #0                               @ 080191DE branch if meter_range != 0
@@ -995,6 +1010,41 @@ FUNC fn_0801912C
     bl fn_08019268                           @ 08019254
 .L08019258:                                @ reached from 0801917E b; 080191D6 bhi (unsigned >); 080191F0 b; 080191FC b; 0801920C b; 08019214 b; 0801922E b; 08019248 b; falls in
     pop {r4, pc}                             @ 08019258
+@ modes 22..24 (DCuVA, DCmVA, DCVA); every other mode: no label change, as v2.05
+.Lbl_va_dc:
+    sub r1, r0, #2                           @ r0 = mode - 20
+    cmp r1, #2
+    bls .Lbl_va
+    pop {r4, pc}
+@ OF-76: v2.05 set no label for the VA modes 13..15 and 22..24, so the "0" of 50 / 500 stayed as the mode before had
+@ left it (A / mA to uA / mA and back showed "50"; GitHub issue 17).  The label follows the digits of the main display
+@ as in the other modes: index = 4 - digits (decimal_position_for_mode_range), full bar 50000 counts (0x20007D68 is in
+@ display counts in these modes, measured in the emulator for every range).  Digits 1 or 0 (full bar 5000 or 50000 of
+@ the unit shown): no label fits, so the "5" and both zeros are off (owner decision 2026-11-07); scale byte 0
+.Lbl_va:
+    ldr r0, =meter_mode
+    ldrb r0, [r0]
+    ldr r1, =meter_range
+    ldrb r1, [r1]
+    bl decimal_position_for_mode_range       @ r0 = digits 0..4 (clobbers r1, r2)
+    rsb r0, r0, #4                           @ index = 4 - digits
+    cmp r0, #2
+    bls 1f
+    ldr r1, =lcd_shadow
+    ldr r0, [r1, #16]
+    bic r0, r0, #128
+    str r0, [r1, #16]                        @ w4 &= ~0x80: bar range label 5 off
+    movs r0, #0                              @ index 0: both zeros off, scale byte 0
+1:  bl fn_08019268
+    pop {r4, pc}
+@ OF-75: the label follows the digits of the DIODE display (decimal_position_for_mode_range: 4 on 3 V, 3 on 15 V): full bar
+@ 50000 counts = 5 V or 50 V.  v2.05 took meter_range, which the 15 V key (fn_080159C8) does not change, so 15 V showed "5" (an open
+@ 15 V source, 8 segments, read as about 1.5 V; GitHub issue 19)
+.Lbl_diode:
+    ldr r0, =v_200080B3                    @ DIODE 15 V flag (mode_diode_15v)
+    ldrb r0, [r0]                            @ 0 = 3 V, 1 = 15 V (fn_080159C8 writes only 0 or 1)
+    bl fn_08019268
+    pop {r4, pc}
 ENDFUNC fn_0801912C
     .ltorg
 

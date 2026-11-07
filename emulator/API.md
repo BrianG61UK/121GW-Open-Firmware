@@ -123,6 +123,7 @@ Later starts use the cached image of the latest release.  Without a connection t
 | `time_ms` | float, ms | emulated time since the last power-up (virtual time, not wall time) |
 | `sysclk` | int, Hz | current core clock |
 | `lcd` | 8 x uint32 | LCD RAM, COM x SEG: word `2*com + (seg>>5)`, bit `seg & 31`, COM 0..3, SEG 0..43. `ui/assets/lcd_bits.json` maps `"w<word>b<bit>"` to the glass elements it lights |
+| `lcd_seen` | 8 x uint32 | as `lcd`, the OR of every state the LCD showed since the previous snapshot (each snapshot starts it again from the state shown): a state that lasts only part of the page's 100 ms refresh, such as a one-pass bargraph flash, is visible on a meter's glass; the page draws such elements faint |
 | `lcd_on` | bool | the LCD controller is enabled and the meter is powered |
 | `backlight`, `buzzer` | 0 / 1 | levels of PE8 and PE7 |
 | `dial` | int 0..9 | rotary switch position (4.2) |
