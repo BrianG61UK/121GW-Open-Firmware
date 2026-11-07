@@ -6,7 +6,7 @@ Drives the emulated meter in TEMP (dial mV/Temp, EEPROM 0x09 = 5, unit degC) wit
 N, R or S (stimulus field 'probe', NIST ITS-90 EMF) at a board temperature of 25 degC, and checks for each type of the
 SETUP page tc the displayed temperature at points across its span, the range limits the probe spans of the emulator can
 reach (J over 936 degC, J, T and N under -200 degC; the probes end where the NIST tables end, so the N, R, S high limits
-and the R, S low limit at -50 degC are not reachable), the page navigation (rEL -> tc in TEMP -> item 0), the page texts,
+and the R, S low limit at -50 degC are not reachable), the page navigation (rEL -> tc in TEMP -> dSP), the page texts,
 that only EEPROM byte 0x00F is written and only by the save, the type after a power cycle, the fallback of invalid bytes
 and the undo of an unsaved edit by the edit timeout (induced: the timeout counter 0x20008070 set just below its end).
 The helpers are those of test_backlight_timer.py.

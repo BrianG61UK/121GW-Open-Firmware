@@ -60,6 +60,8 @@ Bluetooth, the 121GW Companion, lives on the branch [`companion`](../../tree/com
 | 4–20 mA in percent | DC mA, SETUP page `LP` | a 4–20 mA or 0–20 mA loop signal shown as 0–100 % |
 | PT100 / PT1000 | Ω, SETUP page `Pt` | a platinum RTD read as a temperature in °C or °F (IEC 60751) |
 | Battery trim | SETUP page `BAT` | match the battery reading to a reference meter (±10 %, 0.2 % steps) |
+| Diode contact chirp | DIODE, SETUP page `CHIrP` | one double beep per diode contact instead of a beep on every jump (off by default) |
+| Two SETUP groups | SETUP, page `SEt` | SETUP goes round the measurement pages; hold SETUP on `SEt` for the meter pages (clock, backlight, Bluetooth, …) |
 | Firmware over Bluetooth | SETUP page `Ld`, `emulator/tools/bt_upload.py` | send a new `EEVBlog.bin` to the card without removing it |
 | exFAT cards, long file names, card format | SETUP page `Fr` | reads and writes FAT12 / FAT16 / FAT32 / exFAT cards with long file names; `Fr` formats the card as exFAT (shown only with the two-part bootloader) |
 | Two-part bootloader support | SETUP page `Ld`, the 121GW Companion | first install of the bootloader over Bluetooth; on request over Bluetooth the meter restarts into the bootloader's update mode (firmware and bootloader updates without card or keys) |

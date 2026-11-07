@@ -573,6 +573,30 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   value reads as off). Emulator `test_diode_chirp.py` (off: the counts of beeps per phase of the production build
   before IMP-51; on: one per contact), `test_bft_settings.py` (id 0x02C).
 
+### 2.26 Two SETUP walks (implemented, IMP-52, F-1.22; GitHub issue 24)
+- Request (GitHub issue 24): the SETUP walk had about twenty pages; date and time came round every time.
+- What it does: SETUP short walks the measurement pages (item 0, the function's v2.05 pages 10..12, `rEL`, `tc`,
+  `dSP`, the function page, the limit test, `tr`, `Ch`, `In`, the MIN/MAX pages) and ends on a new page `SEt`; a long
+  SETUP on `SEt` opens the meter pages (v2.05 items 1..8, `bL`, `bt`, `Ld`, `Fr`, `CL`), after whose last page SETUP
+  returns to item 0. Every page edits as before; a function or range change and switching off start again with item
+  0 (or 10) as in v2.05. Holding SETUP at power-on was not used to enter the meter pages: in v2.05 it enables the
+  calibration date code (a year or month save then writes EEPROM 0x001).
+- How: `set/setup.s` fn_08015410 (the port's dispatch in front of v2.05's sequence: item 0 enters v2.05's sequence as
+  from item 9, item 8 goes to `bL`, the log interval `In` (item 9) follows `tr` / `Ch` with v2.05's entry action, a
+  wrap goes to `rEL`), `set/menu.s` (page `SEt`, item 43), `key/long.s` (long SETUP on `SEt`). Emulator
+  `test_setup_walks.py`. The companion's settings are unchanged (they do not use the pages).
+
+### 2.27 Bluetooth on after an update over Bluetooth (implemented, IMP-53, F-1.22 with bootloader B-1.14; GitHub issue 23)
+- Reason (GitHub issue 23): a release firmware starts with Bluetooth off, so after an update over Bluetooth the
+  companion could not reconnect to confirm it; the user had to hold PEAK.
+- What it does: the start that follows an update over Bluetooth switches Bluetooth on, as a long PEAK does; every
+  other start is unchanged.
+- How: bootloader DESIGN.md 6.5.1. The bootloader B-1.14 leaves a note in RTC_BKP1R when a Bluetooth transfer ends
+  (and relays it across its own start); the firmware's end of the first install leaves it too (`ble/blcmd.s`
+  blcmd_bt_note from `ble/bft.s` bft_poll); the firmware reads it in `sys_system_init` before the RTC domain resets
+  (`blcmd_bt_note_read`, `sys/main.s` sys_bt_note) and calls blcmd_ble_on at the start. No EEPROM, flash or
+  calibration access. An older bootloader leaves no note: the start is as before.
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
@@ -618,15 +642,17 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 40 | `Fr` card format (after `Ld`) | only with the two-part bootloader | yes, after a confirmation (implemented) |
 | 41 | `HUnt` CAP anti-hunting (after `dSP`) | CAP mode only; name on the sub display, `on` / `oFF` on the main display | yes (implemented) |
 | 42 | `CHIrP` DIODE contact chirp (after `dSP`) | DIODE mode only; name on the sub display, `on` / `oFF` on the main display | yes (implemented) |
+| 43 | `SEt` the end of the measurement walk | always; a long SETUP opens the meter walk (IMP-52) | no (implemented) |
 | 32 | `n` count | MIN/MAX on | no |
 | 33 | `Sd` | MIN/MAX on | no |
 | 34, 35 | `tHI`, `tLo` | MIN/MAX on | no |
 
 Items 32..35 are the MIN/MAX pages. v2.05 uses 0..12 and 100; the page dispatcher falls back to item 0 for an unknown item
-(`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 25. SETUP short steps
-20 -> 21 -> 39 -> 40 (two-part bootloader only) -> 22 -> 23 (TEMP only) -> 24 -> 26 (BEEP only) / 37 (DCmA only) / 38 (OHM only) /
-41 (CAP only) / 42 (DIODE only) -> 25 -> 27 -> 28 -> 29 -> 36 (test on) -> 30 -> 31 (tr-Ch) -> 32 -> 33 -> 34 -> 35 (MIN/MAX on) -> 0 (`fn_08015410`);
-each new page joins that chain.
+(`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 25. Since
+IMP-52 (2.26) SETUP short steps two walks (`fn_08015410`).  Measurement: 0 -> 10..12 (the modes that have them) -> 22 -> 23
+(TEMP only) -> 24 -> 26 (BEEP only) / 37 (DCmA only) / 38 (OHM only) / 41 (CAP only) / 42 (DIODE only) -> 27 -> 28 -> 29 ->
+36 (test on) -> 30 -> 31 (tr-Ch) -> 9 -> 32 -> 33 -> 34 -> 35 (MIN/MAX on) -> 43 -> 0.  Meter (long SETUP on 43): 1 -> ... ->
+8 -> 20 -> 21 -> 39 -> 40 (two-part bootloader only) -> 25 -> 0.  Each new page joins one of the two chains.
 
 ## 5. Order of work and checks
 

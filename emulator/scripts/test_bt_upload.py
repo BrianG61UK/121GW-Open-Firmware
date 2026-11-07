@@ -192,7 +192,7 @@ def run_tests(image, full):
 
     print('T5 leaving the page')
     T.press(e, 'SETUP', gap=0.6)
-    T.check('Ld -> rEL (item 22)', T.rd(e, ADDR_ITEM) == 22, 'item %d' % T.rd(e, ADDR_ITEM))
+    T.check('Ld -> CL (item 25; no Fr without the two-part bootloader)', T.rd(e, ADDR_ITEM) == 25, 'item %d' % T.rd(e, ADDR_ITEM))
     T.check('status frames again', status_frames(e, 1.5) > 0)
     del e
     files = card_files(card)

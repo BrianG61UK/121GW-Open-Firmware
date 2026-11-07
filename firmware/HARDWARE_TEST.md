@@ -168,7 +168,7 @@ These checks confirm on hardware what the emulator cannot.
    power-off after one minute and the key wake): page APO, REL steps APO.60, APO.oF, APO. 1, APO.15, APO.30; save APO. 1 and
    wait: five warning beeps about 15 s before the meter switches off one minute after the last key press; a key wakes it
    (item 36). Dump the EEPROM: only 0x016 and 0x02B changed.
-38. Bargraph (F-1.20, OF-74, OF-75, OF-76; GitHub issues 19 and 17; the DIODE part verified working on a meter 2026-11-07): DIODE, RANGE to 15 V, open leads: a steady bar of
+38. Bargraph (F-1.20, OF-74, OF-75, OF-76; GitHub issues 19 and 17; verified working on a meter 2026-11-07): DIODE, RANGE to 15 V, open leads: a steady bar of
    8 segments with the label 50 at its right end, no flash to 16 segments (look from below with the backlight on); RANGE
    back to 3 V: 15 segments, label 5.  With the mA jack plugged, uA position: DCuA shows 50, MODE to DCuVA shows 500;
    dial to A / mA and back: DCuVA still shows 500.  mVA / VA position, DCVA, RANGE through the four ranges: no label,
@@ -177,6 +177,13 @@ These checks confirm on hardware what the emulator cannot.
    touch a diode: the double beep as v2.05.  Long SETUP, REL (`on`), long SETUP (saved; dump: only EEPROM 0x02C = 1
    changed).  Touch a diode: one double beep; hold it: no more; lift: nothing; touch again: one; open leads and a
    reversed diode: nothing; short the probes: the continuous tone as before, then a diode: one double beep.
+40. Two SETUP walks (F-1.22, IMP-52): DCV, SETUP repeatedly: temperature, `rEL`, `dSP`, `LtOFF`, `Lo`, `HI`, `tr`,
+   `In`, `SEt`, temperature.  On `SEt` hold SETUP (long beep): the battery page; SETUP: APO, buzzer, contrast, year,
+   month-day, hour-minute, ID, `bL`, `bt`, `Ld-bt`, (`Fr`), `CL`, temperature.  Edit one page in each walk (long
+   SETUP, REL, long SETUP) as before.  Turn the dial: SETUP starts with the measurement pages again.
+41. Bluetooth after an update (F-1.22 with bootloader B-1.14, IMP-53): a release build (BLE_AT_POWERUP 0) and B-1.14
+   installed; update the firmware with the companion: after the restart Bluetooth is on and the companion confirms the
+   update without a key.  Switch off and on: Bluetooth stays off (as before).
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

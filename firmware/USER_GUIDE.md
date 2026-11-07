@@ -17,16 +17,25 @@ and the original settings are not touched, and a meter flashed back to v2.05 sim
 | Change the value | **REL** = next value, **PEAK** = previous value |
 | Save | hold **SETUP** again until the long beep |
 | Leave without saving | press **SETUP** |
+| Open the meter pages | on the page `SEt`, hold **SETUP** until the long beep |
 
 If you start changing a setting and then press nothing for about two minutes, the change is undone. Only a saved
 setting is kept over a power-off.
 
-The new pages come after the original SETUP pages, in this order:
+The pages come in two groups (GitHub issue 24: one long walk had grown to about twenty pages).
 
-`bL` (backlight) → `bt` (Bluetooth speed) → `Ld` (firmware over Bluetooth) → `Fr` (format the card as exFAT, only with the new bootloader) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) → `dSP` (display
-level) → `bH` (continuity hold, BEEP only) → `LP` (4–20 mA view, DC mA only) → `Pt` (PT100 / PT1000 view, Ω only) → `HUnt` (capacitance anti-hunting, CAP only) → `CHIrP` (diode contact chirp, DIODE only) → `CL` (12 / 24-hour clock) → `Lt`, `Lo`, `HI` (limit test; the verdict page
-while the test is on) → `tr`, `Ch` (logging trigger) → back to the first page (while MIN/MAX is on, the statistics pages
-`n` and `Sd` and the time pages `tHI` and `tLo` come before it)
+**Measurement pages** (press **SETUP**): the temperature page → the function's own pages of the original (dBm in ACV,
+the continuity threshold in BEEP, the current option, `bd`) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) →
+`dSP` (display level) → `bH` (continuity hold, BEEP only) → `LP` (4–20 mA view, DC mA only) → `Pt` (PT100 / PT1000
+view, Ω only) → `HUnt` (capacitance anti-hunting, CAP only) → `CHIrP` (diode contact chirp, DIODE only) → `Lt`, `Lo`,
+`HI` (limit test; the verdict page while the test is on) → `tr`, `Ch` (logging trigger) → `In` (logging interval) →
+(while MIN/MAX is on: the statistics pages `n` and `Sd` and the time pages `tHI` and `tLo`) → `SEt` → back to the
+temperature page.
+
+**Meter pages** (on `SEt` hold **SETUP**): battery → `APO` (auto power-off) → `b-On` (buzzer) → `Lcd` (contrast) →
+year → month and day → hour and minute → ID → `bL` (backlight) → `bt` (Bluetooth speed) → `Ld` (firmware and files over
+Bluetooth) → `Fr` (format the card as exFAT, only with the new bootloader) → `CL` (12 / 24-hour clock) → back to the
+temperature page.  Changing the function or switching off also ends the meter pages.
 
 The dBm reference is not a new page: it is edited on the existing dBm page of ACV.
 
@@ -170,6 +179,18 @@ Tip: with `L4-20` a sensor's output reads directly in percent of its range, for 
   bootloader installed (next section) the companion does this step itself: no keys.
 - Logging must be off. The meter keeps measuring during the transfer. Leaving the page stops it; the old `EEVBlog.bin`
   stays until a new file has arrived complete and checked.
+
+## Connecting the 121GW Companion
+
+- **Do not pair the meter** in the Bluetooth settings of Windows, macOS or Linux. The Companion finds the meter by
+  itself. A meter that the computer has paired is kept connected by the computer, does not advertise and can no longer be
+  found (GitHub issue 23).
+- **If you paired it already:** remove it in the computer's Bluetooth settings (Windows: Settings > Bluetooth & devices,
+  `121GW`, the three dots, Remove device), switch the meter's Bluetooth off and on (hold PEAK twice), start the Companion.
+- **One connection at a time:** close the phone app before using the Companion.
+- **After an update over Bluetooth** the meter switches Bluetooth on by itself, so the Companion reconnects and
+  confirms the update (firmware 1.2.2 with bootloader 1.1.4 or newer; GitHub issue 23). With an older bootloader, and
+  after the one update that installs bootloader 1.1.4, hold PEAK to switch Bluetooth on.
 
 ## Card files and settings from the companion (page `Ld-bt`)
 

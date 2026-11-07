@@ -2,7 +2,7 @@
 
     python -I emulator/scripts/test_limit.py [image]      default firmware/build/EEVBlog.bin (production build)
 
-DCV with known inputs, buzzer setting on (EEPROM 0x1E = 1).  Checks: CL -> Lt -> Lo -> HI; "Lo---" before a capture; the
+DCV with known inputs, buzzer setting on (EEPROM 0x1E = 1).  Checks: dSP -> Lt -> Lo -> HI; "Lo---" before a capture; the
 capture of the displayed value with REL in the edit and the label / value alternation; switching on refused without
 both limits (refusal beep); switching on with Lo above HI (swapped); the verdict page after the edit; PASS / HI / Lo
 for inputs inside, above and below, an overload counted as HI; the refusal pattern on leaving PASS and the accept beep
@@ -68,9 +68,9 @@ def run_tests(image, a_on):
     volts(e, 1.0, 3.0)
 
     print('T1 pages and captures')
-    goto(e, 25)
+    goto(e, 24)
     T.press(e, 'SETUP', gap=0.4)
-    T.check('SETUP short on CL shows Lt: "LtOFF"', T.rd(e, ADDR_ITEM) == 27 and T.sub_text(e) == 'LT0FF', 'sub=%r' % T.sub_text(e))
+    T.check('SETUP short on dSP shows Lt: "LtOFF"', T.rd(e, ADDR_ITEM) == 27 and T.sub_text(e) == 'LT0FF', 'sub=%r' % T.sub_text(e))
     T.press(e, 'SETUP', gap=0.4)
     T.check('Lt -> Lo: "Lo---"', T.rd(e, ADDR_ITEM) == 28 and T.sub_text(e) == 'Lo---', 'sub=%r' % T.sub_text(e))
     T.press(e, 'SETUP', gap=0.4)

@@ -26,6 +26,8 @@
     .equ BLCMD_BL_MAX,      0x5B00
     .equ BLCMD_MAGIC,       0x55504454      @ "TDPU": update mode requested (read by the bootloader)
     .equ RTC_BKP0R,         0x40002850      @ RTC_BASE + 0x50 (RM0038 20.6.20)
+    .equ RTC_BKP1R,         0x40002854      @ RTC_BASE + 0x54 (RM0038 20.6.20)
+    .equ BLCMD_BT_MAGIC,    0x4E4F5442      @ "BTON": a Bluetooth update has ended (bootloader DESIGN.md 6.5.1, bl.inc BKP_BT_MAGIC)
     .equ BLCMD_APB1_PWREN,  0x10000000      @ RCC_APB1ENR bit 28 PWREN (RM0038 6.3.10)
 
     .section .bss_port.blcmd, "aw", %nobits
@@ -166,5 +168,49 @@ FUNC blcmd_update_mode
 1:  b 1b
 9:  pop {r4, pc}
 ENDFUNC blcmd_update_mode
+
+    .ltorg
+
+@ -----------------------------------------------------------------------------
+@ blcmd_bt_note - leave the note "Bluetooth update ended" for the next start: RTC_BKP1R = BLCMD_BT_MAGIC (IMP-53,
+@ bootloader DESIGN.md 6.5.1); the bootloader B-1.14 relays it to the firmware it starts
+@ In/Out   : - / -
+@ Clobbers : r0, r1
+@ Context  : main only (bft_poll, right before the restart that ends the first install)
+@ RAM      : RCC_APB1ENR PWREN, PWR_CR DBP, RTC_BKP1R (as blcmd_update_mode for RTC_BKP0R)
+@ -----------------------------------------------------------------------------
+FUNC blcmd_bt_note
+    ldr r0, =RCC_APB1ENR
+    ldr r1, [r0]
+    orr r1, r1, #BLCMD_APB1_PWREN
+    str r1, [r0]                            @ PWR interface clock (RM0038 6.3.10)
+    ldr r0, =PWR_CR
+    ldr r1, [r0]
+    orr r1, r1, #PWR_CR_DBP
+    str r1, [r0]                            @ backup domain writable (RM0038 5.4.1)
+    ldr r0, =RTC_BKP1R
+    ldr r1, =BLCMD_BT_MAGIC
+    str r1, [r0]
+    bx lr
+ENDFUNC blcmd_bt_note
+
+@ -----------------------------------------------------------------------------
+@ blcmd_bt_note_read - was the last restart the end of an update over Bluetooth?  (IMP-53, bootloader DESIGN.md 6.5.1)
+@ In       : -
+@ Out      : r0 = 1 when RTC_BKP1R holds BLCMD_BT_MAGIC, else 0
+@ Clobbers : r0, r1, flags
+@ Context  : main only (sys_system_init, after sys_clock_select has switched PWREN on and before ck_run, whose RTC
+@            domain reset clears the register)
+@ -----------------------------------------------------------------------------
+FUNC blcmd_bt_note_read
+    ldr r0, =RTC_BKP1R
+    ldr r0, [r0]
+    ldr r1, =BLCMD_BT_MAGIC
+    cmp r0, r1
+    ite eq
+    moveq r0, #1
+    movne r0, #0
+    bx lr
+ENDFUNC blcmd_bt_note_read
 
     .ltorg

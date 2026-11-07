@@ -96,6 +96,15 @@ FUNC handle_pg8_15_long_press
     b .Llp_end                          @ 0801628E
 @ reached from 08016288 beq (equal / zero) after cmp r0, #0
 .Llp_08016290:
+    @ IMP-52: on the page SEt (item 43) the long SETUP opens the meter walk instead of an edit (set/menu.s), long beep
+    ldr r0, =key_setup_item
+    ldrb r0, [r0]
+    cmp r0, #43
+    bne 1f
+    bl set_menu_enter
+    bl fn_0800EE5E
+    b .Llp_end
+1:
     movs r0, #0                         @ 08016290
     bl fn_080165F4                      @ 08016292
     cmp r0, #0                          @ 08016296

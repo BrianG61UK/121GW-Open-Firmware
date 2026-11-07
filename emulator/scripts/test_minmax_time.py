@@ -5,7 +5,7 @@ ui/mmtime.s).
 
 DCV; the clock chip model is set to 23:59:40 so that the minute and the hour roll during the test.  MIN/MAX on, the input
 steps up (a new maximum before 00:00) and down (a new minimum after 00:00).  Checks: SETUP short goes Sd -> tHI -> tLo ->
-item 0; tHI shows "tHI" on the sub display and the hour-minute of the maximum on the main display, tLo the same for the
+SEt (43) -> item 0; tHI shows "tHI" on the sub display and the hour-minute of the maximum on the main display, tLo the same for the
 minimum, both equal to the clock chip copy (0x200080DA / 0x200080DB) read right after each step; 24-hour and 12-hour
 (EEPROM 0x020 bit 3); a positive overload (manual range, 10 V): tHI shows the time in place of "OFL", tLo "-----"; HOLD
 keeps the held display; ending MIN/MAX sends the page back to item 0.  The helpers are those of test_backlight_timer.py.
@@ -83,7 +83,9 @@ def steps(image, h12):
     want = fmt(*t_min, h12)
     T.check('tLo main %r' % want, main_text(e) == want, 'main=%r' % main_text(e))
     T.press(e, 'SETUP', gap=0.6)
-    T.check('tLo -> item 0, the reading on the main display', T.rd(e, ADDR_ITEM) == 0 and '-' not in main_text(e),
+    T.check('tLo -> SEt (item 43)', T.rd(e, ADDR_ITEM) == 43, 'item=%d' % T.rd(e, ADDR_ITEM))
+    T.press(e, 'SETUP', gap=0.6)
+    T.check('SEt -> item 0, the reading on the main display', T.rd(e, ADDR_ITEM) == 0 and '-' not in main_text(e),
             'item=%d main=%r' % (T.rd(e, ADDR_ITEM), main_text(e)))
     return e
 

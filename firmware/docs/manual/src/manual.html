@@ -487,8 +487,11 @@ nothing changes. Holding MEM a bit too long while switching on no longer starts 
 
 <!-- ============================================================ -->
 <h2 id="setup">The settings menu (SETUP)</h2>
-<p class="lead">All settings live on the small display. Press <kbd>SETUP</kbd> to go to the next page; the pages go round
-in a circle.</p>
+<p class="lead">All settings live on the small display. Press <kbd>SETUP</kbd> to go to the next page. The pages come
+in two groups: the <b>measurement pages</b>, which a SETUP press goes round, and the <b>meter pages</b> (clock, date,
+backlight, Bluetooth and the like), which open when you hold <kbd>SETUP</kbd> on the last measurement page,
+<span class="lcd">SEt</span>. After the last meter page, a function change or switching off, SETUP starts with the
+measurement pages again.</p>
 <h3>Changing a setting</h3>
 <ol class="steps">
 <li>Press <kbd>SETUP</kbd> until the page shows.</li>
@@ -508,19 +511,9 @@ menu is locked while logging and while you look at stored readings.</p>
 <tr><th>Page</th><th>What it sets</th><th>Where</th><th></th></tr>
 </thead>
 <tbody>
+<tr><th colspan="4">Measurement pages (press SETUP)</th></tr>
 <tr><td><span class="lcd">25.0c</span></td><td>Temperature inside the meter; °C (<span class="lcd">c</span>) or °F (<span class="lcd">F</span>)</td><td>all</td><td></td></tr>
-<tr><td><span class="lcd">BAT5.0</span></td><td>Battery voltage, trim</td><td>all</td><td><a class="pg" href="#f-bat"></a></td></tr>
-<tr><td><span class="lcd">APO.30</span></td><td>Auto power-off: off, 1, 15, 30, 60 min</td><td>all</td><td></td></tr>
-<tr><td><span class="lcd">b-On</span></td><td>Buzzer on / off</td><td>all</td><td><a class="pg" href="#f-quiet"></a></td></tr>
-<tr><td><span class="lcd">Lcd-4</span></td><td>Display contrast</td><td>all</td><td></td></tr>
-<tr><td><span class="lcd">2026</span>, <span class="lcd">11-05</span>, <span class="lcd">14-30</span></td><td>Year; month and day; hour and minute</td><td>all</td><td></td></tr>
-<tr><td><span class="lcd">00000</span></td><td>Serial number (0–99999)</td><td>all</td><td><a class="pg" href="#serial"></a></td></tr>
-<tr><td><span class="lcd">In 0</span></td><td>Logging interval, 0–999 s (0 = about 5 per second)</td><td>all</td><td><a class="pg" href="#logging"></a></td></tr>
 <tr><td>extra pages</td><td>Depending on the function: frequency, dBm, continuity threshold, diode voltage, burden voltage</td><td>some</td><td></td></tr>
-<tr><td><span class="lcd">bLOFF</span></td><td>Backlight timer</td><td>all</td><td><a class="pg" href="#f-bl"></a></td></tr>
-<tr><td><span class="lcd">bt  2</span></td><td>Bluetooth speed</td><td>all</td><td><a class="pg" href="#f-bt"></a></td></tr>
-<tr><td><span class="lcd">Ld-bt</span></td><td>Bluetooth transfer</td><td>all</td><td><a class="pg" href="#f-transfer"></a></td></tr>
-<tr><td><span class="lcd">Fr no</span></td><td>Format the SD card</td><td>two-part bootloader only</td><td><a class="pg" href="#f-card"></a></td></tr>
 <tr><td><span class="lcd">rEL-d</span></td><td>REL as difference or percent</td><td>all</td><td><a class="pg" href="#f-relpct"></a></td></tr>
 <tr><td><span class="lcd">tc-K</span></td><td>Thermocouple type</td><td>temperature</td><td><a class="pg" href="#f-tc"></a></td></tr>
 <tr><td><span class="lcd">dSP 1</span></td><td>Display level</td><td>all</td><td><a class="pg" href="#f-dsp"></a></td></tr>
@@ -529,11 +522,24 @@ menu is locked while logging and while you look at stored readings.</p>
 <tr><td><span class="lcd">PtOFF</span></td><td>PT100 / PT1000 view</td><td>resistance</td><td><a class="pg" href="#f-pt"></a></td></tr>
 <tr><td><span class="lcd">HUnt</span></td><td>Capacitance anti-hunting (on / oFF on the main display)</td><td>capacitance</td><td><a class="pg" href="#f-hunt"></a></td></tr>
 <tr><td><span class="lcd">CHIrP</span></td><td>Diode contact chirp (on / oFF on the main display)</td><td>diode</td><td><a class="pg" href="#f-chirp"></a></td></tr>
-<tr><td><span class="lcd">CL 24</span></td><td>12 / 24-hour clock</td><td>all</td><td><a class="pg" href="#f-cl"></a></td></tr>
 <tr><td><span class="lcd">LtOFF</span>, <span class="lcd">Lo</span>, <span class="lcd">HI</span></td><td>Pass / fail test and its limits</td><td>all</td><td><a class="pg" href="#f-limit"></a></td></tr>
 <tr><td><span class="lcd">PASS</span></td><td>Pass / fail result</td><td>while the test is on</td><td><a class="pg" href="#f-limit"></a></td></tr>
 <tr><td><span class="lcd">tr-In</span>, <span class="lcd">Ch</span></td><td>Logging trigger and change amount (Ch only with tr-Ch)</td><td>all</td><td><a class="pg" href="#f-trig"></a></td></tr>
+<tr><td><span class="lcd">In 0</span></td><td>Logging interval, 0–999 s (0 = about 5 per second)</td><td>all</td><td><a class="pg" href="#logging"></a></td></tr>
 <tr><td><span class="lcd">n</span>, <span class="lcd">Sd</span>, <span class="lcd">tHI</span>, <span class="lcd">tLo</span></td><td>Statistics</td><td>during MIN/MAX</td><td><a class="pg" href="#f-stats"></a></td></tr>
+<tr><td><span class="lcd">SEt</span></td><td>Hold <kbd>SETUP</kbd> here for the meter pages</td><td>all</td><td></td></tr>
+<tr><th colspan="4">Meter pages (hold SETUP on SEt)</th></tr>
+<tr><td><span class="lcd">BAT5.0</span></td><td>Battery voltage, trim</td><td>all</td><td><a class="pg" href="#f-bat"></a></td></tr>
+<tr><td><span class="lcd">APO.30</span></td><td>Auto power-off: off, 1, 15, 30, 60 min</td><td>all</td><td></td></tr>
+<tr><td><span class="lcd">b-On</span></td><td>Buzzer on / off</td><td>all</td><td><a class="pg" href="#f-quiet"></a></td></tr>
+<tr><td><span class="lcd">Lcd-4</span></td><td>Display contrast</td><td>all</td><td></td></tr>
+<tr><td><span class="lcd">2026</span>, <span class="lcd">11-05</span>, <span class="lcd">14-30</span></td><td>Year; month and day; hour and minute</td><td>all</td><td></td></tr>
+<tr><td><span class="lcd">00000</span></td><td>Serial number (0–99999)</td><td>all</td><td><a class="pg" href="#serial"></a></td></tr>
+<tr><td><span class="lcd">bLOFF</span></td><td>Backlight timer</td><td>all</td><td><a class="pg" href="#f-bl"></a></td></tr>
+<tr><td><span class="lcd">bt  2</span></td><td>Bluetooth speed</td><td>all</td><td><a class="pg" href="#f-bt"></a></td></tr>
+<tr><td><span class="lcd">Ld-bt</span></td><td>Bluetooth transfer</td><td>all</td><td><a class="pg" href="#f-transfer"></a></td></tr>
+<tr><td><span class="lcd">Fr no</span></td><td>Format the SD card</td><td>two-part bootloader only</td><td><a class="pg" href="#f-card"></a></td></tr>
+<tr><td><span class="lcd">CL 24</span></td><td>12 / 24-hour clock</td><td>all</td><td><a class="pg" href="#f-cl"></a></td></tr>
 </tbody>
 </table>
 <div class="grid3">
@@ -576,6 +582,11 @@ firmware updates.</p>
 <div class="feat"><div class="txt">
 <p>Hold <kbd>PEAK</kbd> to switch Bluetooth on (BT symbol); hold again to switch off. The meter keeps measuring and sends
 its readings. Only one device at a time: close the phone app before using the computer app.</p>
+<p><b>Connecting:</b> do not add (pair) the meter in the Bluetooth settings of Windows, macOS or Linux. The
+Companion finds the meter by itself; a meter that the computer has paired is kept connected by the computer and can no
+longer be found. If you added it already, remove it there, switch the meter's Bluetooth off and on (hold
+<kbd>PEAK</kbd> twice) and start the Companion. After an update over Bluetooth the meter switches Bluetooth on by
+itself (bootloader 1.1.4 or newer); with an older bootloader hold <kbd>PEAK</kbd>, and the Companion reconnects.</p>
 <p>The <b>121GW Companion</b> is an app for Windows, macOS and Linux (download it from the project's releases page; free
 for individuals, schools and non-profits). It can:</p>
 <ul>

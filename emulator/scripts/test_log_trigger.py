@@ -5,7 +5,7 @@
 DCV with a FAT32 card image; logging started with MEM long; the records counted with log_total (0x20007D38).  Checks:
 tr-In with interval 1 (one record per second) and interval 0 (the v2.05 5-per-second path); tr-Ch with interval 0 (the
 first record, then one record per change of at least the threshold, none for smaller changes, no fast path); tr-Lt with
-interval 0 (a record at each verdict change only); the pages tr -> Ch (with tr-Ch) after HI, and that the saves change only
+interval 0 (a record at each verdict change only); the pages tr -> Ch (with tr-Ch) after HI and Ch -> In -> SEt -> item 0 (IMP-52), and that the saves change only
 EEPROM 0x020 bits 2..1 and 0x022.  The helpers are those of test_backlight_timer.py.
 """
 import os
@@ -154,7 +154,11 @@ def run_tests(image, a_trig, sym):
     e.advance(1.0)
     T.check('Ch 1 -> 5 saved in 0x022', e.m.eeprom[0x22] == 5 and T.sub_text(e) == 'Ch  5', 'ee=%d sub=%r' % (e.m.eeprom[0x22], T.sub_text(e)))
     T.press(e, 'SETUP', gap=0.4)
-    T.check('Ch -> item 0 (MIN/MAX off)', T.rd(e, ADDR_ITEM) == 0)
+    T.check('Ch -> In (item 9)', T.rd(e, ADDR_ITEM) == 9)
+    T.press(e, 'SETUP', gap=0.4)
+    T.check('In -> SEt (item 43; MIN/MAX off: no statistics pages)', T.rd(e, ADDR_ITEM) == 43)
+    T.press(e, 'SETUP', gap=0.4)
+    T.check('SEt -> item 0', T.rd(e, ADDR_ITEM) == 0)
     s = e.snapshot()
     T.check('no unmodelled access, no safety violation', s['unmodelled'] == 0 and not s['safety'])
 

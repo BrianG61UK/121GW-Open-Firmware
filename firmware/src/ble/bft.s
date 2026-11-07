@@ -32,7 +32,7 @@
 @                      the clock measurement, sys/msical.s, IMP-46)
 @     types 0x10 .. 0x15 SD card requests (LIST, READ, CHUNK, DELETE, INFO, FORMAT; ble/bftsd.s, IMP-36, IMP-39) and
 @     0x16 / 0x17 settings (GET, PUT; ble/bftset.s, IMP-37), answered with the type 0x82 answer described in ble/bftsd.s
-@     type 0x19 LEAVE    leave the page Ld as a SETUP press does (next page Fr or rEL), answered with status 0 first (IMP-47)
+@     type 0x19 LEAVE    leave the page Ld as a SETUP press does (next page Fr or CL, IMP-52), answered with status 0 first (IMP-47)
 @     type 0x18 UPDMODE  restart into the two-part bootloader's update mode (blcmd_update_mode, IMP-42); no answer (the
 @                      meter restarts), status 3 without the two-part bootloader
 @ Answer: B5 5B 81 seq(2) 03 status next(2) crc16(2), seq = the packet answered, next = the packet number expected
@@ -1072,7 +1072,7 @@ LFUNC bft_packet
     bne 1f
     @ IMP-47: leave the page Ld from the companion (keys do not reach the meter while the page owns the link): what a
     @ SETUP short press on the page does (key/short.s .Lsh_setup_next without the beep): the next page (fn_08015410: Fr
-    @ with the two-part bootloader, else rEL) and a redraw of the setup page.  The answer (status 0) is queued first; bft_poll gives the link back on its next
+    @ with the two-part bootloader, else CL, IMP-52) and a redraw of the setup page.  The answer (status 0) is queued first; bft_poll gives the link back on its next
     @ pass, the queued answer still goes out, then the status frames resume.
     movs r0, #0
     bl bft_answer
@@ -1324,6 +1324,7 @@ FUNC bft_poll
     ldrb r0, [r0]
     cmp r0, #BFT_RESET_TICKS
     blo 0f
+    bl blcmd_bt_note                        @ IMP-53: the new bootloader passes it on, the firmware starts with Bluetooth on
     bl bft_sysreset
 0:
     @ is the page Ld active?

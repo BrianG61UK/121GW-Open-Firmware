@@ -78,7 +78,7 @@ def run_tests(image):
     T.check('REL then save: "L4-20", only EEPROM 0x028 changed to 1', diff == {0x28: (0, 1)} and T.sub_text(e) == 'L4-20',
             'diff %r sub %r' % (diff, T.sub_text(e)))
     T.press(e, 'SETUP', gap=0.4)
-    T.check('LP -> CL (item 25)', T.rd(e, ADDR_ITEM) == 25)
+    T.check('LP -> Lt (item 27)', T.rd(e, ADDR_ITEM) == 27)
     s = e.snapshot()
     T.check('no unmodelled access, no safety violation', s['unmodelled'] == 0 and not s['safety'])
 

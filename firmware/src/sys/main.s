@@ -27,6 +27,10 @@
     .global sys_bootwin_open
 sys_bootwin_open:
     .space 1
+@ sys_bt_note: 1 when this start follows an update over Bluetooth (RTC_BKP1R note of the bootloader B-1.14, read by
+@ sys_system_init; IMP-53); the start then switches Bluetooth on.  Owner SYS.
+sys_bt_note:
+    .space 1
 
     .section .rodata.sys.main, "a", %progbits
     .balign 4
@@ -75,6 +79,12 @@ FUNC sys_main
     bl sys_bootwin_begin                    @ power-on window (FUN_0800EA3A at 0x08024B66)
     .if BLE_AT_POWERUP
     bl blcmd_ble_on                         @ development build: Bluetooth on as a long PEAK would switch it on
+    .else
+    ldr r0, =sys_bt_note                    @ IMP-53: the start after an update over Bluetooth: Bluetooth on, so the
+    ldrb r0, [r0]                           @ companion reconnects and confirms the update (bootloader DESIGN.md 6.5.1)
+    cbz r0, 1f
+    bl blcmd_ble_on
+1:
     .endif
 
     @ ---------------------------------------------------------------- main loop 0x08024B6A..0x08024DDE
@@ -390,6 +400,9 @@ FUNC sys_system_init
 .Lssi_vos_ok:
     movs r0, #0
     bl sys_clock_select                     @ run clock (0x0801BEEC)
+    bl blcmd_bt_note_read                   @ IMP-53: the note of a Bluetooth update (RTC_BKP1R), before ck_run's RTC
+    ldr r1, =sys_bt_note                    @ domain reset clears it (PWREN is on since sys_clock_select)
+    strb r0, [r1]
     bl ck_run                               @ IMP-46: MSI measured against HSE and trimmed (sys/msical.s)
     bl rcc_lsi_as_rtc_lcd_clock             @ 0x0801BEF0
     .if DEBUG

@@ -14,7 +14,7 @@ Checks (each prints PASS or FAIL):
      press 20 s into the countdown restarts it; a dial change restarts it; MODE long press while on switches it off at once
   T2 setting OFF (blank byte): the backlight stays on for 70 s; MODE long press still switches it off
   T3 invalid stored values (0xFF, 101) read as OFF, 100 (99 min) is accepted, the byte is not changed
-  T4 SETUP page bL: ten SETUP presses in DCV reach "bLOFF"; REL/PEAK edit; the save writes only EEPROM 0x017; an abandoned
+  T4 SETUP page bL (meter walk, IMP-52: SETUP short to SEt, long SETUP, eight more SETUP presses in DCV) reaches "bLOFF"; REL/PEAK edit; the save writes only EEPROM 0x017; an abandoned
      edit writes nothing; the setting survives a power cycle
   T5 auto power-off and wake with the backlight on: the flag 0x2000807B and PE8 agree after the wake and the first MODE
      long press switches the backlight on (OF-55)
@@ -39,6 +39,7 @@ DEC = _trace.LcdDecoder()                       # decodes the LCD words into dis
 SYNTHETIC = open(os.path.join(ROOT, 'emulator', 'data', 'synthetic_eeprom.bin'), 'rb').read()
 ADDR_FLAG = 0x2000807B                          # backlight flag of the MODE long press (v2.05 RAM)
 ADDR_APO = 0x20000230                           # APO countdown (v2.05 RAM, u16)
+ADDR_ITEM = 0x20008037                          # SETUP page (set_item); 43 = SEt, the last page of the measurement walk
 TMP = os.environ.get('TMPDIR', '/tmp')
 fails = []
 
@@ -128,6 +129,32 @@ def sample_texts(e, n=4, step=0.25):
     return out
 
 
+def to_meter_walk(e):
+    """Open the meter walk (IMP-52): SETUP short up to the page SEt (item 43), then one long SETUP -> item 1.
+    The pages after that (2 .. 8, bL 20, bt 21, Ld 39, CL 25) follow with SETUP short."""
+    for _ in range(20):
+        if rd(e, ADDR_ITEM) == 43:
+            break
+        press(e, 'SETUP', gap=0.5)
+    long_press(e, 'SETUP')
+    return rd(e, ADDR_ITEM) == 1
+
+
+METER_PAGES = {1, 2, 3, 4, 5, 6, 7, 8, 20, 21, 25, 39, 40}   # the pages of the meter walk (IMP-52)
+
+
+def to_item(e, want, limit=24):
+    """SETUP short until the item `want` is shown.  A page of the meter walk (items 1 .. 8, bL 20, bt 21, CL 25, Ld 39,
+    Fr 40) is reached through the page SEt and one long SETUP (to_meter_walk); the other pages are on the measurement walk."""
+    if want in METER_PAGES and rd(e, ADDR_ITEM) not in METER_PAGES:
+        to_meter_walk(e)
+    for _ in range(limit):
+        if rd(e, ADDR_ITEM) == want:
+            break
+        press(e, 'SETUP', gap=0.5)
+    return rd(e, ADDR_ITEM) == want
+
+
 def in_window(dt):
     return dt is not None and 29.9 <= dt <= 31.6
 
@@ -196,9 +223,11 @@ def run_tests(image, a_count, a_setting):
     e.command({'dial': 2})
     e.advance(3.0)
     before = bytes(e.m.eeprom)
-    for _ in range(10):
+    check('long SETUP on SEt opens the meter walk (item 1)', to_meter_walk(e))
+    for _ in range(8):                                   # items 2 .. 8, then bL 20
         press(e, 'SETUP', gap=0.5)
-    check('tenth SETUP press shows bLOFF', sub_text(e) == 'BL0FF', 'sub=%r' % sub_text(e))
+    check('SETUP presses of the meter walk reach item 20 and show bLOFF', rd(e, ADDR_ITEM) == 20 and sub_text(e) == 'BL0FF',
+          'item %d sub=%r' % (rd(e, ADDR_ITEM), sub_text(e)))
     long_press(e, 'SETUP')
     press(e, 'REL', gap=0.5)
     e.advance(0.6)
@@ -231,7 +260,8 @@ def run_tests(image, a_count, a_setting):
     diff2 = {i: (after[i], after2[i]) for i in range(len(after)) if after[i] != after2[i]}
     check('second save wrote only 0x017 = 3', diff2 == {0x17: (1, 3)}, 'diff=%r' % (diff2,))
     press(e, 'SETUP', gap=0.5)
-    check('SETUP short on the page bL goes to item 0', not sub_text(e).startswith('BL'), 'sub=%r' % sub_text(e))
+    check('SETUP short on the page bL goes to bt (item 21)', rd(e, ADDR_ITEM) == 21 and sub_text(e).startswith('BT'),
+          'item %d sub=%r' % (rd(e, ADDR_ITEM), sub_text(e)))
     e.power_cycle()
     e.command({'dial': 2})
     e.advance(3.0)
@@ -240,7 +270,8 @@ def run_tests(image, a_count, a_setting):
     e.command({'dial': 2})
     e.advance(3.0)
     before = bytes(e.m.eeprom)
-    for _ in range(10):
+    to_meter_walk(e)
+    for _ in range(8):
         press(e, 'SETUP', gap=0.5)
     long_press(e, 'SETUP')
     press(e, 'REL', gap=0.5)

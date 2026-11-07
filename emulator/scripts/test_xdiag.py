@@ -228,7 +228,7 @@ def run_tests(image):
 
     print('T7 0x94: counting off')
     T.press(e, 'SETUP', gap=0.6)
-    T.check('left the page (item 22)', T.rd(e, ADDR_ITEM) == 22, 'item %d' % T.rd(e, ADDR_ITEM))
+    T.check('left the page (item 25)', T.rd(e, ADDR_ITEM) == 25, 'item %d' % T.rd(e, ADDR_ITEM))
     got = ask(e, key_frame(0x94))
     T.check('0x94 echoed, nothing else', got == key_frame(0x94), 'got %r' % got)
     T.check('counting off', T.rd(e, sym['xd_on']) == 0)
@@ -249,7 +249,7 @@ def run_tests(image):
     a = link.send(btft.packet(btft.T_LEAVE, 0), timeout=3.0)
     T.check('LEAVE answered with status 0', a is not None and a[1] == 0, repr(a))
     e.advance(0.5)
-    T.check('next page rEL (item 22; no two-part bootloader here)', T.rd(e, ADDR_ITEM) == 22, 'item %d' % T.rd(e, ADDR_ITEM))
+    T.check('next page CL (item 25; no Fr without the two-part bootloader)', T.rd(e, ADDR_ITEM) == 25, 'item %d' % T.rd(e, ADDR_ITEM))
     n0 = len(e.ble_rx)
     e.advance(2.0)
     frames_seen = bytes(e.ble_rx[n0:]).count(b'\xF2')
