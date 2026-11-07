@@ -68,7 +68,7 @@ jobs:
                  test_dcv_fast.py, test_bft_files.py, test_bft_settings.py,
                  test_calbin_ident.py, test_sd_capacity.py, test_sd_slow.py, test_sd_clock.py,
                  test_cap_timeout.py, test_cap_antihunt.py, test_ble_overrun.py, test_xdiag.py, test_msical.py, test_apo_wake.py,
-                 test_apo_time.py]
+                 test_apo_time.py, test_careful.py]
     steps:
       - uses: actions/checkout@v7
       - name: Production build (firmware/build/EEVBlog.bin and 121gw.map, the symbols the tests read; dist/v205_tables.json)

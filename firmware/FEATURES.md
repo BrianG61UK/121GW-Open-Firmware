@@ -546,6 +546,15 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   while MIN/MAX is on; the warning beeps start 60 s before the power-off (15 s with the 1-minute time). EEPROM 0x016 keeps
   on / off as v2.05 stores it, 0x02B the time (EEPROM_MAP.md 4.1). The companion (1.2.19) shows and changes it.
 
+### 2.24 Careful mode for the old Bluetooth module (implemented, IMP-50, F-1.19)
+- Reason (GitHub issues 9 and 14): meters with the Bluegiga BLE112-A module (early v.01 boards) deliver single damaged
+  bytes to the computer; the newer BGM220S module (v.03 boards) does not. The damage happens inside the old module
+  (its own sleep and clock handling, per the Bluegiga and TI documents); the meter cannot keep it awake.
+- What it does: the 121GW Companion (1.2.20) recognises the old module by the packet size the link negotiates (MTU 23)
+  and switches careful mode on: the meter sends every status frame twice and the companion keeps the copy that checks
+  out; the card file list and downloads come in small pieces, each asked for again when damaged. Newer meters are not
+  affected (nothing changes for them).
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |

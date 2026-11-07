@@ -45,6 +45,12 @@
     .equ BLE_SWS_HSE,   0x08            @ RCC_CFGR SWS = 10b: HSE is the system clock (RM0038 6.3.3)
 
     .section .bss_port.ble, "aw", %nobits
+@ IMP-50: careful mode of the link (old BLE112 module): each status frame sent twice, back to back, the copy marked by
+@ the first byte 0xF3 (its XOR byte adjusted to match) so it can be told from a new frame with the same values; RAM only, set and
+@ cleared by the key codes 0x97 / 0x98 (ble/commands.s), cleared when Bluetooth is switched on (ble_link_reset)
+    .global ble_dup_on
+ble_dup_on:     .space 1                    @ 1 = send each status frame twice
+ble_dup_sent:   .space 1                    @ 1 = the second copy of the current frame is in transmission
     .balign 4
 @ BLE port RAM (owner BLE; DESIGN.md 5.1 .bss_port).  The v2.05 frame buffer ble_tx_frame (0x20007AE0) keeps its
 @ address; the builder works in ble_frame_b and the transmit side copies it (OF-10).
@@ -120,6 +126,10 @@ FUNC ble_link_reset
     strb r0, [r1]                           @ no expected length (v2.05 0x2000802E)
     ldr r1, =ble_rx_ready
     strb r0, [r1]                           @ no command waiting (v2.05 0x20008030)
+    ldr r1, =ble_dup_on
+    strb r0, [r1]                           @ IMP-50: frames once, until the companion asks again
+    ldr r1, =ble_dup_sent
+    strb r0, [r1]
     msr primask, r3                         @ restore the interrupt mask
     bx lr
 ENDFUNC ble_link_reset
@@ -296,9 +306,28 @@ FUNC ble_tx_pump
     bhs .Lpump_framedone                    @ idx >= 19: the frame is complete (v2.05 0x08024800)
     ldr r1, =ble_tx_frame
     ldrb r1, [r1, r3]                       @ next byte of the frame (v2.05 0x08024812..0x08024818)
+    cmp r3, #(BLE_FRAME_LEN - 1)
+    bne .Lpump_send
+    ldr r0, =ble_dup_sent                   @ IMP-50: the copy's check byte: XOR over F3 instead of F2 (one bit apart)
+    ldrb r0, [r0]
+    cmp r0, #0
+    beq .Lpump_send
+    eor r1, r1, #(0xF2 ^ 0xF3)
     b .Lpump_send
 .Lpump_framedone:
-    movs r0, #BLE_TX_IDLE
+    ldr r0, =ble_dup_on                     @ IMP-50: careful mode: the same frame once more, from byte 0
+    ldrb r0, [r0]
+    cbz r0, 1f
+    ldr r1, =ble_dup_sent
+    ldrb r0, [r1]
+    cbnz r0, 1f                             @ the second copy is done
+    movs r0, #1
+    strb r0, [r1]
+    movs r0, #0
+    strb r0, [r2]                           @ ble_tx_idx = 0 (r2 still points at it)
+    movs r1, #0xF3                          @ the copy starts with 0xF3: the companion takes it only when the F2 frame
+    b .Lpump_send                           @ before it was lost (its check byte is adjusted at byte 18)
+1:  movs r0, #BLE_TX_IDLE
     strb r0, [r5]                           @ the frame is finished
 .Lpump_idle_echo:
     ldrb r0, [r5]
@@ -324,6 +353,8 @@ FUNC ble_tx_pump
     subs r3, r3, #1
     bne .Lpump_copy
     movs r0, #0
+    ldr r2, =ble_dup_sent
+    strb r0, [r2]                           @ IMP-50: the first copy of this frame
     ldr r2, =ble_tx_idx
     strb r0, [r2]                           @ v2.05 0x08024638: transmit index = 0
     movs r0, #BLE_TX_FRAME

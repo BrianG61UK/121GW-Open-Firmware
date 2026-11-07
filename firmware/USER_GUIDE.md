@@ -209,6 +209,13 @@ Nothing is written to the card except the deletes you confirm.  While the compan
   diagnosis** on, the report has a section "meter clock": the clock as found, after the trim, and the resulting serial
   speed. Nothing to set; nothing is stored.
 
+## Old Bluetooth module (careful mode, F-1.19 or newer)
+
+Early meters (v.01 boards, Bluegiga BLE112-A module) damage single bytes on the Bluetooth link. The 121GW Companion
+(1.2.20 or newer) recognises them by themselves and switches careful mode on: every reading is sent twice and the card
+list and downloads come in small pieces. Nothing to set; the report says "careful mode on". Newer meters (BGM220S
+module) are not affected.
+
 ## Two-part bootloader (with the 121GW Companion)
 
 The two-part bootloader (`bootloader/README.md`, releases `bl-vA.B.C`) replaces EEVblog's. The fast build supports it in two

@@ -40,6 +40,8 @@
     .equ BLE_XDOFF_CODE,    0x94             @ extended link diagnosis off (F4 39 34 39 34; ble/xdiag.s)
     .equ BLE_XDGET_CODE,    0x95             @ extended link diagnosis counters request, answered with F9 (F4 39 35 39 35)
     .equ BLE_CKGET_CODE,    0x96             @ clock measurement request, answered with FA (F4 39 36 39 36; sys/msical.s)
+    .equ BLE_DUPON_CODE,    0x97             @ careful mode on: each status frame twice (F4 39 37 39 37; IMP-50)
+    .equ BLE_DUPOFF_CODE,   0x98             @ careful mode off (F4 39 38 39 38)
 
     .section .rodata.ble.version, "a", %progbits
 @ ble_version_frame - answer to the version request: F6, the five characters the meter shows at power-on (config.inc
@@ -92,7 +94,8 @@ ENDFUNC fn_0800C308
 @            echo, key_remote_req = 1 and key_remote_code = the code (decoded by fn_08014AE6 in KEY); code 0x90 is
 @            answered with ble_version_frame instead (FEATURES.md 2.11 stage 3), 0x91 and 0x92 by ble/blcmd.s
 @            (bootloader update mode, bootloader version), 0x93 / 0x94 / 0x95 by ble/xdiag.s (extended link diagnosis on,
-@            off, counters frame F9; IMP-44), 0x96 by sys/msical.s (clock measurement frame FA; IMP-46).  A frame rejected for its checksum (F8) or its unequal code pairs (F4) is
+@            off, counters frame F9; IMP-44), 0x96 by sys/msical.s (clock measurement frame FA; IMP-46), 0x97 / 0x98 careful mode on / off (each status
+@            frame twice, ble/usart.s; IMP-50).  A frame rejected for its checksum (F8) or its unequal code pairs (F4) is
 @            counted in xd_bad_frames.  Any other first byte is ignored.
 @ -----------------------------------------------------------------------------
 FUNC fn_0800C332
@@ -235,8 +238,20 @@ FUNC fn_0800C332
     bl xd_send                              @ 0x95: counters frame F9 (only while the diagnosis is on)
     b .L0800C46C
 7:  cmp r0, #BLE_CKGET_CODE
-    bne 1f
+    bne 8f
     bl ck_send                              @ 0x96: clock measurement frame FA (IMP-46)
+    b .L0800C46C
+8:  cmp r0, #BLE_DUPON_CODE
+    bne 9f
+    movs r0, #1
+    ldr r1, =ble_dup_on
+    strb r0, [r1]                           @ 0x97: careful mode on (IMP-50; one byte, read by the USART2 handler)
+    b .L0800C46C
+9:  cmp r0, #BLE_DUPOFF_CODE
+    bne 1f
+    movs r0, #0
+    ldr r1, =ble_dup_on
+    strb r0, [r1]                           @ 0x98: careful mode off
     b .L0800C46C
 .Lkey_bad:
     ldr r0, =xd_bad_frames
