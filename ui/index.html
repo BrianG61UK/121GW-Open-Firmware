@@ -69,6 +69,15 @@ select {
 }
 select:focus { border-color: var(--acc); }
 input:focus { border-color: var(--acc); }
+/* light theme: hover and the selected choice as a yellow fill, as visible as the yellow frame on the dark theme
+   (owner 2026-11-07: a 1 px dark amber frame alone could not be seen on the paper) */
+:root[data-theme="light"] button:hover:not(:disabled) { background: #efd98f; border-color: #5c4400; color: #0b0b09; }
+:root[data-theme="light"] button.on, :root[data-theme="light"] .seg button.on { background: #e3bd45; border-color: #5c4400;
+  color: #0b0b09; }
+:root[data-theme="light"] button.pri:hover:not(:disabled) { background: #5c4400; color: #ffffff; }
+:root[data-theme="light"] select:focus, :root[data-theme="light"] input:focus { border-color: #5c4400;
+  box-shadow: 0 0 0 2px #e3bd45; }
+:root[data-theme="light"] nav button.on { border-bottom-width: 3px; }
 input:disabled { opacity: .3; }
 .seg { display: inline-flex; }
 .seg button { margin-left: -1px; padding: 3px 8px; font-size: 10px; color: var(--dim); }

@@ -2,7 +2,7 @@
 
 What each release brought, newest first. The release page of a version shows only its own paragraphs.
 
-New in 1.2.27: the light theme is easier to read: a dimmer background, near-black text, darker greys and the text one size larger. The theme now follows the computer's light or dark setting by default (System); Dark and Light stay selectable in SETTINGS, Appearance.
+New in 1.2.27: the light theme is easier to read: a dimmer background, near-black text, darker greys and the text one size larger. A button under the mouse and the selected choice (tab, option) show as a yellow fill, as visible as the yellow frame of the dark theme. The theme now follows the computer's light or dark setting by default (System); Dark and Light stay selectable in SETTINGS, Appearance.
 
 New in 1.2.26: a light theme (GitHub issue 26). SETTINGS has a new choice "Appearance": Dark (as before, the default), Light, or System, which follows the light or dark choice of the computer and changes with it while the program runs. The scope and trend graphs change colours with the page. The choice is kept in the program's settings file and "Reset all settings" returns it to Dark.
 
