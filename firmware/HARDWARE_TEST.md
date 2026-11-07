@@ -20,7 +20,7 @@ These checks confirm on hardware what the emulator cannot.
 - Alternatively over SWD to 0x08006000 (application area only).
 
 ## First boot
-1. Power on (batteries; a current-limited supply instead of the batteries is optional). The version (`F-1.11` for the
+1. Power on (batteries; a current-limited supply instead of the batteries is optional). The version (`F-1.16` for the
    fast build, `V-2.05` for the like-v2.05 build) shows on the sub display; the fast build shows nothing on the main display
    until the first reading (IMP-35). First reading within about 0.5 s.
 2. Every dial position: reading and annunciators plausible; DCV/Ohm against a reference source.
@@ -60,16 +60,16 @@ These checks confirm on hardware what the emulator cannot.
 9. Bluetooth frame rate (production build): transfer on (PEAK long), SETUP to the page bt (after bL), long SETUP, step to
    `bt  4`, `bt 10`, `bt 20` and save; check in the phone application (or a BLE logger) that readings arrive at the chosen
    rate and that the application still connects and decodes them. Dump the EEPROM after the save: only byte 0x015 may differ.
-10. Thermocouple type (production build): TEMP, SETUP to the page tc (after bt), select J, T, N, R or S and save; with such a probe
+10. Thermocouple type (production build): TEMP, SETUP to the page tc (after rEL), select J, T, N, R or S and save; with such a probe
    (or a thermocouple calibrator set to the type) compare readings at room temperature, in ice water (0 degC) and at a known
    hot point. Dump the EEPROM after the save: only byte 0x00F may differ.
-11. REL in percent (production build): SETUP to the page rEL (after bt), select `rEL-P` and save; DCV with a source at 1 V,
+11. REL in percent (production build): SETUP to the page rEL (after Ld, or after Fr with the two-part bootloader), select `rEL-P` and save; DCV with a source at 1 V,
    REL, then 1.1 V: 10.000 with the % sign and no V; REL off: volts again. Dump the EEPROM after the save: only byte 0x020
    may differ.
-12. Display level (production build): SETUP to the page dSP (last page), select `dSP 2` and save; a slowly changing
+12. Display level (production build): SETUP to the page dSP (after rEL, or after tc in TEMP), select `dSP 2` and save; a slowly changing
    source (or a small step) settles visibly faster; the reading is somewhat noisier. Dump the EEPROM after the save: only
    byte 0x013 may differ.
-13. 12-hour clock (production build): SETUP to the page CL (last page), select `CL 12` and save; the time page shows the
+13. 12-hour clock (production build): SETUP to the page CL (after dSP, or after bH, LP, Pt or HUnt in their functions), select `CL 12` and save; the time page shows the
    hour 1..12 (for example 14:30 as ` 2-30`); the clock keeps running correctly. Only byte 0x020 may differ.
 14. Statistics (production build): DCV, MIN/MAX on: page `n` counts the readings; SETUP to `Sd`: the standard deviation
    on the main digits (a steady source: a few counts; switching between two voltages: about half their difference);
@@ -111,9 +111,9 @@ These checks confirm on hardware what the emulator cannot.
    equals the file sent (compare the SHA-256). Then the usual update with HOLD + MEM at power-on and SETUP; the new version
    shows at power-on. Leave the page during a transfer: the sender reports no answer, the old `EEVBlog.bin` is unchanged.
 27. Format as exFAT (production build with the two-part bootloader, IMP-32; verified working on a meter 2026-11-04/05):
-   SETUP to `For`, long SETUP (`Fr no` blinks), REL for `Fr yE`, long SETUP: `Fr --` then `Fr oK`. Card in a computer: it is
+   SETUP to `Fr` (after `Ld`), long SETUP (`Fr no` blinks), REL for `Fr yE`, long SETUP: `Fr --` then `Fr oK`. Card in a computer: it is
    exFAT and empty. Log on the meter and save `cal.bin`: both files are on the card. Without the two-part bootloader the
-   page `For` is not shown.
+   page `Fr` is not shown.
 28. SD card reliability (production build, IMP-33, IMP-34; verified working on a meter 2026-11-04/05: 5 Bluetooth transfers
    to the card with 0 failed writes and 0 failed card start-ups in 220 start-ups): repeat the Bluetooth transfer of item 26
    and power the meter on with the card in several times. Every transfer ends with `Ld oK`; the card starts every time (no
@@ -125,9 +125,26 @@ These checks confirm on hardware what the emulator cannot.
 30. Capacitance anti-hunting (production build, IMP-45; not yet tried on a meter: no capacitor that hunts is at hand): CAP,
    SETUP page `HUnt` (after `dSP`): the sub display shows `HUnt`, the main display `oFF`; long SETUP (the sub display
    blinks), REL: `on`, long SETUP saves (only EEPROM 0x020 bit 4 changes). A ceramic capacitor of about 100 nF that makes
-   the range hunt (digits blank, decimal point moving, with `oFF`) must then stay on the 1 µF range after two timeouts
-   (about 6 s) and show its value; a different capacitor, open probes or a MODE or RANGE press end the lock. Capacitors
+   the range hunt (digits blank, decimal point moving, with `oFF`) must then stay on the 1 µF range after two range-1 timeouts
+   (two timeouts of 2.5 s each, plus the time of the range-2 measurements in between) and show its value; a different capacitor, open probes or a MODE or RANGE press end the lock. Capacitors
    that measure normally behave as before with `on` or `oFF`.
+31. CAP 100 nF range wait (production build, F-1.13, IMP-43; experimental; not measured on a meter yet): CAP in auto range
+   with a capacitor of about 100 nF whose reading does not arrive on the 100 nF range: the range changes to 1 µF about
+   2.5 s after the capacitor is connected, by stopwatch (v2.05: 2.0 s); a capacitor that gives its result on the 100 nF range
+   shows it with the 100 nF range's digits (for example `100.00` nF). The wait itself is checked in the emulator by
+   `emulator/scripts/test_cap_timeout.py` (reload of range 1 in auto range 250 ticks of 10 ms, manual range 300, range 2 200).
+   Report how long your capacitors take.
+32. Extended link diagnosis (production build, F-1.15, IMP-44; the counters answered with the frame F9 on a meter 2026-11-06:
+   verified working on a meter for the counters themselves): Bluetooth on, the Companion (1.2.15 or newer) connected, SETTINGS
+   "Extended diagnosis" on, then "Save report" on the METER view: the report holds the nine values (bytes received, overruns,
+   noise flags, framing errors, bytes discarded while the clock was not MSI, rejected frames, packets answered "CRC wrong",
+   answers not queued, battery in 0.01 V); the byte count grows when the Companion sends keys. Switch the meter off and on:
+   the counters are zero again (RAM only). With the setting off the Companion does not switch counting on and the report shows no counters. Dump the EEPROM before and after:
+   identical.
+33. Card clock (production build, F-1.12, IMP-41, OF-69, OF-70; verified working on a meter 2026-11-05: three formats of a
+   32 GB card of 16 s each without a failed block, 100 s of logging, the file downloaded over Bluetooth): format the card as
+   in item 27 and time it; log for a minute or more, then download the file over Bluetooth. No card error (`SdEnn`, `FrE n`,
+   `LdE 1`) and a complete file. Before F-1.12 a format of this card took 40 s at ClockDiv 4, or stopped on a transmit underrun.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

@@ -21,12 +21,17 @@ h2 { font-size: 21pt; font-weight: 600; margin: 10mm 0 4mm; padding-bottom: 2mm;
 h3 { font-size: 14.5pt; font-weight: 600; margin: 7mm 0 2.5mm; page-break-after: avoid; }
 h4 { font-size: 12pt; font-weight: 700; margin: 4.5mm 0 1.5mm; page-break-after: avoid; }
 p, li { orphans: 3; widows: 3; }
-.lead { font-size: 12.5pt; color: var(--dim); }
+.lead { font-size: 12.5pt; color: var(--dim); page-break-after: avoid; break-after: avoid; }
+p.keep { page-break-after: avoid; break-after: avoid; }   /* an introduction that belongs to the picture group or list after it */
+.where { page-break-after: avoid; break-after: avoid; }
+/* a list never leaves its last item alone at the top of the next page */
+li:last-child { page-break-before: avoid; break-before: avoid; }
 
-/* table of contents */
-ol.toc { list-style: none; padding: 0; margin: 0; column-count: 2; column-gap: 10mm; font-size: 10.5pt; }
-ol.toc li { margin: 0; padding: .5mm 0; break-inside: avoid; }
-ol.toc li.toc2 { font-weight: 600; margin-top: 2.5mm; font-size: 11pt; }
+/* table of contents: the whole list on one page, "What's new" starts on the next one */
+ol.toc { list-style: none; padding: 0; margin: 0; column-count: 2; column-gap: 10mm; font-size: 10pt; line-height: 1.35;
+         page-break-after: always; break-after: page; }
+ol.toc li { margin: 0; padding: .25mm 0; break-inside: avoid; }
+ol.toc li.toc2 { font-weight: 600; margin-top: 2mm; font-size: 10.5pt; }
 ol.toc li.toc3 { padding-left: 4mm; color: var(--dim); }
 ol.toc a { color: inherit; text-decoration: none; display: flex; align-items: baseline; }
 ol.toc a .t { flex: 0 1 auto; }
@@ -45,6 +50,9 @@ kbd.long::after { content: " long"; font-weight: 400; color: var(--dim); }
 /* figures */
 figure { margin: 3mm 0 4.5mm; page-break-inside: avoid; text-align: center; }
 figure img { max-width: 100%; }
+/* the display pictures (560 x 536 px) end in the top edge of the next key row: cut the last 12 px; the whole-panel
+   picture (dial_*) is not cropped */
+figure img:not([src*="dial_"]) { aspect-ratio: 560 / 528; object-fit: cover; object-position: top; }   /* display crops: the bottom key row ends at row 519 of 536, fragments of the next row start at about 529 */
 figure.small img { width: 60mm; }
 figure.panel img { width: 90mm; }
 figcaption { font-size: 9.5pt; color: var(--dim); margin-top: 1.5mm; }
@@ -62,16 +70,22 @@ figure.small img[src*="dial_"] { width: auto; max-height: 80mm; }   /* full fron
 .page-entry h4 { margin-top: 0; }
 
 /* a feature: text left, pictures right */
-.feat { display: flex; gap: 7mm; align-items: flex-start; page-break-inside: avoid; margin-bottom: 4mm; }
-.feat .txt { flex: 1; }
-.feat .pics { flex: 0 0 48mm; display: flex; flex-direction: column; gap: 2mm; }
+/* the text of a feature may run on to the next page; its picture column always stays whole */
+.feat { display: flex; gap: 7mm; align-items: flex-start; margin: 6mm 0 3mm; }
+.feat .txt > h3:first-child { margin-top: 0; }               /* the block's own margin is the space above it */
+.feat .txt { flex: 1; min-width: 0; }
+.feat .pics { flex: 0 0 42mm; display: flex; flex-direction: column; gap: 1mm; page-break-inside: avoid; break-inside: avoid; }
 .feat .pics figure { margin: 0; }
-.feat .pics img { width: 48mm; }
+.feat .pics img { width: 42mm; }
+.feat .pics.narrow { flex-basis: 36mm; }
+.feat .pics.narrow img { width: 36mm; }   /* the tall whole-panel picture beside the dial table */
 .where { font-size: 10pt; color: var(--dim); margin: 0 0 2mm; }
 .where b { color: var(--ink); }
-.grid3 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm 5mm; margin: 2mm 0 4mm; }
-.grid3 figure { margin: 0; }
-.grid3 img { width: 100%; }
+/* a group of pictures: always on one page, rows centred (an incomplete last row too) */
+.grid3 { display: flex; flex-wrap: wrap; justify-content: center; gap: 3mm 5mm; margin: 2mm 0 4mm;
+         page-break-inside: avoid; break-inside: avoid; }
+.grid3 figure { margin: 0; flex: 0 0 44mm; }
+.grid3 img { width: 44mm; }
 table.feats td:first-child { font-weight: 600; white-space: nowrap; }
 
 /* steps */
@@ -82,7 +96,12 @@ ol.steps > li { margin: 1.5mm 0; }
 table { border-collapse: collapse; width: 100%; margin: 2.5mm 0 4.5mm; font-size: 10.5pt; page-break-inside: auto; }
 th { text-align: left; font-weight: 600; border-bottom: 1.5px solid var(--ink); padding: 1.5mm 2mm; }
 td { border-bottom: 1px solid var(--rule); padding: 1.5mm 2mm; vertical-align: top; }
+thead { display: table-header-group; }                     /* the header row is repeated on the next page */
 tr { page-break-inside: avoid; }
+table.compact th, table.compact td { padding-top: .9mm; padding-bottom: .9mm; }   /* long reference tables: tighter rows, same type size */
+/* a table never starts with its header row alone at the foot of a page: header row and first data row stay together */
+thead tr, tbody tr:first-child { page-break-after: avoid; break-after: avoid; }
+tbody tr:last-child { page-break-before: avoid; break-before: avoid; }   /* and never a single last row alone on the next page */
 
 /* callouts */
 .note, .tip, .warning { border-left: 3px solid var(--accent); background: var(--soft); padding: 2.5mm 3.5mm; margin: 3.5mm 0;
@@ -92,3 +111,13 @@ tr { page-break-inside: avoid; }
                         font-size: 9.5pt; margin-right: 1.5mm; }
 .warning b:first-child { color: var(--warn); }
 h2.cont { page-break-before: auto; margin-top: 10mm; }  /* (all chapters may continue on the page before now) */
+/* a tall picture beside flowing text (the text and its table may continue on the next page) */
+figure.side { float: right; width: 30mm; margin: 0 0 2mm 6mm; }
+figure.side img { width: 30mm; }
+h2, h3 { clear: both; }   /* a heading starts below a floating picture */
+/* a long two-column reference table shown as two halves side by side */
+.tables2 { display: flex; gap: 6mm; align-items: flex-start; page-break-inside: avoid; }
+.tables2 table { flex: 1; margin-top: 0; }
+/* a note right after a table stays with it; short closing paragraphs are not split */
+table + .note { page-break-before: avoid; break-before: avoid; }
+p.keep { page-break-inside: avoid; break-inside: avoid; }

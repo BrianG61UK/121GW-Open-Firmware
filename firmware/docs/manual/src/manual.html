@@ -20,28 +20,33 @@
 <p class="lead">The open firmware keeps everything you know from the original 121GW and adds a lot. Here is what you
 get. Click a page number to jump there.</p>
 <table class="feats">
+<thead>
 <tr><th>Feature</th><th>What it does for you</th><th></th></tr>
+</thead>
+<tbody>
 <tr><td>Pass / fail testing</td><td>Sort parts as PASS, too high or too low, with a beep</td><td><a class="pg" href="#f-limit"></a></td></tr>
 <tr><td>REL in percent</td><td>See how far a part is from a reference, in %</td><td><a class="pg" href="#f-relpct"></a></td></tr>
-<tr><td>Statistics</td><td>Number of readings, how much the reading wobbles, and when the max and min happened</td><td><a class="pg" href="#f-stats"></a></td></tr>
+<tr><td>Statistics</td><td>Count, standard deviation, time of the max and min</td><td><a class="pg" href="#f-stats"></a></td></tr>
 <tr><td>dBm with your reference</td><td>Audio levels for 600 Ω, 50 Ω, 75 Ω or dBV</td><td><a class="pg" href="#f-dbm"></a></td></tr>
 <tr><td>Six thermocouple types</td><td>K, J, T, N, R and S</td><td><a class="pg" href="#f-tc"></a></td></tr>
 <tr><td>PT100 / PT1000</td><td>Read a platinum sensor directly as a temperature</td><td><a class="pg" href="#f-pt"></a></td></tr>
 <tr><td>4–20 mA loop</td><td>See a loop current as 0–100 %</td><td><a class="pg" href="#f-loop"></a></td></tr>
 <tr><td>Better continuity</td><td>Beep below or above 1–300 Ω, adjustable beep hold</td><td><a class="pg" href="#f-beep"></a></td></tr>
 <tr><td>Faster digits</td><td>Choose calm or quick-reacting digits</td><td><a class="pg" href="#f-dsp"></a></td></tr>
-<tr><td>Steady capacitance range</td><td>Stops the range from hunting with some 100 nF ceramic capacitors</td><td><a class="pg" href="#f-hunt"></a></td></tr>
+<tr><td>Steady capacitance range</td><td>Stops the range hunting with some 100 nF capacitors</td><td><a class="pg" href="#f-hunt"></a></td></tr>
 <tr><td>Backlight timer</td><td>The light switches off by itself to save the batteries</td><td><a class="pg" href="#f-bl"></a></td></tr>
 <tr><td>Faster Bluetooth</td><td>Up to 20 readings per second to your phone or computer</td><td><a class="pg" href="#f-bt"></a></td></tr>
 <tr><td>12-hour clock</td><td>Time shown as 1–12</td><td><a class="pg" href="#f-cl"></a></td></tr>
-<tr><td>Smart logging</td><td>Log only when the value changes or the pass/fail result changes</td><td><a class="pg" href="#f-trig"></a></td></tr>
+<tr><td>Smart logging</td><td>Log only on a change or a pass/fail change</td><td><a class="pg" href="#f-trig"></a></td></tr>
 <tr><td>Battery check</td><td>Correct battery voltage reading, adjustable</td><td><a class="pg" href="#f-bat"></a></td></tr>
 <tr><td>Quiet mode that is really quiet</td><td>Buzzer off silences key and info beeps</td><td><a class="pg" href="#f-quiet"></a></td></tr>
 <tr><td>Faster measuring</td><td>Quicker display updates</td><td><a class="pg" href="#f-fast"></a></td></tr>
 <tr><td>Big SD cards</td><td>exFAT cards, long file names, format on the meter</td><td><a class="pg" href="#f-card"></a></td></tr>
 <tr><td>Bluetooth file transfer</td><td>Firmware, log files and settings over Bluetooth</td><td><a class="pg" href="#f-transfer"></a></td></tr>
 <tr><td>Protected calibration backup</td><td>A backup can only go back into its own meter</td><td><a class="pg" href="#f-backup"></a></td></tr>
-<tr><td>Companion app</td><td>Live view, graphs, recording, updates, card files, settings</td><td><a class="pg" href="#app"></a></td></tr>
+<tr><td>Link diagnosis</td><td>Error counts of the Bluetooth link, for problem reports</td><td><a class="pg" href="#f-xdiag"></a></td></tr>
+<tr><td>Companion app</td><td>Live view, scope, recording, updates, card files, settings</td><td><a class="pg" href="#app"></a></td></tr>
+</tbody>
 </table>
 <div class="note"><b>Note</b>Your calibration, serial number and settings stay in the meter when you install this
 firmware. If you ever go back to the original firmware, they are still there.</div>
@@ -68,13 +73,14 @@ leads and accessories rated at least as high as the meter.</div>
 
 <!-- ============================================================ -->
 <h2 id="meter">Your meter</h2>
-<div class="feat">
-<div class="txt">
 <h3>The dial</h3>
 <p>The dial switches the meter on and chooses what you measure. Both ends are <b>OFF</b>. Press <kbd>MODE</kbd> to switch
 between the functions of a position. Each position remembers your last choice, also after switching off.</p>
-<table>
+<table class="compact">
+<thead>
 <tr><th>Position</th><th>Functions (MODE)</th></tr>
+</thead>
+<tbody>
 <tr><td>Low Z</td><td>Voltage with low input resistance</td></tr>
 <tr><td>V</td><td>DC → AC → AC+DC volts</td></tr>
 <tr><td>mV / Temp</td><td>DC mV → AC mV → temperature</td></tr>
@@ -83,16 +89,17 @@ between the functions of a position. Each position remembers your last choice, a
 <tr><td>mVA / VA</td><td>power (volts × amps)</td></tr>
 <tr><td>µA / µVA</td><td>small currents (µA) and small power (µVA)</td></tr>
 <tr><td>A / mA</td><td>AC ↔ DC current (the socket you use picks mA or A)</td></tr>
+</tbody>
 </table>
-</div>
-<div class="pics"><figure><img src="../img/dial_DCV.png" alt=""><figcaption>The front of the meter.</figcaption></figure></div>
-</div>
 
 <h3>The keys</h3>
 <p>Each key does one thing when you <b>press</b> it and often another when you <b>hold</b> it for half a second.
 One beep = done. Two short beeps = not possible right now.</p>
 <table>
+<thead>
 <tr><th>Key</th><th>Press</th><th>Hold</th></tr>
+</thead>
+<tbody>
 <tr><td><kbd>MODE</kbd></td><td>Next function of the dial position</td><td>Backlight on / off</td></tr>
 <tr><td><kbd>RANGE</kbd></td><td>Fix the range; press again for the next range. Diode: 3 V / 15 V</td><td>Back to auto-range</td></tr>
 <tr><td><kbd>HOLD</kbd></td><td>Freeze the reading → auto-hold → off</td><td>–</td></tr>
@@ -101,6 +108,7 @@ One beep = done. Two short beeps = not possible right now.</p>
 <tr><td><kbd>MIN/MAX</kbd></td><td>Start; then show max → min → average → all</td><td>Stop MIN/MAX</td></tr>
 <tr><td><kbd>MEM</kbd></td><td>Show the last logged readings</td><td>Start / stop logging to the SD card</td></tr>
 <tr><td><kbd>SETUP</kbd></td><td>Next page of the settings (small display)</td><td>Change the page shown; hold again to save</td></tr>
+</tbody>
 </table>
 
 <h3>The display</h3>
@@ -131,12 +139,12 @@ key to keep it on). It never switches off while logging or during MIN/MAX. You c
 </ol>
 </div>
 <div class="pics"><figure><img src="../img/special_version.png" alt=""><figcaption>The version at power-on.</figcaption></figure>
-<figure><img src="../img/d_DCV.png" alt=""><figcaption>Measuring DC volts.</figcaption></figure></div>
+<figure><img src="../img/d_DCV.png" alt=""><figcaption>Measuring DC volts.</figcaption></figure><figure><img src="../img/dial_DCV.png" alt=""><figcaption>The front of the meter.</figcaption></figure></div>
 </div>
 
 <!-- ============================================================ -->
 <h2 id="measure">Measuring</h2>
-<p>Always: dial first, then <kbd>MODE</kbd> for the function, then connect the leads.</p>
+<p class="keep">Always: dial first, then <kbd>MODE</kbd> for the function, then connect the leads.</p>
 <div class="grid3">
 <figure><img src="../img/d_ACV.png" alt=""><figcaption>AC volts, frequency on top</figcaption></figure>
 <figure><img src="../img/d_LowZ.png" alt=""><figcaption>Low Z</figcaption></figure>
@@ -160,17 +168,22 @@ chooses AC or DC itself (dashes while it decides). Not for voltages below about 
 <li><b>Continuity</b>: beeps below 30 Ω (you can change it <a class="pg" href="#f-beep"></a>).</li>
 <li><b>Diode</b>: shows the forward voltage. <kbd>RANGE</kbd> switches the test voltage between 3 V and 15 V.
 It goes back to 3 V after a mode change. Use 15 V only on parts that are off and discharged.</li>
-<li><b>Capacitance</b> up to 10 000 µF. Discharge first; <kbd>REL</kbd> subtracts the leads.</li>
+<li><b>Capacitance</b> up to 10 000 µF. Discharge first; <kbd>REL</kbd> subtracts the leads. On the 100 nF range in
+auto range the meter waits up to <b>2.5 seconds</b> for a result before it goes on to the 1 µF range (the original
+firmware waits 2 seconds; 1.5 seconds on a meter with the board strap PF8 set), so a slow ceramic capacitor of about 100 nF
+can show its value with the full resolution. This is <b>experimental</b>: how long such a capacitor really takes
+is not measured yet. A capacitor that still keeps the range changing: <a class="pg" href="#f-hunt"></a></li>
 </ul>
 <h3>Current</h3>
 <p>Put the red lead in <b>µA/mA</b> (small currents) or <b>A</b> (up to 10 A) first. On <b>A / mA</b> the meter sees
 which socket you use. <kbd>MODE</kbd> switches AC and DC.</p>
 <p><b>Burden voltage</b> (the voltage the meter itself drops): on the small display page <span class="lcd">bdOFF</span>
-switch it to <span class="lcd">bdOn</span> and connect a lead from the current socket you use to V Ω. This choice is
-forgotten when you switch off.</p>
+switch it to <span class="lcd">bdOn</span> and connect a lead from the current socket you use to V Ω. In the current
+functions this choice is forgotten when you switch off.</p>
 <h3>Power (VA)</h3>
 <p>Measures voltage (V Ω socket) and current (mA or A socket) at the same time and shows the power, volts × amps. The
-small display shows the voltage or the current. Dashes until the first result.</p>
+small display shows the voltage or the current. Dashes until the first result. The burden page
+<span class="lcd">bd</span> is here too; in the power functions its setting is <b>saved</b> and stays after switching off.</p>
 <h3>Ranges and OFL</h3>
 <p><kbd>RANGE</kbd> fixes the range, each press goes one range up; hold it to go back to AUTO.
 <span class="lcd">OFL</span> means the input is too big for the range.</p>
@@ -284,12 +297,16 @@ you come back after an hour and want to know when the voltage dropped.</li>
 <p>Choose the type printed on your thermocouple. A wrong type gives a wrong temperature (a J sensor at 100 °C reads
 about 122 °C on the K setting).</p>
 <table>
+<thead>
 <tr><th>Type</th><th>Range</th></tr>
+</thead>
+<tbody>
 <tr><td>K (default)</td><td>−200 to 1350 °C</td></tr>
 <tr><td>J</td><td>−200 to 936 °C</td></tr>
 <tr><td>T</td><td>−200 to 400 °C</td></tr>
 <tr><td>N</td><td>−200 to 1300 °C</td></tr>
 <tr><td>R, S</td><td>−50 to 1760 °C</td></tr>
+</tbody>
 </table>
 <p>Outside the range the meter shows <span class="lcd">OFL</span>.</p>
 </div><div class="pics"><figure><img src="../img/setup_TEMP_23_Tc_K.png" alt=""><figcaption>Type K selected.</figcaption></figure></div></div>
@@ -344,7 +361,7 @@ dSP is hardly visible. Hz, ms and % are not affected.</p>
 digits stay blank and only the decimal point moves. The page <span class="lcd">HUnt</span> has two values, shown on the main
 display: <span class="lcd">oFF</span> (the default, as the original) and <span class="lcd">on</span>. With <span class="lcd">on</span>
 the meter stays on the 1 µF range after the 100 nF range has given no result twice in a row, and shows the value
-(about 0.095 µF for a 95 nF capacitor, one digit less than the 100 nF range would show). It goes back to normal ranging when you connect
+(about 0.095 µF for a 95 nF capacitor, one digit less than the 100 nF range would show). It goes back to normal ranging when a result arrives on the 100 nF range, when you connect
 a different capacitor, with open probes, when you change the range by hand, press REL or change the function, and when you
 switch the meter off. Leave it <span class="lcd">oFF</span> if your capacitors measure normally. It does nothing in the other
 functions.</p>
@@ -409,7 +426,7 @@ continuity beep and the safety warnings (wrong socket, high voltage) still sound
 <h3>Big SD cards and formatting</h3>
 <p>The meter reads and writes cards formatted as FAT32 (usual for cards up to 32 GB) and <b>exFAT</b> (usual for
 larger cards), with long file names. With the two-part
-bootloader (<a class="pg" href="#update"></a>) you can also <b>format the card on the meter</b> (it becomes exFAT):</p>
+bootloader (<a class="pg" href="#two-part"></a>) you can also <b>format the card on the meter</b> (it becomes exFAT):</p>
 <ol class="steps">
 <li>Settings page <span class="lcd">Fr no</span> (after <span class="lcd">Ld-bt</span>).</li>
 <li>Hold SETUP, REL for <span class="lcd">Fr yE</span>, hold SETUP. <b>Everything on the card is erased.</b></li>
@@ -433,6 +450,21 @@ takes about 2½ minutes.</p>
 </div><div class="pics">
 <figure><img src="../img/ld_bt.png" alt=""><figcaption>Ready for the app.</figcaption></figure>
 <figure><img src="../img/ld_ok.png" alt=""><figcaption>Transfer done.</figcaption></figure>
+</div></div>
+
+<div class="feat" id="f-xdiag"><div class="txt">
+<h3>Extended link diagnosis</h3>
+<p class="where"><b>Where:</b> Companion app, SETTINGS view · firmware F-1.15 or newer</p>
+<p>For a problem report about damaged data on the Bluetooth link. When it is on, the meter counts what happens on its
+Bluetooth serial line: bytes received, bytes lost, noise, framing errors, rejected commands and answers it could not
+send. The numbers show whether the damage happens in the meter, on the radio or in the computer.</p>
+<ol class="steps">
+<li>In the Companion, open the SETTINGS view (key <kbd>6</kbd>) and switch <b>Extended diagnosis</b> on. It is <b>off by default</b>.</li>
+<li>Use the meter as usual; the Companion tells the meter to count when it connects.</li>
+<li>On the METER view click <b>Save report</b>: the counts are in the report file.</li>
+</ol>
+<p>The counters live only in the meter's RAM: they start at zero each time counting is switched on, are lost when you
+switch the meter off and are never stored. Counting changes nothing else on the link.</p>
 </div></div>
 
 <h3 id="f-backup">Protected calibration backup</h3>
@@ -459,7 +491,10 @@ stay after switching off. A page left blinking for about two minutes goes back t
 menu is locked while logging and while you look at stored readings.</p>
 <h3>All pages, in order</h3>
 <table>
+<thead>
 <tr><th>Page</th><th>What it sets</th><th>Where</th><th></th></tr>
+</thead>
+<tbody>
 <tr><td><span class="lcd">25.0c</span></td><td>Temperature inside the meter; °C (<span class="lcd">c</span>) or °F (<span class="lcd">F</span>)</td><td>all</td><td></td></tr>
 <tr><td><span class="lcd">BAT5.0</span></td><td>Battery voltage, trim</td><td>all</td><td><a class="pg" href="#f-bat"></a></td></tr>
 <tr><td><span class="lcd">APOoN</span></td><td>Auto power-off on / off</td><td>all</td><td></td></tr>
@@ -485,6 +520,7 @@ menu is locked while logging and while you look at stored readings.</p>
 <tr><td><span class="lcd">PASS</span></td><td>Pass / fail result</td><td>while the test is on</td><td><a class="pg" href="#f-limit"></a></td></tr>
 <tr><td><span class="lcd">tr-In</span>, <span class="lcd">Ch</span></td><td>Logging trigger and change amount (Ch only with tr-Ch)</td><td>all</td><td><a class="pg" href="#f-trig"></a></td></tr>
 <tr><td><span class="lcd">n</span>, <span class="lcd">Sd</span>, <span class="lcd">tHI</span>, <span class="lcd">tLo</span></td><td>Statistics</td><td>during MIN/MAX</td><td><a class="pg" href="#f-stats"></a></td></tr>
+</tbody>
 </table>
 <div class="grid3">
 <figure><img src="../img/setup_02_AP0_oN.png" alt=""><figcaption>Auto power-off</figcaption></figure>
@@ -529,13 +565,29 @@ its readings. Only one device at a time: close the phone app before using the co
 <p>The <b>121GW Companion</b> is an app for Windows, macOS and Linux (download it from the project's releases page; free
 for individuals, schools and non-profits). It can:</p>
 <ul>
-<li>show the meter live with a graph and statistics, and record to your computer;</li>
-<li>press the meter's keys from the computer;</li>
-<li>set the meter's clock from the internet;</li>
-<li>update the firmware and the bootloader;</li>
-<li>with the meter on page <span class="lcd">Ld-bt</span>: list, download and delete card files, copy new log files to a
-folder, and change most settings (not the logging interval, the serial number or the calibration).</li>
+<li>show the meter live (<b>LIVE</b> view) with statistics, and press the meter's keys from the computer;</li>
+<li>draw the readings of the last minutes on a scope grid (<b>SCOPE</b> view): choose the time span and the vertical
+scale, freeze the picture, and read time, voltage and frequency differences between two cursors;</li>
+<li>record to your computer (<b>LOG</b> view): start and stop a recording, see the recordings in the computer's folder,
+and save the trend as a CSV file;</li>
+<li>list, download and delete the card files, copy new log files to a folder, and format the card (<b>CARD</b>
+view);</li>
+<li>show the meter's versions, set its clock from a time server, update the firmware and the bootloader, and change
+the meter's settings (<b>METER</b> view), with the meter on page <span class="lcd">Ld-bt</span>. Not the logging
+interval, the serial number or the calibration. The capacitance page <span class="lcd">HUnt</span> is among them (firmware
+F-1.16 or newer);</li>
+<li>keep the program's own settings (<b>SETTINGS</b> view, key <kbd>6</kbd>): the folders for recordings and for the card
+copy, the CSV format (decimal point with comma-separated values, or decimal comma with semicolons), the time server and
+whether the meter's clock is set after each connection, how often to look for new firmware (at each connection,
+daily or never), diagnostic logging, the extended diagnosis <a class="pg" href="#f-xdiag"></a>, and a reset of all
+these settings.</li>
 </ul>
+<p>The keys <kbd>1</kbd> to <kbd>6</kbd> on the computer switch between the six views.</p>
+<p>After a transfer (an update or a card file) the Companion shows one line about it: how many packets in how many
+seconds, how many were sent again, missing answers, damaged packets, and the slowest answer. It stays on the METER view as
+"last transfer". If something does not work, click <b>Save report</b> on the METER view: it writes one text file with
+versions, link details, the last transfer and the settings, anonymised, to attach to a problem report on
+GitHub.</p>
 </div><div class="pics"><figure><img src="../img/func_bluetooth.png" alt=""><figcaption>Bluetooth on (BT).</figcaption></figure></div></div>
 
 <!-- ============================================================ -->
@@ -543,7 +595,7 @@ folder, and change most settings (not the logging interval, the serial number or
 <p class="lead">Your meter's calibration, serial number and settings live inside the meter. Keep a backup on the SD card
 and on your computer, in case something ever goes wrong.</p>
 <div class="feat"><div class="txt">
-<h3>Make a backup</h3>
+<h3 id="make-backup">Make a backup</h3>
 <ol class="steps">
 <li>Card in, dial to OFF.</li>
 <li>Hold <kbd>MEM</kbd> and switch on. Let go. You see <span class="lcd">SdCAL</span>.</li>
@@ -567,12 +619,16 @@ file.</div>
 backup right after.</p>
 <h3>Keys while switching on</h3>
 <table>
+<thead>
 <tr><th>Hold while switching on</th><th>What happens</th></tr>
+</thead>
+<tbody>
 <tr><td><kbd>MEM</kbd></td><td>Backup / restore menu (above)</td></tr>
 <tr><td><kbd>MEM</kbd> + <kbd>HOLD</kbd></td><td>Firmware update from the card <a class="pg" href="#update"></a></td></tr>
 <tr><td><kbd>RANGE</kbd></td><td>All segments on (display test)</td></tr>
 <tr><td><kbd>MODE</kbd></td><td><span class="lcd">CAL1</span>: switch off again. Pressing further keys would start
 calibration mode, which can ruin the calibration.</td></tr>
+</tbody>
 </table>
 
 <!-- ============================================================ -->
@@ -601,15 +657,18 @@ the old firmware first, so an interrupted update leaves the meter without firmwa
 <span class="lcd">douun</span>, then <span class="lcd">Good</span>; <span class="lcd">FAIL</span> = file refused, nothing
 changed.</li>
 </ol>
-<h3>The two-part bootloader</h3>
-<p>An optional replacement for EEVblog's bootloader. With it, updates go over Bluetooth without card or keys, exFAT cards
+<h3 id="two-part">The two-part bootloader</h3>
+<p class="keep">An optional replacement for EEVblog's bootloader. With it, updates go over Bluetooth without card or keys, exFAT cards
 work, and you can format the card on the meter. It never touches your calibration. The Companion app installs it once
 (fresh batteries needed, at least 4.8 V). More in the bootloader guide on the project page.</p>
 
 <!-- ============================================================ -->
 <h2 id="messages">Messages</h2>
 <table>
+<thead>
 <tr><th>Display</th><th>Meaning</th><th>What to do</th></tr>
+</thead>
+<tbody>
 <tr><td><span class="lcd">OFL</span></td><td>Input too big for the range or the sensor</td><td>Higher range or smaller input</td></tr>
 <tr><td><span class="lcd">LEAd</span> + beeping</td><td>A lead is in a current socket, the dial is on something else</td><td>Move the lead to V Ω, or turn the dial to current</td></tr>
 <tr><td><span class="lcd">-----</span></td><td>No value yet</td><td>Wait or measure</td></tr>
@@ -617,7 +676,7 @@ work, and you can format the card on the meter. It never touches your calibratio
 <tr><td><span class="lcd">LoBAt</span></td><td>Batteries too low for logging</td><td>New batteries</td></tr>
 <tr><td><span class="lcd">SdEnd</span></td><td>The log file is full</td><td>Start a new recording</td></tr>
 <tr><td><span class="lcd">SdE03</span> etc.</td><td>SD card problem while logging</td><td>Check the card, its space and that it sits right</td></tr>
-<tr><td><span class="lcd">SdCAL</span>, <span class="lcd">SdSAv</span>, <span class="lcd">SdSEt</span></td><td>Backup menu</td><td><a class="pg" href="#backup"></a></td></tr>
+<tr><td><span class="lcd">SdCAL</span>, <span class="lcd">SdSAv</span>, <span class="lcd">SdSEt</span></td><td>Backup menu</td><td><a class="pg" href="#make-backup"></a></td></tr>
 <tr><td><span class="lcd">SAvEd</span></td><td>Backup / restore done</td><td>Switch off</td></tr>
 <tr><td><span class="lcd">-Err-</span></td><td>Backup / restore failed (no card, wrong file, other meter's file)</td><td>Check card and file</td></tr>
 <tr><td><span class="lcd">Ld 42</span>, <span class="lcd">Ld oK</span></td><td>Bluetooth transfer running / done</td><td>–</td></tr>
@@ -628,12 +687,16 @@ work, and you can format the card on the meter. It never touches your calibratio
 <tr><td><span class="lcd">-IAP-</span></td><td>Update mode (two-part bootloader)</td><td>Send the firmware, or use a card</td></tr>
 <tr><td><span class="lcd">douun</span>, <span class="lcd">Good</span>, <span class="lcd">FAIL</span></td><td>Card update running / done / file refused</td><td>FAIL: check EEVBlog.bin</td></tr>
 <tr><td><span class="lcd">CAL1</span>, <span class="lcd">CAL</span></td><td>Calibration menu / mode</td><td>Switch off</td></tr>
+</tbody>
 </table>
 
 <!-- ============================================================ -->
 <h2 class="cont" id="trouble">Troubleshooting</h2>
-<table>
+<table class="compact">
+<thead>
 <tr><th>Problem</th><th>Solution</th></tr>
+</thead>
+<tbody>
 <tr><td>A key does nothing, two short beeps</td><td>Not possible right now, e.g. during logging. Stop logging first.</td></tr>
 <tr><td>No <span class="lcd">SdCAL</span>, or MODE does nothing after <span class="lcd">SdSAv</span></td><td>Hold MEM while switching on, then press each next key within 5 seconds.</td></tr>
 <tr><td>Bluetooth won't connect</td><td>Hold PEAK until BT shows. Close the phone app: only one device at a time.</td></tr>
@@ -644,12 +707,18 @@ work, and you can format the card on the meter. It never touches your calibratio
 <tr><td>Card update does nothing (EEVblog's bootloader)</td><td>Card must be FAT32, file EEVBlog.bin in the top folder.</td></tr>
 <tr><td><span class="lcd">-IAP-</span> stays after an interrupted update</td><td>Send the firmware again with the app or use a card.</td></tr>
 <tr><td>Display blank after a bootloader update</td><td>Take the batteries out and put them back.</td></tr>
+</tbody>
 </table>
 
 <!-- ============================================================ -->
 <h2 class="cont" id="ranges">Measuring ranges</h2>
-<table>
+<p>The accuracy of each range is in EEVblog's original 121GW manual; the firmware doesn't change the hardware.</p>
+<div class="tables2">
+<table class="compact">
+<thead>
 <tr><th>Function</th><th>Ranges</th></tr>
+</thead>
+<tbody>
 <tr><td>DC and AC volts</td><td>5 V, 50 V, 500 V, 600 V</td></tr>
 <tr><td>DC and AC millivolts</td><td>50 mV, 500 mV</td></tr>
 <tr><td>Low Z</td><td>600 V</td></tr>
@@ -657,11 +726,19 @@ work, and you can format the card on the meter. It never touches your calibratio
 <tr><td>Continuity</td><td>beep threshold 1–300 Ω</td></tr>
 <tr><td>Diode</td><td>3 V or 15 V test voltage</td></tr>
 <tr><td>Capacitance</td><td>10 nF to 10 000 µF</td></tr>
+</tbody>
+</table>
+<table class="compact">
+<thead>
+<tr><th>Function</th><th>Ranges</th></tr>
+</thead>
+<tbody>
 <tr><td>Frequency</td><td>99.999 Hz to 999.99 kHz</td></tr>
 <tr><td>Pulse width</td><td>9.9999 ms, 99.999 ms, 999.99 ms</td></tr>
 <tr><td>Duty cycle</td><td>to 99 %</td></tr>
 <tr><td>DC and AC current</td><td>50 µA to 10 A</td></tr>
 <tr><td>Power</td><td>250.00 µVA to 500.00 VA (50 V × 10 A)</td></tr>
 <tr><td>Temperature</td><td>Type K −200 to 1350 °C, other types <a class="pg" href="#f-tc"></a></td></tr>
+</tbody>
 </table>
-<p>The accuracy of each range is in EEVblog's original 121GW manual; the firmware doesn't change the hardware.</p>
+</div>

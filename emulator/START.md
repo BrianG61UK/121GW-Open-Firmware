@@ -52,8 +52,9 @@ The emulator window opens. From now on a double-click on **121GW Emulator** is e
 
    ![Run anyway](docs/start/09-win-smartscreen-2.svg)
 
-3. The installer: tick **I accept the agreement**, **Next**, leave **Create a desktop icon** ticked, **Next**,
-   **Install**, **Finish**. No administrator password is needed.
+3. The installer asks for administrator rights (it installs into Program Files for all users of the computer): click
+   **Yes**; on an account without administrator rights Windows asks for an administrator's password. Then tick
+   **I accept the agreement**, **Next**, leave **Create a desktop icon** ticked, **Next**, **Install**, **Finish**.
 
    ![installer](docs/start/10-win-installer.svg)
 

@@ -2,7 +2,7 @@
 
 Everything on this page is in the **fast build** (`2_fast/EEVBlog.bin`). The `1_like_v2.05` build behaves like the
 original firmware apart from the defect fixes and has none of these features. At power-on the fast build shows its
-version, `F-1.11` (the release number, v1.1.1), on the small display; the main display stays blank until the first
+version, `F-1.16` (the release number, v1.1.6), on the small display; the main display stays blank until the first
 reading. The `1_like_v2.05` build shows `V-2.05` like the original.
 
 All settings are stored in bytes of the data EEPROM that the original firmware never uses. Calibration, serial number
@@ -23,7 +23,7 @@ setting is kept over a power-off.
 
 The new pages come after the original SETUP pages, in this order:
 
-`bL` (backlight) → `bt` (Bluetooth speed) → `Ld` (firmware over Bluetooth) → `For` (format the card as exFAT, only with the new bootloader) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) → `dSP` (display
+`bL` (backlight) → `bt` (Bluetooth speed) → `Ld` (firmware over Bluetooth) → `Fr` (format the card as exFAT, only with the new bootloader) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) → `dSP` (display
 level) → `bH` (continuity hold, BEEP only) → `LP` (4–20 mA view, DC mA only) → `Pt` (PT100 / PT1000 view, Ω only) → `HUnt` (capacitance anti-hunting, CAP only) → `CL` (12 / 24-hour clock) → `Lt`, `Lo`, `HI` (limit test; the verdict page
 while the test is on) → `tr`, `Ch` (logging trigger) → back to the first page (while MIN/MAX is on, the statistics pages
 `n` and `Sd` and the time pages `tHI` and `tLo` come before it)
@@ -95,7 +95,7 @@ setting (meter at 25 °C). Set `tc` to the probe you plug in.
 
 ## Display level
 
-- **Where:** page `dSP`, the last of the new pages: `dSP 1` (default, as the original) or `dSP 2`.
+- **Where:** page `dSP`: `dSP 1` (default, as the original) or `dSP 2`.
 - **What it does:** the meter averages its last few readings before showing them, so the last digit stays steady; a big
   change still shows immediately. With `dSP 2` that averaging is four times shorter, so small changes and slow drifts
   appear about four times sooner (in AC volts a small step: 0.24 s instead of 0.96 s). How often the digits update does
@@ -172,12 +172,27 @@ With the meter on the SETUP page `Ld-bt` (Bluetooth on, logging off, not in cali
   changed files into a folder on the computer ("sync");
 - **read and change the settings** of the SETUP pages: thermocouple type, temperature unit, dBm reference, display level,
   continuity threshold and hold, Bluetooth speed, auto power-off, backlight auto-off, contrast, VA burden, buzzer, REL
-  view, logging trigger and change threshold, 12-hour clock, current-loop and RTD views, battery trim.  A change is
+  view, logging trigger and change threshold, 12-hour clock, current-loop and RTD views, the capacitance anti-hunting
+  (`HUnt`, F-1.16 or newer), battery trim.  A change is
   stored exactly as the page itself stores it; calibration, serial number and the rotary memory cannot be reached.  The
   logging interval is set on the meter only.
 
 Nothing is written to the card except the deletes you confirm.  While the companion uses the card the readings pause
 (the page `Ld` owns the link).
+
+## Extended link diagnosis (F-1.15 or newer)
+
+- **What it is for:** a problem report about damaged data on the Bluetooth link. With it the meter counts what happens on
+  its Bluetooth serial line (USART2): bytes received, bytes lost (overruns), noise flags, framing errors, bytes discarded
+  during a card session, key and set-clock frames rejected, page `Ld` packets answered "CRC wrong" and answers it could not
+  queue for lack of room, plus the battery voltage. The numbers show whether damage arises in the meter, on the radio or in
+  the computer.
+- **How:** in the 121GW Companion's SETTINGS view switch **Extended diagnosis** on (it is **off by default**). The Companion
+  then tells the meter to count each time it connects; **Save report** on the METER view puts the counts into the
+  report file to attach to a GitHub issue.
+- **On the meter:** the counting is a RAM flag that is 0 at every reset; it is never written to the EEPROM or the flash, the
+  counters start at 0 when counting is switched on, and counting changes nothing else on the link. Older firmware ignores
+  the request.
 
 ## Two-part bootloader (with the 121GW Companion)
 
@@ -198,7 +213,7 @@ The card update (HOLD + MEM at power-on, SETUP) keeps working with the two-part 
 
 ## Format the SD card (exFAT)
 
-- **Where:** SETUP page `For`, right after `Ld-bt`.  It appears only when the meter has the new two-part bootloader
+- **Where:** SETUP page `Fr`, right after `Ld-bt`.  It appears only when the meter has the new two-part bootloader
   (`bootloader/README.md`): EEVblog's original bootloader cannot read exFAT, so its card update would stop working.
 - **How:** hold SETUP until `Fr no` blinks, press REL (or PEAK) for `Fr yE`, hold SETUP again.  `Fr --` while it works,
   then `Fr oK`.  **Everything on the card is erased.**  `FrE n` means the format failed (n = the FatFs result),
@@ -276,7 +291,7 @@ Tip: start MIN/MAX in the evening on a supply rail, read `tLo` in the morning to
 
 ## 12-hour clock
 
-- **Where:** page `CL`, the last of the new pages: `CL 24` (default, as the original) or `CL 12`.
+- **Where:** page `CL`: `CL 24` (default, as the original) or `CL 12`.
 - **Effect:** the time page shows the hour as 1 to 12 instead of 0 to 23, for example 14:30 as ` 2-30`. There is no AM/PM
   mark (the display has five characters and the time uses all of them).
 - Setting the clock works as before (hour, then minute). Log files and Bluetooth keep 24-hour time.
@@ -305,7 +320,7 @@ The fast build also reacts faster, with no setting needed:
   original could show a value in between once (for example 4.5 V when connecting 9 V).
 - **Capacitance, 100 nF range (experimental):** in auto range the meter now waits 2.5 s for a result on the 100 nF range
   (original: 2.0 s, 1.5 s on some boards) before it moves to the 1 µF range. Capacitors near 100 nF that measure slowly
-  stay on the 100 nF range and keep its resolution (0.01 nF instead of 1 nF). Reports welcome.
+  stay on the 100 nF range and keep its resolution (0.01 nF per digit instead of 0.1 nF per digit on the 1 µF range). Reports welcome.
 - **Auto-hold in Ω and diode:** a short (0 Ω, 0 V) is captured like any other value; the original ignored readings below
   1000 digits. Open probes (OL) are still ignored. In the volt and current functions auto-hold still ignores readings
   near zero, because there open probes read about 0.

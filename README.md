@@ -61,10 +61,12 @@ Bluetooth, the 121GW Companion, lives on the branch [`companion`](../../tree/com
 | PT100 / PT1000 | Ω, SETUP page `Pt` | a platinum RTD read as a temperature in °C or °F (IEC 60751) |
 | Battery trim | SETUP page `BAT` | match the battery reading to a reference meter (±10 %, 0.2 % steps) |
 | Firmware over Bluetooth | SETUP page `Ld`, `emulator/tools/bt_upload.py` | send a new `EEVBlog.bin` to the card without removing it |
-| exFAT cards, long file names, card format | SETUP page `For` | reads and writes FAT12 / FAT16 / FAT32 / exFAT cards with long file names; `For` formats the card as exFAT (shown only with the two-part bootloader) |
+| exFAT cards, long file names, card format | SETUP page `Fr` | reads and writes FAT12 / FAT16 / FAT32 / exFAT cards with long file names; `Fr` formats the card as exFAT (shown only with the two-part bootloader) |
 | Two-part bootloader support | SETUP page `Ld`, the 121GW Companion | first install of the bootloader over Bluetooth; on request over Bluetooth the meter restarts into the bootloader's update mode (firmware and bootloader updates without card or keys) |
 | Limit test | SETUP pages `Lt`, `Lo`, `HI` | PASS / HI / Lo verdict against captured limits, with beeps |
 | Capacitance anti-hunting | CAP, SETUP page `HUnt` | keeps the 1 µF range for ceramic capacitors that make the range hunt (off by default) |
+| Longer wait on the 100 nF range (experimental) | CAP, auto range | waits 2.5 s (v2.05: 2.0 s, 1.5 s with the PF8 strap) for a result on the 100 nF range before moving to the 1 µF range, so a slow capacitor of about 100 nF keeps the 100 nF range's resolution; how long such a capacitor takes is not measured |
+| Extended link diagnosis | the 121GW Companion, SETTINGS (off by default) | the meter counts errors on its Bluetooth module's serial line (RAM only, nothing stored); the Companion's report shows the counts |
 | Logging trigger | SETUP pages `tr`, `Ch` | SD records every interval, on a change, or on a limit verdict change |
 | MIN/MAX times | MIN/MAX, pages `tHI`, `tLo`; SD file | when the maximum and the minimum happened, on the meter and in the closing rows of the log file |
 
@@ -77,8 +79,7 @@ How to set and use each one: [`firmware/USER_GUIDE.md`](firmware/USER_GUIDE.md).
 display keeps switching between the 100 nF and the 1 µF range, the digits stay blank and only the decimal point moves.
 (Reported on the EEVblog forum.) On the 100 nF range such a capacitor gets no result in time, so after 2.5 s the meter
 moves up to the 1 µF range; there the capacitor reads below 0.1000 µF, so the meter goes down again, and so on. Why those
-capacitors get no result in time is not proven: nobody has measured one on a meter yet, so the emulator reproduces the
-behaviour with a setting for a capacitor that cannot be measured in time on a range (`cap_slow_ranges`).
+capacitors get no result in time is not proven yet.
 
 **The rule** (SETUP page `HUnt`, CAP only, **off by default**; the companion's METER view has the same setting). With `on`,
 after the 100 nF range has found no result **twice in a row**, the meter stays on the 1 µF range and shows the value (about
@@ -89,19 +90,15 @@ capacitance measurement is unchanged.
 
 <p align="center"><img src="firmware/docs/antihunt/antihunt.gif" alt="Emulator display, CAP with a 95 nF capacitor that hunts: with HUnt off the range keeps changing and the digits stay blank; with HUnt on the meter stays on the 1 uF range and shows 0.0949 uF" width="380"></p>
 
-The picture is made by `emulator/tools/make_antihunt_gif.py` from the emulator running the firmware (time-lapse, three times
-faster than real time). How to use it: [`firmware/USER_GUIDE.md`](firmware/USER_GUIDE.md); design: IMP-45 in
-[`firmware/DESIGN.md`](firmware/DESIGN.md); test: `emulator/scripts/test_cap_antihunt.py`.
-
 ## Two-part bootloader (updates over Bluetooth)
 
 Once installed (once per meter, from the 121GW Companion over Bluetooth, no SWD and no case opening), the firmware and the bootloader itself are updated from the companion without a card and without holding keys; the card route still works and also reads exFAT cards. How to install and use it, step by step: [`bootloader/README.md`](../../blob/bootloader/bootloader/README.md) (branch `bootloader`, releases `bl-vA.B.C`).
 
 | First install | Firmware update | Format the card as exFAT |
 |---|---|---|
-| <img src="firmware/docs/bootloader/first_install.gif" alt="First install from page Ld-bt" width="220"> | <img src="firmware/docs/bootloader/bt_update.gif" alt="Firmware update over Bluetooth" width="220"> | <img src="firmware/docs/bootloader/format.gif" alt="Setup page For" width="220"> |
+| <img src="firmware/docs/bootloader/first_install.gif" alt="First install from page Ld-bt" width="220"> | <img src="firmware/docs/bootloader/bt_update.gif" alt="Firmware update over Bluetooth" width="220"> | <img src="firmware/docs/bootloader/format.gif" alt="Setup page Fr" width="220"> |
 
-## Downloads
+## Release files
 
 Every release of this branch (tag `vA.B.C`, see [Releases](../../releases)) carries:
 
@@ -131,10 +128,15 @@ of any meter.
 - `DESIGN.md` design and deviation list, `EEPROM_MAP.md` every EEPROM byte, `ORIGINAL_FIRMWARE_ISSUES.md` the defects
   found in v2.05 (with evidence), `OPTIMIZATIONS.md`, `FEATURES.md` user-visible features (keys, display, storage; implemented in the production build: backlight
   auto-off timer with remembered on/off state, selectable dBm reference, Bluetooth frame rate 2/4/10/20 per second,
-  thermocouple type K/J/T/N/R/S, REL in percent, display level, 12-hour clock, statistics, continuity hold time, limit test, logging trigger, MIN/MAX times, 4–20 mA percent, PT100/PT1000, battery trim, exFAT cards with long file names and card format, bootloader install and update requests over Bluetooth), `HARDWARE_TEST.md` checklist for the first run on a meter.
+  thermocouple type K/J/T/N/R/S, REL in percent, display level, 12-hour clock, statistics, continuity hold time, limit test, logging trigger, MIN/MAX times, 4–20 mA percent, PT100/PT1000, battery trim, exFAT cards with long file names and card format, bootloader install and update requests over Bluetooth, capacitance anti-hunting and the longer 100 nF wait, extended link diagnosis), `HARDWARE_TEST.md` checklist for the first run on a meter.
 - Status: the fast build is compared with v2.05 in the emulator's test scenarios; its differences are documented deviations
   (`firmware/deviations.txt`) except three display differences still open (battery_low, mem_logging_sd, sd_insert_remove).
-  Verified working on a meter.
+  Verified on a meter, as `firmware/FEATURES.md` states for each feature (for example the limit test, the dBm reference, REL in
+  percent, 20 readings per second, the logging trigger, statistics, backlight, the 12-hour clock, continuity hold time, firmware
+  and bootloader updates over Bluetooth, the card format and the card clock, the companion's counters of the extended link
+  diagnosis). Features without such a statement there (for example the thermocouple types, the 4–20 mA view, PT100 / PT1000 and
+  the battery trim) are not recorded as verified on a meter. The capacitance anti-hunting (`HUnt`) is **not yet verified on a
+  meter** (no suitable capacitor), and neither is how long a 100 nF ceramic capacitor takes on the 100 nF range.
 
 ### Flashing a meter from the SD card
 Read `firmware/HARDWARE_TEST.md` first; it is the procedure and checklist.

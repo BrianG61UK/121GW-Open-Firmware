@@ -1,7 +1,8 @@
-# Planned features of the replacement firmware: user interface, storage, constraints
+# Features of the replacement firmware: user interface, storage, constraints
 
-Status: sections 2.1 to 2.16 and 2.18 are implemented in the production image (the heading of each names its IMP number);
-section 2.17 is a design for the production image and is not in the tree as code. The EEPROM bytes of section 3 are approved (owner, 2026-11-02);
+Status: sections 2.1 to 2.16 (with 2.10a), 2.18 and 2.19 are implemented in the production image (the heading of each names its
+IMP number or release; of 2.11, the companion, stages 1 to 7 are implemented on the branch `companion`); section 2.17 is a
+design for the production image and is not in the tree as code. The EEPROM bytes of section 3 are approved (owner, 2026-11-02);
 each is added to `EEPROM_MAP.md` 4.1 and `nvm_allow` only with the code that uses it. Citations: `KS` = `analysis/keys_setup.md`, `EMAP` =
 `EEPROM_MAP.md`, `LCD` = `analysis/lcd_map.md`, `ARS` = `analysis/autorange_and_scheduler.md`, `DES` = `DESIGN.md`.
 
@@ -39,9 +40,9 @@ has closed.
 
 The page list of v2.05 (items 0..9 for all modes, 10..12 for some modes, 100 for MEM view/logging, KS 4) is unchanged. Port
 pages are appended behind the last v2.05 page of every mode: the wrap of `fn_08015410` to item 0 lands on the first port page
-that applies, the last port page goes to item 0 (as implemented for item 20, `src/set/setup.s`). The item byte 0x20008037
-is read by other modules only for equality with 1, 7, 10, 11, 12 and 100 (DES 6.24), so new item numbers 20..35 are harmless
-there; the BLE packet carries zeros in its sub-display field for them, as for items 3, 4, 8 and 9 (`ble/packet.s`).
+that applies, the last page of the chain goes to item 0 (`fn_08015410` in `src/set/setup.s`; the chain is in section 4). The item byte 0x20008037
+is read by other modules only for equality with 1, 7, 10, 11, 12 and 100 (DES 6.24), so new item numbers are harmless
+there (the numbers in use are in section 4); the BLE packet carries zeros in its sub-display field for them, as for items 3, 4, 8 and 9 (`ble/packet.s`).
 Each page is drawn on the sub display (five characters) by `lcd_draw_5char(1, ...)` like `FUN_08018460` and `FUN_080184D4`.
 Pages with a number that needs a sign and five digits (limits, standard deviation) draw a label on the sub display and
 the value on the main display, which has the sign, the decimal point and the unit annunciators of the present range
@@ -118,7 +119,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 
 ### 2.3 REL in percent (implemented, IMP-11; verified working on a meter)
 
-- Where: SETUP page `rEL`, item 22, after `bt` in every mode; REL short and REL long keep their v2.05 meaning in every mode.
+- Where: SETUP page `rEL`, item 22, after `Ld` (after `Fr` with the two-part bootloader) in every mode; REL short and REL long keep their v2.05 meaning in every mode.
 - Keys: the edit keys of 1.2 on the page (REL or PEAK switches between the two values); no new key action.
 - What is shown: page `rEL-d` (difference, v2.05) or `rEL-P` (percent). With percent selected the main display shows
   (x - ref) / ref * 100 whenever v2.05 shows the REL sign (REL on, 0x20007FE1 = 0, 0x20007FE4 = 0): 0.001 % resolution
@@ -134,7 +135,8 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 
 ### 2.4 Faster display response (implemented, IMP-12; verified working on a meter)
 
-- Where: SETUP page `dSP`, item 24, the last port page in every mode (after `rEL`, or after `tc` in TEMP).
+- Where: SETUP page `dSP`, item 24, in every mode, after `rEL` (after `tc` in TEMP); in BEEP, DCmA, OHM and CAP `bH`, `LP`, `Pt`
+  or `HUnt` follows, otherwise `CL`.
 - Keys: the edit keys of 1.2 (REL or PEAK switches between the two levels).
 - What is shown: `dSP 1` (as v2.05) or `dSP 2` (fast).
 - Meaning (owner decision, 2026-11-02: less smoothing, not shorter means): every displayed value is the thresholded mean of
@@ -152,7 +154,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Constraints: no HY3131 write; the depth change needs no filter reset (`func/smooth.s` header). FREQ, PULSE, DUTY have no
   smoothing; CAP uses its own depth (10), which level 2 also reduces.
 
-### 2.5 Faster Bluetooth streaming (implemented, IMP-09)
+### 2.5 Faster Bluetooth streaming (implemented, IMP-09; verified working on a meter)
 
 - Where: SETUP page `bt`, item 21, after `bL` (the BT annunciator and the PEAK long press that switch the transfer on and off are unchanged, KS 2.2).
 - Keys: the edit keys of 1.2.
@@ -166,8 +168,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   sub-display content are unchanged.
 - Storage: one byte 0x015 (0 = 2 per second). Any other value reads as 0.
 - Verified working on a meter: 20 frames per second with the official iPhone application.
-- Constraints: the link is raw serial through the module on USART2; whether the phone application keeps up with 20 frames per
-  second is not known here (no hardware test); the option is therefore a setting, default v2.05.
+- Constraints: the link is raw serial through the module on USART2; the option is a setting, default v2.05.
 
 ### 2.6 Smarter SD logging (implemented, IMP-21; verified working on a meter)
 
@@ -219,7 +220,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 
 ### 2.8 Thermocouple types J, T, N, R and S (and K) (implemented, IMP-10; N, R, S IMP-26)
 
-- Where: SETUP page `tc`, item 23, reached from the page `bt` in TEMP mode (mode 5) only.
+- Where: SETUP page `tc`, item 23, reached from the page `rEL` in TEMP mode (mode 5) only.
 - Keys: the edit keys of 1.2.
 - What is shown: `tc-K ` (v2.05), `tc-J `, `tc-t `, `tc-n `, `tc-r `, `tc-S ` (N, R, S: forum request 2026-11-03,
   IMP-26). The degC/degF annunciators and the 0.1 degree display are unchanged.
@@ -312,7 +313,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   nothing happens); key code 0x92 is answered with the bootloader version frame `F7` (`B-` and three digits, or `B-EEV`).
 - Verified working on a meter: firmware update into bootloader B-1.11 and bootloader update 1.1.0 to 1.1.1 over Bluetooth.
 
-### 2.11 Meter companion program (stages 1 to 5 implemented, branch companion; owner go 2026-11-04)
+### 2.11 Meter companion program (stages 1 to 7 implemented, branch companion; owner go 2026-11-04)
 - Request (owner, 2026-11-02 and 2026-11-04): the official phone application connects but draws badly; a program of our
   own for Windows, macOS and Linux that shows the meter live, records, and updates the firmware, with a design of its
   own ("sleek, functional, not the run-of-the-mill look").
@@ -360,7 +361,8 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
      FatFs R0.16 (f_opendir / f_readdir / f_read / f_unlink / f_rename); only while logging is off and outside
      calibration mode, as 2.10.  Speed about 1 KB/s (measured for 2.10: 155 kB in 159 to 172 s).
   7. Extended link diagnosis (implemented in F-1.15, IMP-44, `ble/xdiag.s`; emulator tests test_xdiag.py and, for the
-     overrun fix OF-71, test_ble_overrun.py; companion 1.2.15; not yet verified on a meter): a setting of the companion
+     overrun fix OF-71, test_ble_overrun.py; companion 1.2.15; the counters verified working on a meter 2026-11-06: the frame F9
+     answered with the counters; the overrun that OF-71 clears has not been seen on a meter): a setting of the companion
      ("Extended diagnosis", off by default) makes it send the key codes 0x93 / 0x94 / 0x95 of the key frame (as 0x90 ..
      0x92, `F4 39 33 39 33` and so on; echoed first). 0x93 clears the counters and switches counting on (a RAM flag, 0 at
      every reset, never stored), 0x94 switches it off, 0x95 is answered with the frame `F9` (20 bytes) while counting is
@@ -389,7 +391,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   Linux connections need a tester with Bluetooth there.
 
 ### 2.12 12-hour clock (implemented, IMP-13; verified working on a meter)
-- Where: SETUP page `CL`, item 25, the last port page (after `dSP`): `CL 24` (v2.05, default) or `CL 12`.
+- Where: SETUP page `CL`, item 25, after `dSP` (after `bH`, `LP`, `Pt` or `HUnt` in their functions), before the limit pages: `CL 24` (v2.05, default) or `CL 12`.
 - What is shown: the time page (item 7) keeps its form `HH-MM` with the blinking separator; with `CL 12` the hour is 1..12
   (0 -> 12, 13..23 -> 1..11) with the leading zero blank (` 2-30`). No AM/PM mark (decision, 2026-11-02: the five
   characters are all used by `HH-MM`, and morning and afternoon are told apart by context).
@@ -474,14 +476,19 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 ### 2.18 exFAT, long file names and card format (implemented, IMP-32, F-1.04; format verified working on a meter 2026-11-04/05)
 - Facts: DESIGN.md section 10, IMP-32 (FatFs R0.16 with exFAT and long file names, translated by hand), IMP-33 and IMP-34
   (the SD fixes found on the way, 5 Bluetooth transfers with 0 failed writes and 0 failed card start-ups in 220 start-ups).
-- What it does: the meter reads and writes FAT12, FAT16, FAT32 and exFAT cards with long file names. The SETUP page `For`
+- What it does: the meter reads and writes FAT12, FAT16, FAT32 and exFAT cards with long file names. The SETUP page `Fr`
   (item 40, after `Ld`) formats the card as exFAT after a confirmation, only with the two-part bootloader installed:
   EEVblog's bootloader cannot read exFAT, so its card update would stop working. `Fr --` while it works, `Fr oK`; `FrE n` a
   FatFs failure, `FrE L` refused while logging or in calibration mode (`set/fmt.s`).
 - Format from the 121GW Companion (IMP-39, F-1.09): on the page `Ld-bt` the companion's CARD view has "Format card"; after
-  the user types FORMAT the meter formats the card exactly as the page `For` does (request 0x15 of `ble/bftsd.s`, same
+  the user types FORMAT the meter formats the card exactly as the page `Fr` does (request 0x15 of `ble/bftsd.s`, same
   conditions: two-part bootloader, not while a firmware transfer runs).  The meter cannot report progress meanwhile (its
   link is deaf during card work); the companion shows a window whose OK unlocks when the meter answers.
+- Card clock (F-1.12, IMP-41, OF-69, OF-70; GitHub issue 5): v2.05 runs every card session on the 4 MHz crystal with the PLL at
+  a 48 MHz VCO, where RM0038 6.2 requires 96 MHz for the SDIO; on a meter block writes stopped with a transmit underrun.  Card
+  sessions now run on the PLL (VCO 96 MHz, SDIOCLK 48 MHz, the CPU at 32 MHz, our choice) and the clock is raised in steps
+  below 4x (OF-70, also at reset).  Verified working on a meter 2026-11-05: three formats of a 32 GB card in 16 s each
+  without a failed block (40 s at ClockDiv 4 before), 100 s of logging, the file downloaded over Bluetooth.
 
 ### 2.19 Capacitance anti-hunting (implemented, IMP-45, F-1.16; off by default)
 - Request (EEVblog forum, firmware thread, 2026-11-06): with a small ceramic capacitor of about 100 nF the CAP auto range
@@ -544,8 +551,10 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 30 | `tr` (log trigger) | always | yes (implemented) |
 | 31 | `Ch` | with `tr-Ch` | yes (implemented) |
 | 36 | verdict `PASS`/`HI`/`Lo` | while the limit test is on (shown when it is switched on) | no (implemented) |
-| 39 | `Ld` firmware over Bluetooth (after `bt`) | with Bluetooth on | transfer (implemented) |
-| 40 | `For` card format (after `Ld`) | only with the two-part bootloader | yes, after a confirmation (implemented) |
+| 37 | `LP` 4..20 mA view (after `dSP`) | DCmA mode only | yes (implemented) |
+| 38 | `Pt` PT100 / PT1000 view (after `dSP`) | OHM mode only | yes (implemented) |
+| 39 | `Ld` firmware over Bluetooth (after `bt`) | always (only the transfer needs Bluetooth on, logging off, not calibration mode) | transfer (implemented) |
+| 40 | `Fr` card format (after `Ld`) | only with the two-part bootloader | yes, after a confirmation (implemented) |
 | 41 | `HUnt` CAP anti-hunting (after `dSP`) | CAP mode only; name on the sub display, `on` / `oFF` on the main display | yes (implemented) |
 | 32 | `n` count | MIN/MAX on | no |
 | 33 | `Sd` | MIN/MAX on | no |
@@ -553,8 +562,9 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 
 Items 32..35 are the MIN/MAX pages. v2.05 uses 0..12 and 100; the page dispatcher falls back to item 0 for an unknown item
 (`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 25. SETUP short steps
-20 -> 21 -> 22 -> 23 (TEMP only) -> 24 -> 26 (BEEP only) / 41 (CAP only) -> 25 -> 27 -> 28 -> 29 -> 36 (test on) -> 30 -> 31 (tr-Ch) ->
-32 -> 33 (MIN/MAX on) -> 0 (`fn_08015410`); each new page joins that chain.
+20 -> 21 -> 39 -> 40 (two-part bootloader only) -> 22 -> 23 (TEMP only) -> 24 -> 26 (BEEP only) / 37 (DCmA only) / 38 (OHM only) /
+41 (CAP only) -> 25 -> 27 -> 28 -> 29 -> 36 (test on) -> 30 -> 31 (tr-Ch) -> 32 -> 33 -> 34 -> 35 (MIN/MAX on) -> 0 (`fn_08015410`);
+each new page joins that chain.
 
 ## 5. Order of work and checks
 
