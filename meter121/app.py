@@ -786,7 +786,7 @@ class Companion:
             newest = lst[0]['version'] if lst else None
             out[kind] = [{'tag': e['tag'], 'text': e['text'], 'published': e['published'],
                           **{k: v for k, v in install.make_plan(kind, facts, release=e, newest=newest).items()
-                             if k in ('relation', 'refusal', 'needs_confirm')}} for e in lst]
+                             if k in ('relation', 'refusal', 'needs_confirm', 'needs_meter')}} for e in lst]
         return {'ok': True, 'firmware': out['firmware'], 'bootloader': out['bootloader'],
                 'meter': {'firmware': self.version if self.fw_kind == 'fast' else None, 'bootloader': self.bl, 'mode': self.mode}}
 

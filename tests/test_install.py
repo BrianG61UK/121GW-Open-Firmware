@@ -252,6 +252,13 @@ class Install(AppCase):
         self.assertEqual(rel, {'F-1.22': 'newer', 'F-1.21': 'same', 'F-1.19': 'older', 'F-1.15': 'older', 'F-1.02': 'older', 'F-0.99': 'older'})
         self.assertEqual({e['text']: e['relation'] for e in j['bootloader']}, {'B-1.13': 'same', 'B-1.12': 'older', 'B-1.11': 'older'})
         self.assertEqual(j['meter'], {'firmware': 'F-1.21', 'bootloader': 'B-1.13', 'mode': 'firmware'})
+        self.assertFalse(any('needs_meter' in e for e in j['firmware'] + j['bootloader']))
+
+    def test_release_list_without_a_meter_asks_for_it(self):
+        # the page labels these "connect the meter" (needs_meter), not "refused"
+        self.app.link.state = 'idle'
+        j = self.app.command({'release_list': True})
+        self.assertTrue(all(e.get('needs_meter') for e in j['firmware'] + j['bootloader']))
 
     def test_downgrade_is_refused_without_the_typed_word(self):
         self.images['v1.1.9'] = fw_image()
