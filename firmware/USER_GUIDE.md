@@ -59,6 +59,9 @@ Check: 1.000 V reads 2.218 dBm (600 ohm), 13.01 dBm (50 ohm), 11.25 dBm (75 ohm)
 ## Bluetooth speed
 
 - **Bluetooth on / off:** hold **1ms PEAK** until **BT** shows / disappears, as on the original firmware.
+- **After an auto power-off (F-1.18 or newer):** any key press or a dial turn switches the meter on again, and Bluetooth
+  comes back on if it was on before the power-off. (F-1.17 and older did not wake from a key: only the dial off and on
+  again started them, OF-73.)
 - **Speed:** page `bt`: `bt  2` (2 readings per second, the default, as the original), `bt  4`, `bt 10`, `bt 20`.
 - Verified working on a meter: 20 readings per second with the official iPhone application.
 

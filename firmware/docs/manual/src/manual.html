@@ -130,7 +130,8 @@ running.</p>
 <p>Turn the dial to a function. The small display shows the firmware version (<span class="lcd">{{FW_VERSION}}</span>) for a
 moment, then the meter measures.</p>
 <p>After 30 minutes without a key press the meter switches itself off (it beeps five times in its last minute; press any
-key to keep it on). It never switches off while logging or during MIN/MAX. You can turn this off in the settings: page <span class="lcd">APOoF</span>.</p>
+key to keep it on). Press any key or turn the dial to switch it on again; Bluetooth comes back on if it was on (firmware
+F-1.18 or newer). It never switches off while logging or during MIN/MAX. You can turn this off in the settings: page <span class="lcd">APOoF</span>.</p>
 <h3>Your first measurement</h3>
 <ol class="steps">
   <li>Black lead into <b>COM</b>, red lead into <b>V Ω</b>.</li>
@@ -677,7 +678,7 @@ work, and you can format the card on the meter. It never touches your calibratio
 <tr><td><span class="lcd">OFL</span></td><td>Input too big for the range or the sensor</td><td>Higher range or smaller input</td></tr>
 <tr><td><span class="lcd">LEAd</span> + beeping</td><td>A lead is in a current socket, the dial is on something else</td><td>Move the lead to V Ω, or turn the dial to current</td></tr>
 <tr><td><span class="lcd">-----</span></td><td>No value yet</td><td>Wait or measure</td></tr>
-<tr><td><span class="lcd">-oFF-</span></td><td>Auto power-off</td><td>Switch the dial off and on again</td></tr>
+<tr><td><span class="lcd">-oFF-</span></td><td>Auto power-off</td><td>Press any key or turn the dial (F-1.18 or newer; before that: switch the dial off and on again)</td></tr>
 <tr><td><span class="lcd">LoBAt</span></td><td>Batteries too low for logging</td><td>New batteries</td></tr>
 <tr><td><span class="lcd">SdEnd</span></td><td>The log file is full</td><td>Start a new recording</td></tr>
 <tr><td><span class="lcd">SdE03</span> etc.</td><td>SD card problem while logging</td><td>Check the card, its space and that it sits right</td></tr>

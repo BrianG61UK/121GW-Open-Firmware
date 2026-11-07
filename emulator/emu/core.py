@@ -106,6 +106,7 @@ class Machine:
         self._carry = None                    # (address, cycles) of an instruction a slice stopped at: its cost in
                                               #   the block it was cut from (pipelining / IT folding context)
         self._tail = False                    # an exception return with no instruction since (tail-chaining)
+        self.exc_exit_hooks = []              # hook(exception number) after each exception return (periph/tim.py _LevelIrq)
         self._vis = 0                         # cycles value last seen by a peripheral / SCS / EEPROM access
         self._prepay = 0                      # cycles counted ahead of the executed instructions (see _refund)
         self._restart = False                 # the slice ended at once to retranslate a block (no progress needed)
@@ -534,8 +535,9 @@ class Machine:
             if vals[7] & (1 << 9):
                 sp += 4
             uc.reg_write(UC_ARM_REG_SP, sp)
-            if self.active:
-                self.active.pop()
+            done = self.active.pop() if self.active else None
+            for hook in list(self.exc_exit_hooks):     # level-sensitive sources still asserted pend again at once
+                hook(done)
             self._resume = vals[6] | 1
             self._charge(12)
             uc.emu_stop()

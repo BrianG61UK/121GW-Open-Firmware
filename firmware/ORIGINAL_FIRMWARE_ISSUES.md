@@ -84,6 +84,7 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-69 | SD card | Card sessions run the CPU on the 4 MHz crystal with the PLL at a 48 MHz VCO, where the reference manual requires 96 MHz for the SDIO; on a meter block writes stopped with a transmit underrun | medium | fixed |
 | OF-70 | Clock | The reset clock set-up raises the CPU clock 7.6-fold in one step; the reference manual allows less than 4-fold per step | low | fixed |
 | OF-71 | Bluetooth | The USART2 receive interrupt returns without reading USART_DR when RXNE is clear; an overrun flag (ORE) that is set with RXNE = 0 also raises this interrupt and is then never cleared, so the interrupt repeats for ever | medium | fixed |
+| OF-73 | Power | After auto power-off the meter wakes from STOP on a key or dial turn but hangs in the restart: a timer interrupt left asserted with the timer's clock off is entered again for ever | high (the meter could only be restarted with the dial) | fixed |
 | OF-72 | Bluetooth | The baud computation of USART_Init drops the carry of the rounded fraction: for a clock 2.3 .. 2.5 % above nominal the Bluetooth serial line runs 7 % too fast | low (reachable only with the measured clock) | fixed |
 
 ## Details
@@ -1086,3 +1087,16 @@ of 224, 20649 baud instead of 19174 (+7.5 %). v2.05 always passes the nominal MS
 so the case cannot happen there; the port's measured clock (IMP-46) can be in that window (MSI +2.3 .. +2.5 %, inside the
 data sheet's temperature drift). Port: the fraction is added to the mantissa field instead of masked and or-ed (a fraction of
 16 carries into bit 4; with OVER8 a fraction of 8 becomes mantissa + 1, BRR bit 3 stays 0). Emulator `test_msical.py` C5.
+
+### OF-73 — after auto power-off the restart hangs in a timer interrupt
+`FUN_0801C92E` (0x0801C92E, called by the STOP preparation `FUN_0801C522` at 0x0801C528) disables TIM2 and TIM3
+(TIM_Cmd) and then their clocks (RCC_APB1PeriphClockCmd), but leaves DIER.UIE set and does not clear SR.UIF.  An update
+flag that is set at that moment keeps the timer's interrupt request asserted through STOP.  After the EXTI wake the
+restart (`FUN_0801BE76`, called at 0x08024EEE) enables IRQ28 / IRQ29 in the NVIC (`FUN_0801BFDE`) while interrupts are
+not masked (v2.05 never masks them); the handler clears UIF by a write to TIMx_SR, which has no effect while the timer's
+clock is gated, so the level request stays and the handler is entered again at once, for ever.  The timers' clocks are
+switched on only later in the restart (0x0801BF0C, 0x0801BF10).  On a meter with the port (F-1.17, the same sequence),
+2026-11-07: a beep placed right after the STOP exit sounded on a key press, beeps after each restart step stopped
+inside the NVIC set-up, and only the dial off and on restarted the meter (a power-up: the dial OFF position removes the
+battery supply).  Not tested with v2.05 on a meter.  Port (F-1.18): `fn_0801C92E` clears DIER and SR of both timers
+while their clocks still run.  Emulator `test_apo_wake.py`.

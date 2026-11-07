@@ -536,6 +536,10 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - What it does: the page Ld takes a request LEAVE (type 0x19): the meter answers and goes to the next SETUP page, as a SETUP
   press does; the readings and the keys work again. The companion (1.2.18) offers it as "Leave Ld-bt" on the CARD view.
 
+### 2.22 Wake from auto power-off with a key, Bluetooth kept (OF-73 fixed, IMP-48, F-1.18; the wake verified working on a meter 2026-11-07, the Bluetooth part not yet)
+- After "-oFF-" a key press or a dial turn switches the meter on again (F-1.17 and v2.05: the restart hung, only the dial
+  off and on started the meter, OF-73), and Bluetooth comes back on when it was on before the power-off (IMP-48).
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |

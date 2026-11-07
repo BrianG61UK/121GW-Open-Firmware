@@ -88,8 +88,10 @@ class _LevelIrq:
     """Level-sensitive interrupt line towards the NVIC.
 
     The line is raised with nvic.irq(); the exception is pended again after a handler returns while the line is still
-    high (a flag the handler did not clear), which is how an NVIC treats a level interrupt.  The re-pend check polls
-    with a back-off while the exception is pending but not served.
+    high (a flag the handler did not clear), which is how an NVIC treats a level interrupt: at the exception return
+    itself (Machine.exc_exit_hooks), so a handler that cannot clear its flag (the timer's clock is off: its SR write is
+    ignored) is entered again at once and the interrupted code makes no progress, as on the chip.  Besides that, the
+    re-pend check polls with a back-off while the exception is pending but not served.
     """
     MIN_POLL = 64                       # cycles
     MAX_POLL = 4096
@@ -110,7 +112,14 @@ class _LevelIrq:
             m.set_pending(exc)
         return True
 
+    def _on_exit(self, exc):
+        if exc == 16 + self.irq and self.line():
+            self._pend()
+
     def update(self):
+        if self.owner.m is not None and not getattr(self, '_hooked', False):
+            self.owner.m.exc_exit_hooks.append(self._on_exit)
+            self._hooked = True
         if self.owner.m is None or not self.line():
             return
         self._pend()
