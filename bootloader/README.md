@@ -8,12 +8,12 @@ updates itself the same way.  The old way, with the card and the keys, still wor
 |---|---|---|
 | <img src="docs/first_install.gif" alt="First install: Ld-bt, Ld 00 to Ld 99, Ld oK, restart, the firmware starts through the new bootloader" width="250"> | <img src="docs/bt_update.gif" alt="Bluetooth update: -IAP-, Ld 00 to Ld 99 with the bargraph, Ld oK, the firmware starts" width="250"> | <img src="docs/bl_update.gif" alt="Bootloader update: -IAP-, Ld 00 to Ld 99, Ld oK, display blank while the starter installs it, the firmware starts" width="250"> |
 
-| Update from the SD card (MEM + HOLD, then SETUP) | Format the card as exFAT (setup page `For`) |
+| Update from the SD card (MEM + HOLD, then SETUP) | Format the card as exFAT (setup page `Fr`) |
 |---|---|
-| <img src="docs/card_update.gif" alt="Card update: -IAP-, douun with the bargraph, Good, the firmware starts" width="250"> | <img src="docs/format.gif" alt="Setup page For: Fr no, Fr yE, Fr oK" width="250"> |
+| <img src="docs/card_update.gif" alt="Card update: -IAP-, douun with the bargraph, Good, the firmware starts" width="250"> | <img src="docs/format.gif" alt="Setup page Fr: Fr no, Fr yE, Fr oK" width="250"> |
 
 (Pictures from the emulator, time-lapse; the meter shows the same screens.)  Current release: **bl-v1.1.3**
-(bootloader B-1.13), with firmware **v1.1.2** (F-1.12) and the companion **companion-v1.2.6**.
+(bootloader B-1.13), with firmware **v1.1.6** (F-1.16) and the companion **companion-v1.2.16**.
 
 ## What it does
 
@@ -31,7 +31,7 @@ updates itself the same way.  The old way, with the card and the keys, still wor
   next start (take the batteries out and put them back).
 - **30 seconds** to press SETUP after MEM + HOLD at power-on (the old bootloader allowed about 8 s).
 - **Reads exFAT and FAT32 cards** for the card update (FatFs R0.16, read only), so the card can be formatted as
-  exFAT on the meter (setup page `For`, shown only while this bootloader is installed: EEVblog's bootloader cannot
+  exFAT on the meter (setup page `Fr`, shown only while this bootloader is installed: EEVblog's bootloader cannot
   read exFAT).
 - **Never touches the data EEPROM** (calibration, serial number, settings) or the option bytes.
 
@@ -69,7 +69,7 @@ update mode, receives the bootloader (about 15 s), restarts; the starter install
 
 ### Format the card as exFAT (optional)
 
-On the meter: SETUP pages up to `For` (after `Ld`), long **SETUP** (`Fr no` blinks), **REL** for `Fr yE`, long
+On the meter: SETUP pages up to `Fr` (after `Ld`), long **SETUP** (`Fr no` blinks), **REL** for `Fr yE`, long
 **SETUP** again.  `Fr --` while it formats, `Fr oK` when done; everything on the card is gone.  `FrE n` = failed
 (FatFs result n), `FrE L` = refused while logging or in calibration mode.  Only offered while this bootloader is
 installed.
