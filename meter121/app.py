@@ -667,7 +667,7 @@ class Companion:
 
     def diag_read(self):
         """STATUS values of the file transfer with their readable text (diag.py); needs page Ld.  Values 0..20 every
-        firmware with the transfer has; 21..25 (F-1.10 on) are read until the meter refuses one (older firmware)."""
+        firmware with the transfer has; 21..25 (F-1.11 on) are read until the meter refuses one (older firmware)."""
         try:
             with self._ops('diagnosis', wait=LINK_WAIT) as (sender, _):
                 values = [sender.status_value(i) for i in range(diag.BASE_COUNT)]
@@ -675,7 +675,7 @@ class Companion:
                     try:
                         values.append(sender.status_value(i))
                     except transfer.TransferError:
-                        break                           # a firmware before F-1.10: the values end here
+                        break                           # a firmware before F-1.11: the values end here
         except transfer.TransferError as e:
             raise RuntimeError(str(e)) from e
         self.diag = {'values': values, 'text': diag.explain(values)}

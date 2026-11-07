@@ -6,8 +6,8 @@ been pressed.  The codes (key/keys.s fn_08014AE6, branches 0x08014B06..0x08014B4
     short press   1 RANGE   2 HOLD   3 REL   4 PEAK   5 MODE   6 MIN/MAX   7 MEM   8 SETUP
     long press    0x81 .. 0x88 = the same keys with bit 7 set (0x08014B68..0x08014B82)
 
-Any other code runs no key (r5 stays 0: 0x08014B56 and 0x08014BB8 skip the handlers); 0x90, 0x91 and 0x92 are not keys
-(version, update mode, bootloader version: frames.py).  A remote key counts as a key press for the backlight countdown
+Any other code runs no key (r5 stays 0: 0x08014B56 and 0x08014BB8 skip the handlers); 0x90 .. 0x95 are not keys
+(version, update mode, bootloader version, extended diagnosis on / off / counters: frames.py).  A remote key counts as a key press for the backlight countdown
 (pwr_bl_restart, keys.s fn_08014AE6) and a remote SETUP is refused by the meter while logging and starts an offset
 calibration in calibration mode (FEATURES.md 2.11 stage 4), so the page asks for a deliberate click on SETUP.
 Nothing arrives at the key routine while the SETUP page Ld owns the link (bft_active, ble/bft.s): the caller refuses then.

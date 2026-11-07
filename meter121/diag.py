@@ -1,19 +1,23 @@
 """Diagnosis values of the file transfer (STATUS requests, type 5, ble/bft.s bft_diag_tab) and their readable text.
 
-The meter answers a STATUS request with index 0..20 with one value in the "next" field of the answer, in any state of
-the page Ld (ble/bft.s .Lpk_status).  The values (bft.s comment above bft_diag_tab): 0 failed card sessions of the
+The meter answers a STATUS request with one value in the "next" field of the answer, in any state of the page Ld
+(ble/bft.s .Lpk_status).  The index range of the firmware (bft.s BFT_DIAG_N): 0..20 up to F-1.10, 0..25 from F-1.11 (the write
+wait, IMP-40), 0..39 from F-1.12 (the first write timeout), 0..48 from F-1.15 (the extended link diagnosis, read by
+app.py xdiag_collect); this module handles 0..25.  The values (bft.s comment above bft_diag_tab): 0 failed card sessions of the
 transfer, 1 last card failure (step << 8 | FatFs result), 2 failed disk_read / disk_write calls since power-on, 3 their op
 (low byte) and reason (high byte), 4 SDIO_STA, 5 sd_transfer_error, 6 sd_wait_write result, 7 end flags (transfer end << 1
 | DMA end), 8 DMA2 channel 4 flags, 9 CNDTR, 10 SDIO_DCOUNT, 11 SDIO_STA high half, 12 reads taken on the hardware
 counters, 13 / 14 low / high half of the card status of the last CMD13 answer before the failure, 15 10 ms ticks of the
 failed status polling, 16 failed card start-ups since power-on, 17 the sd_init error code of the last one, 18 SCR reads
-since power-on, 19 / 20 of these the reads whose polling loop had read no word / one word when the block end was seen.
+since power-on, 19 / 20 of these the reads whose polling loop had read no word / one word when the block end was seen,
+21 the write wait that last ran out, 22 its length in 10 ms ticks, 23 the last ACMD22 answer, 24 blocks ACMD22 confirmed,
+25 blocks written again (F-1.11 on).
 
 explain() is a copy of explain_diag / card_diag of the firmware repository's emulator/tools/btft.py (this program does
 not depend on that repository).
 """
-COUNT = 26                                         # bft.s BFT_DIAG_N (F-1.10)
-BASE_COUNT = 21                                    # what every firmware with the transfer answers (earlier firmware refuses the rest)
+COUNT = 26                                         # STATUS 0..25: the values this module explains (firmware F-1.11 on)
+BASE_COUNT = 21                                    # STATUS 0..20: what every firmware with the transfer answers (before F-1.11 it refuses the rest)
 CARD_STEP = {1: 'open', 2: 'seek', 3: 'write', 4: 'short write (card full?)', 5: 'close', 6: 'read back'}
 
 

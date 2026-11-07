@@ -28,10 +28,10 @@ class Keys(unittest.TestCase):
 class Diag(unittest.TestCase):
     def test_readable_text(self):
         v = [2, 3 << 8 | 17, 5, 2 | 2 << 8, 0x0002, 1, 0, 0b10, 0x5, 12, 300, 0x10, 4, 0x0900, 0x0000, 7, 3, 9, 11, 1, 2]
-        self.assertEqual(len(v), diag.BASE_COUNT)                     # a firmware before F-1.10
+        self.assertEqual(len(v), diag.BASE_COUNT)                     # a firmware before F-1.11
         t = diag.explain(v)
         self.assertNotIn('last write wait', t)
-        t26 = diag.explain(v + [2, 61, 0x8000 | 0 << 8 | 1, 3, 1])  # F-1.10: wait 2 for 61 ticks, ACMD22 said 1 block
+        t26 = diag.explain(v + [2, 61, 0x8000 | 0 << 8 | 1, 3, 1])  # F-1.11: wait 2 for 61 ticks, ACMD22 said 1 block
         self.assertEqual(len(v) + 5, diag.COUNT)
         self.assertIn("last write wait that ran out: wait 2 (the card's busy) after 61 ticks", t26)
         self.assertIn('last ACMD22 answer: SD error 0, 1 block(s) written; 3 late block(s) confirmed, 1 block(s) written again', t26)
