@@ -512,7 +512,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   `ui/hunt.s`. Storage: EEPROM 0x020 bit 4 (1 = on; an erased byte reads as off). The companion (1.2.16) shows and
   changes it on the METER view.
 
-### 2.20 Run clock measured against the crystal (implemented, IMP-46, F-1.17; hardware test pending)
+### 2.20 Run clock measured against the crystal (implemented, IMP-46, F-1.17; verified working on a meter 2026-11-07)
 - Reason (GitHub issue 9, 2026-11-07): a user's report shows single damaged bytes on the Bluetooth link, each looking like a
   byte read with the wrong bit timing (not proven). The meter's serial line to its Bluetooth module (19200 baud) runs from
   the processor's RC oscillator (MSI, 4.194304 MHz nominal; +-0.5 % from the factory, +-3 % over temperature, data sheet
@@ -529,6 +529,12 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   "Extended diagnosis" on.
 - How: `sys/msical.s`, called from `sys_system_init`; `fn_0801FE2A` (`sys/clock.s`) returns the measured value to
   USART_Init; OF-72 (`ble/usart.s`) fixed with it.
+
+### 2.21 Leave the page Ld from the companion (implemented, IMP-47, F-1.17; verified working on a meter 2026-11-07)
+- Reason (owner, 2026-11-07): while the page `Ld-bt` owns the Bluetooth link, keys sent by the companion do not reach the
+  meter, so only a SETUP press on the meter gave the readings back.
+- What it does: the page Ld takes a request LEAVE (type 0x19): the meter answers and goes to the next SETUP page, as a SETUP
+  press does; the readings and the keys work again. The companion (1.2.18) offers it as "Leave Ld-bt" on the CARD view.
 
 ## 3. EEPROM bytes the features need
 

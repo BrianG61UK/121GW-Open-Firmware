@@ -145,7 +145,7 @@ These checks confirm on hardware what the emulator cannot.
    32 GB card of 16 s each without a failed block, 100 s of logging, the file downloaded over Bluetooth): format the card as
    in item 27 and time it; log for a minute or more, then download the file over Bluetooth. No card error (`SdEnn`, `FrE n`,
    `LdE 1`) and a complete file. Before F-1.12 a format of this card took 40 s at ClockDiv 4, or stopped on a transmit underrun.
-34. Run clock measurement (production build, F-1.17, IMP-46, OF-72; not tested on a meter yet): Bluetooth on, the
+34. Run clock measurement (production build, F-1.17, IMP-46, OF-72; verified working on a meter 2026-11-07): Bluetooth on, the
    Companion (1.2.18 or newer) connected, SETTINGS "Extended diagnosis" on, "Save report" on the METER view: the section
    "meter clock" says "measured", the clock as found within a few tenths of a percent of 4194304 Hz (2026-11-05 a DWT count
    against the HY3131 gave about 4.187 MHz on one meter), the clock in use closer to 4194304 Hz than the clock as found or
@@ -154,6 +154,12 @@ These checks confirm on hardware what the emulator cannot.
    again "measured", the trim kept), a card format and logging (the card session runs on the crystal and must work as in
    item 33). Dump the EEPROM before and after: identical. On a meter whose crystal does not start (not expected) the result
    says so and everything works as with F-1.16.
+   Verified working on a meter 2026-11-07 (F-1.17 dev image): 4190308 .. 4190796 Hz (-0.084 .. -0.095 %) at four starts
+   and one dial OFF / on, trim 0 (both neighbouring trims measured worse), 19223 baud (BRR 218), 0 % damaged bytes over
+   60 s at bt 20, MSICAL 0x5A unchanged after a card session.  The first F-1.17 image measured nothing (status 5): HSE_RTC
+   reached TIM11 only with RTCSEL = HSE (DESIGN.md IMP-46).
+35. Leave page Ld (F-1.17, IMP-47; verified working on a meter 2026-11-07): with the meter on `Ld-bt`, the Companion's
+   button "Leave Ld-bt" (CARD view): the meter shows the next SETUP page and the readings come back.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

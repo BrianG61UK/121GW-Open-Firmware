@@ -177,6 +177,9 @@ With the meter on the SETUP page `Ld-bt` (Bluetooth on, logging off, not in cali
   stored exactly as the page itself stores it; calibration, serial number and the rotary memory cannot be reached.  The
   logging interval is set on the meter only.
 
+With F-1.17 or newer the companion can also take the meter off the page `Ld-bt` (button **Leave Ld-bt** on its CARD
+view): the meter goes to the next SETUP page, as with a SETUP press, and the readings come back.
+
 Nothing is written to the card except the deletes you confirm.  While the companion uses the card the readings pause
 (the page `Ld` owns the link).
 
