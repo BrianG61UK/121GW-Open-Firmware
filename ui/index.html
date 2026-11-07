@@ -23,16 +23,22 @@
 /* light theme (SETTINGS > Appearance: Light, or System with a light system): the same names, a paper palette.  The page sets
    data-theme on <html> to the resolved choice (dark or light); the SCOPE / trend canvases read these variables as well. */
 :root[data-theme="light"] {
-  --bg: #f4f3ee; --rule: #d9d7cc; --rule-hi: #b5b2a4; --ink: #1d1c18; --dim: #5e5b52; --faint: #8f8c80;
-  --acc: #8f6900; --acc-dim: #c9a64a;        /* acc darker than #9a6f00 so that accent text reaches 4.5:1 on the paper */
+  /* owner 2026-11-07: a dimmer paper, near-black text, darker greys (the first palette was hard to read) */
+  --bg: #e2e0d8; --rule: #c2bfb2; --rule-hi: #9c988a; --ink: #0b0b09; --dim: #3a3832; --faint: #66635a;
+  --acc: #7a5a00; --acc-dim: #b8952f;        /* accent text above 4.5:1 on the dimmer paper */
   --on-acc: #ffffff;
-  --scrim: rgba(244, 243, 238, .88);
+  --scrim: rgba(226, 224, 216, .9);
   --scan: rgba(29, 28, 24, .035);
   --env: rgba(143, 105, 0, .24);
   color-scheme: light;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/20px var(--sans); }
+/* light theme: the text one size larger (owner 2026-11-07) */
+:root[data-theme="light"] body { font-size: 14px; line-height: 21px; }
+:root[data-theme="light"] .cap, :root[data-theme="light"] .eng, :root[data-theme="light"] .lamp,
+:root[data-theme="light"] .warn, :root[data-theme="light"] button.sm, :root[data-theme="light"] .seg button { font-size: 11px; }
+:root[data-theme="light"] input, :root[data-theme="light"] select, :root[data-theme="light"] .ident { font-size: 13px; }
 body { display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; user-select: none; overflow: hidden; }
 .num, input, .code { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .cap { font: 600 10px/16px var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); white-space: nowrap; }
@@ -726,7 +732,7 @@ function applyTheme(pref) {                              // true when the colour
          scan: v('--scan'), env: v('--env')};
   return true;
 }
-try { applyTheme(localStorage.getItem('theme')); } catch (e) { applyTheme('dark'); }
+try { applyTheme(localStorage.getItem('theme') || 'system'); } catch (e) { applyTheme('system'); }   // default: the system's choice
 function setTheme(pref) {                                // the setting arrived (state, or the answer to a change)
   const was = themePref;
   const changed = applyTheme(pref);

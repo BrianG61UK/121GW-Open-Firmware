@@ -84,7 +84,7 @@ PREF_DEFAULTS = {'recordings_folder': None,      # None: <Documents>/121GW
                  'clock_on_connect': False,      # set the meter's clock from the time server after each connection
                  'update_check': 'connect',      # 'connect' (at each connection and every 30 min), 'daily', 'never'
                  'csv_format': 'comma',          # recordings: 'comma' = , and decimal point; 'semicolon' = ; and decimal comma
-                 'theme': 'dark',                # the page's colours: 'dark', 'light', or 'system' (follows the system's light/dark choice)
+                 'theme': 'system',              # the page's colours: 'dark', 'light', or 'system' (follows the system's light/dark choice; default, owner 2026-11-07)
                  'diag_log': False,              # the COMPANION_LOG=1 diagnosis, from the next start
                  'ext_diag': False}              # the meter counts link errors inside (F-1.15 on) and the report shows them
 UPDATE_CHECKS = ('connect', 'daily', 'never')

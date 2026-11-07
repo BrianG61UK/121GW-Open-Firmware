@@ -483,7 +483,7 @@ class Prefs(AppCase):
     def test_state_and_defaults(self):
         p = self.app.state()['prefs']
         self.assertEqual({k: p[k] for k in ('clock_on_connect', 'update_check', 'csv_format', 'theme', 'diag_log')},
-                         {'clock_on_connect': False, 'update_check': 'connect', 'csv_format': 'comma', 'theme': 'dark',
+                         {'clock_on_connect': False, 'update_check': 'connect', 'csv_format': 'comma', 'theme': 'system',
                           'diag_log': False})
         self.assertEqual(p['recordings_folder'], os.path.join(self.tmp, 'docs'))
         self.assertTrue(p['folder_forced'])
@@ -522,7 +522,7 @@ class Prefs(AppCase):
         os.makedirs(os.path.dirname(app_mod.config_path()), exist_ok=True)
         with open(app_mod.config_path(), 'w') as f:
             json.dump({'theme': 'purple'}, f)
-        self.assertEqual(app_mod.Companion(os.path.join(self.tmp, 'docs')).prefs()['theme'], 'dark')
+        self.assertEqual(app_mod.Companion(os.path.join(self.tmp, 'docs')).prefs()['theme'], 'system')
 
     def test_recordings_folder(self):
         with self.assertRaises(ValueError):                   # --folder given: the setting cannot override it
@@ -575,7 +575,7 @@ class Prefs(AppCase):
         a.command({'set_derived': {'loop_range': '0-20'}})
         r = a.command({'prefs_reset': True})
         self.assertEqual(r['prefs']['csv_format'], 'comma')
-        self.assertEqual(r['prefs']['theme'], 'dark')
+        self.assertEqual(r['prefs']['theme'], 'system')
         self.assertEqual(a.folder, os.path.join(self.tmp, 'Documents', '121GW'))
         self.assertEqual(a.state()['derived']['loop_range'], '4-20')
         with open(app_mod.config_path()) as f:
