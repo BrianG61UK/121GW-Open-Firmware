@@ -137,6 +137,16 @@
     .equ BRD_LEVEL_KEEP, 0xFF
     .equ GPIO_DESC_SIZE, 12
 
+@ ck_status values (sys/msical.s, IMP-46): the result of the last MSI measurement
+    .equ CK_ST_NONE,     0                  @ not run since reset
+    .equ CK_ST_OK,       1                  @ measured; ck_hz is the MSI frequency (used for the USART2 baud)
+    .equ CK_ST_NOTMSI,   2                  @ SYSCLK was not MSI: nothing measured
+    .equ CK_ST_HSEON,    3                  @ HSE was already on (RTCPRE cannot be set): nothing measured
+    .equ CK_ST_NOHSE,    4                  @ HSE did not start: nothing measured
+    .equ CK_ST_NOCAP,    5                  @ no HSE_RTC captures on TIM11 (or every attempt lost one)
+    .equ CK_ST_RANGE,    6                  @ the measured frequency was more than 6 % from 4.194304 MHz
+    .equ CK_ST_UNDO,     7                  @ the trimmed clock measured worse: trim taken back, ck_hz is the first value
+
     .macro GPIO_DESC mask, mode, speed, otype, pupd, af, level
     .balign 4
     .word \mask

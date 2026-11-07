@@ -145,6 +145,15 @@ These checks confirm on hardware what the emulator cannot.
    32 GB card of 16 s each without a failed block, 100 s of logging, the file downloaded over Bluetooth): format the card as
    in item 27 and time it; log for a minute or more, then download the file over Bluetooth. No card error (`SdEnn`, `FrE n`,
    `LdE 1`) and a complete file. Before F-1.12 a format of this card took 40 s at ClockDiv 4, or stopped on a transmit underrun.
+34. Run clock measurement (production build, F-1.17, IMP-46, OF-72; not tested on a meter yet): Bluetooth on, the
+   Companion (1.2.18 or newer) connected, SETTINGS "Extended diagnosis" on, "Save report" on the METER view: the section
+   "meter clock" says "measured", the clock as found within a few tenths of a percent of 4194304 Hz (2026-11-05 a DWT count
+   against the HY3131 gave about 4.187 MHz on one meter), the clock in use closer to 4194304 Hz than the clock as found or
+   equal to it, and the baud within 0.25 % of 19200. Then a live view of several minutes and a card file list without
+   damaged bytes (report "damaged pieces" none), a firmware transfer over Bluetooth, an auto power-off and a wake (the report
+   again "measured", the trim kept), a card format and logging (the card session runs on the crystal and must work as in
+   item 33). Dump the EEPROM before and after: identical. On a meter whose crystal does not start (not expected) the result
+   says so and everything works as with F-1.16.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

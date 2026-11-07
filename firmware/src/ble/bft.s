@@ -27,8 +27,9 @@
 @     type 0x02 DATA   seq = packet number from 0, payload = the next bytes of the file
 @     type 0x03 END    all bytes sent: flush, check, copy, check the copy
 @     type 0x04 ABORT  back to waiting
-@     type 0x05 STATUS payload index(1): a diagnosis value in the answer's "next" field (bft_diag_tab: index 0 .. 48; 40 .. 48
-@                      are the extended link diagnosis counters and the battery voltage, ble/xdiag.s, IMP-44)
+@     type 0x05 STATUS payload index(1): a diagnosis value in the answer's "next" field (bft_diag_tab: index 0 .. 55; 40 .. 48
+@                      are the extended link diagnosis counters and the battery voltage, ble/xdiag.s, IMP-44; 49 .. 55
+@                      the clock measurement, sys/msical.s, IMP-46)
 @     types 0x10 .. 0x15 SD card requests (LIST, READ, CHUNK, DELETE, INFO, FORMAT; ble/bftsd.s, IMP-36, IMP-39) and
 @     0x16 / 0x17 settings (GET, PUT; ble/bftset.s, IMP-37), answered with the type 0x82 answer described in ble/bftsd.s
 @     type 0x18 UPDMODE  restart into the two-part bootloader's update mode (blcmd_update_mode, IMP-42); no answer (the
@@ -160,7 +161,9 @@ bft_reset_due:  .space 1                    @ 1: restart once the link has been 
 @ ble/xdiag.s; the counters count only after the key code 0x93, and keep their values after 0x94): 40 bytes received on USART2,
 @ 41 overruns (SR.ORE), 42 noise flags (SR.NE), 43 framing errors (SR.FE), 44 bytes discarded while SYSCLK was not MSI (NF-04),
 @ 45 key / set-clock frames rejected, 46 packets answered with status 1 (CRC wrong), 47 answers / echoes not queued for lack of
-@ room, 48 battery voltage (0.01 V, read at the moment of the request)
+@ room, 48 battery voltage (0.01 V, read at the moment of the request).  Clock measurement (IMP-46, sys/msical.s; written at
+@ power-on and at every STOP wake): 49 / 50 MSI Hz measured with the trim as found (low / high half), 51 / 52 MSI Hz in use,
+@ 53 MSITRIM | status << 8 (CK_ST_*, macros.inc), 54 measurements made, 55 USART2_BRR
 bft_diag_tab:   .word bft_fails, bft_diag, sd_dg_count, sd_dg_op, sd_dg_sta, sd_dg_terr, sd_dg_wait
                 .word sd_dg_flags, sd_dg_dmaisr, sd_dg_cndtr, sd_dg_dcount, sd_dg_stahi, sd_dg_recov
                 .word sd_dg_r1, sd_dg_r1 + 2, sd_dg_ticks, sd_dg_icount, sd_dg_ierr, sd_dg_scrs, sd_dg_scr0, sd_dg_scr1
@@ -169,10 +172,12 @@ bft_diag_tab:   .word bft_fails, bft_diag, sd_dg_count, sd_dg_op, sd_dg_sta, sd_
                 .word sd_dg_wdctrl, sd_dg_wdlen, sd_dg_wfifo, sd_dg_wsta, sd_dg_wsta + 2, sd_dg_wtry, sd_dg_wclkcr
                 .word xd_rx_bytes, xd_err_ore, xd_err_ne, xd_err_fe, xd_rx_dropped_hse, xd_bad_frames, xd_bft_crc_bad
                 .word xd_tx_q_full, pwr_bat_cv
+                .word ck_hz0, ck_hz0 + 2, ck_hz, ck_hz + 2, ck_trim, ck_steps, USART2_BASE + USART_BRR
 bft_diag_wid:   .byte 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2
                 .byte 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2
                 .byte 2, 2, 2, 2, 2, 2, 2, 2, 2             @ 40 .. 48: nine u16 (IMP-44)
-    .equ BFT_DIAG_N, 49
+                .byte 2, 2, 2, 2, 2, 2, 2                   @ 49 .. 55: the clock measurement (IMP-46)
+    .equ BFT_DIAG_N, 56
     .equ BFT_T_UPDMODE, 0x18                @ request: restart into the two-part bootloader's update mode (as key code
                                             @ 0x91, which the page Ld does not take: it owns the link)
 bft_name_tmp:   .asciz "0:BTLOAD.TMP"

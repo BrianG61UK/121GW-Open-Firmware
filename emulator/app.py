@@ -39,7 +39,7 @@ from emu.periph.gpio import make_ports, GPIO_BASES, GPIO_SIZE
 from emu.periph.syscfg import SYSCFG
 from emu.periph.exti import EXTI
 from emu.periph.lcd import LCD
-from emu.periph.tim import Tim
+from emu.periph.tim import Tim, Tim11
 from emu.periph.usart import USART
 from emu.periph.adc import ADC
 from emu.periph.dma import DMA
@@ -130,6 +130,8 @@ class Emulator:
     sdcard_path = None
     sdcard_mb = 512
     flash_allow_protected = False       # True only in tests of the bootloader install (FLASH brick guard off)
+    msi_error_ppm = 0                   # model settings of the MSI oscillator (emu/periph/rcc.py RCC.__init__): this
+    msi_trim_ppm = 0                    # part's error and the change per MSITRIM code; 0 / 0 = nominal, trim inert
 
     def __init__(self, inputs=None, app=None, eeprom=None, speed=1.0, hw_cal=None, *, bootloader=None, option_bytes=None,
                  v205_image=None, tables=None, firmware=None):
@@ -184,7 +186,8 @@ class Emulator:
     def build(self):
         m = self.m = Machine()
         SCS(m)
-        self.rcc, self.pwr, self.flash = RCC(), PWR(), FLASH(allow_protected=self.flash_allow_protected)
+        self.rcc = RCC(msi_error_ppm=self.msi_error_ppm, msi_trim_ppm=self.msi_trim_ppm)
+        self.pwr, self.flash = PWR(), FLASH(allow_protected=self.flash_allow_protected)
         m.add_periph(0x40023800, 0x400, self.rcc)
         m.add_periph(0x40007000, 0x400, self.pwr)
         m.add_periph(0x40023C00, 0x400, self.flash)
@@ -210,6 +213,9 @@ class Emulator:
         self.tim2, self.tim3 = Tim(0x40000000, 28, 'TIM2'), Tim(0x40000400, 29, 'TIM3')
         m.add_periph(0x40000000, 0x400, self.tim2)
         m.add_periph(0x40000400, 0x400, self.tim3)
+        self.tim11 = Tim11()                # MSI measurement against HSE_RTC (firmware IMP-46)
+        m.add_periph(0x40011000, 0x400, self.tim11)
+        self.rcc.reset_hooks.setdefault('TIM11', []).append(self.tim11.reset)
         self.usart2 = USART(0x40004400, 38, 'USART2')
         m.add_periph(0x40004400, 0x400, self.usart2)
         # ADC: PA5 = battery sense, PA4 = thermistor (firmware: adc_ch5_process / adc_ch4_process).
@@ -329,7 +335,8 @@ class Emulator:
                 port.reset()                    # pins return to inputs (RM0038 7.3.1), the chips on them see it
             self.board.apply()                  # front-panel inputs drive their pins again
             self.exti.resync()
-            for periph in (self.lcd, self.adc, self.dma1, self.dma2, self.sdio, self.usart2, self.tim2, self.tim3):
+            for periph in (self.lcd, self.adc, self.dma1, self.dma2, self.sdio, self.usart2, self.tim2, self.tim3,
+                           self.tim11):
                 periph.reset()
             self.rtc.reset('system')            # after the RCC: it may have changed the RTC clock
             m.nvic.reset()

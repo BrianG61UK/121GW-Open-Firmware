@@ -177,14 +177,17 @@ class _Events:
 
 class Tim(Periph):
     SIZE = TIM_SIZE
+    OR_MASK = 1                         # TIM2_OR / TIM3_OR: ITR1_RMP only (17.4.19, 17.4.20)
 
-    def __init__(self, base, irq, name="TIM", has_or=True):
-        """has_or: TIM2 and TIM3 have the option register at 0x50 (17.4.19, 17.4.20); pass False for TIM4."""
+    def __init__(self, base, irq, name="TIM", has_or=True, apb=1):
+        """has_or: TIM2 and TIM3 have the option register at 0x50 (17.4.19, 17.4.20); pass False for TIM4.
+        apb: the bus whose timer clock drives the counter (1: TIM2..TIM7; 2: TIM9..TIM11, 6.2 / 6.3.9)."""
         super().__init__()
         self.base = base
         self.irq = irq
         self.name = name
         self.has_or = has_or
+        self.apb = apb
         self._line_irq = _LevelIrq(self, irq, self._line)
         self.reset()
 
@@ -225,7 +228,10 @@ class Tim(Periph):
     def _ratio_now(self):
         """Timer clock divided by core clock (see module docstring); read again whenever it is needed."""
         rcc = getattr(self.m, "rcc", None)
-        tim = rcc.timclk1_hz() if rcc is not None else self.m.sysclk_hz
+        if rcc is None:
+            tim = self.m.sysclk_hz
+        else:
+            tim = rcc.timclk2_hz() if self.apb == 2 else rcc.timclk1_hz()
         return Fraction(tim) / Fraction(self.m.sysclk_hz)
 
     def _clk_on(self):
@@ -612,7 +618,7 @@ class Tim(Periph):
         elif reg == DCR:
             self.dcr = self.merge(self.dcr, off, value, size) & DCR_MASK
         elif reg == OR and self.has_or:
-            self.opt = self.merge(self.opt, off, value, size) & 1
+            self.opt = self.merge(self.opt, off, value, size) & self.OR_MASK
         else:                                   # DMAR and reserved offsets
             self.unmodelled(off, 'W')
             return
@@ -650,3 +656,82 @@ class Tim(Periph):
                     self._set_capture(ch)       # 17.4.6: input: capture the counter, CCxOF if CCxIF was set
         if w & EGR_TG:
             self.sr |= SR_TIF
+
+
+class Tim11(Tim):
+    """TIM11 (RM0038 18.5, APB2, base 0x40011000) with the channel-1 input remap of TIM11_OR (18.5.13): TI1_RMP = 10
+    puts HSE_RTC (HSE / RTCPRE, RCC.hse_rtc_hz) on channel 1 "for measurement purposes" (6.2.14).  The firmware uses it
+    only that way (sys/msical.s, IMP-46): counter on the APB2 timer clock, input capture 1 with prescaler.  The register
+    subset TIM11 shares with TIM2..TIM4 (CR1, DIER, SR, EGR, CCMR1, CCER, CNT, PSC, ARR, CCR1, OR at the same offsets,
+    18.5.14) is the Tim model; the edges of HSE_RTC are delivered as input edges of channel 1 at their real times
+    (Machine.elapsed_s), so the captured counts follow the ratio of the timer clock to the HSE crystal.  TI1_RMP = 01
+    (MSI on channel 1) and the GPIO input are not modelled (logged when selected)."""
+
+    OR_TI1_RMP = 3
+    OR_MASK = 0x0F                      # 18.5.13: TI1_RMP[1:0], ETR_RMP, TI1_RMP_RI
+
+    def __init__(self):
+        super().__init__(0x40011000, 27, 'TIM11', has_or=True, apb=2)
+
+    def reset(self):
+        super().reset()
+        self._edge_gen = getattr(self, '_edge_gen', 0) + 1
+        self._edge_on = False
+
+    def _rtc_source(self):
+        """HSE_RTC frequency reaching channel 1, 0 when it does not (remap not 10, clock gate off, HSE not ready)."""
+        rcc = getattr(self.m, 'rcc', None)
+        if rcc is None or (self.opt & self.OR_TI1_RMP) != 2 or not self._clk_on():
+            return 0
+        return rcc.hse_rtc_hz
+
+    def _edges_wanted(self):
+        return bool(self._rtc_source()) and bool(self.cr1 & 1) and self._ccer_en(0) and not self._is_out(0)
+
+    def _edges_update(self):
+        """Start or stop the HSE_RTC edge train after a register write."""
+        if self._edges_wanted() and not self._edge_on:
+            self._edge_on = True
+            self._edge_gen += 1
+            self._edge_t0 = self.m.elapsed_s()
+            self._edge_k = 0
+            self._edge_next(self._edge_gen)
+        elif not self._edges_wanted() and self._edge_on:
+            self._edge_on = False
+            self._edge_gen += 1
+
+    def _edge_next(self, gen):
+        f = self._rtc_source()
+        if gen != self._edge_gen or not f:
+            self._edge_on = False
+            return
+        self._edge_k += 1
+        due = self._edge_t0 + Fraction(self._edge_k, f)
+        delay = (due - self.m.elapsed_s()) * self.m.sysclk_hz
+        cycles = max(1, -(-delay.numerator // delay.denominator)) if delay > 0 else 1
+        due = self.m.cycles + cycles
+        self.m.schedule(cycles, lambda: self._edge(gen, due))
+
+    def _edge(self, gen, due):
+        if gen != self._edge_gen or not self._edges_wanted():
+            self._edge_on = False
+            return
+        # The machine runs an event at the first basic block start at or after its due cycle (core.py schedule), so
+        # the counter has moved on by the cycles since `due`.  The hardware latches CNT at the edge (18.3.5): the
+        # capture takes the counter value of the due cycle.
+        self._late = max(0, self.m.cycles - due)
+        self.input_edge(0)
+        self._late = 0
+        self._edge_next(gen)
+
+    def _set_capture(self, ch):
+        super()._set_capture(ch)
+        late = getattr(self, '_late', 0)
+        if late and self.running and self.st.psc == 0:
+            self.ccr[ch] = (self.ccr[ch] - int(late * self._ratio_now())) % (self.st.arr + 1)
+
+    def write(self, off, value, size):
+        super().write(off, value, size)
+        if (off & ~3) == OR and ((self.opt & self.OR_TI1_RMP) in (1, 3) or (self.opt & ~self.OR_TI1_RMP)):
+            self.unmodelled(off, 'W')           # MSI / GPIO on channel 1, RI and ETR remaps: not modelled
+        self._edges_update()

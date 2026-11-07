@@ -193,6 +193,10 @@ Nothing is written to the card except the deletes you confirm.  While the compan
 - **On the meter:** the counting is a RAM flag that is 0 at every reset; it is never written to the EEPROM or the flash, the
   counters start at 0 when counting is switched on, and counting changes nothing else on the link. Older firmware ignores
   the request.
+- **The meter's clock (F-1.17 or newer):** at power-on and at every wake from auto power-off the meter measures its RC run
+  clock against its crystal, trims it, and sets the Bluetooth serial speed from the measurement. With **Extended
+  diagnosis** on, the report has a section "meter clock": the clock as found, after the trim, and the resulting serial
+  speed. Nothing to set; nothing is stored.
 
 ## Two-part bootloader (with the 121GW Companion)
 

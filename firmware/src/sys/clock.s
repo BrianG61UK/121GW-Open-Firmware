@@ -651,6 +651,19 @@ FUNC fn_0801FE2A
     ldr r7, =RCC_ICSCR
     ldr r7, [r7]
     ubfx r6, r7, #13, #3                    @ MSIRANGE (0x0801FE5A)
+    cmp r6, #6
+    bne 1f
+    ldr r7, =ck_status                      @ IMP-46: range 6 measured against HSE (sys/msical.s): the measured value
+    ldrb r7, [r7]
+    cmp r7, #CK_ST_OK
+    it ne
+    cmpne r7, #CK_ST_UNDO
+    bne 1f
+    ldr r7, =ck_hz
+    ldr r7, [r7]
+    str r7, [r0]
+    b .Lfe2a_bus
+1:
     adds r12, r6, #1
     movs r7, #1
     lsl r7, r7, r12

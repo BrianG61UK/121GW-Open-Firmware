@@ -20,7 +20,7 @@ arrive (overrun, RM0038 27.3.3), as test_ble_overrun.py does.  Bluetooth on (lon
   T5 0x95: F9 of 20 bytes, XOR ok, every value as expected (rx_bytes = every byte fed since 0x93, the exact error
      counts, tx_q_full equal to the RAM counter, battery equal to pwr_bat_cv)
   T6 page Ld: STATUS 40 .. 48 equal the F9 values (rx_bytes plus the bytes of the STATUS packets themselves), a packet
-     with a wrong CRC is answered with status 1 and bft_crc_bad becomes 1, index 49 is refused (status 3)
+     with a wrong CRC is answered with status 1 and bft_crc_bad becomes 1, index 56 is refused (status 3)
   T7 0x94 (sent after leaving the page): echoed; bytes fed afterwards are not counted (STATUS 40 on the page again
      shows the old value plus the 5 bytes of the 0x94 frame), 0x95 is echoed only
 The helpers are those of test_backlight_timer.py.
@@ -218,12 +218,13 @@ def run_tests(image):
     T.check('wrong CRC: status 1', a is not None and a[1] == 1, repr(a))
     a = link.send(btft.status_packet(46), timeout=3.0)
     T.check('STATUS 46 (bft_crc_bad) = 1', a is not None and a[1] == 0 and a[2] == 1, repr(a))
-    a = link.send(btft.status_packet(49), timeout=3.0)
-    T.check('STATUS 49 is refused (status 3)', a is not None and a[1] == 3, repr(a))
+    a = link.send(btft.status_packet(56), timeout=3.0)
+    T.check('STATUS 56 is refused (status 3; 49 .. 55 are the clock measurement, test_msical.py)',
+            a is not None and a[1] == 3, repr(a))
     a = link.send(btft.status_packet(40), timeout=3.0)
     rx_ld = a[2]                                     # includes the packet itself
     T.check('STATUS 40 counts the Ld packets (9 bytes each; 12 packets since the first read: 41 .. 48, the wrong CRC, '
-            '46, 49 and this one)', rx_ld == st[0] + 9 * 12, '%r first %r' % (rx_ld, st[0]))
+            '46, 56 and this one)', rx_ld == st[0] + 9 * 12, '%r first %r' % (rx_ld, st[0]))
 
     print('T7 0x94: counting off')
     T.press(e, 'SETUP', gap=0.6)
