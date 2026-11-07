@@ -452,6 +452,8 @@ footer .r { color: var(--faint); min-width: 160px; }
 <section class="view" id="v-prefs">
   <div class="two">
     <div>
+      <div class="eng">This program</div>
+      <div class="row" style="margin:4px 0 24px"><span class="num" id="p-app">121GW Companion</span></div>
       <div class="eng">Files</div>
       <div class="cap">recordings folder</div>
       <div class="cardbar" style="margin:4px 0 4px"><input id="p-folder" class="num" spellcheck="false" aria-label="recordings folder" style="flex:1"><button id="p-folder-save">Save</button></div>
@@ -1158,6 +1160,7 @@ function drawCompanion(C) {
   $('cnotice').classList.toggle('show', !!n && n.tag !== cnHidden);
   if (n) { setText($('cntext'), 'A newer version of this program is available: ' + n.text + ' (you have ' + C.version + ')'); $('cnopen').title = n.url; }
   setText($('m-app'), C ? C.version + (n ? ' · newer: ' + n.text : '') : '—');
+  setText($('p-app'), '121GW Companion ' + (C ? C.version + (n ? '  ·  a newer version is available: ' + n.text : '') : '—'));
 }
 
 const UPTXT = {none: 'no information yet', available: 'update available', downloading: 'downloading', waiting_ld: 'waiting for Ld-bt', restarting: 'restarting',
