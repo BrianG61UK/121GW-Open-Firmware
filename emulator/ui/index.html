@@ -15,6 +15,7 @@
   #lcd img { position:absolute; inset:0; width:100%; height:100%; opacity:0; filter:brightness(0.05); }
   #lcd.ghost img { opacity:.06; }
   #lcd img.on { opacity:.92 !important; }
+  #lcd img.brief { opacity:.45 !important; }   /* lit only for part of the last 100 ms (a short flash on the meter) */
   #lcd img.unproven.show { opacity:.5 !important; filter:sepia(1) hue-rotate(-50deg) saturate(6); }
   .hot { cursor:pointer; border-radius:22px; }
   .hot:hover { box-shadow:0 0 0 2px #ffffff55; }
@@ -204,7 +205,11 @@ async function tick() {
     lcd.classList.toggle('off', !s.lcd_on); lcd.classList.toggle('backlight', !!s.backlight);
     const lit = new Set();
     for (let w = 0; w < 8; w++) for (let b = 0; b < 32; b++) if (s.lcd[w] >>> b & 1) for (const n of (bits['w'+w+'b'+b] || [])) lit.add(n);
-    for (const n in imgs) if (!imgs[n].classList.contains('unproven')) imgs[n].classList.toggle('on', s.lcd_on && lit.has(n));
+    const seen = new Set(), sw = s.lcd_seen || s.lcd;
+    for (let w = 0; w < 8; w++) for (let b = 0; b < 32; b++) if (sw[w] >>> b & 1) for (const n of (bits['w'+w+'b'+b] || [])) seen.add(n);
+    for (const n in imgs) if (!imgs[n].classList.contains('unproven')) {
+      imgs[n].classList.toggle('on', s.lcd_on && lit.has(n));
+      imgs[n].classList.toggle('brief', s.lcd_on && !lit.has(n) && seen.has(n)); }
     let mt = '      SEG 0         10        20        30        40\n';
     for (let c = 0; c < 4; c++) { let row = 'COM' + c + '  ';
       for (let seg = 0; seg < 44; seg++) { const w = 2 * c + (seg >> 5), b = seg & 31; row += (s.lcd[w] >>> b & 1) ? '█' : '·'; }

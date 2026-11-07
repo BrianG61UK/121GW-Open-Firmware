@@ -210,6 +210,10 @@ class Emulator:
         self.nju.attach(m, (self.gpio['C'], 13), (self.gpio['B'], 6), (self.gpio['B'], 7))
         self.lcd = LCD()
         m.add_periph(0x40002400, 0x400, self.lcd)
+        # segments shown at any LCD frame update since the last snapshot: the page asks about every 100 ms, a state that
+        # lasts one main-loop pass (a few ms) is on the glass of a meter but would be missed by a single sample
+        self._lcd_seen = [0] * 8
+        self.lcd.on_update.append(self._lcd_shown)
         self.tim2, self.tim3 = Tim(0x40000000, 28, 'TIM2'), Tim(0x40000400, 29, 'TIM3')
         m.add_periph(0x40000000, 0x400, self.tim2)
         m.add_periph(0x40000400, 0x400, self.tim3)
@@ -414,6 +418,17 @@ class Emulator:
                 'option_bytes': 'file' if self.option_path else 'synthetic',
                 'v205_tables': 'original image' if self.v205_path else 'table data'}
 
+    def _lcd_shown(self, display):
+        for i in range(8):
+            self._lcd_seen[i] |= display[i]
+
+    def _take_lcd_seen(self):
+        """OR of every LCD_DISPLAY state since the previous call and the one shown now; starts again from the one shown."""
+        now = self.lcd.display[:8]
+        seen = [a | b for a, b in zip(self._lcd_seen, now)]
+        self._lcd_seen = list(now)
+        return seen
+
     def snapshot(self):
         with self.lock:
             m = self.m
@@ -422,6 +437,7 @@ class Emulator:
                 'time_ms': float(m.elapsed_s()) * 1000,
                 'sysclk': m.sysclk_hz,
                 'lcd': list(self.lcd.display[:8]),
+                'lcd_seen': self._take_lcd_seen(),
                 'lcd_on': bool(self.lcd.enabled) and self.board.powered(),
                 'backlight': self.board.outputs.get('backlight', 0),
                 'buzzer': self.board.outputs.get('buzzer', 0),

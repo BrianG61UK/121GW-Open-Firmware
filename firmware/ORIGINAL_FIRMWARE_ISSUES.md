@@ -86,8 +86,38 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-71 | Bluetooth | The USART2 receive interrupt returns without reading USART_DR when RXNE is clear; an overrun flag (ORE) that is set with RXNE = 0 also raises this interrupt and is then never cleared, so the interrupt repeats for ever | medium | fixed |
 | OF-73 | Power | After auto power-off the meter wakes from STOP on a key or dial turn but hangs in the restart: a timer interrupt left asserted with the timer's clock off is entered again for ever | high (the meter could only be restarted with the dial) | fixed |
 | OF-72 | Bluetooth | The baud computation of USART_Init drops the carry of the rounded fraction: for a clock 2.3 .. 2.5 % above nominal the Bluetooth serial line runs 7 % too fast | low (reachable only with the measured clock) | fixed |
+| OF-74 | Display | In the DIODE 15 V range with open leads the bargraph flashes 16 segments over the 8 of the open-circuit value once per reading: the overload flag that forces a full bar is set once per reading and cleared by the OFL drawing that follows the bargraph | low | fixed |
+| OF-75 | Display | The DIODE 15 V range shows the bargraph label "5" (full bar 5 V) where full bar is 50 V: the label is taken from the range number, which the 15 V selection does not change | low | fixed |
+| OF-76 | Display | The VA modes (uVA, mVA, VA, AC and DC) never set the bargraph label: the "0" of 50 / 500 stays as the mode before left it (from DCuA "50", from DCmA "5") | low | fixed |
 
 ## Details
+### OF-74 — DIODE 15 V: the bargraph flashes full once per reading
+`FUN_08018FA8` (bargraph count) sets the count to 25 when the overload flag 0x20008046 is set and MIN/MAX is off
+(0x080190BC..0x08019100); in DIODE the count is then limited to 15 (0x08019114), 16 segments with segment 0.  The flag is
+set once per new mean by the autorange step (0x0800E08C, 0x0800E12E) and cleared by the OFL drawing of the main value
+(0x0801702A), which `FUN_08016D34` calls after the bargraph (0x08016D4A, then 0x08016D62).  The bargraph is also redrawn
+on every sample, when the flag is already 0, from the per-sample value: 15400 counts with open leads on the 15 V range,
+8 segments.  So the bar shows 8 segments with a 16-segment flash once per reading (GitHub issue 19; emulator, v2.05 and
+the port alike: 26 and 39 of 400 samples at 10 ms).  On the 3 V range the open-circuit value already gives 15 segments.
+Port (F-1.20): in DIODE the overload does not force the bar; it follows the value (a steady 8 segments).
+
+### OF-75 — DIODE 15 V: the bargraph label says 5 instead of 50
+`FUN_0801912C` takes the label index from the range for DIODE (0x080191C4); the 15 V selection (`FUN_080159C8`) changes
+the flag 0x200080B3 and the digits (`FUN_0800D920`: 4 on 3 V, 3 on 15 V) but not the range, so the label stays "5"
+(index 0).  With 3 digits a full bar (50000 counts) is 50 V; the open 15 V source (8 segments) reads as about 1.5 V
+against the "5" label (GitHub issue 19).  Port (F-1.20): index 1 ("50") when 0x200080B3 is set, else 0.
+
+### OF-76 — VA modes: the bargraph label is left from the mode before
+`FUN_0801912C` sets the label for modes 1..4, 9..11 and 16..21 and ends with no change for every other mode
+(0x080191D6); the VA modes 13..15 and 22..24 have a bargraph (`FUN_08018F14` calls the count with scale 0) but get no
+label: the "5" is set, the zeros of 50 and 500 stay as the previous mode left them.  At the uA position DCuA range 0
+shows "50" (correct, 3 digits); MODE to DCuVA kept it, and after the A / mA position (DCmA, "5") the uA position's
+DCuVA showed "5" (GitHub issue 17; emulator, v2.05 and the port alike).  In these modes the per-sample value is in
+counts of the main display (measured in the emulator for every range), so the label follows its digits as in the other
+modes: index = 4 - digits.  With 1 or 0 digits (uVA ranges 1..3, mVA range 3, VA ranges 0, 1) a full bar is 5000 or
+50000 of the unit shown and no label fits.  Port (F-1.20): the label by the digits; where none fits the "5" and both
+zeros are off and the scale byte is 0 (owner decision 2026-11-07).
+
 
 ### OF-01 — stale index when a table search fails
 `FUN_08007D1E`: the index register r7 is only set when the search hits (`0x08007D5E movs r7,r6`).

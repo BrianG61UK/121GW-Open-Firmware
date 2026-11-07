@@ -168,6 +168,11 @@ These checks confirm on hardware what the emulator cannot.
    power-off after one minute and the key wake): page APO, REL steps APO.60, APO.oF, APO. 1, APO.15, APO.30; save APO. 1 and
    wait: five warning beeps about 15 s before the meter switches off one minute after the last key press; a key wakes it
    (item 36). Dump the EEPROM: only 0x016 and 0x02B changed.
+38. Bargraph (F-1.20, OF-74, OF-75, OF-76; GitHub issues 19 and 17): DIODE, RANGE to 15 V, open leads: a steady bar of
+   8 segments with the label 50 at its right end, no flash to 16 segments (look from below with the backlight on); RANGE
+   back to 3 V: 15 segments, label 5.  With the mA jack plugged, uA position: DCuA shows 50, MODE to DCuVA shows 500;
+   dial to A / mA and back: DCuVA still shows 500.  mVA / VA position, DCVA, RANGE through the four ranges: no label,
+   no label, 50, 500.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).
