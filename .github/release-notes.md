@@ -1,5 +1,7 @@
 121GW Companion: live view, recording and firmware information for the EEVblog 121GW over Bluetooth LE.
 
+New in 1.2.18: with SETTINGS "Extended diagnosis" on and firmware F-1.17 or newer, the report has a section "meter clock": the meter's RC run clock as the meter measured it against its crystal at the last start or wake, after its trim, and the resulting Bluetooth serial speed (GitHub issue 9). The CARD view has a button "Leave Ld-bt" that takes a meter with F-1.17 or newer off page Ld-bt, so the readings come back without touching the meter.
+
 New in 1.2.17: with "Extended diagnosis" on, the meter's link counting is now also switched on after a firmware update (it was refused while the update was finishing, so the report of that connection showed only zeros; GitHub issue 9).
 
 New in 1.2.16: the METER view shows and changes the new meter setting "HUnt" (capacitance anti-hunting) of firmware F-1.16 or newer: with some ceramic capacitors of about 100 nF the capacitance range keeps changing, the digits stay blank and only the decimal point moves; with HUnt on the meter stays on the 1 uF range after two timeouts and shows the value. Off by default; older firmware does not show the row.
