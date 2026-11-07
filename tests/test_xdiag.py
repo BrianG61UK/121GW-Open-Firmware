@@ -639,6 +639,18 @@ class LeaveLd(AppCase):
         self.assertIn((transfer.T_LEAVE, b''), self.meter.sent)
         self.assertTrue(any('page Ld left by the program' in t for _, t in self.app.events))
 
+    def test_leave_stops_a_hanging_card_operation(self):
+        """GitHub issue 9: a card list that keeps retrying held the link, and Leave only said "the link is busy: list"."""
+        self.meter.drop_next = 1000                     # no card answer arrives: the list keeps retrying
+        r = self.app.command({'card_list': True})
+        self.assertTrue(wait(lambda: self.app.card_st['busy']), 'the list did not start')
+        t0 = time.time()
+        self.assertEqual(self.app.command({'leave_ld': True}), {'ok': True})
+        self.assertLess(time.time() - t0, app_mod.LINK_WAIT + app_mod.LEAVE_CANCEL_WAIT)
+        self.assertFalse(self.meter.on_ld)
+        self.assertTrue(any('running card operation' in t for _, t in self.app.events))
+        self.assertTrue(wait(lambda: self.app.state()['card']['done_job'] >= r['job']), 'the list did not end')
+
     def test_older_firmware(self):
         self.app.version = 'F-1.16'
         self.assertFalse(self.app.state()['can_leave_ld'])

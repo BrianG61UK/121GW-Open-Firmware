@@ -52,6 +52,7 @@ DESK_STALE = 4.0                                 # seconds without a status fram
 DESK_PERIOD = 1.0                                # seconds between looks of the desk watcher
 DESK_PROBE_TIMEOUT = 1.5                         # seconds the page Ld has to answer a status request
 KEY_ECHO_WAIT = 1.0                              # seconds to wait for the echo of a key frame
+LEAVE_CANCEL_WAIT = 3.0                          # extra seconds Leave waits for a stopped card operation to give the link back
 LINK_WAIT = 2.5                                  # seconds a command waits for the link while the desk watcher's page check has it
 TRACE_UI = os.environ.get('COMPANION_LOG') == '1'     # the page and the window report pointer events (diagnosis)
 UPDATE_ACTIVE = ('downloading', 'waiting_ld', 'restarting', 'sending')      # update states that own the link
@@ -338,7 +339,12 @@ class Companion:
         if not self._leave_supported():
             raise RuntimeError('this firmware (%s) cannot be told to leave the page Ld: press SETUP on the meter '
                                '(F-1.17 or newer needed)' % (self.version or 'unknown'))
-        with self._ops('leave page Ld', wait=LINK_WAIT) as (sender, _):
+        wait = LINK_WAIT
+        if self.card_st['busy']:                         # a card operation that keeps retrying holds the link (GitHub
+            self.card_cancel()                           # issue 9: "the link is busy: list"): stop it first; it ends
+            wait = LINK_WAIT + LEAVE_CANCEL_WAIT         # at its next half-second check of the answers
+            self.event('leave page Ld: the running card operation (%s) is stopped' % self.card_st['op'])
+        with self._ops('leave page Ld', wait=wait) as (sender, _):
             sender.leave()
         self.event('page Ld left by the program (LEAVE request)')
         return {'ok': True}
