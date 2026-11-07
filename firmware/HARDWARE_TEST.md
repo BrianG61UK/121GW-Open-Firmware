@@ -181,7 +181,7 @@ These checks confirm on hardware what the emulator cannot.
    `In`, `SEt`, temperature.  On `SEt` hold SETUP (long beep): the battery page; SETUP: APO, buzzer, contrast, year,
    month-day, hour-minute, ID, `bL`, `bt`, `Ld-bt`, (`Fr`), `CL`, temperature.  Edit one page in each walk (long
    SETUP, REL, long SETUP) as before.  Turn the dial: SETUP starts with the measurement pages again.
-41. Bluetooth after an update (F-1.22 with bootloader B-1.14, IMP-53): a release build (BLE_AT_POWERUP 0) and B-1.14
+41. Bluetooth after an update (F-1.22 with bootloader B-1.14, IMP-53; verified working on a meter 2026-11-07: B-1.14 installed by B-1.13, then the F-1.22 release build sent over Bluetooth, the meter came back with Bluetooth on without a key): a release build (BLE_AT_POWERUP 0) and B-1.14
    installed; update the firmware with the companion: after the restart Bluetooth is on and the companion confirms the
    update without a key.  Switch off and on: Bluetooth stays off (as before).
 
