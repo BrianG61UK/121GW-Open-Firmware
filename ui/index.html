@@ -12,8 +12,24 @@
 :root {
   --bg: #0c0c0b; --rule: #262622; --rule-hi: #3a3a34; --ink: #e9e7df; --dim: #8d8a80; --faint: #55534c;
   --acc: #f2c200; --acc-dim: #7a6200;
+  --on-acc: #0c0c0b;                         /* text on a filled accent area */
+  --scrim: rgba(12, 12, 11, .86);            /* behind the confirm dialogs */
+  --scan: rgba(233, 231, 223, .025);         /* SCOPE / trend: scanlines over the plot */
+  --env: rgba(242, 194, 0, .28);             /* SCOPE / trend: min-max envelope of the trace */
+  color-scheme: dark;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace;
   --sans: -apple-system, "Segoe UI", "Helvetica Neue", Cantarell, "DejaVu Sans", sans-serif;
+}
+/* light theme (SETTINGS > Appearance: Light, or System with a light system): the same names, a paper palette.  The page sets
+   data-theme on <html> to the resolved choice (dark or light); the SCOPE / trend canvases read these variables as well. */
+:root[data-theme="light"] {
+  --bg: #f4f3ee; --rule: #d9d7cc; --rule-hi: #b5b2a4; --ink: #1d1c18; --dim: #5e5b52; --faint: #8f8c80;
+  --acc: #8f6900; --acc-dim: #c9a64a;        /* acc darker than #9a6f00 so that accent text reaches 4.5:1 on the paper */
+  --on-acc: #ffffff;
+  --scrim: rgba(244, 243, 238, .88);
+  --scan: rgba(29, 28, 24, .035);
+  --env: rgba(143, 105, 0, .24);
+  color-scheme: light;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/20px var(--sans); }
@@ -33,7 +49,7 @@ button {
 button:hover:not(:disabled) { border-color: var(--acc); color: var(--acc); }
 button:focus-visible, input:focus-visible { outline: 1px solid var(--acc); outline-offset: 2px; }
 button.pri { border-color: var(--acc); color: var(--acc); }
-button.pri:hover:not(:disabled) { background: var(--acc); color: var(--bg); }
+button.pri:hover:not(:disabled) { background: var(--acc); color: var(--on-acc); }
 button.on { border-color: var(--acc); color: var(--acc); }
 button:disabled { opacity: .3; cursor: default; }
 button.sm { padding: 3px 8px; font-size: 10px; }
@@ -51,8 +67,8 @@ input:disabled { opacity: .3; }
 .seg { display: inline-flex; }
 .seg button { margin-left: -1px; padding: 3px 8px; font-size: 10px; color: var(--dim); }
 .seg button.on { z-index: 1; }
-/* inverted warning block: black on yellow, always a word */
-.warn { display: inline-block; background: var(--acc); color: var(--bg); font: 700 10px/16px var(--mono); letter-spacing: .14em;
+/* inverted warning block: dark (white in the light theme) on the accent, always a word */
+.warn { display: inline-block; background: var(--acc); color: var(--on-acc); font: 700 10px/16px var(--mono); letter-spacing: .14em;
         padding: 0 8px; text-transform: uppercase; white-space: nowrap; }
 .eng { display: flex; align-items: center; gap: 12px; margin: 0 0 12px; font: 600 10px/16px var(--sans); letter-spacing: .14em;
        text-transform: uppercase; color: var(--dim); white-space: nowrap; }
@@ -199,7 +215,7 @@ tr.empty td { color: var(--faint); }
 .cardbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
 .cardbar input { width: 340px; max-width: 100%; }
 .stat { display: flex; justify-content: space-between; font-size: 12px; margin-top: 8px; }
-.confirm { position: fixed; inset: 0; background: rgba(12, 12, 11, .86); display: none; align-items: center; justify-content: center; z-index: 5; }
+.confirm { position: fixed; inset: 0; background: var(--scrim); display: none; align-items: center; justify-content: center; z-index: 5; }
 .confirm.show { display: flex; }
 .confirm .box { background: var(--bg); border: 1px solid var(--acc); padding: 20px; width: 480px; max-width: 92vw; }
 .confirm .box p { margin: 8px 0 12px; }
@@ -437,6 +453,9 @@ footer .r { color: var(--faint); min-width: 160px; }
       <div class="path" id="p-clock-note" style="margin:0 0 12px"></div>
     </div>
     <div>
+      <div class="eng">Appearance</div>
+      <div class="cap">colours (System follows the light or dark choice of the computer)</div>
+      <div class="row" style="margin:4px 0 24px"><span class="seg" id="p-theme"><button data-v="dark">Dark</button><button data-v="light">Light</button><button data-v="system">System</button></span></div>
       <div class="eng">Updates</div>
       <div class="cap">look for new firmware and bootloader releases</div>
       <div class="row" style="margin:4px 0 24px"><span class="seg" id="p-upd"><button data-v="connect">On connect</button><button data-v="daily">Daily</button><button data-v="never">Never</button></span></div>
@@ -686,6 +705,36 @@ function valueAt(a, t) {                               // interpolated, null acr
   return n ? n[1] : null;
 }
 
+// ---------------------------------------------------------------- theme (SETTINGS > Appearance: dark, light, system)
+// data-theme on <html> holds the resolved choice and switches the CSS variables; the canvases cannot use CSS variables, so
+// PAL holds the colours they draw with, read from the computed style whenever the theme changes.  The choice itself is the
+// setting "theme" of the program (settings.json); localStorage only remembers the last one so that the first paint of a
+// start already has the right colours.
+const THEMES = ['dark', 'light', 'system'];
+const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+let themePref = null, themeShown = null, PAL = null;
+function applyTheme(pref) {                              // true when the colours changed
+  if (!THEMES.includes(pref)) pref = 'dark';
+  const shown = pref === 'system' ? (darkQuery.matches ? 'dark' : 'light') : pref;
+  themePref = pref;
+  if (shown === themeShown && PAL) return false;
+  themeShown = shown;
+  const root = document.documentElement;
+  root.dataset.theme = shown;
+  const css = getComputedStyle(root), v = n => css.getPropertyValue(n).trim();
+  PAL = {rule: v('--rule'), ruleHi: v('--rule-hi'), ink: v('--ink'), dim: v('--dim'), acc: v('--acc'), bg: v('--bg'),
+         scan: v('--scan'), env: v('--env')};
+  return true;
+}
+try { applyTheme(localStorage.getItem('theme')); } catch (e) { applyTheme('dark'); }
+function setTheme(pref) {                                // the setting arrived (state, or the answer to a change)
+  const was = themePref;
+  const changed = applyTheme(pref);
+  if (themePref !== was) { try { localStorage.setItem('theme', themePref); } catch (e) {} }
+  return changed;
+}
+darkQuery.addEventListener('change', () => { if (themePref === 'system' && applyTheme('system')) render(); });
+
 /* o: {data, t1, win, auto, lo, hi, mini, cursors:[tA,tB]|null, unit}; returns the geometry for cursor mapping */
 function drawTrace(c, o) {
   const w = c.clientWidth, hgt = c.clientHeight, dpr = window.devicePixelRatio || 1;
@@ -706,11 +755,11 @@ function drawTrace(c, o) {
   }
   const X = t => L + (R - L) * (t - t0) / o.win, Y = v => B - (B - T) * (v - lo) / (hi - lo);
   // graticule: 10 x 8 major divisions, minor ticks (5 per division) on the centre lines and the frame
-  g.strokeStyle = '#262622'; g.lineWidth = 1; g.beginPath();
+  g.strokeStyle = PAL.rule; g.lineWidth = 1; g.beginPath();
   for (let i = 0; i <= 10; i++) { const x = Math.round(L + (R - L) * i / 10) + .5; g.moveTo(x, T); g.lineTo(x, B); }
   for (let j = 0; j <= 8; j++) { const y = Math.round(T + (B - T) * j / 8) + .5; g.moveTo(L, y); g.lineTo(R, y); }
   g.stroke();
-  g.strokeStyle = '#3a3a34'; g.beginPath();
+  g.strokeStyle = PAL.ruleHi; g.beginPath();
   const cx = Math.round((L + R) / 2) + .5, cy = Math.round((T + B) / 2) + .5;
   g.moveTo(cx, T); g.lineTo(cx, B); g.moveTo(L, cy); g.lineTo(R, cy); g.stroke();
   g.beginPath();
@@ -720,7 +769,7 @@ function drawTrace(c, o) {
     if (k) { g.moveTo(cx - k, y); g.lineTo(cx + k, y); g.moveTo(L, y); g.lineTo(L + k, y); g.moveTo(R, y); g.lineTo(R - k, y); } }
   g.stroke();
   // one-pixel scanlines over the plot, barely visible
-  g.fillStyle = 'rgba(233,231,223,.025)';
+  g.fillStyle = PAL.scan;
   for (let y = T; y < B; y += 4) g.fillRect(L, y, R - L, 1);
   g.save(); g.beginPath(); g.rect(L, T, R - L, B - T); g.clip();
   const n = Math.floor(R - L) + 1;
@@ -732,11 +781,11 @@ function drawTrace(c, o) {
       if (mn[k] === null || p[1] < mn[k]) mn[k] = p[1];
       if (mx[k] === null || p[1] > mx[k]) mx[k] = p[1];
     }
-    g.fillStyle = 'rgba(242,194,0,.28)';
+    g.fillStyle = PAL.env;
     for (let k = 0; k < n; k++) if (mn[k] !== null) { const y1 = Y(mx[k]), y2 = Y(mn[k]); g.fillRect(L + k, y1, 1, Math.max(1, y2 - y1)); }
   }
   // the trace breaks where there was no value (overload, another mode / unit / range, a pause of the frames)
-  g.strokeStyle = '#f2c200'; g.lineWidth = 1.25; g.lineJoin = 'round'; g.beginPath();
+  g.strokeStyle = PAL.acc; g.lineWidth = 1.25; g.lineJoin = 'round'; g.beginPath();
   let pen = false, tp = null;
   for (const p of pts) {
     if (p[1] === null || (tp !== null && p[0] - tp > 1.5)) pen = false;
@@ -745,8 +794,8 @@ function drawTrace(c, o) {
   }
   g.stroke();
   g.restore();
-  g.strokeStyle = '#3a3a34'; g.strokeRect(L + .5, T + .5, R - L, B - T);
-  g.fillStyle = '#8d8a80'; g.font = mono;
+  g.strokeStyle = PAL.ruleHi; g.strokeRect(L + .5, T + .5, R - L, B - T);
+  g.fillStyle = PAL.dim; g.font = mono;
   if (o.mini) {
     g.textAlign = 'right'; g.fillText(axisNum(hi), R, T - 8); g.fillText(axisNum(lo), R, B + 14);
     g.textAlign = 'left'; g.fillText('−' + o.win + ' s', L, B + 14); g.textAlign = 'right'; g.fillText('0', R, B + 14);
@@ -759,9 +808,9 @@ function drawTrace(c, o) {
   if (o.cursors) o.cursors.forEach((t, i) => {
     if (t === null || t < t0 || t > t1) return;
     const x = Math.round(X(t)) + .5;
-    g.strokeStyle = '#e9e7df'; g.lineWidth = 1; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x, T); g.lineTo(x, B); g.stroke(); g.setLineDash([]);
-    g.fillStyle = '#e9e7df'; g.fillRect(x - 7, T, 14, 14);
-    g.fillStyle = '#0c0c0b'; g.textAlign = 'center'; g.font = 'bold 10px ' + getComputedStyle(document.body).getPropertyValue('--mono'); g.fillText('AB'[i], x, T + 11);
+    g.strokeStyle = PAL.ink; g.lineWidth = 1; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(x, T); g.lineTo(x, B); g.stroke(); g.setLineDash([]);
+    g.fillStyle = PAL.ink; g.fillRect(x - 7, T, 14, 14);
+    g.fillStyle = PAL.bg; g.textAlign = 'center'; g.font = 'bold 10px ' + getComputedStyle(document.body).getPropertyValue('--mono'); g.fillText('AB'[i], x, T + 11);
   });
   return {L, R, T, B, t0, t1, lo, hi};
 }
@@ -1235,6 +1284,10 @@ function prefText(id, key) {                            // a text setting: the f
 }
 prefText('p-folder', 'recordings_folder'); prefText('p-sync', 'card_sync_folder'); prefText('p-ntp', 'ntp_server');
 $('p-csv').onclick = e => { const b = e.target.closest('button'); if (b) setPref('csv_format', b.dataset.v); };
+$('p-theme').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  send('prefs_set', {key: 'theme', value: b.dataset.v}, true).then(j => { if (setTheme(j.prefs.theme)) render(); say('saved'); }).catch(fail);
+};
 $('p-upd').onclick = e => { const b = e.target.closest('button'); if (b) setPref('update_check', b.dataset.v); };
 $('p-clock').onclick = e => { const b = e.target.closest('button'); if (b) setPref('clock_on_connect', b.dataset.v === 'on'); };
 $('p-diag').onclick = e => { const b = e.target.closest('button'); if (b) setPref('diag_log', b.dataset.v === 'on'); };
@@ -1256,7 +1309,7 @@ function drawPrefs(P, C, S) {
   $('p-folder').disabled = $('p-folder-save').disabled = P.folder_forced || rec;
   setText($('p-folder-note'), P.folder_forced ? 'given on the command line (--folder): change it there'
     : rec ? 'a recording is running: stop it to change the folder' : '');
-  seg($('p-csv'), P.csv_format); seg($('p-upd'), P.update_check);
+  seg($('p-theme'), themePref); seg($('p-csv'), P.csv_format); seg($('p-upd'), P.update_check);
   seg($('p-clock'), P.clock_on_connect ? 'on' : 'off'); seg($('p-diag'), P.diag_log ? 'on' : 'off');
   seg($('p-xdiag'), P.ext_diag ? 'on' : 'off');
   setText($('p-xdiag-note'), P.ext_diag_note || '');
@@ -1269,6 +1322,7 @@ function drawPrefs(P, C, S) {
 
 function render() {
   if (!state) return;
+  if (state.prefs) setTheme(state.prefs.theme);
   const L = state.link || {state: 'idle'}, S = state.session || {stats: {}, trend: []}, M = state.meter || {};
   const U = state.update || {state: 'none'};
   drawHeader(L, M, S, state.now);

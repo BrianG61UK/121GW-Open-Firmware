@@ -218,7 +218,7 @@ def build(app, now=None):
     w('')
     w('[companion settings]')
     p = st.get('prefs') or {}
-    for k in ('update_check', 'clock_on_connect', 'csv_format', 'diag_log', 'ext_diag'):
+    for k in ('update_check', 'clock_on_connect', 'csv_format', 'theme', 'diag_log', 'ext_diag'):
         w('%-17s %s' % (k, p.get(k)))
     w('recordings folder %s' % ('custom' if app.settings.get('recordings_folder') or app.folder_forced else 'default'))
     w('')

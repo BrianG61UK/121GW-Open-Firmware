@@ -482,8 +482,9 @@ class Prefs(AppCase):
 
     def test_state_and_defaults(self):
         p = self.app.state()['prefs']
-        self.assertEqual({k: p[k] for k in ('clock_on_connect', 'update_check', 'csv_format', 'diag_log')},
-                         {'clock_on_connect': False, 'update_check': 'connect', 'csv_format': 'comma', 'diag_log': False})
+        self.assertEqual({k: p[k] for k in ('clock_on_connect', 'update_check', 'csv_format', 'theme', 'diag_log')},
+                         {'clock_on_connect': False, 'update_check': 'connect', 'csv_format': 'comma', 'theme': 'dark',
+                          'diag_log': False})
         self.assertEqual(p['recordings_folder'], os.path.join(self.tmp, 'docs'))
         self.assertTrue(p['folder_forced'])
         self.assertEqual(p['card_sync_folder'], os.path.join(self.tmp, 'docs', 'card'))
@@ -491,6 +492,7 @@ class Prefs(AppCase):
 
     def test_set_persists_and_applies(self):
         self.set('csv_format', 'semicolon')
+        self.set('theme', 'light')
         self.set('clock_on_connect', True)
         self.set('ntp_server', ' time.example.org ')
         self.set('card_sync_folder', os.path.join(self.tmp, 'sync'))
@@ -498,15 +500,29 @@ class Prefs(AppCase):
         self.assertEqual(self.app.card_st['sync']['folder'], os.path.join(self.tmp, 'sync'))
         again = app_mod.Companion(os.path.join(self.tmp, 'docs'))
         p = again.prefs()
-        self.assertEqual((p['csv_format'], p['clock_on_connect'], p['ntp_server'], p['card_sync_folder']),
-                         ('semicolon', True, 'time.example.org', os.path.join(self.tmp, 'sync')))
+        self.assertEqual((p['csv_format'], p['theme'], p['clock_on_connect'], p['ntp_server'], p['card_sync_folder']),
+                         ('semicolon', 'light', True, 'time.example.org', os.path.join(self.tmp, 'sync')))
 
     def test_bad_values_are_refused_and_not_stored(self):
         for key, value in (('nonsense', 1), ('clock_on_connect', 'yes'), ('diag_log', 1), ('update_check', 'hourly'),
-                           ('csv_format', 'tab'), ('ntp_server', 'a b'), ('ntp_server', ''), ('card_sync_folder', '  ')):
+                           ('csv_format', 'tab'), ('theme', 'blue'), ('theme', None), ('theme', True), ('theme', 'Light'),
+                           ('ntp_server', 'a b'), ('ntp_server', ''), ('card_sync_folder', '  ')):
             with self.assertRaises(ValueError, msg=key):
                 self.set(key, value)
         self.assertFalse(os.path.exists(app_mod.config_path()))
+
+    def test_theme_values(self):
+        for v in app_mod.THEMES:                               # all three are accepted and reported back
+            self.assertEqual(self.set('theme', v)['prefs']['theme'], v)
+        self.assertEqual(app_mod.THEMES, ('dark', 'light', 'system'))
+        with open(app_mod.config_path()) as f:
+            self.assertEqual(json.load(f)['theme'], 'system')
+
+    def test_theme_from_a_hand_edited_file_is_the_default(self):
+        os.makedirs(os.path.dirname(app_mod.config_path()), exist_ok=True)
+        with open(app_mod.config_path(), 'w') as f:
+            json.dump({'theme': 'purple'}, f)
+        self.assertEqual(app_mod.Companion(os.path.join(self.tmp, 'docs')).prefs()['theme'], 'dark')
 
     def test_recordings_folder(self):
         with self.assertRaises(ValueError):                   # --folder given: the setting cannot override it
@@ -554,10 +570,12 @@ class Prefs(AppCase):
     def test_reset(self):
         a = self.unforced()
         self.set('csv_format', 'semicolon', a)
+        self.set('theme', 'light', a)
         self.set('recordings_folder', os.path.join(self.tmp, 'rec'), a)
         a.command({'set_derived': {'loop_range': '0-20'}})
         r = a.command({'prefs_reset': True})
         self.assertEqual(r['prefs']['csv_format'], 'comma')
+        self.assertEqual(r['prefs']['theme'], 'dark')
         self.assertEqual(a.folder, os.path.join(self.tmp, 'Documents', '121GW'))
         self.assertEqual(a.state()['derived']['loop_range'], '4-20')
         with open(app_mod.config_path()) as f:

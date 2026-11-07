@@ -84,9 +84,11 @@ PREF_DEFAULTS = {'recordings_folder': None,      # None: <Documents>/121GW
                  'clock_on_connect': False,      # set the meter's clock from the time server after each connection
                  'update_check': 'connect',      # 'connect' (at each connection and every 30 min), 'daily', 'never'
                  'csv_format': 'comma',          # recordings: 'comma' = , and decimal point; 'semicolon' = ; and decimal comma
+                 'theme': 'dark',                # the page's colours: 'dark', 'light', or 'system' (follows the system's light/dark choice)
                  'diag_log': False,              # the COMPANION_LOG=1 diagnosis, from the next start
                  'ext_diag': False}              # the meter counts link errors inside (F-1.15 on) and the report shows them
 UPDATE_CHECKS = ('connect', 'daily', 'never')
+THEMES = ('dark', 'light', 'system')
 CSV_FORMATS = {'comma': (',', '.'), 'semicolon': (';', ',')}
 
 
@@ -1184,6 +1186,8 @@ class Companion:
         """The settings as they apply now, plus what the page needs to explain them."""
         p = {k: self.settings.get(k, d) for k, d in PREF_DEFAULTS.items()}
         p['recordings_folder'] = self.folder
+        if p['theme'] not in THEMES:                       # a hand-edited settings.json: the default, as the page would show it
+            p['theme'] = PREF_DEFAULTS['theme']
         p['card_sync_folder'] = self.card_st['sync']['folder'] or os.path.join(self.folder, 'card')
         p['ntp_server'] = self.clock['server']
         p.update(folder_forced=self.folder_forced, diag_log_active=TRACE_UI, file=config_path(),
@@ -1224,6 +1228,9 @@ class Companion:
         elif key == 'csv_format':
             if value not in CSV_FORMATS:
                 raise ValueError('csv_format: one of %s' % ', '.join(CSV_FORMATS))
+        elif key == 'theme':
+            if value not in THEMES:
+                raise ValueError('theme: one of %s' % ', '.join(THEMES))
         self.settings[key] = value
         save_settings(self.settings)
         if key == 'ext_diag' and self.link.state == 'connected' and self.mode == 'firmware':
