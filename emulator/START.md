@@ -86,6 +86,9 @@ On Linux the emulator opens in your web browser; stop it with the **Quit emulato
 
   ![load your own firmware](docs/start/13-load-firmware.svg)
 
+- **Colours:** the **colours** list in the Emulator box switches the page between Dark (the default), Light and System
+  (follows the computer's light or dark setting); the drawn meter and its display do not change.
+
 - **Stop:** close the window (Mac, Windows) or click **Quit emulator**.
 
 The emulated meter starts with made-up calibration and no serial number. Never copy a `cal.bin` that the emulator

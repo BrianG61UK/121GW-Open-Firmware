@@ -3,8 +3,29 @@
 <head>
 <meta charset="utf-8">
 <title>121GW emulator</title>
+<script>
+  /* theme of the page around the meter (the drawing and the LCD never change): Dark (default), Light, System (follows the
+     computer's light / dark choice).  The choice is kept in this browser's localStorage; data-theme on <html> holds the
+     resolved value that the variables below switch on. */
+  const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+  function applyTheme(pref) {
+    if (!['dark', 'light', 'system'].includes(pref)) pref = 'dark';
+    document.documentElement.dataset.theme = pref === 'system' ? (darkQuery.matches ? 'dark' : 'light') : pref;
+    return pref;
+  }
+  let themePref = 'dark';
+  try { themePref = localStorage.getItem('emu-theme') || 'dark'; } catch (e) {}
+  themePref = applyTheme(themePref);
+  darkQuery.addEventListener('change', () => applyTheme(themePref));
+</script>
 <style>
-  html, body { height:100%; } body { margin:0; box-sizing:border-box; height:100vh; overflow:hidden; background:#16181b; color:#dfe3e6; font:13px/1.35 -apple-system, Helvetica, Arial, sans-serif; display:flex; gap:18px; padding:16px; }
+  :root { --page:#16181b; --ink:#dfe3e6; --panel:#1f2327; --panel-line:#2c3237; --h3:#9fb4c6; --log:#c7d0d6;
+          --ctl:#2b3238; --ctl-ink:#e6eaee; --ctl-line:#3a434a; --led:#333; --led-on:#ffd23f; --led-glow:#ffd23f;
+          --bad:#ff9b6b; --good:#8fdc8f; --stop:#ff6b6b; color-scheme:dark; }
+  :root[data-theme="light"] { --page:#f2f4f6; --ink:#1c2126; --panel:#ffffff; --panel-line:#cfd6dc; --h3:#3b5f7d; --log:#26303a;
+          --ctl:#e8ecef; --ctl-ink:#1c2126; --ctl-line:#b9c2c9; --led:#b8bec4; --led-on:#ffb800; --led-glow:#ffb800;
+          --bad:#b3411a; --good:#1f7a2e; --stop:#b3261e; color-scheme:light; }
+  html, body { height:100%; } body { margin:0; box-sizing:border-box; height:100vh; overflow:hidden; background:var(--page); color:var(--ink); font:13px/1.35 -apple-system, Helvetica, Arial, sans-serif; display:flex; gap:18px; padding:16px; }
   /* Front panel: the meter drawing (695 x 1338 px) with live elements placed in its pixel coordinates. */
   #panel { position:relative; height:min(calc(100vh - 32px), calc((100vw - 470px) * 1338 / 695)); width:auto; aspect-ratio:695/1338; flex:none; background:url(/assets/panel.png) center/100% 100% no-repeat; }
   .abs { position:absolute; }
@@ -27,17 +48,18 @@
   .jack:hover { box-shadow:0 0 0 3px #ffffff55; }
   .jack.plugged { background:radial-gradient(circle,#cfd3d6 0 34%,#1b1d1f 35% 48%,#c62626 49% 64%,#0000 65%); }
   #side { flex:1; min-width:420px; overflow:auto; display:flex; flex-direction:column; gap:12px; }
-  .panel { background:#1f2327; border:1px solid #2c3237; border-radius:10px; padding:10px 12px; }
-  .panel h3 { margin:0 0 6px; font-size:13px; color:#9fb4c6; font-weight:600; }
+  .panel { background:var(--panel); border:1px solid var(--panel-line); border-radius:10px; padding:10px 12px; }
+  .panel h3 { margin:0 0 6px; font-size:13px; color:var(--h3); font-weight:600; }
   #status span { display:inline-block; margin-right:14px; }
-  .led { display:inline-block; width:10px; height:10px; border-radius:50%; background:#333; vertical-align:-1px; margin-right:4px; }
-  .led.on { background:#ffd23f; box-shadow:0 0 8px #ffd23f; }
+  .led { display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--led); vertical-align:-1px; margin-right:4px; }
+  .led.on { background:var(--led-on); box-shadow:0 0 8px var(--led-glow); }
   #matrix { font:10px/12px Menlo, monospace; white-space:pre; overflow-x:auto; }
-  #log { font:11px/14px Menlo, monospace; height:300px; overflow:auto; white-space:pre; color:#c7d0d6; }
-  .ctl button { background:#2b3238; color:#e6eaee; border:1px solid #3a434a; border-radius:6px; padding:4px 10px; margin-right:6px; cursor:pointer; }
+  #log { font:11px/14px Menlo, monospace; height:300px; overflow:auto; white-space:pre; color:var(--log); }
+  .ctl button { background:var(--ctl); color:var(--ctl-ink); border:1px solid var(--ctl-line); border-radius:6px; padding:4px 10px; margin-right:6px; cursor:pointer; }
   label { margin-right:12px; } input[type=range] { width:160px; vertical-align:middle; }
-  .ctl select, .ctl input[type=number] { background:#2b3238; color:#e6eaee; border:1px solid #3a434a; border-radius:6px; padding:3px 6px; }
-  .bad { color:#ff9b6b; } .good { color:#8fdc8f; }
+  .ctl select, .ctl input[type=number] { background:var(--ctl); color:var(--ctl-ink); border:1px solid var(--ctl-line); border-radius:6px; padding:3px 6px; }
+  .bad { color:var(--bad); } .good { color:var(--good); } .stop { color:var(--stop); }
+  #themebox { float:right; font-weight:400; margin:0; }
 </style>
 </head>
 <body>
@@ -57,7 +79,7 @@
   </svg>
 </div>
 <div id="side">
-  <div class="panel ctl"><h3>Emulator</h3>
+  <div class="panel ctl"><h3>Emulator <label id="themebox" title="colours of this page (the meter drawing and the LCD stay as they are); System follows the computer's light or dark choice">colours <select id="theme"><option value="dark">Dark</option><option value="light">Light</option><option value="system">System</option></select></label></h3>
     <button id="run">Pause</button><button id="reset">Power cycle</button>
     <label><input type="checkbox" id="ghost"> ghost unlit segments</label>
     <label><input type="checkbox" id="unproven"> show unproven glass elements</label>
@@ -164,6 +186,8 @@ let envInit = false;
 sv('eapply').onclick = () => post({environment: {pickup_hz: +sv('ehz').value, pickup_v: +sv('ev').value,
   coupling_pf: +sv('epf').value, drift: +sv('edrift').value}});
 sv('eoff').onclick = () => { sv('ev').value = 0; post({environment: {pickup_v: 0}}); };
+sv('theme').value = themePref;
+sv('theme').onchange = e => { themePref = applyTheme(e.target.value); try { localStorage.setItem('emu-theme', themePref); } catch (err) {} };
 document.getElementById('run').onclick =e => post({run: e.target.textContent === 'Resume'});
 document.getElementById('reset').onclick = () => post({reset:true});
 document.getElementById('sdcard').onchange = e => post({sdcard: e.target.checked});
@@ -219,7 +243,7 @@ async function tick() {
       `<span>${s.running ? 'running' : 'paused'}</span><span>t = ${(s.time_ms/1000).toFixed(3)} s</span>` +
       `<span>clock ${(s.sysclk/1e6).toFixed(3)} MHz</span><span><i class="led ${s.buzzer?'on':''}"></i>buzzer</span>` +
       `<span><i class="led ${s.backlight?'on':''}"></i>backlight</span><span>dial: ${NAMES[s.dial]}</span><span>unmodelled accesses: ${s.unmodelled}</span>` +
-      (s.stop ? `<br><b style="color:#ff6b6b">stopped: ${s.stop}</b>` : '');
+      (s.stop ? `<br><b class="stop">stopped: ${s.stop}</b>` : '');
     document.getElementById('run').textContent = s.running ? 'Pause' : 'Resume';
     if (s.machine) { const mi = s.machine, fw = sv('fw');
       if (fw.dataset.key !== JSON.stringify(mi.firmware_choices)) {          // the release builds
