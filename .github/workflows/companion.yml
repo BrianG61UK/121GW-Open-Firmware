@@ -209,3 +209,42 @@ jobs:
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --verify-tag --latest=false \
             --title "121GW Companion ${tag#companion-}" --notes-file "$RUNNER_TEMP/notes.md" || gh release view "$tag" >/dev/null
           gh release upload "$tag" 121GW-Companion-* --clobber
+
+  firmware-release:
+    # The firmware workflow attaches "the newest companion" to each firmware release; a firmware tag pushed together
+    # with a companion tag attached the previous companion (2026-11-07: v1.2.3 carried 1.2.25, not 1.2.26).  Once all
+    # files of this companion release are there, they replace older companion files on the newest firmware release.
+    name: Put this companion on the newest firmware release
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'companion-v')
+    needs: [macos, windows, linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Replace the companion files of the newest firmware release
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          ver="${tag#companion-v}"
+          fw=$(gh release list --limit 100 --exclude-drafts --json tagName,publishedAt \
+               -q '[.[] | select(.tagName | test("^v[0-9]+[.][0-9]+[.][0-9]+$"))] | sort_by(.publishedAt) | last | .tagName')
+          test -n "$fw"
+          have=$(gh release view "$fw" --json assets -q '[.assets[].name | select(startswith("121GW-Companion-"))
+                 | capture("^121GW-Companion-(?<v>[0-9.]+)-").v] | unique | .[]')
+          for v in $have; do                       # never put an older companion over a newer one
+            if [ "$(printf '%s\n%s\n' "$v" "$ver" | sort -V | tail -1)" != "$ver" ]; then
+              echo "$fw already carries companion $v, newer than $ver: nothing to do"; exit 0
+            fi
+          done
+          mkdir companion
+          gh release download "$tag" --dir companion --pattern "121GW-Companion-$ver-*"
+          n=$(ls companion | wc -l)
+          test "$n" -eq 8 || { echo "expected 8 files of $tag, found $n"; exit 1; }
+          gh release upload "$fw" companion/* --clobber
+          for a in $(gh release view "$fw" --json assets -q '.assets[].name | select(startswith("121GW-Companion-"))'); do
+            case "$a" in "121GW-Companion-$ver-"*) ;; *) gh release delete-asset "$fw" "$a" -y; echo "removed $a" ;; esac
+          done
+          echo "$fw now carries companion $ver"
