@@ -7,9 +7,9 @@ Two emulated meters, both with the bundled synthetic EEPROM.  The reference mete
 with the keys (item poked, long SETUP = edit, REL until the page's RAM variable has the wanted value, long SETUP = save);
 for every setting the EEPROM byte and the RAM variable it ends with are recorded.  The second meter shows the page Ld
 (Bluetooth on) and takes PUT requests over the emulated USART2 (host side emulator/tools/btft.py).
-  T1 reference: the 17 pages (the four pages of EEPROM 0x020 together; the page APO for 0x016 and for the time 0x02B)
+  T1 reference: the 18 pages (the four pages of EEPROM 0x020 together; the page APO for 0x016 and for the time 0x02B)
      give the recorded EEPROM byte and RAM value.
-  T2 GET: the 18 ids in table order with the values of the synthetic EEPROM as the pages show them.
+  T2 GET: the 19 ids in table order with the values of the synthetic EEPROM as the pages show them.
   T3 round trip: every id with 2 .. 4 values (the first is the one the reference meter's page gave): status 0, the answer
      names the id and the value now in effect, the EEPROM byte and the RAM variable equal the reference's for the first
      value and the page's rules for the others (byte = value, RAM = value - bias), and no other EEPROM byte changed (the
@@ -65,12 +65,13 @@ SPEC = [
     (0x029, 'RTD', 'set_rtd_code', 0, 0, 2, [2, 1, 0], 38, None, 0),
     (0x02A, 'battery trim', 'set_btrim', 100, 50, 150, [105, 50, 150, 100], 1, None, 100),
     (0x02B, 'auto power-off time', 'pwr_apo_code', 0, 0, 3, [3, 1, 0], 2, None, 0),
+    (0x02C, 'DIODE contact chirp', 'set_chirp_on', 0, 0, 1, [1, 0], 42, 11, 0),
 ]
 # EEPROM bytes a page's save writes: the page APO (item 2) saves its on / off byte 0x016 and its time 0x02B together
 SAVES = {s[0]: {s[0]} for s in SPEC}
 SAVES[0x016] = SAVES[0x02B] = {0x016, 0x02B}
 NOT_SETTINGS = [0x000, 0x001, 0x003, 0x007, 0x008, 0x009, 0x00A, 0x00B, 0x00C, 0x00D, 0x00E, 0x012, 0x018, 0x019, 0x01F, 0x023,
-                0x026, 0x02C, 0x030, 0x2D0, 0x2E0, 0x4D0, 0x4F8, 0x500, 0xFFFF]
+                0x026, 0x02D, 0x030, 0x2D0, 0x2E0, 0x4D0, 0x4F8, 0x500, 0xFFFF]
 B20_VARS = ('set_relp', 'log_trig', 'set_clk12', 'set_hunt_on')
 
 

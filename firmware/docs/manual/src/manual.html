@@ -368,6 +368,14 @@ switch the meter off. Leave it <span class="lcd">oFF</span> if your capacitors m
 functions.</p>
 </div><div class="pics"><figure><img src="../img/feat_hunt.png" alt=""><figcaption>HUnt on.</figcaption></figure></div></div>
 
+<div class="feat" id="f-chirp"><div class="txt">
+<h3>Diode contact chirp</h3>
+<p class="where"><b>Where:</b> diode · settings page <span class="lcd">CHIrP</span> (sub display), value on the main display</p>
+<p>With <span class="lcd">on</span> the diode double beep sounds once per diode contact, and not while it stays
+connected, with open probes, a reversed diode or when you lift the probes. <span class="lcd">oFF</span> (the default)
+keeps the beep as before. Idea: GitHub user Cecilius.</p>
+</div><div class="pics"><figure><img src="../img/setup_DIODE_42_CH1rP.png" alt=""><figcaption>CHIrP, off.</figcaption></figure></div></div>
+
 <div class="feat" id="f-bl"><div class="txt">
 <h3>Backlight timer</h3>
 <p class="where"><b>Where:</b> settings page <span class="lcd">bL</span></p>
@@ -520,6 +528,7 @@ menu is locked while logging and while you look at stored readings.</p>
 <tr><td><span class="lcd">LPOFF</span></td><td>4–20 mA loop view</td><td>DC mA</td><td><a class="pg" href="#f-loop"></a></td></tr>
 <tr><td><span class="lcd">PtOFF</span></td><td>PT100 / PT1000 view</td><td>resistance</td><td><a class="pg" href="#f-pt"></a></td></tr>
 <tr><td><span class="lcd">HUnt</span></td><td>Capacitance anti-hunting (on / oFF on the main display)</td><td>capacitance</td><td><a class="pg" href="#f-hunt"></a></td></tr>
+<tr><td><span class="lcd">CHIrP</span></td><td>Diode contact chirp (on / oFF on the main display)</td><td>diode</td><td><a class="pg" href="#f-chirp"></a></td></tr>
 <tr><td><span class="lcd">CL 24</span></td><td>12 / 24-hour clock</td><td>all</td><td><a class="pg" href="#f-cl"></a></td></tr>
 <tr><td><span class="lcd">LtOFF</span>, <span class="lcd">Lo</span>, <span class="lcd">HI</span></td><td>Pass / fail test and its limits</td><td>all</td><td><a class="pg" href="#f-limit"></a></td></tr>
 <tr><td><span class="lcd">PASS</span></td><td>Pass / fail result</td><td>while the test is on</td><td><a class="pg" href="#f-limit"></a></td></tr>
@@ -580,8 +589,8 @@ view). With firmware F-1.17 or newer the button <b>Leave Ld-bt</b> takes the met
 (the next SETUP page, as with a SETUP press), so the readings come back without touching the meter;</li>
 <li>show the meter's versions, set its clock from a time server, update the firmware and the bootloader, and change
 the meter's settings (<b>METER</b> view), with the meter on page <span class="lcd">Ld-bt</span>. Not the logging
-interval, the serial number or the calibration. The capacitance page <span class="lcd">HUnt</span> is among them (firmware
-F-1.16 or newer);</li>
+interval, the serial number or the calibration. The capacitance page <span class="lcd">HUnt</span> (firmware F-1.16
+or newer) and the diode page <span class="lcd">CHIrP</span> (F-1.21 or newer) are among them;</li>
 <li>keep the program's own settings (<b>SETTINGS</b> view, key <kbd>6</kbd>): the folders for recordings and for the card
 copy, the CSV format (decimal point with comma-separated values, or decimal comma with semicolons), the time server and
 whether the meter's clock is set after each connection, how often to look for new firmware (at each connection,

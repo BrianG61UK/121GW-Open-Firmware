@@ -173,6 +173,10 @@ These checks confirm on hardware what the emulator cannot.
    back to 3 V: 15 segments, label 5.  With the mA jack plugged, uA position: DCuA shows 50, MODE to DCuVA shows 500;
    dial to A / mA and back: DCuVA still shows 500.  mVA / VA position, DCVA, RANGE through the four ranges: no label,
    no label, 50, 500.
+39. DIODE contact chirp (F-1.21, IMP-51; verified working on a meter 2026-11-07): DIODE, SETUP to `CHIrP` (after `dSP`): main display `oFF`.  With `oFF`
+   touch a diode: the double beep as v2.05.  Long SETUP, REL (`on`), long SETUP (saved; dump: only EEPROM 0x02C = 1
+   changed).  Touch a diode: one double beep; hold it: no more; lift: nothing; touch again: one; open leads and a
+   reversed diode: nothing; short the probes: the continuous tone as before, then a diode: one double beep.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

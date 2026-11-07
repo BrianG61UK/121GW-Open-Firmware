@@ -610,8 +610,9 @@ ENDFUNC fn_08016D34
 @ Deviation: OF-30 (both builds), OF-32, IMP-01 rule P5 (production only; only OF-30 writes the byte in the baseline):
 @            when ui_blank_req is non-zero the main digits show spaces (1) or dashes (2) instead of the value; the request is placed after the calibration screens, the jack warning and
 @            the VA no-value screen, and before the v2.05 blank rule, so those keep their priority
-@            IMP-45: while the SETUP page HUnt (item 41) is selected, ui_hunt_draw draws its value on the main digits and nothing else
-@            is drawn; the test sits right after the calibration screens, before the ui_blank_req rule
+@            IMP-45, IMP-51: while the SETUP page HUnt (item 41) or CHIrP (item 42) is selected, ui_hunt_draw draws its value on
+@            the main digits and nothing else is drawn; the test sits right after the calibration screens, before the
+@            ui_blank_req rule
 @ Clobbers : r0, r1, r2, r3 (v2.05 regeffects.txt)
 @ -----------------------------------------------------------------------------
 FUNC fn_08016E08
@@ -814,7 +815,7 @@ FUNC fn_08016E08
     b .L08017090                             @ 08016FCC
 .L08016FCE:                                @ reached from 08016FB4 beq (equal / zero)
     bl ui_hunt_view
-    cbz r0, .Lrf_no_hunt                    @ IMP-45: not the page HUnt
+    cbz r0, .Lrf_no_hunt                    @ IMP-45, IMP-51: not the page HUnt or CHIrP
     bl ui_hunt_draw                         @ IMP-45: its value ("   on" / "  oFF") on the main digits, before every blank rule
     b .L08017090
 .Lrf_no_hunt:

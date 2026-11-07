@@ -555,6 +555,24 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   out; the card file list and downloads come in small pieces, each asked for again when damaged. Newer meters are not
   affected (nothing changes for them).
 
+### 2.25 DIODE contact chirp (implemented, IMP-51, F-1.21; off by default; idea: GitHub PR 22)
+- Request (GitHub PR 22): in DIODE the double beep reports a jump of the reading (v2.05: more than 1000 counts against
+  the last beep's reading, at most once per second), so touching a diode beeps, lifting the probes beeps, and a reading
+  that settles or drifts can beep again. The idea: one beep per diode contact, nothing else.
+- What it does (page `CHIrP` on): one double beep when a diode is connected (two means in a row, about 0.2 s, between
+  the short-circuit window -999..999 counts and the full scale), nothing while it stays connected (settling, drift),
+  nothing with open leads or a reverse diode (overload), nothing when the probes are lifted; after two means in a row
+  with open leads or a short, the next contact beeps again, so a bounce of the probe gives no second beep. The
+  short-circuit tone and the buzzer setting are unchanged. On the 15 V range a forward voltage below 1 V is inside the
+  short-circuit window (counts with 3 decimals), as in v2.05. Off (default): v2.05's jump chirp, unchanged.
+- Where: the SETUP page `CHIrP` (item 42, DIODE only, after `dSP`, before `CL`); like `HUnt` the name fills the sub
+  display and the main display shows `on` or `oFF`. Long SETUP edits, REL or PEAK switches, long SETUP saves, SETUP
+  short leaves without saving; the edit timeout re-reads the EEPROM. Bluetooth setting id 0x02C (companion 1.2.23).
+- How: `mres/chirp.s` (contact state in RAM), one check in `mres/diode.s` before v2.05's jump rule (0x08007EF6), the
+  page in `set/chirp.s`, its value on the main display in `ui/hunt.s`; storage EEPROM 0x02C (0 off, 1 on; any other
+  value reads as off). Emulator `test_diode_chirp.py` (off: the counts of beeps per phase of the production build
+  before IMP-51; on: one per contact), `test_bft_settings.py` (id 0x02C).
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
@@ -570,8 +588,8 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 | 0x028 | 2.14 loop | view code 0..2 (off / 4..20 / 0..20 mA) | off | none (free word 0x028..0x02B) | approved, implemented (planned for the LO limit of 2.1, which stays RAM only) |
 | 0x029 | 2.15 RTD | view code 0..2 (off / Pt100 / Pt1000) | off | as 0x028 | approved, implemented |
 | 0x02A | 2.16 battery | trim t + 100 (t = -50..+50, 0.2 % steps) | no trim | as 0x028 | approved, implemented |
-| 0x02B | - | - | - | as 0x028 | approved, not used |
-| 0x02C..0x02F | 2.1 | HI limit, s32 big-endian | 0 | none (free word) | approved, not used (limits RAM only) |
+| 0x02B | 2.23 APO time | 0 30 min, 1 1 min, 2 15 min, 3 60 min | 30 min | as 0x028 | approved, implemented |
+| 0x02C | 2.25 DIODE chirp | 0 off (v2.05 jump chirp), 1 on (contact chirp) | off | none (free word 0x02C..0x02F) | approved, implemented (planned for the HI limit of 2.1, which stays RAM only) |
 
 0x023 stays unused. Every offset above is in the never-accessed list of EMAP 4. The alternative locations 0x4B0..0x4CF (32
 bytes, never accessed by any code, outside `cal.bin`) would keep the settings out of a restored backup, but EMAP 9.1 item 2
@@ -599,6 +617,7 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 39 | `Ld` firmware over Bluetooth (after `bt`) | always (only the transfer needs Bluetooth on, logging off, not calibration mode) | transfer (implemented) |
 | 40 | `Fr` card format (after `Ld`) | only with the two-part bootloader | yes, after a confirmation (implemented) |
 | 41 | `HUnt` CAP anti-hunting (after `dSP`) | CAP mode only; name on the sub display, `on` / `oFF` on the main display | yes (implemented) |
+| 42 | `CHIrP` DIODE contact chirp (after `dSP`) | DIODE mode only; name on the sub display, `on` / `oFF` on the main display | yes (implemented) |
 | 32 | `n` count | MIN/MAX on | no |
 | 33 | `Sd` | MIN/MAX on | no |
 | 34, 35 | `tHI`, `tLo` | MIN/MAX on | no |
@@ -606,7 +625,7 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 Items 32..35 are the MIN/MAX pages. v2.05 uses 0..12 and 100; the page dispatcher falls back to item 0 for an unknown item
 (`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 25. SETUP short steps
 20 -> 21 -> 39 -> 40 (two-part bootloader only) -> 22 -> 23 (TEMP only) -> 24 -> 26 (BEEP only) / 37 (DCmA only) / 38 (OHM only) /
-41 (CAP only) -> 25 -> 27 -> 28 -> 29 -> 36 (test on) -> 30 -> 31 (tr-Ch) -> 32 -> 33 -> 34 -> 35 (MIN/MAX on) -> 0 (`fn_08015410`);
+41 (CAP only) / 42 (DIODE only) -> 25 -> 27 -> 28 -> 29 -> 36 (test on) -> 30 -> 31 (tr-Ch) -> 32 -> 33 -> 34 -> 35 (MIN/MAX on) -> 0 (`fn_08015410`);
 each new page joins that chain.
 
 ## 5. Order of work and checks

@@ -36,10 +36,12 @@
 @ RAM      : meter_mode, meter_range (read and, for a mode change, written), range_manual, filter_1khz, acdc_active,
 @            peak_hold, hold_stage2, mode_mode_req 0x2000804A, mode_range_req 0x2000804B and the measuring state
 @            that is cleared here (the blocks below list the addresses); calls load_full_scale, fn_0800D80C (HY3131
-@            row, calibration record, user zero), fn_0800FBE8 (front-end pins)
+@            row, calibration record, user zero), fn_0800FBE8 (front-end pins); entering DIODE: mres_chirp_reset
+@            (chirp_state, IMP-51)
 @ Spec     : analysis/autorange_and_scheduler.md 2.3 (what happens after a decision); analysis/rotary.md 2
 @ Deviation: OF-36 (cal_capture_cancel at every apply, switch CAL_CANCEL_ON_MODE_CHANGE), OF-20 (the overload latch is
-@            cleared by ar_apply, called at the end of fn_0800DB48)
+@            cleared by ar_apply, called at the end of fn_0800DB48), IMP-51 (production: entering DIODE clears the
+@            contact-chirp state, mres_chirp_reset)
 @ -----------------------------------------------------------------------------
 FUNC meter_apply_mode_range
 
@@ -154,6 +156,8 @@ FUNC meter_apply_mode_range
     movs r0, #1                         @ 0800D3B6
     ldr r1, =range_manual               @ 0800D3B8
     strb r0, [r1]                       @ 0800D3BC
+    bl mres_chirp_reset                 @ IMP-51: entering DIODE, no contact yet (only the contact-chirp state; fn_0800D718
+                                        @ below takes no argument)
     b .Lap_0800D3C8                     @ 0800D3BE
 @ reached from 0800D3B4 bne (not equal / non-zero) after cmp r0, #0xB
 .Lap_0800D3C0:

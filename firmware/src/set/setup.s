@@ -91,6 +91,7 @@
     .equ SET_ITEM_BFT, 39                   @ IMP-28: Bluetooth file transfer page Ld (between bt and rEL)
     .equ SET_ITEM_FMT, 40                   @ IMP-32: card format page Fr (between Ld and rEL, two-part bootloader only)
     .equ SET_ITEM_HUNT, 41                  @ IMP-45: capacitance anti-hunting page HUnt (CAP only, between dSP and CL)
+    .equ SET_ITEM_CHIRP, 42                 @ IMP-51: DIODE contact chirp page CHIrP (DIODE only, between dSP and CL)
     .equ SET_ITEM_LT, 27                    @ IMP-20: limit test pages Lt (27), Lo (28), HI (29), verdict (36)
     .equ SET_ITEM_LO, 28
     .equ SET_ITEM_HI, 29
@@ -127,7 +128,8 @@ FUNC fn_08015410
     @ to the page bt (item 21), on bt to the page Ld (item 39, IMP-28), on Ld to the page rEL (item 22); on rEL to the page tc (item 23) in TEMP (mode 5), else to
     @ the page dSP (item 24); on tc to dSP; on dSP to the page bH (item 26, IMP-16) in BEEP (mode 10), to the page LP
     @ (item 37, IMP-24) in DCmA (mode 19), to the page Pt (item 38, IMP-25) in OHM (mode 9), to the page HUnt (item 41, IMP-45)
-    @ in CAP (mode 12), else to the page CL (item 25); on bH, LP, Pt and HUnt to CL; on CL to the limit pages Lt, Lo, HI (27..29, IMP-20); on HI to the verdict page (36) while
+    @ in CAP (mode 12), to the page CHIrP (item 42, IMP-51) in DIODE (mode 11), else to the page CL (item 25); on bH, LP, Pt, HUnt
+    @ and CHIrP to CL; on CL to the limit pages Lt, Lo, HI (27..29, IMP-20); on HI to the verdict page (36) while
     @ the test is on; then to the logging pages tr (30) and, with tr-Ch, Ch (31) (IMP-21); then, while MIN/MAX is on, to
     @ the statistics page n (item 32, IMP-14); on n to Sd (item 33); on Sd to the time pages tHI (34) and tLo (35)
     @ (IMP-21); on tLo to item 0.  Each step ends an edit.
@@ -191,7 +193,8 @@ FUNC fn_08015410
 .Lsn_after_lt:
     ldr.w r0, =minmax_state
     ldrb r0, [r0, #0x0]
-    cbz r0, .Lsn_to0                        @ MIN/MAX off: next is item 0
+    cmp r0, #0
+    beq .Lsn_to0                            @ MIN/MAX off: next is item 0 (beyond the reach of cbz since IMP-51)
     movs r0, #SET_ITEM_ST_N                 @ MIN/MAX on: next is n
     b .Lsn_port_set
 .Lsn_not_lt:
@@ -203,6 +206,8 @@ FUNC fn_08015410
     beq .Lsn_to_clk                         @ Pt: next is CL
     cmp r0, #SET_ITEM_HUNT
     beq .Lsn_to_clk                         @ HUnt: next is CL
+    cmp r0, #SET_ITEM_CHIRP
+    beq .Lsn_to_clk                         @ CHIrP: next is CL
     cmp r0, #SET_ITEM_DSP
     bne .Lsn_not_dsp
     ldr.w r0, =meter_mode
@@ -219,8 +224,12 @@ FUNC fn_08015410
     bne 9f
     movs r0, #SET_ITEM_HUNT                 @ dSP in CAP: next is HUnt (IMP-45)
     b .Lsn_port_set
-9:  cmp r0, #0xa
-    bne .Lsn_to_clk                         @ dSP outside BEEP, DCmA, OHM and CAP: next is CL
+9:  cmp r0, #11
+    bne 10f
+    movs r0, #SET_ITEM_CHIRP                @ dSP in DIODE: next is CHIrP (IMP-51)
+    b .Lsn_port_set
+10: cmp r0, #0xa
+    bne .Lsn_to_clk                         @ dSP outside BEEP, DCmA, OHM, CAP and DIODE: next is CL
     movs r0, #SET_ITEM_BH                   @ dSP in BEEP: next is bH
     b .Lsn_port_set
 .Lsn_not_dsp:
@@ -264,13 +273,17 @@ FUNC fn_08015410
 .Lsn_bl:
     movs r0, #SET_ITEM_BT                   @ bL: next is bt
 .Lsn_port_set:
-    @ IMP-45: the page HUnt shows its value on the main display, so entering or leaving it asks for a redraw of that display
-    @ (CAP results can be 2.5 s apart): r0 = the new item, the old one is still in set_item
+    @ IMP-45, IMP-51: the pages HUnt and CHIrP show their value on the main display, so entering or leaving one asks for a
+    @ redraw of that display (CAP results can be 2.5 s apart): r0 = the new item, the old one is still in set_item
     ldr.w r1, =set_item
     ldrb r1, [r1, #0x0]
     cmp r1, #SET_ITEM_HUNT
     beq 1f
+    cmp r1, #SET_ITEM_CHIRP
+    beq 1f
     cmp r0, #SET_ITEM_HUNT
+    beq 1f
+    cmp r0, #SET_ITEM_CHIRP
     bne 2f
 1:  push {r0}
     movs r0, #0x1
@@ -278,7 +291,7 @@ FUNC fn_08015410
     strb r0, [r1, #0x0]                     @ main value redraw request
     pop {r0}
 2:  ldr.w r1, =set_item
-    strb r0, [r1, #0x0]                     @ set_item = 21..41 or 0
+    strb r0, [r1, #0x0]                     @ set_item = 21..42 or 0
     movs r0, #0x0
     ldr.w r1, =set_edit
     strb r0, [r1, #0x0]                     @ set_edit = 0 (v2.05 clears it at 0x08015422 for every item but 8)
@@ -1628,6 +1641,20 @@ FUNC fn_080165F4
     bl set_hunt_edit                        @ up, down or save of the anti-hunting setting
     b .L08016800
 .Lse_not_hunt:
+    cmp r0, #SET_ITEM_CHIRP                 @ IMP-51: the DIODE chirp page CHIrP (item 42)
+    bne .Lse_not_chirp
+    uxtb r4, r4
+    cmp r4, #0x0                            @ query?
+    bne .Lse_chirp_act
+    movs r0, #0x1
+    movs r5, r0                             @ query result: editable
+    b .L08016800
+.Lse_chirp_act:
+    movs r0, r4
+    uxtb r0, r0
+    bl set_chirp_edit                       @ up, down or save of the chirp setting
+    b .L08016800
+.Lse_not_chirp:
     sub r1, r0, #SET_ITEM_LT                @ IMP-20: the limit pages Lt, Lo, HI (27..29)
     cmp r1, #2
     bhi .Lse_not_lt
@@ -2416,6 +2443,11 @@ FUNC fn_0801797C
     bl set_hunt_draw
     b .L08017F26
 .Lsd_not_hunt:
+    cmp r0, #SET_ITEM_CHIRP                 @ IMP-51: the DIODE chirp page CHIrP (item 42)
+    bne .Lsd_not_chirp
+    bl set_chirp_draw
+    b .L08017F26
+.Lsd_not_chirp:
     cmp r0, #SET_ITEM_BFT                   @ IMP-28: the Bluetooth file transfer page Ld (item 39)
     bne .Lsd_not_bft
     bl set_bft_draw
