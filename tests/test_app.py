@@ -43,6 +43,7 @@ class AppCase(unittest.TestCase):
         app_mod.DESK_PERIOD = 0.05
         self.addCleanup(setattr, app_mod, 'DESK_PERIOD', self._period)
         self.app = app_mod.Companion(os.path.join(self.tmp, 'docs'))
+        self.app._hb_run = False                        # the heartbeat thread stays out of the tests (test_heartbeat drives it)
         self.meter = FakeMeter(sample_files(), eeprom={0x00F: 0, 0x017: 3, 0x020: 0b0101, 0x022: 1, 0x02A: 100})
         self.meter.deliver = self.app._frame
         self.meter.notify = 11

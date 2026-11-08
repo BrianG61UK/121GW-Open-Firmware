@@ -22,6 +22,7 @@ from . import frames, oshold
 SERVICE = '0bd51666-e7cb-469b-8e4d-2742f1ba77cc'
 CHAR = 'e7add780-b042-4876-aae1-112855353cc1'
 SCAN_SECONDS = 6.0
+WRITE_WAIT = 5.0                        # seconds a write may take before it counts as failed
 HELD_CHECK_AFTER = 2                    # searches without the meter before asking whether the system holds it
 STOP_NOTIFY_WAIT = 2.0                  # seconds for unsubscribing the notifications before a disconnect (issue 23)
 RETRY_SECONDS = 3.0
@@ -142,6 +143,8 @@ class MeterLink:
         self.device = None                 # (address, name) of the connected or last connected meter
         self.found = []                    # [(address, name, rssi)] of the last scan
         self.held = None                   # the last check whether the system still holds the meter (oshold.py)
+        self.last_write = 0.0              # time of the last write to the meter (the heartbeat writes when idle)
+        self._wlock = None                 # one write at a time (_send)
         self.want = False                  # keep connected (reconnect after a loss)
         self.address = None                # meter chosen by the user; None = the first one found
         self._client = None
@@ -336,11 +339,23 @@ class MeterLink:
                 self._set('lost', 'the meter went away (auto power-off or out of range); looking for it again')
 
     async def _send(self, data):
+        """One write at a time (IMP-56 review: the heartbeat thread, key frames and page Ld packets are written from
+        different threads; a second write while one is in flight is refused by some backends), each bounded by
+        WRITE_WAIT so an abandoned write cannot pile up on a dead link; last_write is the time of the last write."""
+        if self._client is None or self.state != 'connected':
+            raise RuntimeError('not connected to a meter')
+        if self._wlock is None:
+            self._wlock = asyncio.Lock()               # created on the link's own loop
+        async with self._wlock:
+            return await self._send_one(data)
+
+    async def _send_one(self, data):
         if self._client is None or self.state != 'connected':
             raise RuntimeError('not connected to a meter')
         t0 = time.monotonic()
+        self.last_write = time.time()
         try:
-            await self._client.write_gatt_char(CHAR, data, response=True)
+            await asyncio.wait_for(self._client.write_gatt_char(CHAR, data, response=True), WRITE_WAIT)
         except Exception as e:
             self.stats.write_error('%s: %s' % (type(e).__name__, e))
             # one error type for the callers: bleak's own (BleakError "disconnected" while the meter restarts) is no

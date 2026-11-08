@@ -89,7 +89,7 @@ class FakeMeter:
                 elif kind == frames.BFT:
                     self.answers.put(f)
 
-    def send(self, pkt):
+    def send(self, pkt, timeout=None):
         pkt = bytes(pkt)
         if pkt[:1] == b'\xF4':                          # a key frame: the meter echoes it
             self.keys.append(pkt)

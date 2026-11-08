@@ -75,6 +75,10 @@ XDIAG_WAIT = 2.0                                 # seconds to wait for the answe
 XDIAG_STATUS_FIRST, XDIAG_STATUS_COUNT = 40, 9   # page Ld STATUS indices of the nine values (ble/bft.s bft_diag_tab)
 CAREFUL_MIN_VERSION = (1, 1, 9)                  # firmware F-1.19: key codes 0x97 / 0x98, LIST max, CHUNK len (IMP-50)
 CAREFUL_MTU = 23                                 # the old BLE112 module negotiates only the minimum (the BGM220S: 247)
+HB_SEND = 5.0                                    # IMP-56: the byte 0xFE ("still here") when nothing was written for this long
+HB_ON, HB_OFF = b'\xFE', b'\xFD'                 # the meter's watch: on (kept alive by any byte) / off before a disconnect
+ALIVE_GAP = 8.0                                  # seconds without a byte from the meter (outside page Ld) before asking it
+OFFLINE_AFTER = 60.0                             # seconds the link may stay down before "the meter is offline" (3 x 20 s)
 RATE_PER_S = (2, 4, 10, 20)                      # readings per second of the rate codes 0..3 (page bt; key codes 0x99 + code)
 RATE_START = 0                                   # automatic rate (IMP-55): the lowest, 2 a second, at the connection; up only
                                                  # after a clean minute (owner 2026-11-08: as few errors as possible)
@@ -179,6 +183,12 @@ class Companion:
         self.xdiag = {'state': 'not read'}
         self.ltest = {'state': 'none'}                   # the link test: careful mode's doubled frames on against off
         self.arate = {'code': None}                      # the automatic reading rate of this connection (IMP-55)
+        self._hb_quiet = False                           # IMP-56: no heartbeat bytes (a disconnect by the user is under way)
+        self._hb_run = True                              # the heartbeat thread works (tests drive _hb_step themselves)
+        self.hb = {'sent': 0, 'probes': 0, 'dead': 0}    # heartbeat bytes sent, probes made, links found dead
+        self._alive = (0.0, -1)                          # (time, rx_bytes) of the last byte seen from the meter
+        self._lost_since = None                          # the link is down since (while the program wants it)
+        self.offline = False                             # the meter has been unreachable for OFFLINE_AFTER
         self._st_n, self._st_first, self._st_last = 0, None, None   # status frames of this connection (frames per second)
         self.card_st = {'files': [], 'listed': False, 'free_bytes': None, 'total_bytes': None, 'busy': False, 'op': '', 'progress': 0.0,
                         'sync': {'folder': self.settings.get('card_sync_folder'), 'last': None, 'copied': 0},
@@ -188,6 +198,7 @@ class Companion:
         threading.Thread(target=self._ask_version, name='version', daemon=True).start()
         threading.Thread(target=self._watch_desk, name='desk', daemon=True).start()
         threading.Thread(target=self._rate_loop, name='rate', daemon=True).start()
+        threading.Thread(target=self._hb_loop, name='heartbeat', daemon=True).start()
         threading.Thread(target=self._recheck_releases, name='releases', daemon=True).start()
 
     def _frame(self, kind, frame, t):
@@ -502,6 +513,70 @@ class Companion:
         a['code'], a['since_up'] = new, (0 if up else None)
         self.event('reading rate %d a second (automatic: %.1f %% of %d bytes damaged in %.0f s)' % (
             RATE_PER_S[new], 100.0 * share, nb, RATE_WINDOW))
+
+    def _hb_loop(self):
+        """IMP-56 (owner design 2026-11-08, GitHub issue 23): every second, outside every lock (the link test holds the
+        link for a minute, the heartbeat must not wait for it).  While connected and not on page Ld or in the bootloader:
+        the byte 0xFE when nothing was written for HB_SEND (any byte keeps the meter's watch alive; firmware before
+        F-1.26 ignores it); when no byte came from the meter for ALIVE_GAP outside page Ld, the version question
+        (3 tries); no answer: the link is dead, connect again.  While the link is down and wanted: after OFFLINE_AFTER
+        the meter is offline (the page shows a window)."""
+        while True:
+            time.sleep(1.0)
+            if not self._hb_run:
+                continue
+            try:
+                self._hb_step(time.time())
+            except (RuntimeError, OSError, TimeoutError) as e:
+                self.event('heartbeat: %s' % e)
+            except Exception as e:                       # noqa: BLE001 - a bug must not end the heartbeat for good
+                self.event('heartbeat: %s: %s' % (type(e).__name__, e))
+
+    def _hb_step(self, now):
+        L = self.link
+        if L.state != 'connected':
+            if L.state == 'idle' or not L.want:
+                self._lost_since, self.offline = None, False
+            elif self._lost_since is None:
+                self._lost_since = now
+            elif not self.offline and now - self._lost_since >= OFFLINE_AFTER:
+                self.offline = True
+                self.event('the meter is offline: no connection for %.0f s' % (now - self._lost_since))
+            return
+        self._lost_since, self.offline = None, False
+        if self._alive[1] != L.rx_bytes:
+            self._alive = (now, L.rx_bytes)
+        quiet = (self._hb_quiet or self.desk or self.mode == 'bootloader' or self.update['state'] == 'restarting')
+        if not quiet and now - L.last_write >= HB_SEND:
+            L.send(HB_ON, timeout=2.0)
+            self.hb['sent'] += 1
+        if (quiet or self.mode != 'firmware' or self._update_active() or self.ltest.get('state') == 'running'
+                or now - self._alive[0] < ALIVE_GAP):
+            return
+        try:
+            with self._ops('alive check', need_desk=False, wait=0.0):
+                self.hb['probes'] += 1
+                answered = self._key_with_echo(0x90)
+        except RuntimeError:                             # the link is busy (page Ld probe, a transfer): next second
+            return
+        if answered or L.rx_bytes != self._alive[1]:
+            self._alive = (time.time(), L.rx_bytes)
+            return
+        self.hb['dead'] += 1
+        self.event('the meter did not answer for %.0f s (3 questions): connecting again' % (time.time() - self._alive[0]))
+        self._alive = (time.time(), L.rx_bytes)
+        L.connect(L.device[0] if L.device else L.address)   # ends the dead connection, searches the same meter again
+
+    def disconnect_clean(self):
+        """Disconnect by the user: the heartbeat stops, the meter's watch is switched off with one 0xFD (at most 1 s,
+        errors ignored: a dead link must not hold up the disconnect), then the link is closed."""
+        self._hb_quiet = True
+        if self.link.state == 'connected':
+            try:
+                self.link.send(HB_OFF, timeout=1.0)
+            except (RuntimeError, OSError, TimeoutError):
+                pass
+        self.link.disconnect()
 
     def link_hint(self):
         """A note when the meter sends more readings than its Bluetooth module carries (GitHub issue 30): the old BLE112
@@ -1505,6 +1580,7 @@ class Companion:
                 'diag': dict(self.diag),
                 'ltest': dict(self.ltest),
                 'link_hint': self.link_hint(),
+                'offline': self.offline,
                 'arate': ({'per_s': RATE_PER_S[self.arate['code']], 'ceiling_per_s': RATE_PER_S[self.arate['ceiling']]}
                           if self.arate.get('code') is not None else None),
                 'trace_ui': TRACE_UI,
@@ -1516,10 +1592,11 @@ class Companion:
         if 'ui_event' in c:                             # COMPANION_LOG=1: the page reports a pointer event (diagnosis)
             return {'ok': True}
         if 'connect' in c:
+            self._hb_quiet = False
             self.link.connect(c['connect'])
             return {'ok': True}
         if 'disconnect' in c:
-            self.link.disconnect()
+            self.disconnect_clean()
             return {'ok': True}
         if 'record' in c:
             if c['record']:
@@ -1722,4 +1799,4 @@ def main(argv=None):
         threading.Timer(0.3, webbrowser.open, (url,)).start()
         while True:
             time.sleep(3600)
-    app.link.disconnect()
+    app.disconnect_clean()

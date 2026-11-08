@@ -635,6 +635,12 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
   <input id="fc-input" class="num" spellcheck="false" autocomplete="off" aria-label="type FORMAT">
   <div class="btns" style="margin-top:0;justify-content:flex-end"><button id="fc-cancel">Cancel</button><button id="fc-ok" class="pri" disabled>Format</button></div>
 </div></div>
+<div class="confirm" id="oconfirm"><div class="box">
+  <div class="eng"><span class="warn">Offline</span> Your meter is offline</div>
+  <p>The companion has not reached the meter for a minute and keeps searching. Check: is the meter switched on, is its
+  Bluetooth on (hold PEAK: the Bluetooth symbol shows), is it in range? <span id="oc-hint"></span></p>
+  <div class="btns" style="margin-top:0;justify-content:flex-end"><button id="oc-stop">Stop</button><button id="oc-keep" class="pri">Keep searching</button></div>
+</div></div>
 <div class="confirm" id="fprog"><div class="box">
   <div class="eng">Formatting the SD card</div>
   <p id="fp-text"></p>
@@ -1528,6 +1534,17 @@ for (const ev of ['pointerdown', 'pointerup', 'click'])
     const t = e.target.closest('button'); fetch('/api', {method: 'POST', headers: {'Content-Type': 'application/json',
       'X-121GW-Companion': '1'}, body: JSON.stringify({ui_event: ev, on: t ? (t.id || t.textContent.trim()) : e.target.tagName})});
   }, true);
+// IMP-56: the meter has been unreachable for a minute (state.offline): a window until it is back, Keep searching hides it
+// for this episode, Stop disconnects
+let offDismissed = false;
+$('oc-keep').onclick = () => { offDismissed = true; $('oconfirm').classList.remove('show'); };
+$('oc-stop').onclick = () => { $('oconfirm').classList.remove('show'); api({disconnect: true}).catch(fail); };
+function drawOffline() {
+  if (!state.offline) offDismissed = false;
+  const show = !!state.offline && !offDismissed;
+  $('oconfirm').classList.toggle('show', show);
+  if (show) setText($('oc-hint'), state.link && state.link.detail ? 'Last message: ' + state.link.detail : '');
+}
 $('connect').onclick = async () => {
   try { await api(state && state.link.state !== 'idle' ? {disconnect: true} : {connect: null}); } catch (e) { fail(e); }
 };
@@ -1591,6 +1608,7 @@ function render() {
   drawHeader(L, M, S, state.now);
   drawUpdate(U, M);
   drawCompanion(state.companion);
+  drawOffline();
   $('c-leave').hidden = !state.can_leave_ld;
   const keysOff = !connected() || desk();
   document.querySelectorAll('#keys button').forEach(b => b.disabled = keysOff);

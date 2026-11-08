@@ -137,6 +137,10 @@ def link_details(app):
         from .app import RATE_PER_S
         w('reading rate     %d a second, set by the companion for this link (automatic, F-1.25; at most %d)' % (
             RATE_PER_S[ar['code']], RATE_PER_S[ar['ceiling']]))
+    hb = getattr(app, 'hb', None)
+    if hb:
+        w('heartbeat        %d "still here" bytes sent, %d alive questions, %d dead links reconnected%s' % (
+            hb['sent'], hb['probes'], hb['dead'], '; the meter is offline' if getattr(app, 'offline', False) else ''))
     hd = getattr(app.link, 'held', None)
     if hd:
         w('system hold      %s%s%s' % (
