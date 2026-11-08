@@ -81,7 +81,7 @@ TABLE = [
     _s(0x017, 'bL', 'Backlight auto-off', 0, 100, None),                    # 0 off, 1 = 30 s, 2..100 = 1..99 min
     _s(0x01A, 'item 4', 'LCD contrast', 10, 17, None),
     _s(0x01B, 'item 11', 'VA burden "bd"', 0, 1, ['off', 'on']),
-    _s(0x01E, 'item 3', 'Buzzer', 0, 1, ['off', 'on']),
+    _s(0x01E, 'item 3', 'Buzzer', 0, 2, ['off', 'on', 'quiet (keys silent)']),   # 2 qUiEt: F-1.24 on (GitHub issue 28)
     _s(0x120, 'rEL', 'REL display', 0, 1, ['difference', 'percent'], wire=B20, shift=0, mask=0x01),
     _s(0x220, 'tr', 'Logging trigger', 0, 2, ['interval', 'on change', 'on limit verdict'], wire=B20, shift=1, mask=0x03),
     _s(0x320, 'CL', 'Clock', 0, 1, ['24 hour', '12 hour'], wire=B20, shift=3, mask=0x01),
@@ -138,17 +138,27 @@ def item(s, raw):
 
 
 HUNT_ID = 0x420                                     # the anti-hunting row: firmware F-1.16 and newer only
+BUZZER_ID = 0x01E                                   # the buzzer row: its third value qUiEt, firmware F-1.24 and newer only
 
 
 class Settings:
-    def __init__(self, client, hunt=True):
+    def __init__(self, client, hunt=True, quiet=True):
         """`hunt`: the meter's firmware knows the anti-hunting bit (F-1.16 or newer); without it the row HUnt is neither
-        listed nor changed (older firmware refuses every value of id 0x020 above 15)."""
+        listed nor changed (older firmware refuses every value of id 0x020 above 15).  `quiet`: the firmware knows the
+        buzzer's third value qUiEt (F-1.24 or newer); without it the buzzer row offers off and on only."""
         self.c = client
         self.hunt = hunt
+        self.quiet = quiet
 
     def rows(self):
-        return [s for s in TABLE if self.hunt or s.id != HUNT_ID]
+        out = []
+        for s in TABLE:
+            if s.id == HUNT_ID and not self.hunt:
+                continue
+            if s.id == BUZZER_ID and not self.quiet:
+                s = s._replace(max=1, choices=s.choices[:2])     # older firmware refuses the value 2
+            out.append(s)
+        return out
 
     def raw_all(self):
         """{wire id: value} as the meter reports; ids the table does not know are dropped (never written either)."""
@@ -163,8 +173,12 @@ class Settings:
     def put(self, setting_id, value):
         """Change one setting (range checked first, written, answer and read-back compared); returns get_all()."""
         s, value = check(setting_id, value)
-        if s not in self.rows():
+        row = next((r for r in self.rows() if r.id == s.id), None)
+        if row is None:
             raise ValueError('%s needs firmware F-1.16 or newer' % s.code)
+        if value > row.max:
+            raise ValueError('%s %s needs firmware F-1.24 or newer' % (s.code, s.choices[value] if s.choices else value))
+        s = row
         raw = self.raw_all()
         if s.wire not in raw:
             raise card.CardError('the meter does not report %s' % s.code)

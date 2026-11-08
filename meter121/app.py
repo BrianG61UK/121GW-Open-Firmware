@@ -67,6 +67,7 @@ EVENTS_KEEP = 300                                # events kept for the diagnosis
 BL_ASK_TRIES = 3                                 # bootloader questions (key code 0x92) until an answer counts as none
 DAILY = 86400.0                                  # update check "daily": seconds between two release checks
 HUNT_MIN_VERSION = (1, 1, 6)                     # firmware F-1.16: EEPROM 0x020 bit 4, the SETUP page HUnt (ble/bftset.s accepts 0..31)
+QUIET_MIN_VERSION = (1, 2, 4)                    # firmware F-1.24: the buzzer's third value qUiEt (ble/bftset.s accepts 0..2)
 XDIAG_MIN_VERSION = (1, 1, 5)                    # firmware F-1.15: key codes 0x93 / 0x94 / 0x95 and STATUS 40..48 (ble/xdiag.s)
 XDIAG_TRIES = 3                                  # tries of a key frame of the extended diagnosis / of the counters request
 XDIAG_WAIT = 2.0                                 # seconds to wait for the answer to each try
@@ -291,6 +292,12 @@ class Companion:
         capacitance anti-hunting, row HUnt); older firmware refuses the value."""
         v = releases.version_of_meter(self.version)
         return self.fw_kind == 'fast' and v is not None and v >= HUNT_MIN_VERSION
+
+    def _quiet_supported(self):
+        """True when the connected meter runs F-1.24 or newer: only that firmware takes the buzzer's third value qUiEt
+        (the key beeps silent, the measurement beeps sounding; GitHub issue 28)."""
+        v = releases.version_of_meter(self.version)
+        return self.fw_kind == 'fast' and v is not None and v >= QUIET_MIN_VERSION
 
     def _xdiag_connect(self):
         """After the version and bootloader questions of a connection: switch the meter's counting on when the setting
@@ -1094,7 +1101,7 @@ class Companion:
     def _settings_op(self, job):
         try:
             with self._ops('settings', wait=LINK_WAIT) as (_, client):
-                items = job(meter_settings.Settings(client, hunt=self._hunt_supported()))
+                items = job(meter_settings.Settings(client, hunt=self._hunt_supported(), quiet=self._quiet_supported()))
         except (RuntimeError, ValueError, OSError) as e:
             self.settings_st['error'] = str(e)
             raise

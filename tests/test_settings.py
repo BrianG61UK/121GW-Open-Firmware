@@ -165,6 +165,26 @@ class OverTheLink(unittest.TestCase):
             s.put(0x420, 1)
         self.assertEqual([t for t, _ in m.sent].count(settings.T_PUT), 0)
 
+    def test_buzzer_quiet_only_for_f124(self):
+        # GitHub issue 28: the buzzer's third value qUiEt (2); older firmware refuses it, so it is neither offered nor sent
+        m = meter()
+        s = settings.Settings(make_client(m))
+        row = next(r for r in s.rows() if r.id == 0x01E)
+        self.assertEqual((row.max, row.choices[2]), (2, 'quiet (keys silent)'))
+        s.put(0x01E, 2)
+        self.assertEqual(m.eeprom[0x01E], 2)
+        self.assertEqual(next(i for i in s.get_all() if i['code'] == 'item 3')['text'], 'quiet (keys silent)')
+        old = settings.Settings(make_client(m), quiet=False)
+        row = next(r for r in old.rows() if r.id == 0x01E)
+        self.assertEqual((row.max, row.choices), (1, ['off', 'on']))
+        puts = [t for t, _ in m.sent].count(settings.T_PUT)
+        with self.assertRaises(ValueError) as cm:
+            old.put(0x01E, 2)
+        self.assertIn('F-1.24', str(cm.exception))
+        self.assertEqual([t for t, _ in m.sent].count(settings.T_PUT), puts)   # nothing sent
+        old.put(0x01E, 0)
+        self.assertEqual(m.eeprom[0x01E], 0)
+
     def test_a_value_above_31_in_the_shared_byte_is_not_changed(self):
         m = meter(b020=0x20)                            # bit 5 is no setting: the meter would refuse the whole value
         s = settings.Settings(make_client(m))
