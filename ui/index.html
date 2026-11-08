@@ -535,8 +535,9 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
           <button class="sm" id="f-fw" disabled>As firmware</button><button class="sm" id="f-bl" disabled>As bootloader</button></div>
         <div class="path instnote" id="inst-note"></div>
       </div>
-      <div class="card"><div class="eng">Diagnostics<span class="sp"></span><button class="sm" id="diag-read">Read</button><button class="sm" id="diag-save">Save report</button></div>
+      <div class="card"><div class="eng">Diagnostics<span class="sp"></span><button class="sm" id="lt-run" title="about one minute: the doubled readings of careful mode on, off, on, off; the damaged share of each">Link test</button><button class="sm" id="diag-read">Read</button><button class="sm" id="diag-save">Save report</button></div>
         <div class="body"><div class="path" id="diag-file" style="margin:0 0 8px"></div>
+          <div class="path num" id="lt-text" style="margin:0 0 8px;white-space:pre-wrap"></div>
           <div class="diag" id="diagvals"></div>
           <pre id="diagtext">—</pre></div></div>
     </div>
@@ -1463,6 +1464,16 @@ function setRow(it) {
 }
 $('set-read').onclick = () => send('settings_get').catch(fail);
 $('diag-read').onclick = () => send('diag_read').catch(fail);
+$('lt-run').onclick = () => send('link_test').then(() => say('link test started: about one minute, keep the meter on its readings')).catch(fail);
+// the link test (GitHub issue 30): careful mode's doubled readings on against off, the damaged share of each phase
+function drawLinkTest(T) {
+  T = T || {state: 'none'};
+  const ph = (T.results || []).map(r => `doubled ${r.doubled ? 'on ' : 'off'}  ${(r.bytes ? 100 * r.damaged / r.bytes : 0).toFixed(1).padStart(5)} % damaged of ${r.bytes} bytes  ${(r.seconds ? r.readings / r.seconds : 0).toFixed(2)} readings/s`);
+  const head = T.state === 'running' ? `Link test: phase ${T.phase} of ${T.phases} …` : T.state === 'done' ? 'Link test: ' + T.summary
+    : T.state === 'error' ? 'Link test stopped: ' + T.error : '';
+  setText($('lt-text'), [head, ...(T.state === 'done' ? [] : ph)].filter(Boolean).join('\n'));
+  $('lt-run').disabled = T.state === 'running' || !connected() || desk();
+}
 function drawSettings(S) {
   S = S || {};
   const items = S.items || [], lock = S.locked_reason;
@@ -1596,7 +1607,7 @@ function render() {
   else if (view === 'scope') drawScopeView();
   else if (view === 'log') drawLog(S);
   else if (view === 'card') drawCard(state.card, state.now);
-  else if (view === 'meter') { drawMeter(L, M, U, state.clock); drawSettings(state.settings); drawDiag(state.diag); }
+  else if (view === 'meter') { drawMeter(L, M, U, state.clock); drawSettings(state.settings); drawDiag(state.diag); drawLinkTest(state.ltest); }
   else if (view === 'prefs') drawPrefs(state.prefs, state.clock, S);
   const vw = $('v-' + view);                        // content grew (a key note, a longer text): fit again
   if (FIT_VIEWS.includes(vw.id) && vw.scrollHeight - vw.clientHeight > 1) fitZoom();

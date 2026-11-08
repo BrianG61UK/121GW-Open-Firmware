@@ -263,3 +263,56 @@ class KeptLinkRestart(AppCase):
         threading.Thread(target=drop_and_come_back, daemon=True).start()
         self.app._enter_update_mode()
         self.assertEqual(self.app.mode, 'bootloader')
+
+
+class LinkTest(AppCase):
+    """The link test (GitHub issue 30): the doubled status frames on, off, on, off, and careful mode back afterwards."""
+    def setUp(self):
+        super().setUp()
+        self.meter.careful_fw = True
+        self.app._frame_t = time.time() + 3600
+        self.app.version, self.app.fw_kind, self.app.mode = 'F-1.19', 'fast', 'firmware'
+        self.app.link.stats.mtu = 23
+        for name, value in (('XDIAG_WAIT', 0.2), ('LTEST_PHASE', 0.05), ('LTEST_SETTLE', 0.01)):
+            old = getattr(app_mod, name)
+            setattr(app_mod, name, value)
+            self.addCleanup(setattr, app_mod, name, old)
+
+    def wait_end(self):
+        end = time.time() + 10
+        while time.time() < end and self.app.ltest.get('state') == 'running':
+            time.sleep(0.02)
+        return self.app.ltest
+
+    def test_four_phases_then_careful_mode_as_wanted(self):
+        self.app.command({'link_test': True})
+        t = self.wait_end()
+        self.assertEqual(t['state'], 'done', t)
+        self.assertEqual([r['doubled'] for r in t['results']], [True, False, True, False])
+        codes = [frames._pair(bytes(k), 1) for k in self.meter.keys]
+        self.assertEqual(codes[-5:], [0x97, 0x98, 0x97, 0x98, 0x97])   # the last one: careful mode back on (MTU 23)
+        self.assertTrue(self.meter.dup_frames and self.app.careful_on)
+        self.assertIn('doubled on:', t['summary'])
+        self.assertIn('link test        careful mode', report.build(self.app))
+
+    def test_the_newer_module_ends_with_the_doubling_off(self):
+        self.app.link.stats.mtu = 247
+        self.app.command({'link_test': True})
+        self.assertEqual(self.wait_end()['state'], 'done')
+        self.assertEqual(frames._pair(bytes(self.meter.keys[-1]), 1), 0x98)
+        self.assertFalse(self.meter.dup_frames or self.app.careful_on)
+
+    def test_no_echo_stops_and_says_why(self):
+        self.meter.echo_keys = False
+        self.app.command({'link_test': True})
+        t = self.wait_end()
+        self.assertEqual(t['state'], 'error')
+        self.assertIn('did not echo', t['error'])
+
+    def test_refused_without_the_firmware_or_on_page_ld(self):
+        self.app.version = 'F-1.18'
+        with self.assertRaises(RuntimeError):
+            self.app.command({'link_test': True})
+        self.app.version, self.app.desk = 'F-1.19', True
+        with self.assertRaises(RuntimeError):
+            self.app.command({'link_test': True})

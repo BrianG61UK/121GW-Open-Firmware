@@ -73,6 +73,19 @@ XDIAG_WAIT = 2.0                                 # seconds to wait for the answe
 XDIAG_STATUS_FIRST, XDIAG_STATUS_COUNT = 40, 9   # page Ld STATUS indices of the nine values (ble/bft.s bft_diag_tab)
 CAREFUL_MIN_VERSION = (1, 1, 9)                  # firmware F-1.19: key codes 0x97 / 0x98, LIST max, CHUNK len (IMP-50)
 CAREFUL_MTU = 23                                 # the old BLE112 module negotiates only the minimum (the BGM220S: 247)
+LTEST_PHASE = 15.0                               # link test: seconds measured per phase (doubled frames on, off, on, off)
+LTEST_SETTLE = 1.5                               # link test: seconds after each switch before the counting starts
+
+
+def link_test_summary(res):
+    """One line from the phases of the link test: per setting the share of damaged bytes and the readings per second."""
+    out = []
+    for on in (True, False):
+        ph = [r for r in res if r['doubled'] == on]
+        b, d, n, s = (sum(r[k] for r in ph) for k in ('bytes', 'damaged', 'readings', 'seconds'))
+        out.append('doubled %s: %.1f %% of %d bytes damaged, %.2f readings/s' % (
+            'on' if on else 'off', 100.0 * d / b if b else 0.0, b, n / s if s else 0.0))
+    return '; '.join(out)
 MCLOCK_MIN_VERSION = (1, 1, 7)                   # firmware F-1.17: key code 0x96 / frame FA, STATUS 49..55 (sys/msical.s)
 LEAVE_MIN_VERSION = (1, 1, 7)                    # firmware F-1.17: the page Ld request LEAVE (type 0x19, ble/bft.s)
 MCLOCK_STATUS_FIRST, MCLOCK_STATUS_COUNT = 49, 7 # page Ld STATUS indices of the clock measurement
@@ -150,6 +163,7 @@ class Companion:
         self.careful_on = False                          # careful mode switched on in the meter (0x97) for this connection
         self._last_status = None                         # the last F2 frame, for its F3 copy (careful mode)
         self.xdiag = {'state': 'not read'}
+        self.ltest = {'state': 'none'}                   # the link test: careful mode's doubled frames on against off
         self._st_n, self._st_first, self._st_last = 0, None, None   # status frames of this connection (frames per second)
         self.card_st = {'files': [], 'listed': False, 'free_bytes': None, 'total_bytes': None, 'busy': False, 'op': '', 'progress': 0.0,
                         'sync': {'folder': self.settings.get('card_sync_folder'), 'last': None, 'copied': 0},
@@ -369,25 +383,79 @@ class Companion:
         card requests use small answers (card.Card careful)."""
         if not self.careful_wanted():
             return
-        frame = frames.key_frame(0x97)
         try:
             with self._ops('careful mode', need_desk=False, wait=LINK_WAIT):
                 if self.desk:
                     raise RuntimeError('page Ld owns the link')
-                for _ in range(XDIAG_TRIES):
-                    self._key_echo = None
-                    self.link.send(frame)
-                    end = time.time() + XDIAG_WAIT
-                    while time.time() < end and self._key_echo != frame:
-                        time.sleep(0.02)
-                    if self._key_echo == frame:
-                        self.careful_on = True
-                        self.event('careful mode on (old BLE112 Bluetooth module, MTU 23): frames twice, small card answers')
-                        return
+                if self._key_with_echo(0x97):
+                    self.careful_on = True
+                    self.event('careful mode on (old BLE112 Bluetooth module, MTU 23): frames twice, small card answers')
+                    return
         except (RuntimeError, OSError, TimeoutError) as e:
             self.event('careful mode: not switched on (%s)' % e)
             return
         self.event('careful mode: no echo after %d tries' % XDIAG_TRIES)
+
+    def _key_with_echo(self, code):
+        """Send the key frame of `code` until the meter echoes it (XDIAG_TRIES tries of XDIAG_WAIT); True when echoed.
+        The caller holds the link (_ops)."""
+        frame = frames.key_frame(code)
+        for _ in range(XDIAG_TRIES):
+            self._key_echo = None
+            self.link.send(frame)
+            end = time.time() + XDIAG_WAIT
+            while time.time() < end and self._key_echo != frame:
+                time.sleep(0.02)
+            if self._key_echo == frame:
+                return True
+        return False
+
+    def link_test(self):
+        """Start the link test (GitHub issue 30): does careful mode's second copy of every status frame help the link or
+        overload it?  Four phases of LTEST_PHASE seconds, the doubled frames on, off, on, off (alternating evens out a
+        drift of the radio conditions); each phase counts the bytes received, the bytes skipped as damaged and the
+        readings taken (an intact F2 frame, or its F3 copy standing in).  Afterwards the meter is set back as careful
+        mode wants it.  Needs firmware F-1.19 or newer (key codes 0x97 / 0x98) and the readings flowing (not page Ld)."""
+        v = releases.version_of_meter(self.version)
+        if self.link.state != 'connected' or self.mode != 'firmware':
+            raise RuntimeError('not connected to a meter')
+        if self.fw_kind != 'fast' or v is None or v < CAREFUL_MIN_VERSION:
+            raise RuntimeError('the link test needs firmware F-1.19 or newer')
+        if self.desk:
+            raise RuntimeError('leave the page Ld first: the test measures the readings')
+        if self.ltest.get('state') == 'running':
+            raise RuntimeError('the link test is running')
+        self.ltest = {'state': 'running', 'phase': 0, 'phases': 4, 'results': [], 'started': time.time()}
+        threading.Thread(target=self._run_link_test, name='link test', daemon=True).start()
+        return {'ok': True}
+
+    def _run_link_test(self):
+        L, res = self.link, []
+        try:
+            with self._ops('link test', need_desk=False, wait=LINK_WAIT):
+                try:
+                    for i, on in enumerate((True, False, True, False)):
+                        self.ltest['phase'] = i + 1
+                        if self.link.state != 'connected' or self.desk:
+                            raise RuntimeError('the link or the page changed during the test')
+                        if not self._key_with_echo(0x97 if on else 0x98):
+                            raise RuntimeError('the meter did not echo the switch (%s)' % ('on' if on else 'off'))
+                        time.sleep(LTEST_SETTLE)
+                        b0, d0, n0, t0 = L.rx_bytes, L.rx_dropped, self._st_n, time.time()
+                        time.sleep(LTEST_PHASE)
+                        b1, d1, n1, t1 = L.rx_bytes, L.rx_dropped, self._st_n, time.time()
+                        res.append({'doubled': on, 'seconds': round(t1 - t0, 2), 'bytes': b1 - b0, 'damaged': d1 - d0,
+                                    'readings': n1 - n0})
+                        self.ltest['results'] = list(res)
+                finally:                                 # also after a stop: the meter as careful mode wants it
+                    if self.link.state == 'connected' and not self.desk:
+                        want = self.careful_wanted()
+                        self.careful_on = self._key_with_echo(0x97 if want else 0x98) and want
+            self.ltest = {'state': 'done', 'results': res, 'summary': link_test_summary(res), 'finished': time.time()}
+            self.event('link test: ' + self.ltest['summary'])
+        except (RuntimeError, OSError, TimeoutError) as e:
+            self.ltest = {'state': 'error', 'results': res, 'error': str(e)}
+            self.event('link test stopped: %s' % e)
 
     def _mclock_supported(self):
         """True when the connected meter runs F-1.17 or newer: only that firmware measures its clock (key code 0x96,
@@ -1276,6 +1344,7 @@ class Companion:
                 'desk': self.desk,
                 'can_leave_ld': bool(self.desk and self._leave_supported()),
                 'diag': dict(self.diag),
+                'ltest': dict(self.ltest),
                 'trace_ui': TRACE_UI,
                 'card': dict(self.card_st, files=list(self.card_st['files']), locked_reason=self._lock_reason()),
                 'settings': dict(self.settings_st, locked_reason=self._lock_reason()),
@@ -1370,6 +1439,8 @@ class Companion:
             return self.settings_put(self._arg(c, 'settings_put', 'id'), self._arg(c, 'settings_put', 'value'))
         if 'diag_read' in c:
             return self.diag_read()
+        if 'link_test' in c:
+            return self.link_test()
         if 'prefs_set' in c:
             return self.set_pref(self._arg(c, 'prefs_set', 'key'), self._arg(c, 'prefs_set', 'value'))
         if 'prefs_reset' in c:

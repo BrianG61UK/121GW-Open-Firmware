@@ -146,6 +146,17 @@ def link_details(app):
             (n - 1) / (b - a), n, b - a, bt or 'not read (SETTINGS of the meter)'))
     else:
         w('status frames    not measured yet (%d in this connection); meter setting bt: %s' % (n, bt or 'not read'))
+    lt = getattr(app, 'ltest', None) or {'state': 'none'}
+    if lt.get('results'):
+        w('link test        careful mode\'s doubled status frames on against off (%s)%s' % (
+            lt['state'], ': ' + lt['error'] if lt.get('error') else ''))
+        for r in lt['results']:
+            w('  doubled %-3s  %5.1f s  %7d bytes  %6d damaged (%4.1f %%)  %4d readings (%.2f/s)' % (
+                'on' if r['doubled'] else 'off', r['seconds'], r['bytes'], r['damaged'],
+                100.0 * r['damaged'] / r['bytes'] if r['bytes'] else 0.0, r['readings'],
+                r['readings'] / r['seconds'] if r['seconds'] else 0.0))
+        if lt.get('summary'):
+            w('  ' + lt['summary'])
     x = getattr(app, 'xdiag', None) or {'state': 'not read'}
     if x['state'] == 'values':
         w('meter counters   %s; %s' % (x['source'], 'the meter was told to count (key code 0x93) after this connection began'
