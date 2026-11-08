@@ -46,7 +46,8 @@ the meter (the companion updates the firmware first if needed, through EEVblog's
 1. Connect the companion; it shows *bootloader: EEVblog original* and offers the newest bootloader release
    (`bl-vA.B.C`).
 2. Click **Update now** (or *Bootloader only*).
-3. On the meter: press **SETUP** until the page shows `Ld-bt`.  The transfer starts by itself (about 15 s).
+3. On the meter: press **SETUP** until `SEt`, hold **SETUP** until the long beep (the meter pages), then press
+   **SETUP** until `Ld-bt`.  The transfer starts by itself (about 15 s; several minutes with the old BLE112 module).
 4. The meter restarts, installs the bootloader (about 1 s, display blank) and starts the firmware.  The companion
    reconnects and shows the new bootloader.
 
