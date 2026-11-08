@@ -250,6 +250,34 @@ class KeptLinkRestart(AppCase):
                                timeout=5.0, poll=self.app._version_kept_link)
         self.assertEqual((self.app.mode, self.app.version, self.app.bl), ('firmware', 'F-1.19', 'B-1.13'))
 
+    def test_a_write_failing_while_the_meter_restarts_does_not_stop_the_wait(self):
+        # the owner's update 2026-11-07 21:07:52: the version question on the dying connection failed (BleakError,
+        # now OSError from the link); the wait goes on and ends when the reconnection has found the new firmware
+        self.app.mode, self.app.version = 'bootloader', 'F-1.22'
+
+        def send(data):
+            raise OSError('write failed: BleakError: disconnected')
+        self.app.link.send = send
+
+        def come_back():
+            time.sleep(0.2)
+            self.app.link.state = 'lost'
+            time.sleep(0.2)
+            self.app.link.state = 'connected'
+            self.app.version, self.app.mode = 'F-1.23', 'firmware'   # what _ask_version finds after the reconnection
+        threading.Thread(target=come_back, daemon=True).start()
+        self.app._wait_restart(lambda: self.app.mode == 'firmware' and self.app.version == 'F-1.23', 'failed', 'x',
+                               timeout=5.0, poll=self.app._version_kept_link)
+        self.assertEqual((self.app.mode, self.app.version), ('firmware', 'F-1.23'))
+
+    def test_an_unexpected_error_ends_the_update_with_its_message(self):
+        def boom():
+            raise KeyError('a bug')
+        self.app._update_firmware = boom
+        self.app._run_update('firmware')
+        self.assertEqual(self.app.update['state'], 'error')
+        self.assertIn('KeyError', self.app.update['message'])
+
     def test_a_dropped_link_still_reconnects(self):
         self.app._boot_probe = lambda: None              # no answer on the old connection: it is going away
         self.app.link.send = self.sent.append

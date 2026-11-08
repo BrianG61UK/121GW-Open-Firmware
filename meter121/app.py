@@ -658,6 +658,9 @@ class Companion:
         except (OSError, ValueError, RuntimeError, releases.ReleaseError, transfer.TransferError) as e:
             u.update(state='error', message=str(e))
             self.event('update stopped: %s' % e)
+        except Exception as e:                           # noqa: BLE001 - a bug must reach the page, not leave the
+            u.update(state='error', message='%s: %s' % (type(e).__name__, e))   # notice at "restarting" for ever
+            self.event('update stopped by an error of the program: %s: %s' % (type(e).__name__, e))
         finally:
             self._sender, self._cancel = None, False
             self._picks = {}

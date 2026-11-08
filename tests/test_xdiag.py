@@ -211,6 +211,24 @@ class LinkStatistics(unittest.TestCase):
         self.assertIn('write refused', L.stats.recent_write_error())
         L.state = 'idle'
 
+    def test_a_backend_error_reaches_the_caller_as_oserror(self):
+        """bleak raises its own BleakError ("disconnected") when the meter restarts under a write; the callers catch
+        OSError, and an update thread that met BleakError ended without a word (notice stuck at "restarting")."""
+        class BleakError(Exception):
+            pass
+
+        class Client:
+            async def write_gatt_char(self, char, data, response):
+                raise BleakError('disconnected')
+
+        L = link_mod.MeterLink(lambda *a: None)
+        L._client, L.state = Client(), 'connected'
+        with self.assertRaises(OSError) as cm:
+            L.send(b'x')
+        self.assertIn('BleakError: disconnected', str(cm.exception))
+        self.assertIn('BleakError: disconnected', L.stats.recent_write_error())
+        L.state = 'idle'
+
 
 class Setting(AppCase):
     def test_default_and_validation_and_persistence(self):

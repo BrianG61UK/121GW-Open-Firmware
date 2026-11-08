@@ -11,6 +11,7 @@ connection, so the phone application or another bridge must not be connected.
 """
 import asyncio
 import collections
+import concurrent.futures
 import math
 import sys
 import threading
@@ -169,8 +170,12 @@ class MeterLink:
         return asyncio.run_coroutine_threadsafe(self._scan(), self._loop).result(SCAN_SECONDS + 5)
 
     def send(self, data, timeout=5.0):
-        """Write bytes to the meter; raises RuntimeError when not connected."""
-        return asyncio.run_coroutine_threadsafe(self._send(bytes(data)), self._loop).result(timeout)
+        """Write bytes to the meter; raises RuntimeError when not connected, OSError when the write fails or is
+        cancelled (the connection went away under it), TimeoutError after `timeout` seconds."""
+        try:
+            return asyncio.run_coroutine_threadsafe(self._send(bytes(data)), self._loop).result(timeout)
+        except concurrent.futures.CancelledError as e:   # a BaseException: it would end the calling thread
+            raise OSError('the write was cancelled (the connection went away)') from e
 
     # ------------------------------------------------------------------ link thread
     def _run(self):
@@ -306,5 +311,7 @@ class MeterLink:
             await self._client.write_gatt_char(CHAR, data, response=True)
         except Exception as e:
             self.stats.write_error('%s: %s' % (type(e).__name__, e))
-            raise
+            # one error type for the callers: bleak's own (BleakError "disconnected" while the meter restarts) is no
+            # OSError, and an update thread that met it ended without a word (issue: notice stuck at "restarting")
+            raise OSError('write failed: %s: %s' % (type(e).__name__, e)) from e
         self.stats.write(time.monotonic() - t0)         # seconds until the write was confirmed
