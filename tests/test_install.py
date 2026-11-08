@@ -355,6 +355,37 @@ class Install(AppCase):
         with self.assertRaises(ValueError):
             self.app.stage_file('both', 'x.bin', fw_image())
 
+    def test_the_file_says_what_it_is(self):
+        # one "Install file" button: the two checks exclude each other, so the kind comes from the file
+        for data, kind in ((fw_image(size=5000), 'firmware'), (bl_image(), 'bootloader')):
+            for given in ('auto', '', None):
+                r = self.app.stage_file(given, 'x.bin', data)
+                self.assertEqual(r['staged']['kind'], kind)
+        self.app.stage_file('auto', 'bl.bin', bl_image())
+        p = self.app.command({'install_plan': True, 'staged': True})['plan']     # no kind given: the checked file's
+        self.assertEqual(p['kind'], 'bootloader')
+
+    def test_neither_firmware_nor_bootloader_is_refused_with_both_reasons(self):
+        for data in (bytes(20000), b'\x89PNG\r\n\x1a\n' + bytes(5000), fw_image(reset=0x08001001)):
+            with self.assertRaises(ValueError) as cm:
+                self.app.stage_file('auto', 'odd.bin', data)
+            self.assertIn('neither a 121GW firmware nor a two-part bootloader image', str(cm.exception))
+            self.assertIn('As firmware:', str(cm.exception))
+            self.assertIn('As bootloader:', str(cm.exception))
+            self.assertIsNone(self.app.staged)
+        with self.assertRaises(ValueError):
+            self.app.stage_file('auto', 'empty.bin', b'')
+
+    def test_first_install_file_is_named_as_such_also_by_itself(self):
+        starter = struct.pack('<II', 0x20002000, 0x08000201) + bytes(0x400 - 8)
+        header = struct.pack('<4I', 0x32484C42, 2000, 0, 0x00010103)
+        header += struct.pack('<I', 0) + bytes(0x100 - 20)
+        inst = starter + header + bl_image()
+        inst += bytes(-len(inst) % 128)
+        with self.assertRaises(ValueError) as cm:
+            self.app.stage_file('auto', 'install.bin', inst)
+        self.assertIn('first-install file', str(cm.exception))
+
     def test_first_install_file_is_named_as_such(self):
         starter = struct.pack('<II', 0x20002000, 0x08000201) + bytes(0x400 - 8)
         header = struct.pack('<4I', 0x32484C42, 2000, 0, 0x00010103)
@@ -495,6 +526,14 @@ class Upload(AppCase):
         self.assertEqual(code, 200)
         self.assertEqual((body['staged']['name'], body['staged']['size'], body['staged']['kind']), ('my fw.bin', 3000, 'firmware'))
         self.assertEqual(self.app.staged['data'], data)
+
+    def test_upload_without_a_kind_finds_it(self):
+        self.start()
+        code, body = self.post('?kind=auto&name=bl.bin', bl_image())
+        self.assertEqual((code, body['staged']['kind']), (200, 'bootloader'))
+        code, body = self.post('?kind=auto&name=odd.bin', bytes(3000))
+        self.assertEqual(code, 400)
+        self.assertIn('neither a 121GW firmware nor a two-part bootloader image', body['error'])
 
     def test_upload_refuses_a_bad_file_with_the_reason(self):
         self.start()

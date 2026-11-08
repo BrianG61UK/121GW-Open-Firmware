@@ -5,7 +5,7 @@
     GET  /state?since=T    JSON: link, meter, session (statistics, trend points newer than T), update notice, and the
                            derived values, desk mode, diagnosis, SD card and settings of the meter (STATE.md)
     POST /api              JSON command; needs the request header "X-121GW-Companion: 1"
-    POST /upload?kind=firmware|bootloader&name=<file name>
+    POST /upload?kind=auto|firmware|bootloader&name=<file name>   (auto: the file says what it is)
                            the bytes of a file the user chose (METER view); the program checks it (app.stage_file) and
                            keeps it for the command install_chosen; at most UPLOAD_MAX bytes; same header rule
 

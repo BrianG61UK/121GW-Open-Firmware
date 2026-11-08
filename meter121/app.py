@@ -863,9 +863,14 @@ class Companion:
 
     def stage_file(self, kind, name, data):
         """Check a file of the user's own and keep it for install; the file is never sent unless it passes the same
-        checks as a release image (releases.check_image / check_bootloader_image).  Returns the summary the page shows."""
-        self._kind(kind)
+        checks as a release image (releases.check_image / check_bootloader_image).  `kind` '' or 'auto': the file says
+        what it is, because the two checks exclude each other (a bootloader's reset vector lies below 0x08006000, a
+        firmware image is larger than the bootloader area and has no vector table of the two-part bootloader); a file
+        that passes neither is refused with both reasons.  Returns the summary the page shows."""
         self.staged = None
+        if kind in (None, '', 'auto'):
+            kind = self._kind_of_file(name, data)
+        self._kind(kind)
         name = ''.join(ch for ch in os.path.basename(str(name).replace('\\', '/')) if ch.isprintable())[:NAME_MAX] or 'file'
         if not data:
             raise ValueError('%s: the file is empty' % name)
@@ -882,12 +887,31 @@ class Companion:
         self.event('file chosen for %s: %d bytes, SHA-256 %s' % (kind, len(data), self.staged['sha256'][:16]))
         return {'ok': True, 'staged': self._staged_summary()}
 
+    def _kind_of_file(self, name, data):
+        """'firmware' or 'bootloader' for a file of the user's own; ValueError with the reasons when it is neither."""
+        name = os.path.basename(str(name).replace('\\', '/')) or 'the file'
+        if not data:
+            raise ValueError('%s: the file is empty' % name)
+        fw_bad, bl_bad = releases.check_image(data), releases.check_bootloader_image(data)
+        if fw_bad is None:
+            return 'firmware'
+        if bl_bad is None:
+            return 'bootloader'
+        if releases.check_install(data) is None:
+            raise ValueError('%s is a first-install file (starter and bootloader); only the bootloader image '
+                             '(blimage.bin) of a release can be sent, and only to a meter that has the two-part '
+                             'bootloader already' % name)
+        raise ValueError('%s is neither a 121GW firmware nor a two-part bootloader image, nothing is sent.  As firmware: '
+                         '%s.  As bootloader: %s' % (name, fw_bad, bl_bad))
+
     def _staged_summary(self):
         s = self.staged
         return {k: s[k] for k in ('kind', 'name', 'size', 'sha256')} if s else None
 
     def _plan(self, c):
         """(plan, pick) for the command's choice: {'kind', 'tag'} a release or {'kind', 'staged': True} the checked file."""
+        if c.get('staged') and not c.get('kind') and self.staged:   # the checked file says what it is
+            c = dict(c, kind=self.staged['kind'])
         kind = self._kind(c.get('kind'))
         facts = self._meter_facts()
         if c.get('staged'):

@@ -530,9 +530,9 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
         <div class="body" style="padding:6px 0 0"><table id="rl-table"><thead><tr><th>Version</th><th>Released</th><th>On this meter</th><th></th></tr></thead>
           <tbody id="rl-rows"></tbody></table></div>
         <div class="drop" id="f-drop"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z M14 3v5h5 M12 12v6 M9 15l3-3 3 3"/></svg>
-          <div class="t"><b>Install a file of your own</b><span class="cap" id="f-name">Drop a .bin here or choose one; it is checked before anything is sent.</span></div>
+          <div class="t"><b>Install a file of your own</b><span class="cap" id="f-name">Drop a .bin here or choose one. The program sees whether it is firmware or a bootloader and refuses anything else.</span></div>
           <input type="file" id="f-file" accept=".bin" aria-label="firmware or bootloader file of your own"><label class="fbtn" for="f-file">Choose file…</label>
-          <button class="sm" id="f-fw" disabled>As firmware</button><button class="sm" id="f-bl" disabled>As bootloader</button></div>
+          <button class="sm pri" id="f-go" disabled>Install file</button></div>
         <div class="path instnote" id="inst-note"></div>
       </div>
       <div class="card"><div class="eng">Diagnostics<span class="sp"></span><button class="sm" id="lt-run" title="about one minute: the doubled readings of careful mode on, off, on, off; the damaged share of each">Link test</button><button class="sm" id="diag-read">Read</button><button class="sm" id="diag-save">Save report</button></div>
@@ -1350,7 +1350,7 @@ $('ic-input').onkeydown = e => { if (e.key === 'Escape') $('ic-cancel').click();
 $('ic-cancel').onclick = () => { planNow = null; $('iconfirm').classList.remove('show'); };
 $('ic-ok').onclick = () => { const p = planNow; planNow = null; $('iconfirm').classList.remove('show'); if (p) go(p.choice, p.word); };
 // a file of your own: chosen with the button or dropped on the box
-const showFile = () => { const f = $('f-file').files[0]; setText($('f-name'), f ? f.name + ' · ' + grp(f.size) + ' B' : 'Drop a .bin here or choose one; it is checked before anything is sent.'); };
+const showFile = () => { const f = $('f-file').files[0]; setText($('f-name'), f ? f.name + ' · ' + grp(f.size) + ' B' : 'Drop a .bin here or choose one. The program sees whether it is firmware or a bootloader and refuses anything else.'); };
 $('f-file').onchange = showFile;
 const drop = $('f-drop');
 drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
@@ -1359,22 +1359,21 @@ drop.ondrop = e => {
   e.preventDefault(); drop.classList.remove('over');
   if (e.dataTransfer && e.dataTransfer.files.length) { $('f-file').files = e.dataTransfer.files; showFile(); }
 };
-async function chooseFile(kind) {
+async function chooseFile() {
   const f = $('f-file').files[0];
   if (!f) return say('choose a .bin file first', true);
   if (f.size > 0x5A000) return say(f.name + ': ' + f.size + ' bytes; at most ' + 0x5A000, true);
   note('checking ' + f.name + ' …');
   try {
-    const r = await fetch('/upload?kind=' + kind + '&name=' + encodeURIComponent(f.name), {method: 'POST', body: f,
+    const r = await fetch('/upload?kind=auto&name=' + encodeURIComponent(f.name), {method: 'POST', body: f,
       headers: {'Content-Type': 'application/octet-stream', 'X-121GW-Companion': '1'}});
     const j = await r.json().catch(() => ({error: 'no answer'}));
     if (!r.ok) throw new Error(j.error || r.status);
-    note('checked: ' + j.staged.name + ' · ' + grp(j.staged.size) + ' B · SHA-256 ' + j.staged.sha256.slice(0, 16) + ' …');
-    await askInstall({kind, staged: true});
-  } catch (e) { note(''); fail(e); }
+    note('checked: ' + j.staged.name + ' is ' + (j.staged.kind === 'firmware' ? 'firmware' : 'a bootloader') + ' · ' + grp(j.staged.size) + ' B · SHA-256 ' + j.staged.sha256.slice(0, 16) + ' …');
+    await askInstall({kind: j.staged.kind, staged: true});
+  } catch (e) { note('refused: ' + (e && e.message ? e.message : e)); fail(e); }   // the reason stays under the box
 }
-$('f-fw').onclick = () => chooseFile('firmware');
-$('f-bl').onclick = () => chooseFile('bootloader');
+$('f-go').onclick = () => chooseFile();
 // the program's own newer release (notice with a link; the address is the one the release check found)
 let cnHidden = '';
 $('cnopen').onclick = () => send('open_release_page').then(j => say('release page: ' + j.url)).catch(fail);
@@ -1407,7 +1406,7 @@ function drawMeter(L, M, u, C) {
   const auto = connected() && !(state.prefs && state.prefs.update_check === 'never');
   if (auto && rlFactsAt !== rlFacts() && !rlLoading) loadReleases();   // first time, or the verdicts were for another meter state
   drawReleases();
-  $('f-fw').disabled = $('f-bl').disabled = !ready || !$('f-file').files.length;
+  $('f-go').disabled = !ready || !$('f-file').files.length;
   const X = state.last_transfer;
   setText($('m-xfer'), X ? (X.ok ? '' : 'stopped · ') + X.what + ': ' + X.text : '—');
   if (C && C.last && !syncing) $('clockres').textContent = `set to ${C.last.time} from ${C.server} · offset ${(C.last.offset * 1000).toFixed(0)} ms` + (C.last.note || '');
