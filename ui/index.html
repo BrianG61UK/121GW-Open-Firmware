@@ -484,7 +484,7 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
     <p>The memory card is reached only while the meter is in desk mode.</p>
     <div class="page num">Ld-bt</div>
     <p><b style="color:var(--ink)">On the meter: SETUP to page Ld-bt.</b></p>
-    <ol><li>Meter on and connected to this program.</li><li>Press SETUP until the display shows Ld-bt.</li><li>The Desk lamp lights; this page then lists the card.</li></ol>
+    <ol><li>Meter on and connected to this program.</li><li>Press SETUP until the display shows SEt, hold SETUP until the long beep, then press SETUP until Ld-bt.</li><li>The Desk lamp lights; this page then lists the card.</li></ol>
   </div>
   <div class="stack" id="cardmain" hidden>
     <div class="card"><div class="body">
@@ -1271,7 +1271,7 @@ function drawUpdate(u, M) {
     show([...parts.flat(), ' available'], both ? 'Update both' : 'Update now', 'Later', false, both);
   }
   else if (st === 'downloading') show(['getting ', num(u.step), ' …']);
-  else if (st === 'waiting_ld') show(['On the meter: press ', h('b', {}, 'SETUP'), ' until the page shows ', num('Ld-bt'), '. The transfer starts by itself.'], null, 'Cancel');
+  else if (st === 'waiting_ld') show(['On the meter: press ', h('b', {}, 'SETUP'), ' until ', num('SEt'), ', hold ', h('b', {}, 'SETUP'), ' until the long beep, then press ', h('b', {}, 'SETUP'), ' until ', num('Ld-bt'), '. The transfer starts by itself.'], null, 'Cancel');
   else if (st === 'restarting') show(['the meter restarts' + (u.message ? ': ' + u.message : '') + ' …'], null, 'Cancel');
   else if (st === 'sending') {
     if (upStart === null) upStart = state.now;
