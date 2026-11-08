@@ -76,11 +76,15 @@ XDIAG_STATUS_FIRST, XDIAG_STATUS_COUNT = 40, 9   # page Ld STATUS indices of the
 CAREFUL_MIN_VERSION = (1, 1, 9)                  # firmware F-1.19: key codes 0x97 / 0x98, LIST max, CHUNK len (IMP-50)
 CAREFUL_MTU = 23                                 # the old BLE112 module negotiates only the minimum (the BGM220S: 247)
 RATE_PER_S = (2, 4, 10, 20)                      # readings per second of the rate codes 0..3 (page bt; key codes 0x99 + code)
-RATE_START = 1                                   # automatic rate (IMP-55): 4 a second at the connection (76 bytes/s, half
-                                                 # of what the BLE112 carries, GitHub issue 30)
+RATE_START = 0                                   # automatic rate (IMP-55): the lowest, 2 a second, at the connection; up only
+                                                 # after a clean minute (owner 2026-11-08: as few errors as possible)
 RATE_WINDOW = 10.0                               # seconds of one judgement
-RATE_DOWN_SHARE = 0.02                           # damaged share of a window from which the rate goes one step down
+RATE_DOWN_SHARE = 0.01                           # damaged share of a window from which the rate goes one step down (one
+                                                 # lost reading at 10 a second)
 RATE_UP_CLEAN = 6                                # windows without one damaged byte before one step up
+RATE_OVER = 1.6                                  # bytes of a window above this times what the set rate sends: the meter is
+                                                 # not at that rate (its page bt, the menu timeout on bt, a wake cleared it;
+                                                 # GitHub issue 30, Mike's report 2026-11-08): the rate is set again
 RATE_RECENT_UP = 2                               # windows after a step up in which damage makes that rate the ceiling
 LINK_HINT_RATE = 4.5                             # readings/s above which a BLE112 link is over its ~150 bytes/s (issue 30)
 LTEST_PHASE = 15.0                               # link test: seconds measured per phase (doubled frames on, off, on, off)
@@ -464,6 +468,15 @@ class Companion:
         nb, nd = L.rx_bytes - b0, L.rx_dropped - d0
         a['win'] = (now, L.rx_bytes, L.rx_dropped)
         if nb <= 0:
+            return
+        sent = RATE_PER_S[a['code']] * frames.STATUS_LEN * (now - t0)   # bytes the set rate sends in this window
+        if nb > RATE_OVER * sent + 200:                  # far more arrived: the meter no longer runs the set rate
+            with self._ops('reading rate', need_desk=False, wait=0.0):
+                if not self._key_with_echo(0x99 + a['code']):
+                    raise RuntimeError('the meter did not echo the rate %d a second' % RATE_PER_S[a['code']])
+            a['resets'] = a.get('resets', 0) + 1
+            self.event('reading rate %d a second set again (%d bytes in %.0f s: the meter had left it)' % (
+                RATE_PER_S[a['code']], nb, now - t0))
             return
         share = nd / nb
         if a['since_up'] is not None:

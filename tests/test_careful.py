@@ -393,39 +393,41 @@ class AutoRate(AppCase):
     def codes(self):
         return [frames._pair(bytes(k), 1) for k in self.meter.keys if 0x99 <= frames._pair(bytes(k), 1) <= 0x9C]
 
-    def test_starts_at_4_a_second_and_steps_down_on_damage(self):
+    def test_starts_at_2_a_second_and_steps_down_on_damage(self):
         self.app._careful_connect()
-        self.assertEqual((self.app.arate['code'], self.meter.rate_code), (1, 1))
-        self.window(800, 0)
-        self.window(800, 40)                               # 5 % damaged
-        self.assertEqual((self.app.arate['code'], self.meter.rate_code), (0, 0))
+        self.assertEqual((self.app.arate['code'], self.meter.rate_code), (0, 0))   # the lowest rate first
         self.assertIn('reading rate     2 a second', report.build(self.app))
+        for _ in range(app_mod.RATE_UP_CLEAN):
+            self.window(380, 0)                            # a clean minute at 2 a second
+        self.assertEqual(self.app.arate['code'], 1)
+        self.window(760, 19)                               # one lost reading at 4 a second (2.5 %)
+        self.assertEqual((self.app.arate['code'], self.meter.rate_code), (0, 0))
 
     def test_steps_up_after_clean_windows_and_keeps_a_failed_rate_as_ceiling(self):
         self.app._careful_connect()
         self.app.arate['win'] = None
-        for _ in range(app_mod.RATE_UP_CLEAN + 1):
-            self.window(800, 0)
-        self.assertEqual(self.app.arate['code'], 2)       # 10 a second
+        for _ in range(2 * app_mod.RATE_UP_CLEAN + 1):
+            self.window(380, 0)
+        self.assertEqual(self.app.arate['code'], 2)       # 10 a second after two clean minutes
         self.window(1500, 100)                             # damage right after the step up
         self.assertEqual((self.app.arate['code'], self.app.arate['ceiling']), (1, 1))
         for _ in range(3 * app_mod.RATE_UP_CLEAN):
-            self.window(800, 0)
+            self.window(760, 0)
         self.assertEqual(self.app.arate['code'], 1)       # no going back to the rate that failed
-        self.assertEqual(self.codes(), [0x9A, 0x9B, 0x9A])
+        self.assertEqual(self.codes(), [0x99, 0x9A, 0x9B, 0x9A])
 
     def test_never_above_the_saved_rate(self):
         self.app._careful_connect()
         self.app.settings_st = {'items': [{'code': 'bt', 'value': 1}]}   # the user saved 4 a second
-        for _ in range(3 * app_mod.RATE_UP_CLEAN):
-            self.window(800, 0)
+        for _ in range(4 * app_mod.RATE_UP_CLEAN):
+            self.window(380, 0)
         self.assertEqual(self.app.arate['code'], 1)
 
     def test_paused_on_page_ld(self):
         self.app._careful_connect()
         self.app.desk = True
-        self.window(800, 400)
-        self.assertEqual(self.app.arate['code'], 1)
+        self.window(380, 200)
+        self.assertEqual(self.app.arate['code'], 0)
 
     def test_older_firmware_gets_no_rate_codes_but_the_note(self):
         self.app.version = 'F-1.24'
@@ -434,3 +436,14 @@ class AutoRate(AppCase):
         self.assertEqual(self.codes(), [])
         self.app.settings_st = {'items': [{'code': 'bt', 'value': 3}]}
         self.assertIn('sends 20 a second', self.app.link_hint())
+
+    def test_a_meter_that_left_the_set_rate_gets_it_again(self):
+        # Mike's report 2026-11-08: the companion set 2 a second, the meter then sent about 13 (its rate was reset on
+        # the meter); far more bytes than the set rate sends -> the rate is set again
+        self.app._careful_connect()
+        self.meter.rate_code = None                        # the meter forgot the link rate
+        self.window(2500, 0)                               # 2 a second sends about 380 bytes in 10 s
+        self.assertEqual((self.app.arate['code'], self.meter.rate_code, self.app.arate['resets']), (0, 0, 1))
+        self.assertTrue(any('set again' in t for _, t in self.app.events))
+        self.window(380, 0)                                # back at the rate: no second reset
+        self.assertEqual(self.app.arate['resets'], 1)

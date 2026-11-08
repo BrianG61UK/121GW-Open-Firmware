@@ -35,6 +35,7 @@ MCLOCK = 'mclock'
 MCLOCK_LEN = 20
 MCLOCK_NOMINAL_HZ = 4194304             # MSI range 6, the meter's run clock (firmware sys/msical.s)
 MCLOCK_BAUD = 19200                     # the meter's serial line to its Bluetooth module
+STATUS_LEN = 19                         # bytes of a status frame F2 (and of its copy F3)
 # ck_status of the firmware (macros.inc CK_ST_*): what the last measurement at power-on / wake came to
 MCLOCK_STATUS = {0: 'not measured since the meter was switched on', 1: 'measured', 2: 'not measured (the meter was not '
                  'on its RC clock)', 3: 'not measured (the crystal was already running)', 4: 'not measured (the crystal '
