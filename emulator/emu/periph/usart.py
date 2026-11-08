@@ -46,12 +46,16 @@ Transmitter (27.3.2, figure 218)
 
 Receiver (27.3.3)
 - rx_feed(data, pe=False, fe=False, noise=False): the board side delivers a byte, an iterable of ints or a bytes
-  object.  The model puts them on the line back to back, as a remote USART with the same frame format would (parity
-  generated from CR1.PCE/PS; pe inverts it, fe makes the stop bit wrong, noise sets the noise flag); the flags apply
+  object.  The model puts them on the line back to back, as a remote USART with the same data format would (parity
+  generated from CR1.PCE/PS; pe inverts it, fe makes the stop bit wrong, noise sets the noise flag) but with one stop
+  bit (`remote_stop_halves` = 2 half bits: the Bluetooth module's serial line, whatever CR2.STOP says); the flags apply
   to every byte of the call.  Frames that start while RE = 0 or UE = 0 are lost.  Clearing RE aborts the frame in
   progress.
 - RXNE is set when the stop bit has been sampled: half a bit after its start for 1 stop bit, one bit for 2 and 1.5
-  stop bits, at the end of the data bits for 0.5 (27.3.3 configurable stop bits).  If RXNE is still set the new word
+  stop bits, at the end of the data bits for 0.5 (27.3.3 configurable stop bits; for 2: "The second stop bit is not
+  checked for framing error.  The RXNE flag will be set at the end of the first stop bit").  The next frame of the
+  remote may start right after its own stop bit; the model receives it then (RM0038 does not say whether a start bit
+  during the second stop bit time is detected: the model assumes it is, a meter test decides).  If RXNE is still set the new word
   is lost and ORE is set (RDR keeps the old word, 27.3.3 overrun error).  PE (27.6.1), FE and NF are set together with
   RXNE; a word that is overrun sets only ORE.  NF is not set when CR3.ONEBIT = 1.  IDLE is set when the line stays idle
   for a frame time after a received frame and RXNE has been set since the last IDLE (27.6.1 IDLE note).
@@ -173,6 +177,7 @@ class USART(Periph):
         self.on_tx = []                 # callbacks cb(word) at the end of every data frame
         self.on_break = []              # callbacks cb() at the end of every break
         self._line_irq = _LevelIrq(self, irq, self._line)
+        self.remote_stop_halves = 2     # stop bits of the board side's frames, in half bits (1 stop bit)
         self.reset()
 
     def reset(self):
@@ -345,7 +350,7 @@ class USART(Periph):
             if not self._rx_active():
                 self.m.log.append((self.m.cycles, f"{self.name} rx byte 0x{b & 0x1FF:02X} lost: receiver off"))
                 continue
-            halves = self._frame_halves()
+            halves = 2 * (1 + self._nbits()) + self.remote_stop_halves   # the remote's frame on the line
             sample = 2 * (1 + self._nbits()) + STOP_SAMPLE_HALVES[(self.cr2 >> 12) & 3]
             c_sample = self._cycles(sample)
             if c_sample is None:

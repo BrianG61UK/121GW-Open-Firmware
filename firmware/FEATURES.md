@@ -641,6 +641,14 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   bootloader's card update.  No EEPROM access (DESIGN 7.1).
 - Test: emulator `test_power_pairs.py` (P1..P4, S1..S6), `test_calbin_ident.py`; HARDWARE_TEST 46.
 
+### 2.33 Two stop bits to the Bluetooth module (experimental, IMP-59, F-1.28; GitHub issue 30)
+- Request (owner, 2026-11-08): a meter with the old BLE112 module lost 8 % of its bytes; each damaged byte was the sent
+  byte shifted right by 1 to 3 bits, only bytes that follow another byte.
+- What it does: the meter sends every byte with two stop bits, so the module sees one bit time of idle line before each
+  start bit.  About 9 % less throughput (11 instead of 10 bit times per byte); reception from the module is unchanged.
+- Test: emulator `test_bt_upload.py`, `test_careful.py`, `test_ble_overrun.py`; HARDWARE_TEST 47 (a BLE112 meter: the
+  companion's report, damaged bytes before and after).
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |

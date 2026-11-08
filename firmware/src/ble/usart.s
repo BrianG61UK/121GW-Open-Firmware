@@ -557,11 +557,17 @@ ENDFUNC ble_usart2_isr
 @ Clobbers : r0-r3, r12, flags (AAPCS)
 @ Context  : main only (fn_0800C51A, BLE enable)
 @ Spec     : analysis/ble_packet.md 1; DESIGN.md 4.2 (PD5/PD6), 4.3 (PF15 before PD5/PD6 become AF7)
-@ Deviation: pins configured with brd_gpio_init (replaces gpio_init and two gpio_set_alternate_function calls: AF
+@ Deviation: IMP-59 (GitHub issue 30): 2 stop bits instead of v2.05's 1.  The TXE interrupt loads the next byte while
+@            one is shifted out, so the bytes left back to back; a meter's old BLE112 module took some of them 1 to 3
+@            bit times late (a report: 0x17 received as 0x8B, 0x81 as 0xC0, only bytes that follow another byte).
+@            The second stop bit gives the module one bit time of idle line before each start bit.  Reception: RM0038
+@            27.3.3 "The second stop bit is not checked for framing error.  The RXNE flag will be set at the end of the
+@            first stop bit", so the module's bytes with 1 stop bit are received as before (hardware test 47).
+@            pins configured with brd_gpio_init (replaces gpio_init and two gpio_set_alternate_function calls: AF
 @            number and mode in one policy-checked write); OF-10/OF-11 link state reset first; TXEIE cleared
 @            explicitly; ble_usart_on set last
 @ Note     : Order as v2.05: PF15 high (BLE module supply), GPIOD clock, PD5/PD6 AF7 with pull-up (PD6 is the RX line
-@            driven by the module, PD5 TX), USART2 clock, USART_Init (19200, 8N1, TX and RX), USART enable, RXNE
+@            driven by the module, PD5 TX), USART2 clock, USART_Init (19200, 8N2 since IMP-59, TX and RX), USART enable, RXNE
 @            interrupt on, NVIC IRQ 38 on.  The baud rate divider is computed once from RCC_GetClocksFreq (PCLK1), as
 @            in v2.05 (NF-04: the rate is wrong while HSE is the system clock, so the link is idle then).
 @ -----------------------------------------------------------------------------
@@ -585,8 +591,8 @@ FUNC usart2_init_19200_pf15_high
     str r0, [sp, #0x8]                      @ 0801C3F2  local [sp+8] = 19200 (0x4B00)
     movs r0, #0x0                           @ 0801C3F4
     strh r0, [sp, #0xc]                     @ 0801C3F6  local [sp+12] = 0
-    movs r0, #0x0                           @ 0801C3FA
-    strh r0, [sp, #0xe]                     @ 0801C3FC  local [sp+14] = 0
+    mov r0, #0x2000                         @ 0801C3FA replaces v2.05 movs r0,#0x0: IMP-59, USART_StopBits_2
+    strh r0, [sp, #0xe]                     @ 0801C3FC  local [sp+14] = StopBits 0x2000 (CR2.STOP = 10, 2 stop bits)
     movs r0, #0x0                           @ 0801C400
     strh r0, [sp, #0x10]                    @ 0801C402  local [sp+16] = 0
     movs r0, #0x0                           @ 0801C406
