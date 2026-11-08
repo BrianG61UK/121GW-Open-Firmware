@@ -7,14 +7,14 @@ The companion writes the single byte 0xFE every 5 s ("still here") and 0xFD befo
 it has seen 0xFE, switches its Bluetooth module off when nothing has come from the computer for 15 s, and on again 5 s
 later, so a computer that kept a connection the companion gave up must let it go.  The module's state is read from the
 firmware's own flag ble_usart_on (1 between usart2_init and usart2_deinit), sampled every 0.25 s.
-  H1 without 0xFE (the phone app, an older companion): 40 s of silence, the module stays on
+  H1 without 0xFE (another Bluetooth app, an older companion): 40 s of silence, the module stays on
   H2 0xFE, then silence: the module goes off 15 s after the last byte (14.5 .. 16 s), on again 5 s later (4.5 .. 5.5 s),
      status frames flow again, the watch is off afterwards (40 s more silence: no second reset)
   H3 0xFE every 5 s for 40 s: the module stays on
   H4 0xFE, then 0xFD, then 40 s of silence: the module stays on
   H5 0xFE, then page Ld shown (60 s idle there): the module stays on; on leaving the page the watch counts from 0 again
   H6 0xFE, silence until the module is off, then a long PEAK (Bluetooth off by the user) during the off phase: it stays off
-  H7 0xFE, then Bluetooth off and on with PEAK (a new link, maybe the phone app): the watch starts disarmed, 25 s of
+  H7 0xFE, then Bluetooth off and on with PEAK (a new link, maybe another Bluetooth app): the watch starts disarmed, 25 s of
      silence: the module stays on (critique 2026-11-08)
   B1 the meter walk ends with the page bAcK after CL; SETUP there gives item 0 (the temperature page); a long SETUP on
      bAcK does the same

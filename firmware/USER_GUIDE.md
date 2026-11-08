@@ -62,7 +62,7 @@ The ACV function has a dBm page in SETUP; the original always computes dBm into 
   `r dbV`. **REL** / **PEAK** step through them, hold **SETUP** to save.
 - **Meaning:** dBm into 600 ohm (audio), 50 ohm (RF), 75 ohm (video), or dBV (decibels relative to 1 volt). For dBV
   only the dB sign is lit.
-- The Bluetooth packet has no code for dBV, so a phone app labels every reference "dBm".
+- The Bluetooth packet has no code for dBV, so other Bluetooth apps label every reference "dBm".
 
 Check: 1.000 V reads 2.218 dBm (600 ohm), 13.01 dBm (50 ohm), 11.25 dBm (75 ohm), 0.000 dBV.
 
@@ -78,7 +78,7 @@ Check: 1.000 V reads 2.218 dBm (600 ohm), 13.01 dBm (50 ohm), 11.25 dBm (75 ohm)
   comes back on if it was on before the power-off. (F-1.17 and older did not wake from a key: only the dial off and on
   again started them, OF-73.)
 - **Speed:** page `bt`: `bt  2` (2 readings per second, the default, as the original), `bt  4`, `bt 10`, `bt 20`.
-- Verified working on a meter: 20 readings per second with the official iPhone application.
+- Verified working on a meter: 20 readings per second with EEVblog's own app on an iPhone.
 
 Tip: use `bt 10` or `bt 20` for live plotting on a phone or computer, `bt  2` when battery life matters more.
 
@@ -195,7 +195,7 @@ Tip: with `L4-20` a sensor's output reads directly in percent of its range, for 
   found (GitHub issue 23).
 - **If you paired it already:** remove it in the computer's Bluetooth settings (Windows: Settings > Bluetooth & devices,
   `121GW`, the three dots, Remove device), switch the meter's Bluetooth off and on (hold PEAK twice), start the Companion.
-- **One connection at a time:** close the phone app before using the Companion.
+- **One connection at a time:** close any other Bluetooth app for the meter before using the Companion.
 - **After an update over Bluetooth** the meter switches Bluetooth on by itself, so the Companion reconnects and
   confirms the update (firmware 1.2.2 with bootloader 1.1.4 or newer; GitHub issue 23). With an older bootloader, and
   after the one update that installs bootloader 1.1.4, hold PEAK to switch Bluetooth on.
@@ -204,7 +204,7 @@ Tip: with `L4-20` a sensor's output reads directly in percent of its range, for 
   Bluetooth module off for 5 s and on again, so a computer that kept the connection (Windows was seen to) must let it go
   and the Companion reconnects.  The Companion in turn asks the meter when no reading has come for 8 s and reconnects
   when it does not answer; when the meter stays unreachable for a minute it says so in a window.  A clean Disconnect
-  switches the meter's watch off first; the phone app never switches it on.
+  switches the meter's watch off first; other Bluetooth apps never switch it on.
 
 ## Card files and settings from the companion (page `Ld-bt`)
 

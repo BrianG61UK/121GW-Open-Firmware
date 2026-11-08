@@ -10,8 +10,8 @@
 @ Protocol (owner design 2026-11-08, reviewed): the companion writes the single byte 0xFE ("still here") every 5 s when
 @ it has written nothing else, and 0xFD before a clean disconnect.  On the measuring pages the receive parser ignores
 @ a first byte that is neither F4 nor F8 (ble/usart.s .Lrx_resync), so older firmware ignores both bytes, and this
-@ firmware takes 0xFE as "watch on" and 0xFD as "watch off" there.  The phone app never sends 0xFE: the watch never
-@ runs for it.  On page Ld every byte belongs to the file transfer (bft_rx_byte) and the bytes are not looked at.
+@ firmware takes 0xFE as "watch on" and 0xFD as "watch off" there.  Other Bluetooth apps never send 0xFE: the watch
+@ never runs for them.  On page Ld every byte belongs to the file transfer (bft_rx_byte) and the bytes are not looked at.
 @
 @ The watch: every byte received from the module sets hb_seen (ble_usart2_isr, any byte: anything from the computer
 @ proves it is there; bytes received under HSE count too, their parser reset is NF-04's).  The TIM2 tick (hb_tick, the
@@ -170,7 +170,7 @@ ENDFUNC hb_service
 @ Context  : main only
 @ RAM      : writes hb_phase = 0, hb_req = 0, hb_on = 0, hb_seen = 0
 @ Note     : the watch starts disarmed on every new link (critique 2026-11-08: armed across a PEAK off/on or a wake it
-@            would reset a link a phone app had just made); the companion arms it again with its next 0xFE.  hb_cnt is
+@            would reset a link another app had just made); the companion arms it again with its next 0xFE.  hb_cnt is
 @            zeroed by hb_tick's next pass (no watch).  hb_phase is cleared before hb_req, so a tick in between sets no
 @            request (it needs hb_phase 1)
 @ -----------------------------------------------------------------------------

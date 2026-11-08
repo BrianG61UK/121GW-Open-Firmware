@@ -114,7 +114,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Storage: one byte 0x011: 0 = 600 ohm (v2.05: the constant 0.6, `0x0800A7C6`..`0x0800A7E8`), 1 = 50 ohm (0.05), 2 = 75 ohm
   (0.075), 3 = dBV (1.0); any other value reads as 0. Blank = v2.05 behaviour.
 - Constraints: display-side arithmetic only (the constant of the dBm formula). The BLE packet keeps its sub-mode byte 0xB4
-  for this page (`analysis/ble_packet.md` 4), so a phone application labels all four references "dBm"; for dBV that label is
+  for this page (`analysis/ble_packet.md` 4), so other Bluetooth apps label all four references "dBm"; for dBV that label is
   wrong. OF-46 (zero reading, five dashes) stays as fixed.
 
 ### 2.3 REL in percent (implemented, IMP-11; verified working on a meter)
@@ -167,7 +167,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   rate is a maximum and a frame is never torn; command echoes keep their queue between frames. Frame format, checksum and
   sub-display content are unchanged.
 - Storage: one byte 0x015 (0 = 2 per second). Any other value reads as 0.
-- Verified working on a meter: 20 frames per second with the official iPhone application.
+- Verified working on a meter: 20 frames per second with EEVblog's own app on an iPhone.
 - Constraints: the link is raw serial through the module on USART2; the option is a setting, default v2.05.
 
 ### 2.6 Smarter SD logging (implemented, IMP-21; verified working on a meter)
@@ -314,7 +314,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Verified working on a meter: firmware update into bootloader B-1.11 and bootloader update 1.1.0 to 1.1.1 over Bluetooth.
 
 ### 2.11 Meter companion program (stages 1 to 7 implemented, branch companion; owner go 2026-11-04)
-- Request (owner, 2026-11-02 and 2026-11-04): the official phone application connects but draws badly; a program of our
+- Request (owner, 2026-11-02 and 2026-11-04): EEVblog's own app connects but draws badly; a program of our
   own for Windows, macOS and Linux that shows the meter live, records, and updates the firmware, with a design of its
   own ("sleek, functional, not the run-of-the-mill look").
 - Where (owner decision 2026-11-04): a separate program on its own branch `companion` (orphan branch: only the
@@ -381,7 +381,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   no frames come while the main digits are blank and while page Ld is shown.
 - Safety of the local program: every request that sends anything to the meter (version request, clock, file operations,
   firmware transfer) needs a custom request header, so no web page can trigger it; one Bluetooth central at a time (not
-  together with the phone application or another bridge); reconnect after the meter's auto power-off.
+  together with another Bluetooth app or bridge); reconnect after the meter's auto power-off.
 - Packaging: bleak and its platform backends bundled (hidden imports), the macOS Bluetooth usage text in Info.plist.
 - Design (owner choice "bench instrument"): matte black, the 121GW yellow as the only accent, hairlines instead of
   boxes, large tabular digits for the reading, oscilloscope-style grid for the trend graph; dense, no rounded cards, no
@@ -621,7 +621,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   not be found until Bluetooth was switched off and on, and no program on the computer can end such a link.
 - What it does: the companion writes 0xFE ("still here") every 5 s when it has written nothing else; after it, the
   meter switches its Bluetooth module off for 5 s and on again when nothing has come for 15 s, which ends the radio link.
-  0xFD before a clean disconnect switches the watch off.  Older firmware ignores both bytes; the phone app never sends
+  0xFD before a clean disconnect switches the watch off.  Older firmware ignores both bytes; other Bluetooth apps never send
   them.  The companion asks the meter when no byte has come for 8 s and reconnects without an answer, and reports a
   meter unreachable for a minute.
 - How: DESIGN.md IMP-56, `ble/heartbeat.s`.  No EEPROM, calibration or option access.

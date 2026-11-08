@@ -34,7 +34,7 @@ async def main(path):
     devs = await BleakScanner.discover(timeout=8.0, return_adv=True)
     dev = next((d for d, adv in devs.values() if SERVICE in [str(u).lower() for u in adv.service_uuids]), None)
     if dev is None:
-        raise SystemExit('no 121GW found: meter on, Bluetooth on (long PEAK), phone app closed?')
+        raise SystemExit('no 121GW found: meter on, Bluetooth on (long PEAK), other Bluetooth apps closed?')
     parser, answers = btft.AnswerParser(), asyncio.Queue()
 
     def on_notify(_h, chunk):

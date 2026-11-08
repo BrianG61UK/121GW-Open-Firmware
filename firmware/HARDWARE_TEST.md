@@ -58,7 +58,7 @@ These checks confirm on hardware what the emulator cannot.
    dBm), long SETUP, REL to `r  50` and long SETUP: 13.01 dBm; `r  75`: 11.25 dBm; `r dbV`: 0.000 with dB alone. Power off
    and on: the reference is kept. Dump the EEPROM after the save: only byte 0x011 may differ.
 9. Bluetooth frame rate (production build): transfer on (PEAK long), SETUP to the page bt (after bL), long SETUP, step to
-   `bt  4`, `bt 10`, `bt 20` and save; check in the phone application (or a BLE logger) that readings arrive at the chosen
+   `bt  4`, `bt 10`, `bt 20` and save; check in EEVblog's own app (or a BLE logger) that readings arrive at the chosen
    rate and that the application still connects and decodes them. Dump the EEPROM after the save: only byte 0x015 may differ.
 10. Thermocouple type (production build): TEMP, SETUP to the page tc (after rEL), select J, T, N, R or S and save; with such a probe
    (or a thermocouple calibrator set to the type) compare readings at room temperature, in ice water (0 degC) and at a known
@@ -195,7 +195,7 @@ These checks confirm on hardware what the emulator cannot.
    completely.  Switch the meter off and on: page `bt` still shows `bt 20` (the saved setting is unchanged).
 44. Link watch (F-1.26, IMP-56; GitHub issue 23): connect the companion 1.2.32; quit the companion without Disconnect
    (or kill it): about 15 s later the meter's Bluetooth symbol goes off for 5 s and on again, and the meter can be
-   found again.  With a clean Disconnect, and with the phone app, nothing happens.  Switch the meter off during the 5 s:
+   found again.  With a clean Disconnect, and with other Bluetooth apps, nothing happens.  Switch the meter off during the 5 s:
    Bluetooth stays off as switched.
 45. Page bAcK (F-1.26, IMP-57; GitHub issue 31): on SEt hold SETUP, SETUP through the meter pages: after CL the page
    bAcK; SETUP there: the temperature page.  The same with a long SETUP on bAcK.
