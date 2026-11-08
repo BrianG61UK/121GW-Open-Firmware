@@ -645,10 +645,17 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
 // must show whole: when their content is still taller than the page (notices shown above it), the zoom goes down until it
 // fits.  The other pages are lists and scroll.  Called on resize, on a page change and when a notice appears or goes.
 const BASE_W = 1180, BASE_H = 732, FIT_VIEWS = ['v-live', 'v-scope'];
+// CSS zoom: WebKit (macOS window), WebView2 (Windows window), Chromium and Firefox from 126 (Linux opens the browser);
+// an older Firefox has no zoom, so the body is scaled with a transform there (same result; the canvases map the pointer
+// through their drawn size either way)
+const ZOOM_CSS = window.CSS && CSS.supports && CSS.supports('zoom', '1');
 let zoomNow = 1, bandSig = '';
 function fitZoom() {
   const W = window.innerWidth, H = window.innerHeight, b = document.body;
-  const apply = z => { b.style.zoom = z; b.style.width = W / z + 'px'; b.style.height = H / z + 'px'; return z; };
+  const apply = z => {
+    if (ZOOM_CSS) b.style.zoom = z; else { b.style.transformOrigin = '0 0'; b.style.transform = 'scale(' + z + ')'; }
+    b.style.width = W / z + 'px'; b.style.height = H / z + 'px'; return z;
+  };
   let z = apply(Math.max(.4, Math.min(2, W / BASE_W, H / BASE_H)));
   const v = document.querySelector('.view.on');
   for (let i = 0; v && FIT_VIEWS.includes(v.id) && i < 3; i++) {
