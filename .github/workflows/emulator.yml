@@ -13,6 +13,9 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # a push that changes only text (documentation, the manual and its pictures) tests nothing of the emulator: no run
+    # (owner 2026-11-08); GitHub does not apply path filters to tags, so a release tag always builds the packages
+    paths-ignore: ['**.md', 'firmware/docs/**', 'LICENSE']
   pull_request:
     paths: ['emulator/**', 'firmware/**', '.github/**', 'LICENSE']
   workflow_dispatch:
