@@ -104,7 +104,15 @@ FUNC handle_pg8_15_long_press
     bl set_menu_enter
     bl fn_0800EE5E
     b .Llp_end
-1:
+1:  cmp r0, #44                         @ IMP-57: on the page bAcK the long SETUP also goes back (no edit there)
+    bne 2f
+    bl fn_08015410                      @ next item: 0, the temperature page (as the short SETUP)
+    bl fn_0800EE5E
+    movs r0, #1
+    ldr r1, =v_20008062
+    strb r0, [r1]                       @ redraw the setup page
+    b .Llp_end
+2:
     movs r0, #0                         @ 08016290
     bl fn_080165F4                      @ 08016292
     cmp r0, #0                          @ 08016296

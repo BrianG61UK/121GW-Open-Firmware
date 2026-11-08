@@ -7,7 +7,8 @@ SETUP short walks the measurement pages and ends on the page SEt (item 43); a lo
 Each check presses SETUP short and records the item after every press (set_item, RAM 0x20008037), starting on item 0.
   W1 DCV: 0 -> rEL 22 -> dSP 24 -> Lt 27 -> Lo 28 -> HI 29 -> tr 30 -> In 9 -> SEt 43 -> 0; the page In loads its edit
      buffer (set_interval_edit = set_log_interval, as v2.05 on entering item 9); SEt shows "SEt" on the sub display
-  W2 the meter walk: long SETUP on SEt -> 1, then 2 .. 8 -> bL 20 -> bt 21 -> Ld 39 -> CL 25 -> 0 (no two-part
+  W2 the meter walk: long SETUP on SEt -> 1, then 2 .. 8 -> bL 20 -> bt 21 -> Ld 39 -> CL 25 -> bAcK 44 (F-1.26,
+     IMP-57) -> 0 (no two-part
      bootloader in the emulator: no Fr); no edit is started by the long SETUP on SEt
   W3 ACV (function pages 10, 11): from item 0: 10 -> 11 -> rEL ... ; DIODE: 0 -> 10 -> 22 -> 24 -> CHIrP 42 -> 27
   W4 tr-Ch and MIN/MAX on: tr 30 -> Ch 31 -> In 9 -> n 32 -> Sd 33 -> tHI 34 -> tLo 35 -> SEt 43
@@ -64,8 +65,8 @@ def run_tests(image):
     T.long_press(e, 'SETUP')
     T.check('W2: long SETUP on SEt opens item 1, no edit', T.rd(e, ADDR_ITEM) == 1 and T.rd(e, ADDR_EDIT) == 0,
             'item %d edit %d' % (T.rd(e, ADDR_ITEM), T.rd(e, ADDR_EDIT)))
-    seq = walk(e, 12)
-    T.check('W2: 2 .. 8 -> bL bt Ld CL -> 0', seq == [2, 3, 4, 5, 6, 7, 8, 20, 21, 39, 25, 0], repr(seq))
+    seq = walk(e, 13)
+    T.check('W2: 2 .. 8 -> bL bt Ld CL bAcK -> 0', seq == [2, 3, 4, 5, 6, 7, 8, 20, 21, 39, 25, 44, 0], repr(seq))
 
     print('W3 ACV and DIODE')
     e = start(image, 2)                                  # V position: DCV, MODE to ACV

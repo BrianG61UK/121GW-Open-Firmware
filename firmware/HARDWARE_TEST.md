@@ -191,8 +191,14 @@ These checks confirm on hardware what the emulator cannot.
 43. Automatic reading rate (F-1.25, IMP-55; GitHub issue 30; a meter with the old BLE112 module): page `bt` at `bt 20`;
    connect the companion 1.2.31: the Meter page says readings 2 a second, adjusted to this link; the report shows
    "reading rate 2 a second"; after a minute on a clean link it goes up a step.  Press a key on page `bt` (or let the
-   meter restart): within 10 s the companion sets its rate again (event "set again").  Meter settings (page Ld) read completely.  Switch the meter off and on: page `bt` still
-   shows `bt 20` (the saved setting is unchanged).
+   meter restart): within 10 s the companion sets its rate again (event "set again").  Meter settings (page Ld) read
+   completely.  Switch the meter off and on: page `bt` still shows `bt 20` (the saved setting is unchanged).
+44. Link watch (F-1.26, IMP-56; GitHub issue 23): connect the companion 1.2.32; quit the companion without Disconnect
+   (or kill it): about 15 s later the meter's Bluetooth symbol goes off for 5 s and on again, and the meter can be
+   found again.  With a clean Disconnect, and with the phone app, nothing happens.  Switch the meter off during the 5 s:
+   Bluetooth stays off as switched.
+45. Page bAcK (F-1.26, IMP-57; GitHub issue 31): on SEt hold SETUP, SETUP through the meter pages: after CL the page
+   bAcK; SETUP there: the temperature page.  The same with a long SETUP on bAcK.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

@@ -34,8 +34,9 @@ temperature page.
 
 **Meter pages** (on `SEt` hold **SETUP**): battery → `APO` (auto power-off) → `b-On` (buzzer) → `Lcd` (contrast) →
 year → month and day → hour and minute → ID → `bL` (backlight) → `bt` (Bluetooth speed) → `Ld` (firmware and files over
-Bluetooth) → `Fr` (format the card as exFAT, only with the new bootloader) → `CL` (12 / 24-hour clock) → back to the
-temperature page.  Changing the function or switching off also ends the meter pages.
+Bluetooth) → `Fr` (format the card as exFAT, only with the new bootloader) → `CL` (12 / 24-hour clock) → `bAcK` (F-1.26,
+GitHub issue 31: SETUP there, short or long, goes straight back) → the temperature page.  Changing the function or
+switching off also ends the meter pages.
 
 The dBm reference is not a new page: it is edited on the existing dBm page of ACV.
 
@@ -198,6 +199,12 @@ Tip: with `L4-20` a sensor's output reads directly in percent of its range, for 
 - **After an update over Bluetooth** the meter switches Bluetooth on by itself, so the Companion reconnects and
   confirms the update (firmware 1.2.2 with bootloader 1.1.4 or newer; GitHub issue 23). With an older bootloader, and
   after the one update that installs bootloader 1.1.4, hold PEAK to switch Bluetooth on.
+- **A link that hangs is repaired by itself** (firmware 1.2.6 with Companion 1.2.32; GitHub issue 23): while the
+  Companion is connected it sends a one-byte "still here" every 5 s.  If the meter hears nothing for 15 s it switches its
+  Bluetooth module off for 5 s and on again, so a computer that kept the connection (Windows was seen to) must let it go
+  and the Companion reconnects.  The Companion in turn asks the meter when no reading has come for 8 s and reconnects
+  when it does not answer; when the meter stays unreachable for a minute it says so in a window.  A clean Disconnect
+  switches the meter's watch off first; the phone app never switches it on.
 
 ## Card files and settings from the companion (page `Ld-bt`)
 

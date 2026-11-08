@@ -8,8 +8,10 @@
 @     n, Sd, tHI, tLo, then the page SEt (item 43) and item 0 again;
 @   meter walk: items 1..8 (battery trim, APO, buzzer, contrast, year, month and day, hour and minute, ID), bL, bt, Ld,
 @     Fr, CL, then item 0.
-@ The meter walk starts with a long SETUP on the page SEt (set_menu_enter, from key/long.s) and leaves at its end, with a
-@ function or range change (fn_0800D718) or at power-off; no state is kept beyond set_item.  Every page edits as before.
+@ The meter walk starts with a long SETUP on the page SEt (set_menu_enter, from key/long.s) and ends with the page bAcK
+@ (IMP-57, GitHub issue 31: a visible way back): SETUP there, short or long, goes to item 0, the temperature page that
+@ starts the measurement walk.  It is also left with a function or range change (fn_0800D718) or at power-off; no state
+@ is kept beyond set_item.  Every page edits as before.
 @
 @ Context: main only.
 @ =============================================================================
@@ -31,6 +33,10 @@
 set_menu_text:
     .ascii "SEt  "
     .size set_menu_text, . - set_menu_text
+@ IMP-57: the page bAcK (the font's lowercase b and c, uppercase A and K: lcd/font.s)
+set_back_text:
+    .ascii "bAcK "
+    .size set_back_text, . - set_back_text
 
     .section .text.set.menu, "ax", %progbits
 
@@ -76,5 +82,30 @@ FUNC set_menu_draw
     strb r0, [r1]                           @ commit the shadow
     pop {r4, pc}
 ENDFUNC set_menu_draw
+
+@ -----------------------------------------------------------------------------
+@ set_back_draw - draw the page bAcK: "bAcK" on the sub display (the main display keeps the reading)
+@ Replaces : nothing in v2.05 (new, IMP-57; fn_0801797C calls it for item 44)
+@ In/Out   : - / -
+@ Clobbers : r0-r3, r12, flags (AAPCS)
+@ Context  : main only (fn_0801797C)
+@ RAM      : writes lcd_shadow (sub minus and decimal points off, five characters), the commit request
+@ -----------------------------------------------------------------------------
+FUNC set_back_draw
+    push {r4, lr}
+    ldr r0, =lcd_shadow
+    ldr r1, [r0, #0x10]
+    bic r1, r1, #0x20000000                 @ sub minus sign off
+    str r1, [r0, #0x10]
+    movs r0, #0                             @ decimal point code 0: none
+    bl fn_08017FB4                          @ clear the sub display decimal points
+    ldr r1, =set_back_text
+    movs r0, #1                             @ sub display
+    bl lcd_draw_5char
+    movs r0, #1
+    ldr r1, =set_menu_commit_req
+    strb r0, [r1]                           @ commit the shadow
+    pop {r4, pc}
+ENDFUNC set_back_draw
 
     .ltorg

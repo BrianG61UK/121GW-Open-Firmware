@@ -251,6 +251,7 @@ FUNC sys_main
     bl fn_08010B64
 .Lmain_step11:
     bl bft_poll                             @ IMP-28: Bluetooth file transfer while the SETUP page Ld is shown
+    bl hb_service                           @ IMP-56: the link watch switches the module off and on (ble/heartbeat.s)
     @ step 11: BLE command received
     ldr r0, =v_20008030
     ldrb r0, [r0]

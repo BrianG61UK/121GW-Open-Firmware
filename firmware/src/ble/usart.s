@@ -467,7 +467,11 @@ FUNC ble_usart2_isr
     bl xd_rx_account
     ldr r0, =ble_usart_on
     ldrb r0, [r0]
-    cbz r0, .Lisr_done                      @ link down: drop the byte
+    cmp r0, #0
+    beq .Lisr_done                          @ link down: drop the byte (cbz no longer reaches: IMP-56 code grew the handler)
+    movs r0, #1
+    ldr r1, =hb_seen
+    strb r0, [r1]                           @ IMP-56: a byte from the computer (the watch, ble/heartbeat.s)
     bl ble_sysclk_is_hse
     cbz r0, .Lrx_store
     ldr r0, =xd_rx_dropped_hse
@@ -515,7 +519,17 @@ FUNC ble_usart2_isr
     strb r0, [r1]
     b .Lisr_done
 .Lrx_resync:
-    movs r0, #0                             @ any other first byte: ignore it (v2.05 0x08024886)
+    ldr r1, =hb_on                          @ IMP-56: the companion's one-byte heartbeat (ble/heartbeat.s)
+    cmp r0, #0xFE
+    bne 1f
+    movs r3, #1
+    strb r3, [r1]                           @ 0xFE "still here": the watch on
+    b 2f
+1:  cmp r0, #0xFD
+    bne 2f
+    movs r3, #0
+    strb r3, [r1]                           @ 0xFD: the watch off (a clean disconnect)
+2:  movs r0, #0                             @ any other first byte: ignore it (v2.05 0x08024886)
     strb r0, [r2]
     b .Lisr_done
 .Lrx_more:

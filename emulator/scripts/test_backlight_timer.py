@@ -140,7 +140,7 @@ def to_meter_walk(e):
     return rd(e, ADDR_ITEM) == 1
 
 
-METER_PAGES = {1, 2, 3, 4, 5, 6, 7, 8, 20, 21, 25, 39, 40}   # the pages of the meter walk (IMP-52)
+METER_PAGES = {1, 2, 3, 4, 5, 6, 7, 8, 20, 21, 25, 39, 40, 44}   # the pages of the meter walk (IMP-52; bAcK 44, IMP-57)
 
 
 def to_item(e, want, limit=24):

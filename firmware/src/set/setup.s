@@ -93,6 +93,7 @@
     .equ SET_ITEM_HUNT, 41                  @ IMP-45: capacitance anti-hunting page HUnt (CAP only, between dSP and CL)
     .equ SET_ITEM_CHIRP, 42                 @ IMP-51: DIODE contact chirp page CHIrP (DIODE only, between dSP and Lt)
     .equ SET_ITEM_SET, 43                   @ IMP-52: page SEt, the end of the measurement walk (long SETUP: the meter walk)
+    .equ SET_ITEM_BACK, 44                  @ IMP-57: page bAcK, the end of the meter walk (GitHub issue 31)
     .equ SET_ITEM_IN, 9                     @ v2.05's log interval page In; IMP-52: in the measurement walk after tr / Ch
     .equ SET_ITEM_LT, 27                    @ IMP-20: limit test pages Lt (27), Lo (28), HI (29), verdict (36)
     .equ SET_ITEM_LO, 28
@@ -137,11 +138,14 @@ FUNC fn_08015410
     @ time pages tHI (34) and tLo (35) (IMP-21); then the page SEt (item 43); on SEt to item 0.  Meter walk (from SEt by a
     @ long SETUP, key/long.s): v2.05's items 1..8 in v2.05's sequence (the ID cursor of item 8 included), on 8 to the page
     @ bL (item 20, IMP-07), on bL to bt (21, IMP-09), on bt to Ld (39, IMP-28), on Ld to Fr (40, IMP-32, two-part
-    @ bootloader only) or CL (25, IMP-13), on Fr to CL, on CL to item 0.  Each step ends an edit.
+    @ bootloader only) or CL (25, IMP-13), on Fr to CL, on CL to the page bAcK (44, IMP-57, GitHub issue 31), on bAcK to
+    @ item 0, the temperature page that starts the measurement walk.  Each step ends an edit.
     ldr.w r0, =set_item
     ldrb r0, [r0, #0x0]
     cmp r0, #SET_ITEM_SET
     beq .Lsn_to0                            @ SEt: next is item 0 (IMP-52)
+    cmp r0, #SET_ITEM_BACK
+    beq .Lsn_to0                            @ bAcK: back to item 0, the measurement walk (IMP-57)
     cmp r0, #0
     bne 11f
     movs r0, #SET_ITEM_IN                   @ item 0: v2.05's sequence from item 9, so the next is 10 (with its entry actions)
@@ -181,7 +185,8 @@ FUNC fn_08015410
     beq .Lsn_to_sd                          @ n: next is Sd
     cmp r0, #SET_ITEM_CLK
     bne .Lsn_not_clk
-    b .Lsn_to0                              @ CL: the end of the meter walk, item 0 (IMP-52)
+    movs r0, #SET_ITEM_BACK                 @ CL: next is the page bAcK, the end of the meter walk (IMP-57)
+    b .Lsn_port_set
 .Lsn_not_clk:
     cmp r0, #SET_ITEM_LT
     bne 1f
@@ -325,7 +330,7 @@ FUNC fn_08015410
     strb r0, [r1, #0x0]                     @ main value redraw request
     pop {r0}
 2:  ldr.w r1, =set_item
-    strb r0, [r1, #0x0]                     @ set_item = 20..43 or 0
+    strb r0, [r1, #0x0]                     @ set_item = 20..44 or 0
     movs r0, #0x0
     ldr.w r1, =set_edit
     strb r0, [r1, #0x0]                     @ set_edit = 0 (v2.05 clears it at 0x08015422 for every item but 8)
@@ -2501,6 +2506,11 @@ FUNC fn_0801797C
     bl set_menu_draw
     b .L08017F26
 .Lsd_not_set:
+    cmp r0, #SET_ITEM_BACK                  @ IMP-57: the page bAcK (item 44)
+    bne .Lsd_not_back
+    bl set_back_draw
+    b .L08017F26
+.Lsd_not_back:
     cmp r0, #SET_ITEM_BFT                   @ IMP-28: the Bluetooth file transfer page Ld (item 39)
     bne .Lsd_not_bft
     bl set_bft_draw

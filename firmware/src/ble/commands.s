@@ -392,6 +392,7 @@ ENDFUNC fn_0800C470
 FUNC fn_0800C51A
     push {r4, lr}                           @ 0800C51A
     movs r4, r0                             @ 0800C51C
+    bl hb_cancel                            @ IMP-56: every switching of Bluetooth ends a link reset in progress
     ldr.w r0, =ble_enable                   @ 0800C51E
     ldrb r0, [r0, #0x0]                     @ 0800C522  r0 = ble_enable
     cmp r0, #0x0                            @ 0800C524  compare ble_enable with 0

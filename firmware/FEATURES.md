@@ -616,6 +616,20 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   pages that shrink until they arrive; the card list and files already did (careful mode, F-1.19).
 - How: DESIGN.md IMP-55.  No EEPROM, calibration or option change.
 
+### 2.30 Link watch (implemented, IMP-56, F-1.26; GitHub issue 23)
+- Reason: Windows was seen to keep the connection after the companion let go; the meter did not advertise and could
+  not be found until Bluetooth was switched off and on, and no program on the computer can end such a link.
+- What it does: the companion writes 0xFE ("still here") every 5 s when it has written nothing else; after it, the
+  meter switches its Bluetooth module off for 5 s and on again when nothing has come for 15 s, which ends the radio link.
+  0xFD before a clean disconnect switches the watch off.  Older firmware ignores both bytes; the phone app never sends
+  them.  The companion asks the meter when no byte has come for 8 s and reconnects without an answer, and reports a
+  meter unreachable for a minute.
+- How: DESIGN.md IMP-56, `ble/heartbeat.s`.  No EEPROM, calibration or option access.
+
+### 2.31 Page bAcK (implemented, IMP-57, F-1.26; GitHub issue 31)
+- The meter walk ends with a page `bAcK` after `CL`; SETUP there, short or long, goes to the temperature page that
+  starts the measurement walk.
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
@@ -662,6 +676,7 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 41 | `HUnt` CAP anti-hunting (after `dSP`) | CAP mode only; name on the sub display, `on` / `oFF` on the main display | yes (implemented) |
 | 42 | `CHIrP` DIODE contact chirp (after `dSP`) | DIODE mode only; name on the sub display, `on` / `oFF` on the main display | yes (implemented) |
 | 43 | `SEt` the end of the measurement walk | always; a long SETUP opens the meter walk (IMP-52) | no (implemented) |
+| 44 | `bAcK` the end of the meter walk | always; SETUP (short or long) goes to item 0 (IMP-57, F-1.26) | no (implemented) |
 | 32 | `n` count | MIN/MAX on | no |
 | 33 | `Sd` | MIN/MAX on | no |
 | 34, 35 | `tHI`, `tLo` | MIN/MAX on | no |
