@@ -82,8 +82,10 @@ Check: 1.000 V reads 2.218 dBm (600 ohm), 13.01 dBm (50 ohm), 11.25 dBm (75 ohm)
 Tip: use `bt 10` or `bt 20` for live plotting on a phone or computer, `bt  2` when battery life matters more.
 
 - **Meters with the old BLE112 module** (F-1.25 on, GitHub issue 30): that module carries about 150 bytes a second,
-  about 8 readings.  The 121GW Companion sets the rate for the connection by itself: it starts at 4 a second, goes down
-  when readings arrive damaged and up again when the link stays clean, never above the saved `bt` value.  This rate
+  about 8 readings.  The 121GW Companion sets the rate for the connection by itself: it starts at the lowest rate, 2 a
+  second, goes up one step after a minute without a damaged byte and down again at the first damaged readings, never
+  above the saved `bt` value; if the meter drops back to its own rate (a restart, a wake, a key on page `bt`), the
+  companion sets it again (companion 1.2.31).  This rate
   lasts until the meter is switched off; the saved `bt` setting is not changed.
 
 ## REL in percent

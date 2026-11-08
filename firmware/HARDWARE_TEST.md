@@ -189,8 +189,9 @@ These checks confirm on hardware what the emulator cannot.
    the double beep, shorted probes the tone; auto-hold captures with a beep; continuity still beeps.  Switch off and on:
    still `qUiEt`.  Back to `b-On`: the keys beep again.
 43. Automatic reading rate (F-1.25, IMP-55; GitHub issue 30; a meter with the old BLE112 module): page `bt` at `bt 20`;
-   connect the companion 1.2.30: the Meter page says readings 4 a second, adjusted to this link; the report shows
-   "reading rate 4 a second".  Meter settings (page Ld) read completely.  Switch the meter off and on: page `bt` still
+   connect the companion 1.2.31: the Meter page says readings 2 a second, adjusted to this link; the report shows
+   "reading rate 2 a second"; after a minute on a clean link it goes up a step.  Press a key on page `bt` (or let the
+   meter restart): within 10 s the companion sets its rate again (event "set again").  Meter settings (page Ld) read completely.  Switch the meter off and on: page `bt` still
    shows `bt 20` (the saved setting is unchanged).
 
 ## After the tests
