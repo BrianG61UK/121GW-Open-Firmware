@@ -20,13 +20,13 @@ every measuring function, every SETUP page and every message, with pictures of t
 
 A program for Windows, macOS and Linux that connects to the meter over Bluetooth: the live reading with statistics and a trend, a scope view with cursors, CSV recording, the meter's keys from the computer, firmware and bootloader updates without card or keys (two-part bootloader), the SD card's files, the meter's settings and clock. Download it from the [latest release](../../releases/latest) (`121GW-Companion-...`); its source and full description are on the branch [`companion`](../../tree/companion).
 
-<p align="center"><img src="https://github.com/zombu4/121GW-Open-Firmware/raw/companion/docs/companion_live.gif" alt="LIVE view: the meter's reading, symbols, statistics and trend; MODE, HOLD and MIN/MAX pressed from the computer" width="760"></p>
+<p align="center"><img src="https://github.com/zombu4/121GW-Open-Firmware/raw/companion/docs/companion_live.gif" alt="LIVE page: the meter's reading on its seven-segment display with the symbols and bargraph, statistics and trend; HOLD pressed from the computer" width="760"></p>
 
 | **Scope view** | **Recording** |
 |---|---|
 | <img src="https://github.com/zombu4/121GW-Open-Firmware/raw/companion/docs/companion_scope.gif" alt="SCOPE view: the trend on a scope grid with time base and cursors" width="420"> | <img src="https://github.com/zombu4/121GW-Open-Firmware/raw/companion/docs/companion_record.gif" alt="RECORD starts a CSV recording; the LOG view lists the recordings" width="420"> |
 | **SD card** (meter on the page `Ld-bt`) | **Meter**: settings and diagnostics (page `Ld-bt`) |
-| <img src="https://github.com/zombu4/121GW-Open-Firmware/raw/companion/docs/companion_card.gif" alt="CARD view: the files on the meter's SD card with size and date, the space, a download" width="420"> | <img src="https://github.com/zombu4/121GW-Open-Firmware/raw/companion/docs/companion_meter.gif" alt="METER view: firmware, bootloader, clock, the SETUP settings read from the meter, the diagnosis values" width="420"> |
+| <img src="https://github.com/zombu4/121GW-Open-Firmware/raw/companion/docs/companion_card.gif" alt="CARD view: the files on the meter's SD card with size and date, the space, a download" width="420"> | <img src="https://github.com/zombu4/121GW-Open-Firmware/raw/companion/docs/companion_meter.gif" alt="METER page: the meter's firmware and bootloader, the update check, the table of releases to install, the clock" width="420"> |
 
 Recorded from a real 121GW with firmware F-1.07 over Bluetooth (nothing connected to the inputs, so the readings are small; the keys are pressed from the computer; the meter's Bluetooth device identifier is covered).
 
