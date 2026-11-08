@@ -175,7 +175,8 @@ Tip: with `L4-20` a sensor's output reads directly in percent of its range, for 
 
 ## Firmware update over Bluetooth
 
-- **On the meter:** Bluetooth on (hold PEAK), then press SETUP until the page `Ld-bt` (right after `bt`).
+- **On the meter:** Bluetooth on (hold PEAK), then press SETUP until `SEt`, hold SETUP until the long beep (the meter
+  pages), and press SETUP until the page `Ld-bt` (right after `bt`).
 - **On the computer:** `python emulator/tools/bt_upload.py EEVBlog.bin` (Python 3 with the package `bleak`: `pip install
   bleak`). The meter shows the progress in percent (`Ld 45`), a full image takes a few minutes.
 - **Result:** `Ld oK` means the file is on the card as `EEVBlog.bin` and was read back correctly (the temporary file
@@ -256,8 +257,8 @@ module) are not affected.
 The two-part bootloader (`bootloader/README.md`, releases `bl-vA.B.C`) replaces EEVblog's. The fast build supports it in two
 ways, both used by the companion program (releases `companion-vA.B.C`):
 
-- **First install:** the companion sends the install file over the same page `Ld-bt` (start the transfer by pressing SETUP
-  until `Ld-bt`). The meter checks that its bootloader area is one of EEVblog's builds and that the battery is at least
+- **First install:** the companion sends the install file over the same page `Ld-bt` (start the transfer on that page:
+  SETUP until `SEt`, hold SETUP until the long beep, then SETUP until `Ld-bt`). The meter checks that its bootloader area is one of EEVblog's builds and that the battery is at least
   4.80 V, writes the new bootloader, restarts, and the starter installs it. Extra `LdE` codes: `LdE 7` the bootloader area is
   not one of EEVblog's builds (nothing written), `LdE 8` battery below 4.80 V (nothing written), `LdE 9` the install file or
   a flash step failed.
