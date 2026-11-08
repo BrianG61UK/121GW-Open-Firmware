@@ -205,7 +205,9 @@ These checks confirm on hardware what the emulator cannot.
    segment on.  Switch on and press MODE within 1 s: no `CAL1`, the meter measures.  Hold MODE alone while switching on:
    nothing happens, also when it is let go.  Auto power-off (or wait), turn the dial to wake it and press MODE at once:
    no `CAL1`.  MEM + HOLD still starts the card update.  Dump the EEPROM before and after: no byte changed.
-47. Two stop bits (F-1.28, IMP-59; GitHub issue 30): on any meter, send a firmware over Bluetooth (page `Ld-bt`, the
+47. Two stop bits (F-1.28, IMP-59; GitHub issue 30; verified working on a meter with the newer module, MTU 247, 2026-11-08:
+   installed over Bluetooth, link test 0.0 % damaged at 19.93 readings/s, 20 clock frames: 327 bytes received by the
+   meter, 0 framing / noise / overrun errors, 0 rejected frames): on any meter, send a firmware over Bluetooth (page `Ld-bt`, the
    companion) and run the link test: no damaged packets, the meter receives as before.  On a meter with the old BLE112
    module: connect the companion for 10 minutes and save a report; "skipped as damaged" against the report of F-1.27.
 
