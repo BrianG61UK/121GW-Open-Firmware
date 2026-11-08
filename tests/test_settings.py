@@ -185,6 +185,27 @@ class OverTheLink(unittest.TestCase):
         old.put(0x01E, 0)
         self.assertEqual(m.eeprom[0x01E], 0)
 
+    def test_paged_get_adapts_to_a_damaging_link(self):
+        # GitHub issue 30 / IMP-55: one 68-byte answer never arrived on a BLE112 link; F-1.25 answers GET in pages
+        old = settings.GET_PAGE_WAIT
+        settings.GET_PAGE_WAIT = 0.2
+        self.addCleanup(setattr, settings, 'GET_PAGE_WAIT', old)
+        m = meter()
+        plain = settings.Settings(make_client(m)).get_all()
+        m.adapt_fw = True
+        m.damage_over = 9                               # answers above 3 entries never arrive intact
+        s = settings.Settings(make_client(m), paged=True)
+        self.assertEqual(s.get_all(), plain)
+        self.assertEqual(m.get_pages[0], (0, settings.GET_PAGE_FIRST))
+        self.assertTrue(all(mx <= 2 for _, mx in m.get_pages[-3:]))     # settled on pages that arrive
+        s.put(0x01E, 0)                                 # PUT reads back through the pages too
+        self.assertEqual(m.eeprom[0x01E], 0)
+
+    def test_paged_get_refused_by_older_firmware_is_an_error_not_a_hang(self):
+        m = meter()                                     # adapt_fw False: GET with a payload answers 0x22
+        with self.assertRaises(card.CardError):
+            settings.Settings(make_client(m), paged=True).get_all()
+
     def test_a_value_above_31_in_the_shared_byte_is_not_changed(self):
         m = meter(b020=0x20)                            # bit 5 is no setting: the meter would refuse the whole value
         s = settings.Settings(make_client(m))

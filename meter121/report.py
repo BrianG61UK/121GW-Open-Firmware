@@ -132,6 +132,11 @@ def link_details(app):
                                'on: small card answers, readings once (old BLE112 module, MTU 23)' if app.careful_wanted() else
                                'off (MTU %s; careful mode is for the old BLE112 module and firmware F-1.19 or newer)'
                                % (st['mtu'] if st['mtu'] is not None else 'unknown')))
+    ar = getattr(app, 'arate', None) or {}
+    if ar.get('code') is not None:
+        from .app import RATE_PER_S
+        w('reading rate     %d a second, set by the companion for this link (automatic, F-1.25; at most %d)' % (
+            RATE_PER_S[ar['code']], RATE_PER_S[ar['ceiling']]))
     hint = app.link_hint()
     if hint:
         w('link note        ' + hint)

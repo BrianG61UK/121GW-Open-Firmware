@@ -40,6 +40,11 @@ def parse_get(field, data):
     return [struct.unpack_from('<HB', data, i) for i in range(0, len(data), 3)]
 
 
+GET_PAGE_FIRST = 8                                  # entries of the first GET page on a damaging link (IMP-55)
+GET_RETRIES = 8                                     # tries of one GET page before the read fails
+GET_PAGE_WAIT = 3.0                                 # seconds for the answer to one page (a few dozen bytes)
+
+
 def get_answer(pairs):
     """(field, data) of a GET answer (counterpart of parse_get)."""
     return len(pairs), b''.join(struct.pack('<HB', i, v) for i, v in pairs)
@@ -142,13 +147,17 @@ BUZZER_ID = 0x01E                                   # the buzzer row: its third 
 
 
 class Settings:
-    def __init__(self, client, hunt=True, quiet=True):
+    def __init__(self, client, hunt=True, quiet=True, paged=False):
         """`hunt`: the meter's firmware knows the anti-hunting bit (F-1.16 or newer); without it the row HUnt is neither
         listed nor changed (older firmware refuses every value of id 0x020 above 15).  `quiet`: the firmware knows the
-        buzzer's third value qUiEt (F-1.24 or newer); without it the buzzer row offers off and on only."""
+        buzzer's third value qUiEt (F-1.24 or newer); without it the buzzer row offers off and on only.  `paged`: the
+        meter has the old BLE112 module and firmware F-1.25 or newer (GitHub issue 30): GET in pages of start(1) max(1),
+        GET_PAGE_FIRST entries at first, halved after a page that did not arrive (down to 1), as the card list; one
+        answer with every setting (68 bytes) rarely arrives intact on such a link."""
         self.c = client
         self.hunt = hunt
         self.quiet = quiet
+        self.paged = paged
 
     def rows(self):
         out = []
@@ -163,7 +172,31 @@ class Settings:
     def raw_all(self):
         """{wire id: value} as the meter reports; ids the table does not know are dropped (never written either)."""
         known = {s.wire for s in TABLE}
-        return {i: v for i, v in parse_get(*self.c.ok(T_GET)) if i in known}
+        pairs = self._paged_get() if self.paged else parse_get(*self.c.ok(T_GET))
+        return {i: v for i, v in pairs if i in known}
+
+    def _paged_get(self):
+        """[(id, value)] of every setting, fetched page by page (IMP-55); field = entries | 0x8000 with the last one."""
+        out, start, most = [], 0, GET_PAGE_FIRST
+        for _ in range(64):
+            for _ in range(GET_RETRIES):
+                try:
+                    status, field, data = self.c.request(T_GET, bytes([start, most]), retries=1, timeout=GET_PAGE_WAIT)
+                    break
+                except card.CardError:
+                    if self.c.cancelled:
+                        raise
+                    most = max(1, most // 2)
+            else:
+                raise card.CardError('no answer from the meter (is "Ld-bt" still shown on it?)')
+            if status:
+                raise card.CardError(card.describe(status, field), status)
+            count, end = field & 0x7FFF, bool(field & 0x8000)
+            out += parse_get(count, data)
+            start += count
+            if end or not count:
+                return out
+        raise card.CardError('GET: the settings did not end after 64 pages')
 
     def get_all(self):
         """state.settings.items: one entry per table setting the meter reports."""

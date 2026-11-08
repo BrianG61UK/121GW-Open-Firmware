@@ -365,3 +365,72 @@ class LinkTest(AppCase):
         self.app.version, self.app.desk = 'F-1.19', True
         with self.assertRaises(RuntimeError):
             self.app.command({'link_test': True})
+
+
+class AutoRate(AppCase):
+    """IMP-55 (GitHub issue 30): on a BLE112 meter with F-1.25 the reading rate follows the damage of the link."""
+    def setUp(self):
+        super().setUp()
+        self.meter.careful_fw = self.meter.adapt_fw = True
+        self.app._frame_t = time.time() + 3600
+        self.app.version, self.app.fw_kind, self.app.mode = 'F-1.25', 'fast', 'firmware'
+        self.app.link.stats.mtu = 23
+        self.app.link.state = 'connected'
+        old = app_mod.XDIAG_WAIT
+        app_mod.XDIAG_WAIT = 0.2
+        self.addCleanup(setattr, app_mod, 'XDIAG_WAIT', old)
+        self.t = 1000.0
+
+    def window(self, nbytes, damaged):
+        """One judgement window: the link counters advance, the controller looks after RATE_WINDOW seconds."""
+        L = self.app.link
+        self.app._rate_step(self.t)                       # opens the window if none
+        L.rx_bytes += nbytes
+        L.rx_dropped += damaged
+        self.t += app_mod.RATE_WINDOW
+        self.app._rate_step(self.t)
+
+    def codes(self):
+        return [frames._pair(bytes(k), 1) for k in self.meter.keys if 0x99 <= frames._pair(bytes(k), 1) <= 0x9C]
+
+    def test_starts_at_4_a_second_and_steps_down_on_damage(self):
+        self.app._careful_connect()
+        self.assertEqual((self.app.arate['code'], self.meter.rate_code), (1, 1))
+        self.window(800, 0)
+        self.window(800, 40)                               # 5 % damaged
+        self.assertEqual((self.app.arate['code'], self.meter.rate_code), (0, 0))
+        self.assertIn('reading rate     2 a second', report.build(self.app))
+
+    def test_steps_up_after_clean_windows_and_keeps_a_failed_rate_as_ceiling(self):
+        self.app._careful_connect()
+        self.app.arate['win'] = None
+        for _ in range(app_mod.RATE_UP_CLEAN + 1):
+            self.window(800, 0)
+        self.assertEqual(self.app.arate['code'], 2)       # 10 a second
+        self.window(1500, 100)                             # damage right after the step up
+        self.assertEqual((self.app.arate['code'], self.app.arate['ceiling']), (1, 1))
+        for _ in range(3 * app_mod.RATE_UP_CLEAN):
+            self.window(800, 0)
+        self.assertEqual(self.app.arate['code'], 1)       # no going back to the rate that failed
+        self.assertEqual(self.codes(), [0x9A, 0x9B, 0x9A])
+
+    def test_never_above_the_saved_rate(self):
+        self.app._careful_connect()
+        self.app.settings_st = {'items': [{'code': 'bt', 'value': 1}]}   # the user saved 4 a second
+        for _ in range(3 * app_mod.RATE_UP_CLEAN):
+            self.window(800, 0)
+        self.assertEqual(self.app.arate['code'], 1)
+
+    def test_paused_on_page_ld(self):
+        self.app._careful_connect()
+        self.app.desk = True
+        self.window(800, 400)
+        self.assertEqual(self.app.arate['code'], 1)
+
+    def test_older_firmware_gets_no_rate_codes_but_the_note(self):
+        self.app.version = 'F-1.24'
+        self.app._careful_connect()
+        self.assertIsNone(self.app.arate['code'])
+        self.assertEqual(self.codes(), [])
+        self.app.settings_st = {'items': [{'code': 'bt', 'value': 3}]}
+        self.assertIn('sends 20 a second', self.app.link_hint())

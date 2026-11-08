@@ -2,7 +2,7 @@
 
 What each release brought, newest first. The release page of a version shows only its own paragraphs.
 
-New in 1.2.30: meters with the old BLE112 Bluetooth module get every reading once again (GitHub issue 30): the link tests on two meters showed that the second copy did not help (the same readings per second, twice the damaged share at 2 a second, and at 20 a second more damage and fewer readings). The careful mode keeps the small card pieces. When such a meter sends more readings than its module carries (about 150 bytes a second, so page bt at 10 or 20 a second), the METER page and the report say so and suggest bt 2 or 4.
+New in 1.2.30: data over Bluetooth adjusts itself to the link (GitHub issue 30). Meters with the old BLE112 Bluetooth module carry about 150 bytes a second. With firmware F-1.25 the companion sets the rate of the readings for the connection itself: it starts at 4 a second, goes one step down when 2 % or more of the bytes in 10 s arrive damaged, and one step up after a minute without a damaged byte, never above the saved bt setting (which is not changed); a rate that fails right after a step up is not tried again in that connection. The meter settings are read in small pieces that shrink until they arrive, as the card list and files already were. Every reading is sent once again: the link tests on two meters showed that the second copy did not help. With older firmware the METER page and the report suggest bt 2 or 4 when the meter sends more than the module carries. The METER page and the report show the rate in use.
 
 New in 1.2.29: the meter settings offer the buzzer's third value "quiet (keys silent)" (GitHub issue 28) for meters with firmware F-1.24 or newer; older firmware keeps the choices off and on.
 

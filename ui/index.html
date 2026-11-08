@@ -1395,7 +1395,9 @@ const UPTXT = {none: 'no information yet', available: 'update available', downlo
 function drawMeter(L, M, u, C) {
   $('m-fw').textContent = $('fw').textContent; $('m-bl').textContent = $('bl').textContent;
   setText($('m-dev'), L.device ? L.device[1] : '—'); $('m-dev').title = L.device ? L.device[0] : '';
-  $('m-hint').hidden = !state.link_hint; setText($('m-hint'), state.link_hint ? 'Bluetooth: ' + state.link_hint : '');
+  const lh = state.link_hint ? 'Bluetooth: ' + state.link_hint
+    : state.arate ? 'Bluetooth: readings ' + state.arate.per_s + ' a second, adjusted to this link by the companion (fewest damaged bytes)' : '';
+  $('m-hint').hidden = !lh; setText($('m-hint'), lh);
   setText($('m-link'), L.state === 'connected' ? 'Connected' + (L.detail ? ' · ' + L.detail : '') : L.state === 'idle' ? 'Not connected' : L.state);
   const hhmm = t => new Date(t * 1000).toTimeString().slice(0, 5);
   $('m-upd').textContent = u.state !== 'none' ? (UPTXT[u.state] || nz(u.state))

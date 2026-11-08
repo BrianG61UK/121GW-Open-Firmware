@@ -74,6 +74,9 @@ class FakeMeter:
         self.damage_rate = 0.0                         # chance per answer byte to be damaged (the answer is then lost)
         self.rng = random.Random(9)                    # fixed seed: the same losses in every run
         self.dup_frames = False                        # 0x97 received: status frames twice
+        self.adapt_fw = False                          # firmware F-1.25: key codes 0x99..0x9C (rate), GET start max (IMP-55)
+        self.rate_code = None                          # the rate code set by 0x99..0x9C (None: the saved one)
+        self.get_pages = []                            # (start, max) of every paged GET
         self.mclock = {'hz0': 4187000, 'hz': 4194100, 'trim': -3, 'status': 1, 'steps': 6, 'brr': 218, 'cal_run': 0x9D,
                        'cal_now': 0x9D}
 
@@ -107,6 +110,8 @@ class FakeMeter:
                 self._out(mclock_frame(self.mclock))
             if self.careful_fw and frames._pair(pkt, 1) in (0x97, 0x98):
                 self.dup_frames = frames._pair(pkt, 1) == 0x97
+            if self.adapt_fw and 0x99 <= frames._pair(pkt, 1) <= 0x9C:
+                self.rate_code = frames._pair(pkt, 1) - 0x99
             return
         if not self.on_ld:
             return
@@ -218,9 +223,15 @@ class FakeMeter:
                 return card.ST_ARG, 0, b''
             return card.ST_OK, self.sectors_per_cluster, struct.pack('<II', self.free, self.total)
         if rtype == settings.T_GET:
-            if p:
+            pairs = sorted(self.eeprom.items())
+            if not p:
+                return (card.ST_OK,) + settings.get_answer(pairs)
+            if not (self.adapt_fw and len(p) == 2 and p[1] and p[0] <= len(pairs)):   # F-1.25: start(1) max(1)
                 return card.ST_ARG, 0, b''
-            return (card.ST_OK,) + settings.get_answer(sorted(self.eeprom.items()))
+            self.get_pages.append((p[0], p[1]))
+            part = pairs[p[0]:p[0] + p[1]]
+            n, data = settings.get_answer(part)
+            return card.ST_OK, n | (0x8000 if p[0] + len(part) == len(pairs) else 0), data
         if rtype == settings.T_PUT:
             if self.refuse_put:
                 return self.refuse_put, 0, b''

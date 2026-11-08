@@ -67,6 +67,7 @@ EVENTS_KEEP = 300                                # events kept for the diagnosis
 BL_ASK_TRIES = 3                                 # bootloader questions (key code 0x92) until an answer counts as none
 DAILY = 86400.0                                  # update check "daily": seconds between two release checks
 HUNT_MIN_VERSION = (1, 1, 6)                     # firmware F-1.16: EEPROM 0x020 bit 4, the SETUP page HUnt (ble/bftset.s accepts 0..31)
+ADAPT_MIN_VERSION = (1, 2, 5)                    # firmware F-1.25: the reading rate for this power-on, settings in pages (IMP-55)
 QUIET_MIN_VERSION = (1, 2, 4)                    # firmware F-1.24: the buzzer's third value qUiEt (ble/bftset.s accepts 0..2)
 XDIAG_MIN_VERSION = (1, 1, 5)                    # firmware F-1.15: key codes 0x93 / 0x94 / 0x95 and STATUS 40..48 (ble/xdiag.s)
 XDIAG_TRIES = 3                                  # tries of a key frame of the extended diagnosis / of the counters request
@@ -74,6 +75,13 @@ XDIAG_WAIT = 2.0                                 # seconds to wait for the answe
 XDIAG_STATUS_FIRST, XDIAG_STATUS_COUNT = 40, 9   # page Ld STATUS indices of the nine values (ble/bft.s bft_diag_tab)
 CAREFUL_MIN_VERSION = (1, 1, 9)                  # firmware F-1.19: key codes 0x97 / 0x98, LIST max, CHUNK len (IMP-50)
 CAREFUL_MTU = 23                                 # the old BLE112 module negotiates only the minimum (the BGM220S: 247)
+RATE_PER_S = (2, 4, 10, 20)                      # readings per second of the rate codes 0..3 (page bt; key codes 0x99 + code)
+RATE_START = 1                                   # automatic rate (IMP-55): 4 a second at the connection (76 bytes/s, half
+                                                 # of what the BLE112 carries, GitHub issue 30)
+RATE_WINDOW = 10.0                               # seconds of one judgement
+RATE_DOWN_SHARE = 0.02                           # damaged share of a window from which the rate goes one step down
+RATE_UP_CLEAN = 6                                # windows without one damaged byte before one step up
+RATE_RECENT_UP = 2                               # windows after a step up in which damage makes that rate the ceiling
 LINK_HINT_RATE = 4.5                             # readings/s above which a BLE112 link is over its ~150 bytes/s (issue 30)
 LTEST_PHASE = 15.0                               # link test: seconds measured per phase (doubled frames on, off, on, off)
 LTEST_SETTLE = 1.5                               # link test: seconds after each switch before the counting starts
@@ -166,6 +174,7 @@ class Companion:
         self._last_status = None                         # the last F2 frame, for its F3 copy (careful mode)
         self.xdiag = {'state': 'not read'}
         self.ltest = {'state': 'none'}                   # the link test: careful mode's doubled frames on against off
+        self.arate = {'code': None}                      # the automatic reading rate of this connection (IMP-55)
         self._st_n, self._st_first, self._st_last = 0, None, None   # status frames of this connection (frames per second)
         self.card_st = {'files': [], 'listed': False, 'free_bytes': None, 'total_bytes': None, 'busy': False, 'op': '', 'progress': 0.0,
                         'sync': {'folder': self.settings.get('card_sync_folder'), 'last': None, 'copied': 0},
@@ -174,6 +183,7 @@ class Companion:
         self.link = MeterLink(self._frame, self._state)
         threading.Thread(target=self._ask_version, name='version', daemon=True).start()
         threading.Thread(target=self._watch_desk, name='desk', daemon=True).start()
+        threading.Thread(target=self._rate_loop, name='rate', daemon=True).start()
         threading.Thread(target=self._recheck_releases, name='releases', daemon=True).start()
 
     def _frame(self, kind, frame, t):
@@ -231,6 +241,7 @@ class Companion:
         self._frame_t = 0.0
         self.xdiag_on = False                            # the counting is told again at each connection
         self.careful_on = False                           # careful mode is asked for again at each connection
+        self.arate = {'code': None}                       # the automatic rate starts again with careful mode
         self._st_n, self._st_first, self._st_last = 0, None, None
         if state == 'connected':
             self.fw_kind, self.version, self.mode = 'unknown', None, 'unknown'
@@ -293,6 +304,12 @@ class Companion:
         capacitance anti-hunting, row HUnt); older firmware refuses the value."""
         v = releases.version_of_meter(self.version)
         return self.fw_kind == 'fast' and v is not None and v >= HUNT_MIN_VERSION
+
+    def _link_adapt_supported(self):
+        """True when the connected meter runs F-1.25 or newer: the reading rate for this power-on (key codes 0x99..0x9C)
+        and the settings in pages (GET start max), IMP-55, GitHub issue 30."""
+        v = releases.version_of_meter(self.version)
+        return self.fw_kind == 'fast' and v is not None and v >= ADAPT_MIN_VERSION
 
     def _quiet_supported(self):
         """True when the connected meter runs F-1.24 or newer: only that firmware takes the buzzer's third value qUiEt
@@ -400,11 +417,78 @@ class Companion:
                 if self._key_with_echo(0x98):
                     self.careful_on = False
                     self.event('careful mode on (old BLE112 Bluetooth module, MTU 23): small card answers, readings once')
+                    if self._link_adapt_supported() and self._key_with_echo(0x99 + RATE_START):
+                        self.arate = {'code': RATE_START, 'ceiling': len(RATE_PER_S) - 1, 'clean': 0, 'since_up': None,
+                                      'win': None}
+                        self.event('reading rate %d a second for this link (automatic, F-1.25)' % RATE_PER_S[RATE_START])
                     return
         except (RuntimeError, OSError, TimeoutError) as e:
             self.event('careful mode: the meter was not told (%s)' % e)
             return
         self.event('careful mode: no echo after %d tries' % XDIAG_TRIES)
+
+    def _saved_rate(self):
+        """The meter's saved rate code (page bt) when the settings were read, else None."""
+        bt = next((it for it in (self.settings_st.get('items') or []) if it.get('code') == 'bt'), None)
+        v = bt.get('value') if bt else None
+        return v if isinstance(v, int) and 0 <= v < len(RATE_PER_S) else None
+
+    def _rate_loop(self):
+        """The automatic reading rate (IMP-55, GitHub issue 30): for a BLE112 meter with F-1.25 the rate of the readings
+        follows the damage of the link.  Every RATE_WINDOW seconds: RATE_DOWN_SHARE or more of the bytes damaged -> one
+        step down; RATE_UP_CLEAN windows without a damaged byte -> one step up, never above the saved rate (page bt) and
+        the ceiling; damage within RATE_RECENT_UP windows of a step up makes the lower rate the ceiling of this connection
+        (no back and forth).  Paused while page Ld is shown, an update or the link test runs."""
+        while True:
+            time.sleep(1.0)
+            try:
+                self._rate_step(time.time())
+            except (RuntimeError, OSError, TimeoutError) as e:
+                self.event('reading rate: %s' % e)
+
+    def _rate_step(self, now):
+        a = self.arate
+        L = self.link
+        if a.get('code') is None:
+            return
+        if (L.state != 'connected' or self.desk or self._update_active() or self.ltest.get('state') == 'running'
+                or self.mode != 'firmware'):
+            a['win'] = None                              # the window starts again afterwards
+            return
+        if a['win'] is None:
+            a['win'] = (now, L.rx_bytes, L.rx_dropped)
+            return
+        t0, b0, d0 = a['win']
+        if now - t0 < RATE_WINDOW:
+            return
+        nb, nd = L.rx_bytes - b0, L.rx_dropped - d0
+        a['win'] = (now, L.rx_bytes, L.rx_dropped)
+        if nb <= 0:
+            return
+        share = nd / nb
+        if a['since_up'] is not None:
+            a['since_up'] += 1
+        new = None
+        if share >= RATE_DOWN_SHARE and a['code'] > 0:
+            if a['since_up'] is not None and a['since_up'] <= RATE_RECENT_UP:
+                a['ceiling'] = a['code'] - 1             # this rate failed right after the step up: not again
+            new, a['clean'] = a['code'] - 1, 0
+        elif nd == 0:
+            a['clean'] += 1
+            cap = min(a['ceiling'], self._saved_rate() if self._saved_rate() is not None else len(RATE_PER_S) - 1)
+            if a['clean'] >= RATE_UP_CLEAN and a['code'] < cap:
+                new, a['clean'] = a['code'] + 1, 0
+        else:
+            a['clean'] = 0
+        if new is None:
+            return
+        with self._ops('reading rate', need_desk=False, wait=0.0):
+            if not self._key_with_echo(0x99 + new):
+                raise RuntimeError('the meter did not echo the rate %d a second' % RATE_PER_S[new])
+        up = new > a['code']
+        a['code'], a['since_up'] = new, (0 if up else None)
+        self.event('reading rate %d a second (automatic: %.1f %% of %d bytes damaged in %.0f s)' % (
+            RATE_PER_S[new], 100.0 * share, nb, RATE_WINDOW))
 
     def link_hint(self):
         """A note when the meter sends more readings than its Bluetooth module carries (GitHub issue 30): the old BLE112
@@ -412,6 +496,8 @@ class Companion:
         lost or damaged; 2 or 4 fit.  From the setting bt when the settings were read, else from the readings measured
         (more than 4.5 a second over at least 20 of them).  None when nothing is wrong or nothing is known."""
         if self.link.state != 'connected' or self.link.stats.mtu != CAREFUL_MTU:
+            return None
+        if self.arate.get('code') is not None:           # F-1.25: the rate follows the link by itself
             return None
         bt = next((it for it in (self.settings_st.get('items') or []) if it.get('code') == 'bt'), None)
         sent = None
@@ -1126,7 +1212,8 @@ class Companion:
     def _settings_op(self, job):
         try:
             with self._ops('settings', wait=LINK_WAIT) as (_, client):
-                items = job(meter_settings.Settings(client, hunt=self._hunt_supported(), quiet=self._quiet_supported()))
+                items = job(meter_settings.Settings(client, hunt=self._hunt_supported(), quiet=self._quiet_supported(),
+                                                    paged=self.careful_wanted() and self._link_adapt_supported()))
         except (RuntimeError, ValueError, OSError) as e:
             self.settings_st['error'] = str(e)
             raise
@@ -1405,6 +1492,8 @@ class Companion:
                 'diag': dict(self.diag),
                 'ltest': dict(self.ltest),
                 'link_hint': self.link_hint(),
+                'arate': ({'per_s': RATE_PER_S[self.arate['code']], 'ceiling_per_s': RATE_PER_S[self.arate['ceiling']]}
+                          if self.arate.get('code') is not None else None),
                 'trace_ui': TRACE_UI,
                 'card': dict(self.card_st, files=list(self.card_st['files']), locked_reason=self._lock_reason()),
                 'settings': dict(self.settings_st, locked_reason=self._lock_reason()),
