@@ -6,6 +6,9 @@ on:
   push:
     branches: ['bootloader']
     tags: ['bl-v*']
+    # a push that changes only text builds and tests nothing new: no run (owner 2026-11-08); GitHub does not apply path
+    # filters to tags, so a release tag always builds
+    paths-ignore: ['**.md', 'LICENSE']
   workflow_dispatch:
 
 permissions:

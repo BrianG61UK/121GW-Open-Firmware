@@ -5,7 +5,9 @@ name: Firmware
 
 on:
   push:
-    branches: ['**']
+    # main only (owner 2026-11-08): the other branches have their own workflows, and the copy of this file on the bootloader
+    # branch (synced from main) rebuilt main's firmware at every bootloader push for nothing
+    branches: [main]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
