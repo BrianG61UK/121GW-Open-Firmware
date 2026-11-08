@@ -23,7 +23,16 @@ FEATURES.md 2.10 and 2.11):
 Bytes inside a binary frame can equal a start byte, so a frame is taken only when its whole length is present and its
 check passes; otherwise the first byte is dropped and the search goes on from the next one (resynchronisation, also
 after a frame the meter abandoned part way).  The bytes skipped in one run are kept (Reassembler.damaged(), the report's
-"damaged pieces").  Standard library only.
+"damaged pieces").
+
+Repair of a status frame (GitHub issue 30): meters with the old BLE112 module receive some bytes from the meter one to
+three bit times late, so the byte arrives shifted right with 1s (the stop bit, idle) or the next start bit coming in at
+the top (0x17 as 0x8B, 0x81 as 0xC0, 0x23 as 0x48).  An F2 frame whose XOR check fails by one damaged byte is repaired
+when exactly one of its bytes 1..17 explains the check: the byte the check calls for (damaged byte XOR the frame's XOR)
+equals the byte at the same place in the last good status frame, and the damaged byte is that byte shifted right by 1,
+2 or 3 bits with any top bits (repair()).  Reading digits that changed are never repaired this way, only bytes that
+stayed the same; a frame with no or several candidates is skipped as before.  Measured on the report of issue 30: all
+10 damaged status frames repaired to the frame sent, none wrongly.  Standard library only.
 """
 import collections
 import struct
@@ -42,6 +51,7 @@ MCLOCK_STATUS = {0: 'not measured since the meter was switched on', 1: 'measured
                  'did not start)', 5: 'not measured (no signal from the crystal on the timer)', 6: 'measured, but more than '
                  '6 % off: not used', 7: 'measured; the trimmed clock measured worse, the trim was taken back'}
 DAMAGED_KEEP = 20                       # skipped runs kept
+REPAIR_SHIFTS = (1, 2, 3)               # bit times a byte may arrive late and still be repaired (repair())
 DAMAGED_BYTES = 32                      # bytes kept of one run (its real length is kept too)
 XDIAG_LEN = 20
 XDIAG_NAMES = ('bytes received', 'overruns (ORE)', 'noise flags (NE)', 'framing errors (FE)',
@@ -54,6 +64,33 @@ def _xor(data):
     for b in data:
         x ^= b
     return x
+
+
+def _shifted(y, k):
+    """Every byte y arrives as when it is read k bit times late: y >> k with any k bits at the top."""
+    base = y >> k
+    return {base | (t << (8 - k)) for t in range(1 << k)}
+
+
+def repair(frame, last):
+    """The repaired 19-byte status frame, or None.  frame: 19 bytes starting F2 whose XOR is not 0; last: the last good
+    status frame (19 bytes) or None.  See the module docstring."""
+    if last is None or len(frame) != 19 or len(last) != 19:
+        return None
+    s = _xor(frame)
+    if s == 0:
+        return None
+    hits = []
+    for p in range(1, 18):
+        y = frame[p] ^ s
+        if y == last[p] and any(frame[p] in _shifted(y, k) for k in REPAIR_SHIFTS):
+            hits.append((p, y))
+    if len(hits) != 1:
+        return None
+    p, y = hits[0]
+    out = bytearray(frame)
+    out[p] = y
+    return bytes(out)
 
 
 def crc16(data, crc=0xFFFF):
@@ -92,6 +129,8 @@ class Reassembler:
         self._run_len = 0                # and its real length
         self._last_kind = None           # kind of the last frame taken
         self._since_f2 = 0               # skipped bytes since (and including) the last skipped F2 byte, 0 if none
+        self.repaired = 0                # status frames repaired (repair())
+        self._last_status = None         # the last good status frame, the reference of repair()
 
     def feed(self, chunk):
         self.buf += chunk
@@ -114,6 +153,8 @@ class Reassembler:
             self._end_run()              # a valid frame ends the run of skipped bytes before it
             kind, n = got
             self._last_kind, self._since_f2 = kind, 0
+            if kind == STATUS:
+                self._last_status = bytes(self.buf[:n])
             out.append((kind, bytes(self.buf[:n])))
             del self.buf[:n]
         return out
@@ -148,7 +189,14 @@ class Reassembler:
         if s == 0xF2:
             if len(b) < 19:
                 return 'wait'
-            return (STATUS, 19) if _xor(b[:19]) == 0 else None
+            if _xor(b[:19]) == 0:
+                return (STATUS, 19)
+            fixed = repair(bytes(b[:19]), self._last_status)
+            if fixed is None:
+                return None
+            b[:19] = fixed                # the repaired frame is taken in place of the damaged one
+            self.repaired += 1
+            return (STATUS, 19)
         if s in (0xF6, 0xF7):
             if len(b) < 7:
                 return 'wait'

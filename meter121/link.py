@@ -154,6 +154,7 @@ class MeterLink:
         self._task = None
         self.rx_bytes = 0                  # bytes received in this connection
         self.rx_dropped = 0                # of them skipped while resynchronising (frames.Reassembler)
+        self.rx_repaired = 0               # status frames repaired (frames.repair, issue 30)
         self.stats = LinkStats()           # notification / write / disconnect statistics for the report
         self.pieces = collections.deque(maxlen=frames.DAMAGED_KEEP)   # damaged pieces of all connections (frames.Reassembler)
         self.reasm = frames.Reassembler(self.pieces)
@@ -300,7 +301,7 @@ class MeterLink:
             self._set('connecting', name)
             gone = asyncio.Event()
             reasm = self.reasm = frames.Reassembler(self.pieces)
-            self.rx_bytes = self.rx_dropped = 0
+            self.rx_bytes = self.rx_dropped = self.rx_repaired = 0
 
             def on_notify(_h, chunk):
                 t = time.time()
@@ -308,6 +309,7 @@ class MeterLink:
                 self.rx_bytes += len(chunk)
                 got = reasm.feed(bytes(chunk))
                 self.rx_dropped = reasm.dropped
+                self.rx_repaired = reasm.repaired
                 for kind, frame in got:
                     self.on_frame(kind, frame, t)
 

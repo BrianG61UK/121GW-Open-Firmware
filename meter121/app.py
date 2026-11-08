@@ -1563,7 +1563,7 @@ class Companion:
         L = self.link
         return {'now': time.time(),
                 'link': {'state': L.state, 'detail': L.detail, 'device': L.device, 'found': L.found,
-                         'rx_bytes': L.rx_bytes, 'rx_dropped': L.rx_dropped},
+                         'rx_bytes': L.rx_bytes, 'rx_dropped': L.rx_dropped, 'rx_repaired': L.rx_repaired},
                 'meter': {'firmware': self.fw_kind, 'version': self.version, 'bootloader': self.bl, 'mode': self.mode,
                           'xdiag': self.xdiag_on},
                 'update': dict(self.update),

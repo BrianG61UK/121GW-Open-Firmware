@@ -216,7 +216,8 @@ def build(app, now=None):
     w('[link]')
     w('state       %s %s' % (L['state'], L.get('detail') or ''))
     w('name        %s' % ((L.get('device') or [None, '-'])[1] if L.get('device') else '-'))
-    w('received    %s bytes, %s skipped as damaged' % (L.get('rx_bytes'), L.get('rx_dropped')))
+    w('received    %s bytes, %s skipped as damaged, %s status frames repaired' % (L.get('rx_bytes'), L.get('rx_dropped'),
+                                                                               L.get('rx_repaired', 0)))
     w('')
     w('[link details]')
     out.extend(link_details(app))
