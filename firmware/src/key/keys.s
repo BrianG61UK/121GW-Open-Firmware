@@ -443,7 +443,8 @@ ENDFUNC fn_08016A64
 @            key_win_b 0x200080CE, key_mem_view 0x20007FE4, key_setup_edit 0x2000806E
 @ Spec     : analysis/keys_setup.md 2.1
 @ Deviation: OF-43 (key_stable and key_hold saturate at 0xFF instead of wrapping); OF-48 (the queued press of REL / PEAK in
-@            setup edit is dropped once the auto-repeat has stepped)
+@            setup edit is dropped once the auto-repeat has stepped); IMP-58 (pw_check on every tick: the keys held at
+@            power-on start a service path only as a pair, and never a short or long press)
 @ -----------------------------------------------------------------------------
 FUNC process_pg8_15_press_release
     push {r4, lr}                       @ 0801688C
@@ -477,6 +478,7 @@ FUNC process_pg8_15_press_release
     movs r0, #0                         @ 080168C6
     ldr r1, =key_stable                 @ 080168C8
     strb r0, [r1]                       @ 080168CC
+    bl pw_check                         @ IMP-58: keys held at power-on (cal/bootwin.s)
     b .Lpr_done                         @ 080168CE
 
 @ same sample as before: count it (OF-43: the count stops at 0xFF).  Fewer than two equal samples: nothing yet
@@ -490,6 +492,7 @@ FUNC process_pg8_15_press_release
     subeq r0, r0, #1                  @ keep 0xFF
     ldr r1, =key_stable                 @ 080168D8
     strb r0, [r1]                       @ 080168DC
+    bl pw_check                         @ IMP-58: keys held at power-on; may preset key_hold 0x33 (cal/bootwin.s)
     ldr r0, =key_stable                 @ 080168DE
     ldrb r0, [r0]                       @ 080168E2
     cmp r0, #2                          @ 080168E4

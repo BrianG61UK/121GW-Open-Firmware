@@ -590,7 +590,7 @@ def sd_error(r, e, t, what, how):
 
 def g_special(r):
     import struct
-    # power-on: the version on the sub display, the lamp test of the power-on window (RANGE)
+    # power-on: the version on the sub display, the lamp test of the power-on window (RANGE + MIN/MAX held, IMP-58)
     e = meter(card=new_card())
     e.command({'reset': True})
     if until(e, lambda e: text(e)[1].strip() == fw_version(), 3.0):
@@ -598,14 +598,16 @@ def g_special(r):
               'dial 2 (V); power cycle, display after %.2f s' % (snap(e)['time_ms'] / 1000.0))
     else:
         r.miss('special_version', 'no %s on the sub display within 3 s of the power-up' % fw_version())
-    e.command({'reset': True})
-    e.advance(0.5)
     e.command({'key': 'RANGE', 'down': True})
-    e.advance(0.3)
+    e.command({'key': 'MINMAX', 'down': True})
+    e.command({'reset': True})
+    e.advance(1.0)
     lit = popcount(snap(e)['lcd'])
-    r.add(e, 'special_lamptest', 'Lamp test of the power-on window: every segment on', 'power cycle, RANGE pressed 0.5 s later and held', note=False)
+    r.add(e, 'special_lamptest', 'Lamp test of the power-on window: every segment on',
+          'power cycle with RANGE + MIN/MAX held, display after 1 s', note=False)
     print('    lamp test: %d segment bits on' % lit)
     e.command({'key': 'RANGE', 'down': False})
+    e.command({'key': 'MINMAX', 'down': False})
     # power-off screen
     e = meter()
     e.command({'dial': 2})
@@ -616,7 +618,7 @@ def g_special(r):
               'dial 2 (V); auto power-off countdown (RAM 0x20000230) set to 2 s and run out')
     else:
         r.miss('msg_oFF', 'not seen within 6 s of the countdown reaching 0')
-    # cal.bin messages (power-on window with MEM held)
+    # cal.bin messages (power-on window with MEM + PEAK held, IMP-58)
     card = new_card()
     e = meter(card=card)
 
@@ -624,25 +626,26 @@ def g_special(r):
         for k in keys:
             e.command({'key': k, 'down': True})
         e.command({'reset': True})
-        e.advance(0.5)
+        e.advance(1.0)                                # the pair is taken after 0.5 s held
         for k in keys:
             e.command({'key': k, 'down': False})
         e.advance(0.5)
 
-    window(e, ['MEM'], 'MEM')
-    r.add(e, 'msg_SdCAL', 'cal.bin menu "SdCAL" (MEM held at power-on)', 'power cycle with MEM held, released after 0.5 s')
+    window(e, ['MEM', 'PEAK'], 'MEM')
+    r.add(e, 'msg_SdCAL', 'cal.bin menu "SdCAL" (MEM + PEAK held at power-on)',
+          'power cycle with MEM + PEAK held, released after 1 s')
     T.press(e, 'REL')
     e.advance(0.5)
     r.add(e, 'msg_SdSAv', 'cal.bin: save chosen, "SdSAv"', 'as msg_SdCAL, then REL pressed')
     T.press(e, 'MODE')
     until(e, lambda e: text(e)[0].strip().upper() in ('SAVED', '5AVED', '5AVEd'.upper()) or 'AVE' in text(e)[0].upper(), 8.0, 0.1)
     r.add(e, 'msg_SAvEd', 'cal.bin written to the card: "SAvEd"', 'as msg_SdSAv, then MODE pressed (card: empty FAT32 image)')
-    window(e, ['MEM'], 'MEM')
+    window(e, ['MEM', 'PEAK'], 'MEM')
     T.press(e, 'PEAK')
     e.advance(0.5)
     r.add(e, 'msg_SdSEt', 'cal.bin: load chosen, "SdSEt"', 'as msg_SdCAL, then PEAK pressed')
     e2 = meter(card=new_card())
-    window(e2, ['MEM'], 'MEM')
+    window(e2, ['MEM', 'PEAK'], 'MEM')
     T.press(e2, 'PEAK')
     e2.advance(0.5)
     T.press(e2, 'MODE')

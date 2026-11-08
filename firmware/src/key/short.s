@@ -62,8 +62,9 @@ FUNC handle_pg8_15_short_press
     b .Lsh_end                          @ 08014C70
 
 @ ---- MODE ----  refused while logging or MEM view.  Outside the power-on window: cycle the mode.  In the window:
-@ MODE starts the calibration entry (keys_setup.md 3: key_win_a = 1, window reload 2000, beep) or, after
-@ MEM + REL/PEAK, confirms the cal.bin action (key_win_b = 3, window reload 5000, no beep)
+@ after MEM + PEAK held at power-on and REL/PEAK, MODE confirms the cal.bin action (key_win_b = 3, window reload 5000,
+@ no beep).  IMP-58 (GitHub issue 32): MODE no longer starts the calibration entry (v2.05: key_win_a = 1, " CAL1",
+@ then REL); calibration mode is MODE + REL held at power-on (pw_check, cal/bootwin.s)
 @ reached from 08014C46 beq (equal / zero) after cmp r0, #1
 .Lsh_key_mode:
     ldr r0, =key_logging                @ 08014C72
@@ -85,7 +86,8 @@ FUNC handle_pg8_15_short_press
     cmp r0, #0                          @ 08014C92
     beq .Lsh_cycle_mode                 @ 08014C94
 
-@ window open and key_win_a == 0 and key_win_b == 0: first window key = MODE, calibration entry step 1
+@ window open and key_win_a == 0 and key_win_b == 0: IMP-58: nothing (v2.05 0x08014C96..0x08014CC2: key_win_a = 1,
+@ window reload 2000, accept beep, the screen " CAL1")
     ldr r0, =key_win_a                  @ 08014C96
     ldrb r0, [r0]                       @ 08014C9A
     cmp r0, #0                          @ 08014C9C
@@ -94,15 +96,7 @@ FUNC handle_pg8_15_short_press
     ldrb r0, [r0]                       @ 08014CA4
     cmp r0, #0                          @ 08014CA6
     bne .Lsh_08014CC4                   @ 08014CA8
-    ldr r0, =key_win_a                  @ 08014CAA
-    ldrb r0, [r0]                       @ 08014CAE
-    adds r0, r0, #1                     @ 08014CB0
-    ldr r1, =key_win_a                  @ 08014CB2
-    strb r0, [r1]                       @ 08014CB6
-    mov.w r0, #0x7D0                    @ 08014CB8
-    ldr r1, =key_window                 @ 08014CBC
-    strh r0, [r1]                       @ 08014CC0
-    b .Lsh_accept_beep                  @ 08014CC2
+    b .Lsh_end                          @ IMP-58: a stray MODE in the window does nothing, no beep
 
 @ key_win_a != 0, or key_win_b != 2: plain accept beep.  key_win_a == 0 and key_win_b == 2: confirm cal.bin action
 @ reached from 08014C9E bne (not equal / non-zero) after cmp r0, #0
@@ -135,9 +129,9 @@ FUNC handle_pg8_15_short_press
     bl fn_0800EE50                      @ 08014CF0
     b .Lsh_end                          @ 08014CF4
 
-@ ---- RANGE ----  in the power-on window with no sequence started: all LCD segments on (lamp test), window
-@ reload 2000, no beep.  Outside the window: refused while logging, MEM view or MIN/MAX; in DIODE it switches
-@ 3 V / 15 V; otherwise the range key proper (fn_08014796)
+@ ---- RANGE ----  in the power-on window: nothing (IMP-58: the lamp test is RANGE + MIN/MAX held at power-on,
+@ pw_check in cal/bootwin.s; v2.05 0x08014D14..0x08014D22 started it with a single RANGE).  Outside the window: refused
+@ while logging, MEM view or MIN/MAX; in DIODE it switches 3 V / 15 V; otherwise the range key proper (fn_08014796)
 @ reached from 08014C5C beq (equal / zero) after cmp r0, #0x10
 .Lsh_key_range:
     ldr r0, =key_window                 @ 08014CF6
@@ -152,11 +146,7 @@ FUNC handle_pg8_15_short_press
     ldrb r0, [r0]                       @ 08014D0E
     cmp r0, #0                          @ 08014D10
     bne .Lsh_08014D26                   @ 08014D12
-    mov.w r0, #0x7D0                    @ 08014D14
-    ldr r1, =key_window                 @ 08014D18
-    strh r0, [r1]                       @ 08014D1C
-    bl fn_0801A89C                      @ 08014D1E
-    bl lcd_commit_shadow                @ 08014D22
+                                        @ IMP-58: v2.05's lamp test start (0x08014D14..0x08014D22) moved to pw_start
 @ reached from 08014D08 bne (not equal / non-zero) after cmp r0, #0
 @              and from 08014D12 bne (not equal / non-zero) after cmp r0, #0
 .Lsh_08014D26:
@@ -203,9 +193,9 @@ FUNC handle_pg8_15_short_press
 .Lsh_08014D64:
     b .Lsh_end                          @ 08014D64
 
-@ ---- SETUP ----  in the window with no sequence started: key_win_a = 3 (date-code enable), reload 500.
-@ Outside: refused while logging or MEM view.  Not in calibration mode: next setup item.  In calibration mode:
-@ start an offset request (keys_setup.md 5.3)
+@ ---- SETUP ----  in the window: nothing (IMP-58: date-code editing is MODE + SETUP held at power-on, pw_check in
+@ cal/bootwin.s; v2.05 0x08014D84..0x08014D94 set key_win_a = 3 on a single SETUP).  Outside: refused while logging or
+@ MEM view.  Not in calibration mode: next setup item.  In calibration mode: start an offset request (keys_setup.md 5.3)
 @ reached from 08014C4A beq (equal / zero) after cmp r0, #2
 .Lsh_key_setup:
     ldr r0, =key_window                 @ 08014D66
@@ -220,12 +210,7 @@ FUNC handle_pg8_15_short_press
     ldrb r0, [r0]                       @ 08014D7E
     cmp r0, #0                          @ 08014D80
     bne .Lsh_08014D96                   @ 08014D82
-    movs r0, #3                         @ 08014D84
-    ldr r1, =key_win_a                  @ 08014D86
-    strb r0, [r1]                       @ 08014D8A
-    mov.w r0, #0x1F4                    @ 08014D8C
-    ldr r1, =key_window                 @ 08014D90
-    strh r0, [r1]                       @ 08014D94
+                                        @ IMP-58: v2.05's date-code start (0x08014D84..0x08014D94) moved to pw_start
 @ reached from 08014D78 bne (not equal / non-zero) after cmp r0, #0
 @              and from 08014D82 bne (not equal / non-zero) after cmp r0, #0
 .Lsh_08014D96:
@@ -286,8 +271,9 @@ FUNC handle_pg8_15_short_press
     strb r0, [r1]                       @ 08014DEA
     b .Lsh_end                          @ 08014DEC
 
-@ ---- MEM ----  in the window with no sequence started: key_win_b = 1 (cal.bin menu), reload 5000, accept beep.
-@ Outside: calibration mode = gain request; otherwise open or close the MEM view
+@ ---- MEM ----  in the window: nothing (IMP-58: the cal.bin menu is MEM + PEAK held at power-on, pw_check in
+@ cal/bootwin.s; v2.05 0x08014E0C..0x08014E1E set key_win_b = 1 on a single MEM).  Outside: calibration mode = gain
+@ request; otherwise open or close the MEM view
 @ reached from 08014C56 beq (equal / zero) after cmp r0, #8
 @              and from 08014DD4 bne (not equal / non-zero) after cmp r0, #2
 .Lsh_key_mem:
@@ -303,13 +289,7 @@ FUNC handle_pg8_15_short_press
     ldrb r0, [r0]                       @ 08014E06
     cmp r0, #0                          @ 08014E08
     bne .Lsh_08014E22                   @ 08014E0A
-    movs r0, #1                         @ 08014E0C
-    ldr r1, =key_win_b                  @ 08014E0E
-    strb r0, [r1]                       @ 08014E12
-    movw r0, #0x1388                    @ 08014E14
-    ldr r1, =key_window                 @ 08014E18
-    strh r0, [r1]                       @ 08014E1C
-    bl fn_0800EE50                      @ 08014E1E
+                                        @ IMP-58: v2.05's cal.bin menu start (0x08014E0C..0x08014E1E) moved to pw_start
 @ reached from 08014E00 bne (not equal / non-zero) after cmp r0, #0
 @              and from 08014E0A bne (not equal / non-zero) after cmp r0, #0
 .Lsh_08014E22:
@@ -568,8 +548,9 @@ FUNC handle_pg8_15_short_press
     bl fn_0800EE50                      @ 0801500A
     b .Lsh_end                          @ 0801500E
 
-@ ---- REL ----  in the window: with key_win_a = 1 the calibration entry is confirmed (key_win_a = 2, reload 500);
-@ with key_win_b = 1 REL chooses cal.bin save (key_win_b = 2, key_win_save = 1, reload 5000).
+@ ---- REL ----  in the window: with key_win_b = 1 REL chooses cal.bin save (key_win_b = 2, key_win_save = 1,
+@ reload 5000).  IMP-58: v2.05's confirmation of the calibration entry (key_win_a = 1 -> 2, 0x0801501A..0x08015046) is
+@ gone: key_win_a = 1 is never set (calibration mode is MODE + REL held at power-on, pw_check in cal/bootwin.s).
 @ Outside: setup edit = UP, MEM view = next record, else switch REL on or off
 @ reached from 08014C66 beq (equal / zero) after cmp r0, #0x40
 .Lsh_key_rel:
@@ -578,29 +559,7 @@ FUNC handle_pg8_15_short_press
     cmp r0, #0                          @ 08015016
     beq .Lsh_rel_normal                 @ 08015018
 
-@ window open: key_win_a == 1 and key_win_b == 0 confirms the calibration entry: key_win_a = 2, reload 500 (the
-@ power-on loop of CAL then enters calibration mode)
-    ldr r0, =key_win_a                  @ 0801501A
-    ldrb r0, [r0]                       @ 0801501E
-    cmp r0, #1                          @ 08015020
-    bne .Lsh_08015048                   @ 08015022
-    ldr r0, =key_win_b                  @ 08015024
-    ldrb r0, [r0]                       @ 08015028
-    cmp r0, #0                          @ 0801502A
-    bne .Lsh_08015048                   @ 0801502C
-    ldr r0, =key_win_a                  @ 0801502E
-    ldrb r0, [r0]                       @ 08015032
-    adds r0, r0, #1                     @ 08015034
-    ldr r1, =key_win_a                  @ 08015036
-    strb r0, [r1]                       @ 0801503A
-    mov.w r0, #0x1F4                    @ 0801503C
-    ldr r1, =key_window                 @ 08015040
-    strh r0, [r1]                       @ 08015044
-    b .Lsh_accept_end                   @ 08015046
-
-@ key_win_a == 0 and key_win_b == 1 (MEM pressed): REL chooses the cal.bin save
-@ reached from 08015022 bne (not equal / non-zero) after cmp r0, #1
-@              and from 0801502C bne (not equal / non-zero) after cmp r0, #0
+@ window open, key_win_a == 0 and key_win_b == 1 (MEM + PEAK held at power-on): REL chooses the cal.bin save
 .Lsh_08015048:
     ldr r0, =key_win_a                  @ 08015048
     ldrb r0, [r0]                       @ 0801504C

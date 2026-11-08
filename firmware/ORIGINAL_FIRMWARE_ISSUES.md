@@ -89,6 +89,7 @@ semantics, fix waits for owner approval; **by design** = documented, judged inte
 | OF-74 | Display | In the DIODE 15 V range with open leads the bargraph flashes 16 segments over the 8 of the open-circuit value once per reading: the overload flag that forces a full bar is set once per reading and cleared by the OFL drawing that follows the bargraph | low | fixed |
 | OF-75 | Display | The DIODE 15 V range shows the bargraph label "5" (full bar 5 V) where full bar is 50 V: the label is taken from the range number, which the 15 V selection does not change | low | fixed |
 | OF-76 | Display | The VA modes (uVA, mVA, VA, AC and DC) never set the bargraph label: the "0" of 50 / 500 stays as the mode before left it (from DCuA "50", from DCmA "5") | low | fixed |
+| OF-77 | Keys | One key pressed in the 2 s after every start and every wake from auto power-off starts a service path: MODE shows CAL1 (then REL: calibration mode), SETUP the date-code editing, MEM the cal.bin menu, RANGE all segments; a MODE pressed by chance after a start shows CAL1 | low | fixed |
 
 ## Details
 ### OF-74 — DIODE 15 V: the bargraph flashes full once per reading
@@ -117,6 +118,18 @@ counts of the main display (measured in the emulator for every range), so the la
 modes: index = 4 - digits.  With 1 or 0 digits (uVA ranges 1..3, mVA range 3, VA ranges 0, 1) a full bar is 5000 or
 50000 of the unit shown and no label fits.  Port (F-1.20): the label by the digits; where none fits the "5" and both
 zeros are off and the scale byte is 0 (owner decision 2026-11-07).
+
+### OF-77 — one stray key press after a start starts a service path
+`FUN_0800EA3A` opens the power-on window (0x2000022E = 2000 TIM3 ticks, about 2 s) at every start and after every wake
+from STOP (0x08024B66, 0x08024F00), and `handle_pg8_15_short_press` takes the first short press in it as the start of a
+service path: MODE sets state A = 1 and shows " CAL1" (0x08014CAA), REL after it enters calibration mode, SETUP sets
+A = 3 (date-code editing, 0x08014D84), MEM sets B = 1 (the cal.bin menu SdCAL, 0x08014E0C), RANGE lights every segment
+(0x08014D14).  In the window a press fires on the press, not at the release (0x08016A08).  A user who switches the meter
+on or wakes it with the dial and presses MODE at once sees CAL1 for about 2 s (GitHub issue 32; emulator, F-1.26: MODE
+0.8 s after the start, " CAL1" still shown at 2.05 s, the reading again at 4.05 s).  Nothing is written (OF-08 is fixed), but the paths lie next to calibration mode and
+the cal.bin restore.  Port (F-1.27, IMP-58): each path needs two keys held together while the dial switches the meter on,
+0.5 s long (MODE + REL, MODE + SETUP, MEM + PEAK, RANGE + MIN/MAX); single keys start nothing, keys held at power-on give
+no short or long press, and after a wake there is no service path (owner decision 2026-11-08).
 
 
 ### OF-01 — stale index when a table search fails

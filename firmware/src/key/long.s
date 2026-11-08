@@ -8,7 +8,8 @@
 @ Deviations: OF-17 (the 1 kHz filter cannot be switched on while PEAK is on), OF-09 (REL long stores the
 @ accumulated user zero).
 @ Source of truth: analysis/keys_setup.md 2.2, checked against the v2.05 listing.
-@ OF-67: MEM held at power-on opens the cal.bin menu ("SdCAL", key_win_b = 1) on its press; held on past the long-press
+@ OF-67: MEM held at power-on opened the cal.bin menu ("SdCAL", key_win_b = 1) on its press (since IMP-58: MEM + PEAK
+@ held 0.5 s, cal/bootwin.s pw_check, and keys held at power-on give no long press); held on past the long-press
 @ time it also toggled logging in v2.05 (emulator, both images: a CSV file instead of cal.bin), after which MODE could not
 @ confirm the save or the restore.  While the cal.bin sequence is under way (key_win_b 1..3) the long MEM is ignored.
 @ =============================================================================

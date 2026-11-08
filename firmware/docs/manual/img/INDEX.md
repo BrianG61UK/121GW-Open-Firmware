@@ -144,9 +144,9 @@ Not made:
 | File | What it shows | How it was made |
 |---|---|---|
 | special_version.png | Power-on: the firmware version on the sub display (the main display is still blank) - main display "", sub display "F-1.26", bar graph 1 segments | dial 2 (V); power cycle, display after 0.10 s |
-| special_lamptest.png | Lamp test of the power-on window: every segment on | power cycle, RANGE pressed 0.5 s later and held |
+| special_lamptest.png | Lamp test of the power-on window: every segment on | power cycle with RANGE + MIN/MAX held, display after 1 s |
 | msg_oFF.png | Power-off screen "-oFF-" (auto power-off, shown for the last beep) - main display "-oFF-", sub display "" | dial 2 (V); auto power-off countdown (RAM 0x20000230) set to 2 s and run out |
-| msg_SdCAL.png | cal.bin menu "SdCAL" (MEM held at power-on) - main display "5D.CAL", sub display "" | power cycle with MEM held, released after 0.5 s |
+| msg_SdCAL.png | cal.bin menu "SdCAL" (MEM + PEAK held at power-on) - main display "5D.CAL", sub display "" | power cycle with MEM + PEAK held, released after 1 s |
 | msg_SdSAv.png | cal.bin: save chosen, "SdSAv" - main display "5D.5Au", sub display "" | as msg_SdCAL, then REL pressed |
 | msg_SAvEd.png | cal.bin written to the card: "SAvEd" - main display "5AuED", sub display "" | as msg_SdSAv, then MODE pressed (card: empty FAT32 image) |
 | msg_SdSEt.png | cal.bin: load chosen, "SdSEt" - main display "5D.5ET", sub display "" | as msg_SdCAL, then PEAK pressed |

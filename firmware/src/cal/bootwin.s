@@ -17,6 +17,14 @@
 @                 cal.bin runs as the calbin state machine, one step per pass
 @ OF-08: the MODE-then-REL path sets calibration mode (0x2000808A = 1, 0x20008062 = 1) and writes nothing to
 @ the EEPROM (v2.05 called current_extra_erase_all at 0x0800EAF6).
+@ IMP-58 (GitHub issue 32): a single key press in the window starts nothing any more (v2.05: MODE " CAL1", SETUP date
+@ code, MEM cal.bin menu, RANGE all segments; a MODE pressed by chance after a start showed CAL1).  Each path needs two
+@ keys held together while the meter is switched on with the dial (pw_check, pw_start below):
+@   MODE + REL    calibration mode (A = 2)          MODE + SETUP    date-code editing (A = 3)
+@   MEM + PEAK    cal.bin menu SdCAL (B = 1; then REL save / PEAK restore, then MODE, single presses as before)
+@   RANGE + MIN/MAX  all segments
+@ MEM + HOLD stays the bootloader's update (it tests exactly MEM and HOLD); no pair is MEM + HOLD.  After a wake from
+@ auto power-off there is no service path.
 @ Context: main.
 @ =============================================================================
 
@@ -26,6 +34,7 @@
     .include "macros.inc"
     .include "ram_v205.inc"
     .include "config.inc"
+    .include "key.inc"
 
     @ Safety margin before the first HY3131 write (DESIGN.md 7.1: never earlier than v2.05).  Measured in the emulator with
     @ the Cortex-M3 cycle costs (emulator/emu/cycles.py, 2026-11-01; scenario boot_v, end of the 20-byte TEMP row frame):
@@ -37,11 +46,21 @@
     .equ BW_HY_MARGIN_LOOPS, 1000
     .equ BW_A,  v_200080CD                  @ window sequence state A (MODE / SETUP path)
     .equ BW_B,  v_200080CE                  @ window sequence state B (MEM path)
+    @ IMP-58: the pairs (key bits of key_sample: 0x01 MODE, 0x02 SETUP, 0x04 MIN/MAX, 0x08 MEM, 0x10 RANGE, 0x20 HOLD,
+    @ 0x40 REL, 0x80 PEAK) and the timing in key ticks (10 ms, process_pg8_15_press_release)
+    .equ PW_CAL,    0x41                    @ MODE + REL: calibration mode
+    .equ PW_DATE,   0x03                    @ MODE + SETUP: date-code editing
+    .equ PW_CALBIN, 0x88                    @ MEM + PEAK: cal.bin menu
+    .equ PW_LAMP,   0x14                    @ RANGE + MIN/MAX: all segments
+    .equ PW_SETTLE, 20                      @ ticks from the first key tick in which the keys may still settle (0.2 s)
+    .equ PW_HOLD,   52                      @ key_stable of the pair when it is taken: 2 + 50 ticks (0.5 s held)
 
     .section .bss_port.cal, "aw", %nobits
     .global bootwin_active
 bootwin_active: .space 1                    @ 1 from bootwin_start until the window closes (for UI, IMP-02)
 bootwin_cb:     .space 1                    @ 1 while a stepped cal.bin operation runs (bootwin_step)
+pw_done:        .space 1                    @ IMP-58: 1 once the pair check of this start is over (0 at reset)
+pw_ticks:       .space 1                    @ IMP-58: key ticks counted by pw_check since the start (stops at 0xFF)
 
     .section .text.cal, "ax", %progbits
 
@@ -208,7 +227,7 @@ LFUNC bootwin_dispatch
     ldrb r0, [r1]
     cbz r0, .Lbwd_b                         @ A = 0: MEM path (0x0800EAC2)
     cmp r0, #1
-    bne 1f
+    bne 1f                                  @ A = 1 is not set since IMP-58 (no MODE step); kept for fn_0800EA3A's states
     bl fn_08019854                          @ " CAL1" (0x0800EACE)
     bl fn_08019880                          @ " CAL "
     bl lcd_commit_shadow
@@ -328,5 +347,111 @@ LFUNC bootwin_exit
     bl lcd_commit_shadow
     pop {r4, pc}
 ENDFUNC bootwin_exit
+
+    .ltorg
+
+@ -----------------------------------------------------------------------------
+@ pw_check - IMP-58: the service paths of the power-on window need two keys held at power-on
+@ In/Out   : - / -
+@ Clobbers : r0-r3, r12, flags (AAPCS; r4 saved)
+@ Context  : main, once per key tick from process_pg8_15_press_release (keys.s), after key_prev / key_stable were
+@            updated for this tick's sample
+@ RAM      : reads bootwin_active, v_20008038 (1 after any wake, pwr/poweroff.s), key_sample, key_stable; writes
+@            pw_done, pw_ticks, key_hold, key_queued; pw_start writes key_win_a, key_win_b, key_window
+@ Note     : Only at a start with the dial (v_20008038 == 0) and while the window is open.  Every key held in this
+@            check is taken as held past the long-press time (key_hold 0x33, as the wake preset in set/statereset.s):
+@            no short press, no long press, nothing at the release, also when one key of a pair is let go first.
+@            The check ends: with no key down after PW_SETTLE ticks; with a key change after PW_SETTLE (a pair formed
+@            later starts nothing); when the keys down have been the same for PW_HOLD ticks (a pair then starts its
+@            path, anything else nothing); when the window closes or at a wake.
+@ -----------------------------------------------------------------------------
+FUNC pw_check
+    push {r4, lr}
+    ldr r4, =pw_done
+    ldrb r0, [r4]
+    cbnz r0, 9f                             @ the check of this start is over
+    ldr r0, =bootwin_active
+    ldrb r0, [r0]
+    cbz r0, 8f                              @ the window has closed
+    ldr r0, =v_20008038
+    ldrb r0, [r0]
+    cbnz r0, 8f                             @ a wake from auto power-off: no service path
+    ldrb r0, [r4, #1]                       @ r0 = pw_ticks + 1 (stops at 0xFF)
+    cmp r0, #0xFF
+    beq 1f
+    adds r0, r0, #1
+    strb r0, [r4, #1]
+1:  ldr r1, =key_sample
+    ldrb r1, [r1]                           @ r1 = keys down
+    ldr r3, =key_stable
+    ldrb r3, [r3]                           @ r3 = ticks the keys down have been the same (0: changed on this tick)
+    cbnz r1, 2f
+    cmp r0, #PW_SETTLE
+    bhi 8f                                  @ no key held at power-on: the check ends
+    b 9f
+2:  cbnz r3, 3f
+    cmp r0, #PW_SETTLE                      @ the keys down changed on this tick
+    bhi 8f                                  @ after the settle time: the check ends before the preset, so a key pressed
+                                            @ now is a normal press (a key down since the check keeps its hold 0x33)
+3:  movs r2, #0x33
+    ldr r1, =key_hold
+    strb r2, [r1]                           @ a key held at power-on: no short or long press until it is released ...
+    movs r2, #0
+    ldr r1, =key_queued
+    strb r2, [r1]                           @ ... and none queued for the release
+    cmp r3, #PW_HOLD
+    blo 9f                                  @ not held long enough yet (also the change tick inside the settle time)
+    ldr r0, =key_sample
+    ldrb r0, [r0]
+    bl pw_start                             @ the same keys for 0.5 s: a pair starts its path, anything else nothing
+8:  movs r0, #1
+    strb r0, [r4]                           @ pw_done = 1
+9:  pop {r4, pc}
+ENDFUNC pw_check
+
+@ -----------------------------------------------------------------------------
+@ pw_start - IMP-58: start the service path of a pair held at power-on (the states v2.05's single presses set)
+@ In       : r0 = keys down (key_sample)
+@ Out      : -
+@ Clobbers : r0-r3, r12, flags (AAPCS)
+@ Context  : main (pw_check)
+@ RAM      : writes key_win_a (A = 2 or 3; bootwin_dispatch then sets calibration mode or the date-code editing in this
+@            loop pass), key_win_b (B = 1), key_window (cal.bin menu 5000, lamp test 2000, as v2.05's single presses)
+@ Note     : no EEPROM access: calibration mode writes nothing (OF-08); the cal.bin save or restore needs REL or PEAK,
+@            then MODE in the open menu, as before.  Accept beep for every pair; other keys: nothing
+@ -----------------------------------------------------------------------------
+LFUNC pw_start
+    push {r4, lr}
+    cmp r0, #PW_CAL
+    bne 1f
+    movs r0, #2
+    ldr r1, =BW_A
+    strb r0, [r1]                           @ calibration mode (bootwin_dispatch A = 2, as v2.05's REL after MODE)
+    b 7f
+1:  cmp r0, #PW_DATE
+    bne 2f
+    movs r0, #3
+    ldr r1, =BW_A
+    strb r0, [r1]                           @ date-code editing (bootwin_dispatch A = 3, as v2.05's SETUP)
+    b 7f
+2:  cmp r0, #PW_CALBIN
+    bne 3f
+    movs r0, #1
+    ldr r1, =BW_B
+    strb r0, [r1]                           @ cal.bin menu SdCAL (as v2.05's MEM, 0x08014E0C)
+    movw r0, #0x1388
+    ldr r1, =key_window
+    strh r0, [r1]                           @ window 5000 ticks (0x08014E14; halfword store, atomic for IRQ29)
+    b 7f
+3:  cmp r0, #PW_LAMP
+    bne 9f                                  @ no pair: nothing
+    mov.w r0, #0x7D0
+    ldr r1, =key_window
+    strh r0, [r1]                           @ window 2000 ticks (as v2.05's RANGE, 0x08014D14)
+    bl fn_0801A89C                          @ all segments on (ui_lamp_test = 1; ui_bootwin_gate keeps them)
+    bl lcd_commit_shadow
+7:  bl fn_0800EE50                          @ accept beep
+9:  pop {r4, pc}
+ENDFUNC pw_start
 
     .ltorg

@@ -33,8 +33,8 @@ These checks confirm on hardware what the emulator cannot.
    with SEVONPEND, NF-05).
 3. SD logging with a slow card for a few minutes, then check the CSV and the card on a PC (v2.05's write wait is
    about 7 ms; whether SDIO TXACT stays set during card busy decides if slow cards fail: DESIGN 12.2).
-4. Calibration-mode entry no longer clears the user current zeros (OF-08); cal.bin save/load round trip
-   (1248-byte file; a 1200-byte v2.05 file must also load).
+4. Calibration-mode entry no longer clears the user current zeros (OF-08; fast build F-1.27 or newer: MODE + REL held
+   at power-on, IMP-58); cal.bin save/load round trip (1248-byte file; a 1200-byte v2.05 file must also load).
 5. Analog settling for the faster settle profile (`AR_PROFILE_TP`, off by default): step tests below. Enable the
    profile only for the paths whose test passes.
 
@@ -199,6 +199,12 @@ These checks confirm on hardware what the emulator cannot.
    Bluetooth stays off as switched.
 45. Page bAcK (F-1.26, IMP-57; GitHub issue 31): on SEt hold SETUP, SETUP through the meter pages: after CL the page
    bAcK; SETUP there: the temperature page.  The same with a long SETUP on bAcK.
+46. Keys at power-on (F-1.27, IMP-58; GitHub issue 32): dial OFF, hold MODE + REL, dial to V, keep them held: a beep
+   after about 0.5 s; the meter is in calibration mode (over SWD: RAM 0x2000808A = 1); press no further key, switch off.  The same with MEM + PEAK:
+   `SdCAL` (then REL or PEAK and MODE as the manual says), MODE + SETUP: the date-code editing, RANGE + MIN/MAX: every
+   segment on.  Switch on and press MODE within 1 s: no `CAL1`, the meter measures.  Hold MODE alone while switching on:
+   nothing happens, also when it is let go.  Auto power-off (or wait), turn the dial to wake it and press MODE at once:
+   no `CAL1`.  MEM + HOLD still starts the card update.  Dump the EEPROM before and after: no byte changed.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

@@ -389,6 +389,23 @@ Continuity always beeps (it is a continuity tester), and so do the wrong-jack an
 also beeped for the diode short tone, auto-hold and power-off with `b-OFF`; `qUiEt` is close to that, with the diode
 double beep added.) A firmware older than F-1.24 reads a saved `qUiEt` as `b-OFF`.
 
+## Keys held while switching on (F-1.27 or newer)
+
+Each service function needs two keys held together while the dial switches the meter on. Hold them before you turn
+the dial and keep them held for half a second, until the beep:
+
+| Hold while switching on | What happens |
+|---|---|
+| MEM + PEAK | cal.bin backup / restore menu `SdCAL`: then REL (save) or PEAK (restore), then MODE |
+| MODE + REL | calibration mode (calibration labs only) |
+| MODE + SETUP | date-code editing |
+| RANGE + MIN/MAX | all segments on (display test) |
+| MEM + HOLD | firmware update from the card (the bootloader; unchanged) |
+
+A single key pressed right after switching on, or after the meter wakes from auto power-off, starts none of these
+(GitHub issue 32: a MODE pressed in the first 2 s used to show `CAL1`). The original firmware and older releases use a
+single key (MEM, MODE then REL, SETUP, RANGE).
+
 ## Faster responses without a setting
 
 The fast build also reacts faster, with no setting needed:

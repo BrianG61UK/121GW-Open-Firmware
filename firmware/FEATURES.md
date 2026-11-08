@@ -31,10 +31,11 @@ only the keys SETUP, REL and PEAK in the way v2.05's pages do:
 | leave without saving | SETUP short (value stays changed in RAM until power-off, as v2.05's pages 0, 2, 3), or the edit timeout of about 2 minutes, which re-reads the stored value (`fn_0800D190`, extended per page) |
 | digit pages (ID in v2.05) | SETUP short moves the digit cursor 4, 3, 2, 1, 0, 4 while editing (KS 4, item 8) |
 
-No power-on key combination is used by any feature. KS 3 shows that the window combinations (MODE+REL calibration mode,
-MEM+REL/PEAK+MODE cal.bin, SETUP date editing, RANGE all segments) are the calibration and backup paths; a new combination
-there would sit next to a path that erases or restores calibration data, so the settings are reached only after the window
-has closed.
+No power-on key combination is used by any new feature. KS 3 shows that the window combinations are the calibration
+and backup paths; a new combination there would sit next to a path that erases or restores calibration data, so the
+settings are reached only after the window has closed.  Since IMP-58 (2.32) those paths need two keys held at power-on
+(MODE + REL calibration mode, MEM + PEAK then REL/PEAK then MODE cal.bin, MODE + SETUP date editing, RANGE + MIN/MAX all
+segments) instead of v2.05's single keys.
 
 ### 1.3 SETUP pages
 
@@ -629,6 +630,16 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 ### 2.31 Page bAcK (implemented, IMP-57, F-1.26; GitHub issue 31)
 - The meter walk ends with a page `bAcK` after `CL`; SETUP there, short or long, goes to the temperature page that
   starts the measurement walk.
+
+### 2.32 Service paths need two held keys (implemented, IMP-58, F-1.27; GitHub issue 32, OF-77)
+- Request (owner, 2026-11-08): a single MODE pressed by chance right after a start showed CAL1 (issue 32); calibration
+  must still be reachable, by two keys held together at power-on; the other window paths too.
+- What it does: each service path needs two keys held together while the dial switches the meter on, 0.5 s long (accept
+  beep): MODE + REL calibration mode, MODE + SETUP date-code editing, MEM + PEAK the cal.bin menu (then REL save or PEAK
+  restore, then MODE, as before), RANGE + MIN/MAX all segments.  A single key in the window starts nothing; keys held at
+  power-on give no short or long press; after a wake from auto power-off there is no service path.  MEM + HOLD stays the
+  bootloader's card update.  No EEPROM access (DESIGN 7.1).
+- Test: emulator `test_power_pairs.py` (P1..P4, S1..S6), `test_calbin_ident.py`; HARDWARE_TEST 46.
 
 ## 3. EEPROM bytes the features need
 

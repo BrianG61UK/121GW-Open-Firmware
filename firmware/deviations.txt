@@ -304,7 +304,7 @@ IMP-07  lcd_final  setup_navigate_dcv  build == production and main == "0.0000"
 # IMP-52 (DESIGN 10, FEATURES.md 2.26): the production image walks two SETUP walks; in DCV the first press already goes
 # from item 0 to rEL (v2.05: item 1), so every LCD event of setup_navigate_dcv after its first SETUP press (line 6) and
 # its final frame differ in the sub display; the main display and the EEPROM are as in v2.05.
-IMP-52  lcd        setup_navigate_dcv  build == production and step >= 6
+IMP-52  lcd        setup_navigate_dcv  build == production and step in 6..100000
 IMP-52  lcd_final  setup_navigate_dcv  build == production
 
 # OPT-01 (DESIGN 3.2 step 4, 11): the RAM image is copied instead of lz77-unpacked, so the port's start-up takes another

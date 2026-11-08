@@ -632,7 +632,8 @@ and on your computer, in case something ever goes wrong.</p>
 <h3 id="make-backup">Make a backup</h3>
 <ol class="steps">
 <li>Card in, dial to OFF.</li>
-<li>Hold <kbd>MEM</kbd> and switch on. Let go. You see <span class="lcd">SdCAL</span>.</li>
+<li>Hold <kbd>MEM</kbd> and <kbd>PEAK</kbd> together and switch on. Keep both held until it beeps, then let go. You
+see <span class="lcd">SdCAL</span>.</li>
 <li>Within 5 seconds press <kbd>REL</kbd>: <span class="lcd">SdSAv</span>.</li>
 <li>Within 5 seconds press <kbd>MODE</kbd>. A moment later: <span class="lcd">SAvEd</span>. Switch off.</li>
 </ol>
@@ -657,13 +658,15 @@ backup right after.</p>
 <tr><th>Hold while switching on</th><th>What happens</th></tr>
 </thead>
 <tbody>
-<tr><td><kbd>MEM</kbd></td><td>Backup / restore menu (above)</td></tr>
+<tr><td><kbd>MEM</kbd> + <kbd>PEAK</kbd></td><td>Backup / restore menu (above)</td></tr>
 <tr><td><kbd>MEM</kbd> + <kbd>HOLD</kbd></td><td>Firmware update from the card <a class="pg" href="#update"></a></td></tr>
-<tr><td><kbd>RANGE</kbd></td><td>All segments on (display test)</td></tr>
-<tr><td><kbd>MODE</kbd></td><td><span class="lcd">CAL1</span>: switch off again. Pressing further keys would start
-calibration mode, which can ruin the calibration.</td></tr>
+<tr><td><kbd>RANGE</kbd> + <kbd>MIN/MAX</kbd></td><td>All segments on (display test)</td></tr>
+<tr><td><kbd>MODE</kbd> + <kbd>REL</kbd></td><td>Calibration mode, for calibration labs only: switch off again.
+Calibrating without the equipment can ruin the calibration.</td></tr>
 </tbody>
 </table>
+<p>Hold both keys before you turn the dial and keep them held for half a second (it beeps). A single key pressed
+right after switching on, or after the meter wakes from auto power-off, starts none of these.</p>
 
 <!-- ============================================================ -->
 <h2 id="update">Updating the firmware</h2>
@@ -732,7 +735,7 @@ work, and you can format the card on the meter. It never touches your calibratio
 </thead>
 <tbody>
 <tr><td>A key does nothing, two short beeps</td><td>Not possible right now, e.g. during logging. Stop logging first.</td></tr>
-<tr><td>No <span class="lcd">SdCAL</span>, or MODE does nothing after <span class="lcd">SdSAv</span></td><td>Hold MEM while switching on, then press each next key within 5 seconds.</td></tr>
+<tr><td>No <span class="lcd">SdCAL</span>, or MODE does nothing after <span class="lcd">SdSAv</span></td><td>Hold MEM and PEAK together while switching on until it beeps, then press each next key within 5 seconds.</td></tr>
 <tr><td>Bluetooth won't connect</td><td>Hold PEAK until BT shows. Close any other Bluetooth app for the meter: only one device at a time.</td></tr>
 <tr><td>The range keeps jumping</td><td>Press RANGE to fix the range.</td></tr>
 <tr><td>Faint display or ghost segments</td><td>Change the contrast (page <span class="lcd">Lcd</span>).</td></tr>

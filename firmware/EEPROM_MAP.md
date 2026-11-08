@@ -363,6 +363,9 @@ The setup-edit timeout `FUN_0800D190` (from main 0x08024C2C) re-reads 0x10, 0x14
 - MODE then REL: calibration mode (0x2000808A = 1 at 0x0800EAE6..0x0800EAEC, its only store of 1) and
   current_extra_erase_all (0x0800EAF6): A5 00 00 00 00 at 0x4D0, 0x4D8, 0x4E0, 0x4E8, 0x4F0, 0x4F8.
 - MEM, REL, MODE: calbin_save (0x0800EB8C), no EEPROM write. MEM, PEAK, MODE: calbin_load (0x0800EBBC).
+- Fast build F-1.27 (IMP-58, DESIGN 7.1): the same states need two keys held at power-on (MODE + REL: calibration mode,
+  no EEPROM write since OF-08; MEM + PEAK, then REL or PEAK, then MODE: calbin_save / calbin_load); a single key starts
+  nothing.
 
 ### 7.3 Calibration mode (0x2000808A == 1)
 
