@@ -12,7 +12,7 @@ What each version brought: [CHANGELOG.md](CHANGELOG.md).
 |---|---|
 | <img src="docs/companion_scope.gif" alt="SCOPE view: the trend on a scope grid with time base and cursors" width="420"> | <img src="docs/companion_record.gif" alt="RECORD starts a CSV recording; the LOG view lists the recordings" width="420"> |
 | **SD card** (meter on the page `Ld-bt`) | **Meter**: settings and diagnostics (page `Ld-bt`) |
-| <img src="docs/companion_card.gif" alt="CARD view: the files on the meter's SD card with size and date, the space, a download" width="420"> | <img src="docs/companion_meter.gif" alt="METER page: the meter's firmware and bootloader, the update check, the table of releases to install, the clock" width="420"> |
+| <img src="docs/companion_card.gif" alt="CARD page: the meter in desk mode (page Ld-bt): the files on its SD card with size and date, the space" width="420"> | <img src="docs/companion_meter.gif" alt="METER page: the meter's firmware and bootloader, the update check, the table of releases to install, the clock" width="420"> |
 
 Recorded from a real 121GW with firmware F-1.07 over Bluetooth (nothing connected to the inputs, so the readings are small; the keys are pressed from the computer; the meter's Bluetooth device identifier is covered).
 
