@@ -690,3 +690,39 @@ class NotFoundText(unittest.TestCase):
     def test_no_hint_elsewhere(self):
         for platform in ('darwin', 'linux'):
             self.assertEqual(link_mod.not_found_text(5, platform), link_mod.NOT_FOUND)
+
+
+class CloseUnsubscribesFirst(unittest.TestCase):
+    """GitHub issue 23: on Windows the link stayed up after Disconnect; the notifications are unsubscribed first."""
+    def run_close(self, client):
+        asyncio.run(link_mod.MeterLink._close(client))
+        return client.calls
+
+    def make(self, connected=True, hang=False, fail=False):
+        class Client:
+            def __init__(self):
+                self.calls, self.is_connected = [], connected
+
+            async def stop_notify(self, char):
+                self.calls.append('stop_notify')
+                if hang:
+                    await asyncio.sleep(60)
+                if fail:
+                    raise OSError('not subscribed')
+
+            async def disconnect(self):
+                self.calls.append('disconnect')
+        return Client()
+
+    def test_unsubscribe_then_disconnect(self):
+        self.assertEqual(self.run_close(self.make()), ['stop_notify', 'disconnect'])
+
+    def test_a_hanging_or_failing_unsubscribe_still_disconnects(self):
+        old = link_mod.STOP_NOTIFY_WAIT
+        link_mod.STOP_NOTIFY_WAIT = 0.1
+        self.addCleanup(setattr, link_mod, 'STOP_NOTIFY_WAIT', old)
+        self.assertEqual(self.run_close(self.make(hang=True)), ['stop_notify', 'disconnect'])
+        self.assertEqual(self.run_close(self.make(fail=True)), ['stop_notify', 'disconnect'])
+
+    def test_a_gone_link_is_only_disconnected(self):
+        self.assertEqual(self.run_close(self.make(connected=False)), ['disconnect'])

@@ -22,6 +22,7 @@ from . import frames
 SERVICE = '0bd51666-e7cb-469b-8e4d-2742f1ba77cc'
 CHAR = 'e7add780-b042-4876-aae1-112855353cc1'
 SCAN_SECONDS = 6.0
+STOP_NOTIFY_WAIT = 2.0                  # seconds for unsubscribing the notifications before a disconnect (issue 23)
 RETRY_SECONDS = 3.0
 WINDOWS_HINT_AFTER = 2                 # searches in a row without the meter before the Windows hint (GitHub issue 23)
 NOT_FOUND = 'no 121GW found: meter on, Bluetooth on (long PEAK), phone app closed?'
@@ -226,6 +227,17 @@ class MeterLink:
 
     @staticmethod
     async def _close(client):
+        """Unsubscribe the notifications, then disconnect.  bleak's Windows backend (bleak/backends/winrt/client.py
+        disconnect) only drops its own handlers and closes its objects without waiting for the link to go; the meter
+        keeps its notification subscription, and Windows was seen to keep the connection ("Connected (1)" in the tray)
+        so that the meter did not advertise again and a new Connect found nothing until Bluetooth was switched off and
+        on (GitHub issue 23).  stop_notify writes the subscription off first; it is given STOP_NOTIFY_WAIT seconds, so a
+        link that is already gone does not hold up the disconnect."""
+        try:
+            if client.is_connected:
+                await asyncio.wait_for(client.stop_notify(CHAR), STOP_NOTIFY_WAIT)
+        except Exception:                                # noqa: BLE001 - gone, not subscribed, or slow: disconnect anyway
+            pass
         try:
             await client.disconnect()
         except Exception:
