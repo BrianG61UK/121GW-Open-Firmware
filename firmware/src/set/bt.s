@@ -58,6 +58,9 @@ FUNC set_bt_load
     movs r0, #0                             @ anything else: 2 per second, the v2.05 rate
 1:  ldr r1, =ble_rate
     strb r0, [r1]
+    movs r0, #0
+    ldr r1, =ble_rate_link
+    strb r0, [r1]                           @ IMP-55: a link rate of the companion ends with every load of the saved rate
     pop {r4, pc}
 ENDFUNC set_bt_load
 
@@ -77,6 +80,9 @@ ENDFUNC set_bt_load
 FUNC set_bt_edit
     push {r4, lr}
     uxtb r4, r0                             @ action
+    movs r0, #0
+    ldr r1, =ble_rate_link
+    strb r0, [r1]                           @ IMP-55: the user's page wins over a link rate of the companion
     ldr r1, =ble_rate
     ldrb r0, [r1]                           @ r0 = code
     cmp r4, #1

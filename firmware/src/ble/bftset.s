@@ -8,7 +8,11 @@
 @ on, logging off, calibration mode off) and are answered with the type 0x82 answer of ble/bftsd.s, whose header and
 @ statuses are described there.
 @
-@     0x16 GET   no payload (status 0x22 if there is one).  Answer: field = number of entries, data = entries of id(2) value(1), in table order
+@     0x16 GET   no payload: every setting.  Answer: field = number of entries, data = entries of id(2) value(1), in table order.
+@                IMP-55 (GitHub issue 30): payload start(1) max(1): at most max entries (1..255) from entry start of the
+@                table; field = the entries in this answer | 0x8000 when the last setting is among them (as LIST), so a
+@                damaging link can fetch the settings in small answers.  start beyond the table, max 0 or another
+@                payload length: status 0x22.
 @     0x17 PUT   id(2) value(1).  Answer: field = id, data = the value now in effect (1 byte).
 @                status 0 applied; 3 refused: a setting is being edited on the meter (set_edit); 0x22 unknown id, value
 @                out of range, or payload length not 3.
@@ -155,21 +159,41 @@ LFUNC bfs_value
 ENDFUNC bfs_value
 
 @ -----------------------------------------------------------------------------
-@ bfs_get - GET: every setting of the table
-@ In       : -
-@ Out      : r0 = 0 (status), r1 = BFS_N (field), r2 = 3 * BFS_N (data at bfx_ans + 9: id(2) value(1) per entry)
-@ Clobbers : r0-r3, r12, flags (r4-r6 saved)
+@ bfs_get - GET: every setting of the table, or (IMP-55) a page of it
+@ In       : bft_pkt (payload: none, or start(1) max(1))
+@ Out      : r0 = status; r1 = field: BFS_N without a payload, else the entries in this answer | 0x8000 when the last
+@            setting is among them; r2 = 3 * entries (data at bfx_ans + 9: id(2) value(1) per entry)
+@ Clobbers : r0-r3, r12, flags (r4-r7 saved; [sp] holds the paged flag in the slot of the saved r3)
 @ -----------------------------------------------------------------------------
 FUNC bfs_get
-    push {r4-r6, lr}
+    push {r3-r7, lr}
     ldr r4, =bft_pkt
     ldrb r0, [r4, #5]
-    cmp r0, #0
-    bne .Lge_arg                            @ GET has no payload
+    movs r6, #0                             @ r6 = first entry
+    movs r7, #BFS_N                         @ r7 = most entries
+    str r6, [sp]                            @ paged flag: 0 = no payload, the answer of every version before IMP-55
+    cbz r0, 2f                              @ no payload: every setting
+    cmp r0, #2
+    bne .Lge_arg                            @ the payload is none or start(1) max(1)
+    ldrb r6, [r4, #6]                       @ start
+    ldrb r7, [r4, #7]                       @ max
+    cmp r7, #0
+    beq .Lge_arg                            @ max 0 is refused
+    cmp r6, #BFS_N
+    bhi .Lge_arg                            @ start beyond the table (start = BFS_N: no entry, the end)
+    movs r0, #1
+    str r0, [sp]                            @ paged
+2:  rsb r0, r6, #BFS_N                      @ r0 = entries from start to the end of the table
+    cmp r7, r0
+    it hi
+    movhi r7, r0                            @ r7 = entries in this answer
     ldr r4, =bfs_tab
+    movs r0, #BFS_REC
+    mla r4, r6, r0, r4                      @ r4 = record of the first entry
     ldr r5, =bfx_ans
     adds r5, r5, #9
-    movs r6, #BFS_N
+    movs r6, r7                             @ r6 = entries left to pack
+    cbz r6, 3f
 1:  ldrh r1, [r4]
     strb r1, [r5], #1
     lsrs r1, r1, #8
@@ -180,15 +204,21 @@ FUNC bfs_get
     adds r4, r4, #BFS_REC
     subs r6, r6, #1
     bne 1b
+3:  mov r1, r7                              @ field = entries in this answer
+    ldr r0, [sp]
+    cbz r0, 4f                              @ no payload: field = BFS_N as before (r7 = BFS_N)
+    ldr r2, =(bfs_tab + BFS_N * BFS_REC)
+    cmp r4, r2
+    it eq
+    orreq r1, r1, #0x8000                   @ the last setting is in this answer
+4:  add r2, r7, r7, lsl #1                  @ r2 = 3 * entries
     movs r0, #0
-    movs r1, #BFS_N
-    movs r2, #(3 * BFS_N)
-    pop {r4-r6, pc}
+    pop {r3-r7, pc}
 .Lge_arg:
-    movs r0, #BFS_ST_ARG                    @ 0x22: a payload was sent
+    movs r0, #BFS_ST_ARG                    @ 0x22: a payload that is not start(1) max(1), max 0, start beyond the table
     movs r1, #0
     movs r2, #0
-    pop {r4-r6, pc}
+    pop {r3-r7, pc}
 ENDFUNC bfs_get
 
 @ -----------------------------------------------------------------------------

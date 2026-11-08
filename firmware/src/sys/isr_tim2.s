@@ -313,8 +313,7 @@ FUNC sys_tim2_isr
     bl bft_tick                             @ IMP-28: idle time of the Bluetooth file transfer parser (every tick)
     @ IMP-09: a selected frame rate above 2 per second runs on its own counter (ble/rate.s); the 500 ms counter below
     @ then only serves its other users (500 ms flag, blink phases, jack-warning beep)
-    ldr r0, =ble_rate
-    ldrb r0, [r0]
+    bl ble_rate_code                        @ r0 = the rate in effect (IMP-55: the link rate, else the saved ble_rate)
     cbz r0, .Lt2_ble_v205                   @ 2 per second: the v2.05 request and start below
     bl ble_rate_tick                        @ build request and frame start of the selected rate
     ldr r1, =v_20007F04
@@ -341,8 +340,7 @@ FUNC sys_tim2_isr
     movs r0, #1
     ldr r1, =v_200080D3
     strb r0, [r1]                           @ 500 ms flag (0x0802462E)
-    ldr r0, =ble_rate
-    ldrb r0, [r0]
+    bl ble_rate_code                        @ r0 = the rate in effect (IMP-55)
     cbnz r0, .Lt2_no_start                  @ IMP-09: a faster rate starts its frames in ble_rate_tick
     bl ble_tx_start_frame                   @ BLE frame start, replaces 0x08024630..0x0802465A (OF-10)
 .Lt2_no_start:

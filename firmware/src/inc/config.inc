@@ -29,7 +29,7 @@
     .equ FW_VER_C1, '-'
     .equ FW_VER_C2, '1'
     .equ FW_VER_C3, '2'
-    .equ FW_VER_C4, '4'
+    .equ FW_VER_C4, '5'
 
     @ DEBUG = 1 sets DBGMCU_CR DBG_SLEEP | DBG_STOP | DBG_STANDBY at every start as v2.05 does (0x0801BEF8).
     @ Production (0) leaves DBGMCU_CR alone so STOP is the true low-current STOP (NF-18, RM0038 30.16.3).

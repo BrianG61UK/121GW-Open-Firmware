@@ -38,6 +38,12 @@
 @ SETUP page bt (owner SET; read by sys_tim2_isr and ble_rate_tick)
     .global ble_rate
 ble_rate:       .space 1
+@ ble_rate_link: IMP-55, the rate for this link set by the companion (key codes 0x99..0x9C): 0 none (the saved ble_rate
+@ applies), 1..4 = code + 1.  Written by main (ble/commands.s, cleared by set/bt.s at every load of the saved rate and
+@ at every action of the page bt); read through ble_rate_code by the TIM2 interrupt.  The saved ble_rate, the page bt,
+@ the settings GET and the EEPROM byte 0x015 never see it (critique 2026-11-08).
+    .global ble_rate_link
+ble_rate_link:  .space 1
 @ ble_rate_cnt: TIM2 tick count of the present frame period, 0 .. period - 1 (owner BLE, TIM2 interrupt only)
     .global ble_rate_cnt
 ble_rate_cnt:   .space 1
@@ -54,6 +60,25 @@ ble_rate_table:
     .section .text.ble.rate, "ax", %progbits
 
 @ -----------------------------------------------------------------------------
+@ ble_rate_code - the frame rate code in effect: the link rate of IMP-55 when one is set, else the saved ble_rate
+@ In       : -
+@ Out      : r0 = code 0..3
+@ Clobbers : r0, flags
+@ Context  : TIM2 interrupt (sys_tim2_isr, ble_rate_tick)
+@ -----------------------------------------------------------------------------
+FUNC ble_rate_code
+    ldr r0, =ble_rate_link
+    ldrb r0, [r0]
+    cbz r0, 1f
+    subs r0, r0, #1                         @ the link rate: code + 1 stored
+    and r0, r0, #3
+    bx lr
+1:  ldr r0, =ble_rate
+    ldrb r0, [r0]
+    bx lr
+ENDFUNC ble_rate_code
+
+@ -----------------------------------------------------------------------------
 @ ble_rate_tick - one TIM2 tick of the selectable frame rate (codes 1..3)
 @ Replaces : for codes 1..3, the build request at count 40 (0x080245F6..0x08024606) and the frame start at count 50 of
 @            IRQ28_Handler 0x0802428C (port: ble_tx_start_frame)
@@ -61,15 +86,15 @@ ble_rate_table:
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags
 @ Context  : TIM2 interrupt (sys_tim2_isr), only while ble_rate != 0
-@ RAM      : reads ble_rate; reads and writes ble_rate_cnt; writes ble_build_req (0x2000802C)
+@ RAM      : reads the rate in effect (ble_rate_code: ble_rate_link or ble_rate); reads and writes ble_rate_cnt; writes
+@            ble_build_req (0x2000802C)
 @ Note     : As v2.05 at its counter: the build request is tested on the count before the increment, the start when the
 @            incremented count reaches the period (then the count restarts at 0).  A count at or above the period of a
 @            newly selected code (the code changed during a period) also restarts it.
 @ -----------------------------------------------------------------------------
 FUNC ble_rate_tick
     push {r4, lr}
-    ldr r0, =ble_rate
-    ldrb r0, [r0]
+    bl ble_rate_code                        @ r0 = the rate in effect (IMP-55: the link rate, else the saved one)
     and r0, r0, #3                          @ index inside the 4-entry table
     ldr r1, =ble_rate_table
     add r1, r1, r0, lsl #1                  @ 2 bytes per code

@@ -14,7 +14,12 @@ frame twice.  The firmware side:
      max 0 is refused (0x22)
   K5 CHUNK idx(2) len(1): the staged bytes idx*len .. (len bytes, fewer at the end), equal to the plain 232-byte
      CHUNKs; len 0 and len 233 are refused (0x22)
-RUN LIMIT: 1 run of this script (3 boots).
+  K6 (IMP-55, F-1.25) key codes 0x99..0x9C: echoed; the status frames then come at 2, 4, 10, 20 per second (code + 1
+     in ble_rate_link); the saved rate (ble_rate) and the EEPROM byte 0x015 stay as they were
+  K7 (IMP-55) page Ld, settings GET start(1) max(1): at most max entries, field = entries | 0x8000 with the last setting,
+     the pages together equal the plain GET; max 0 and start beyond the table refused (0x22); start = the table's
+     length: no entry and the end
+RUN LIMIT: 1 run of this script (4 boots).
 The helpers are those of test_bft_files.py, test_bt_upload.py, test_ble_version.py and test_backlight_timer.py.
 """
 import os
@@ -116,6 +121,26 @@ def run_tests(image):
     T.check('K3: careful mode cleared by switching Bluetooth on', copies(fr) == 0 and len(fr) >= 4,
             '%d frames, %d copies' % (len(fr), copies(fr)))
 
+    print('K6 frame rate for this power-on')
+    e = boot(image)
+    mp = os.path.join(os.path.dirname(os.path.abspath(image)), '121gw.map')
+    rate_addr, link_addr = T.symbol(mp, 'ble_rate'), T.symbol(mp, 'ble_rate_link')
+    saved = T.rd(e, rate_addr)
+    ee_before = bytes(e.m.eeprom)
+    for code, want in ((0x9C, 20), (0x9A, 4), (0x9B, 10), (0x99, 2)):
+        n0 = len(e.ble_rx)
+        e.usart2.rx_feed(key_frame(code))
+        e.advance(0.6)
+        T.check('K6: 0x%02X echoed, link rate %d, saved rate unchanged' % (code, code - 0x99),
+                key_frame(code) in bytes(e.ble_rx[n0:]) and T.rd(e, link_addr) == code - 0x99 + 1 and T.rd(e, rate_addr) == saved,
+                'ble_rate_link %d ble_rate %d' % (T.rd(e, link_addr), T.rd(e, rate_addr)))
+        n0 = len(e.ble_rx)
+        e.advance(4.0)
+        n = len(frames_with_times(e, n0))
+        T.check('K6: 0x%02X: %d frames per second' % (code, want), abs(n / 4.0 - want) <= max(0.6, want * 0.1),
+                '%d frames in 4 s' % n)
+    T.check('K6: the EEPROM is not written (0x015 keeps the saved rate)', bytes(e.m.eeprom) == ee_before)
+
     print('K4 / K5 page Ld: LIST max, CHUNK len')
     card, expect = F.build_card()
     e, link = U.open_page(image, card)
@@ -154,6 +179,35 @@ def run_tests(image):
     for bad in (0, 233):
         a = f.ask(lambda seq, n: btft.packet(btft.T_CHUNK, seq, struct.pack('<HB', 0, n)), bad)
         T.check('K5: CHUNK len %d refused (0x22)' % bad, F.status_of(a) == 0x22, repr(a))
+    print('K7 page Ld: settings GET in pages')
+    a = f.ask(lambda seq: btft.packet(0x16, seq, b''))
+    whole, n_all = (a.data, a.field) if F.status_of(a) == 0 else (b'', 0)
+    T.check('K7: plain GET unchanged: field = the count, no end flag', F.status_of(a) == 0 and 0 < n_all < 0x8000
+            and len(whole) == 3 * n_all, repr(a))
+    got, start, ok, end = b'', 0, True, False
+    for _ in range(40):
+        a = f.ask(lambda seq, st: btft.packet(0x16, seq, bytes([st, 4])), start)
+        if F.status_of(a) != 0:
+            ok = False
+            break
+        cnt, end = a.field & 0x7FFF, bool(a.field & 0x8000)
+        ok &= cnt <= 4 and len(a.data) == 3 * cnt
+        got += a.data
+        start += cnt
+        if end or not cnt:
+            break
+    T.check('K7: GET start max 4: at most 4 per answer, the last with the end flag, together the plain GET',
+            ok and end and got == whole, '%d of %d bytes' % (len(got), len(whole)))
+    for payload, why in ((bytes([0, 0]), 'max 0'), (bytes([n_all + 1, 4]), 'start beyond the table'), (b'\x00', 'one byte')):
+        a = f.ask(lambda seq, pl: btft.packet(0x16, seq, pl), payload)
+        T.check('K7: GET %s refused (0x22)' % why, F.status_of(a) == 0x22, repr(a))
+    a = f.ask(lambda seq: btft.packet(0x16, seq, bytes([n_all, 4])))
+    T.check('K7: GET start = the table length: no entry, the end', F.status_of(a) == 0 and a.field == 0x8000 and not a.data, repr(a))
+    e.usart2.rx_feed(key_frame(0x9C))                    # a link rate of 20 a second
+    e.advance(0.5)
+    a = f.ask(lambda seq: btft.packet(0x16, seq, b''))
+    T.check('K7: with a link rate set, GET reports the saved rate (0x015)', F.status_of(a) == 0 and a.data == whole,
+            'GET data %r' % (a.data,))
     s = e.snapshot()
     T.check('no unmodelled access, no safety violation', s['unmodelled'] == 0 and not s['safety'],
             'unmodelled %r safety %r' % (s['unmodelled'], s['safety']))

@@ -606,6 +606,16 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - How: DESIGN.md IMP-54 (a class with each beep, two gates).  The same EEPROM byte 0x01E (value 2); calibration, serial
   and options untouched.  Bluetooth setting id 0x01E 0..2; the companion offers `quiet` for F-1.24 and newer.
 
+### 2.29 Data rate that follows the link (implemented, IMP-55, F-1.25; GitHub issue 30)
+- Reason (GitHub issue 30, link tests on two meters): the old BLE112 module carries about 150 bytes a second.  At
+  `bt 20` (380 bytes a second) about a quarter of the bytes arrived damaged; the settings came as one 68-byte answer
+  that almost never arrived intact.
+- What it does: key codes 0x99..0x9C set the rate of the readings (2, 4, 10, 20 a second) for this power-on, without
+  writing the EEPROM; the settings request GET takes start(1) max(1) and answers in pages.  The companion uses both on
+  BLE112 meters: the reading rate follows the damage of the link (never above the saved `bt`), the settings come in
+  pages that shrink until they arrive; the card list and files already did (careful mode, F-1.19).
+- How: DESIGN.md IMP-55.  No EEPROM, calibration or option change.
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |

@@ -42,6 +42,9 @@
     .equ BLE_CKGET_CODE,    0x96             @ clock measurement request, answered with FA (F4 39 36 39 36; sys/msical.s)
     .equ BLE_DUPON_CODE,    0x97             @ careful mode on: each status frame twice (F4 39 37 39 37; IMP-50)
     .equ BLE_DUPOFF_CODE,   0x98             @ careful mode off (F4 39 38 39 38)
+    .equ BLE_RATE0_CODE,    0x99             @ IMP-55: 0x99..0x9C set the frame rate code 0..3 (2, 4, 10, 20 per second)
+                                             @ for this link: ble_rate_link, not ble_rate or EEPROM 0x015 (the companion's
+                                             @ automatic rate for a damaging link, GitHub issue 30)
 
     .section .rodata.ble.version, "a", %progbits
 @ ble_version_frame - answer to the version request: F6, the five characters the meter shows at power-on (config.inc
@@ -248,10 +251,21 @@ FUNC fn_0800C332
     strb r0, [r1]                           @ 0x97: careful mode on (IMP-50; one byte, read by the USART2 handler)
     b .L0800C46C
 9:  cmp r0, #BLE_DUPOFF_CODE
-    bne 1f
+    bne .Lkey_rate
     movs r0, #0
     ldr r1, =ble_dup_on
     strb r0, [r1]                           @ 0x98: careful mode off
+    b .L0800C46C
+.Lkey_rate:
+    subs r1, r0, #BLE_RATE0_CODE            @ r1 = rate code (a code below 0x99 wraps to a large number)
+    cmp r1, #3
+    bhi 1f                                  @ not a rate code: a key of the meter
+    adds r1, r1, #1
+    ldr r2, =ble_rate_link
+    strb r1, [r2]                           @ IMP-55: the link rate, code + 1 (one byte, read by the TIM2 interrupt through
+                                            @ ble_rate_code; ble_rate_tick restarts a count above the new period).  The
+                                            @ saved ble_rate, page bt, GET and EEPROM 0x015 are untouched; the next load of
+                                            @ the saved rate (start, wake) and every action on page bt clear it
     b .L0800C46C
 .Lkey_bad:
     ldr r0, =xd_bad_frames
