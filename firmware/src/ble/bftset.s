@@ -33,7 +33,7 @@
 @     0x01A LCD contrast          10..17  lcd_contrast       (lcd_init inside save)   fn_08015B54      (page 4)
 @     0x01B VA burden "bd"        0..1    set_va_bd_edit     -                        fn_08016190      (page 11; its save
 @                                                            copies the edit buffer to set_va_bd)
-@     0x01E buzzer on             0..1    set_buzzer_on      -                        fn_08015A74      (page 3)
+@     0x01E buzzer setting        0..2    set_buzzer_on      -                        fn_08015A74      (page 3)
 @     0x020 bit field             0..31   set_relp, log_trig, set_clk12, set_hunt_on, then set_b20_store (below)
 @     0x021 continuity hold       0..3    set_bh_code        -                        set_bh_edit      (page bH)
 @     0x022 logging change thr.   1..255  log_ch_thr         -                        set_ch_edit      (page Ch)
@@ -103,7 +103,7 @@ bfs_tab:
     BFS_ENTRY 0x017, 0,   100, 0,   0,             0, pwr_bl_setting,    pwr_bl_setting,   pwr_bl_restart,  set_bl_store
     BFS_ENTRY 0x01A, 10,  17,  0,   0,             0, lcd_contrast,      lcd_contrast,     0,               fn_08015B54
     BFS_ENTRY 0x01B, 0,   1,   0,   0,             0, bfs_va_bd,         bfs_va_bd_edit,   0,               fn_08016190
-    BFS_ENTRY 0x01E, 0,   1,   0,   0,             0, bfs_buzzer_on,     bfs_buzzer_on,    0,               fn_08015A74
+    BFS_ENTRY 0x01E, 0,   2,   0,   0,             0, bfs_buzzer_on,     bfs_buzzer_on,    0,               fn_08015A74   @ 2 qUiEt (IMP-54)
     BFS_ENTRY 0x020, 0,   31,  0,   0,             BFS_KIND_B20, 0,      0,                0,               0
     BFS_ENTRY 0x021, 0,   3,   0,   0,             0, set_bh_code,       set_bh_code,      0,               set_bh_edit
     BFS_ENTRY 0x022, 1,   255, 0,   0,             0, log_ch_thr,        log_ch_thr,       0,               set_ch_edit

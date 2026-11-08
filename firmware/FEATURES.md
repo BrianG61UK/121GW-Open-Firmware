@@ -597,6 +597,15 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   (`blcmd_bt_note_read`, `sys/main.s` sys_bt_note) and calls blcmd_ble_on at the start. No EEPROM, flash or
   calibration access. An older bootloader leaves no note: the start is as before.
 
+### 2.28 Buzzer setting qUiEt (implemented, IMP-54, F-1.24; GitHub issue 28)
+- Reason (GitHub issue 28): with `b-OFF` the diode beeps were silent together with the keys (OF-63); a user wanted the
+  keys silent and the diode beeps sounding.
+- What it does: SETUP page 3 has a third value `qUiEt`: the key beeps silent; the diode double beep and contact chirp,
+  the diode short tone, the auto-hold capture beep, the limit test verdicts, the auto power-off warning and the
+  power-off beep sound.  `b-On` and `b-OFF` are unchanged.  Continuity and the safety warnings always sound.
+- How: DESIGN.md IMP-54 (a class with each beep, two gates).  The same EEPROM byte 0x01E (value 2); calibration, serial
+  and options untouched.  Bluetooth setting id 0x01E 0..2; the companion offers `quiet` for F-1.24 and newer.
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |

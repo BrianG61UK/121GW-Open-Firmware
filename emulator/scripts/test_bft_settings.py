@@ -57,7 +57,7 @@ SPEC = [
     (0x017, 'backlight auto-off', 'pwr_bl_setting', 0, 0, 100, [5, 100, 0], 20, None, 0),
     (0x01A, 'LCD contrast', 0x20000237, 0, 10, 17, [16, 10, 17, 14], 4, None, 14),
     (0x01B, 'VA burden bd', 0x200080A8, 0, 0, 1, [1, 0], 11, 15, 0),
-    (0x01E, 'buzzer', 0x20008078, 0, 0, 1, [0, 1], 3, None, 1),
+    (0x01E, 'buzzer', 0x20008078, 0, 0, 2, [0, 2, 1], 3, None, 1),   # 2 qUiEt (F-1.24, IMP-54)
     (0x020, 'REL / trigger / clock / anti-hunting', None, 0, 0, 31, [0x1B, 0x04, 0x15, 0x00], None, None, 0),
     (0x021, 'continuity hold', 'set_bh_code', 0, 0, 3, [2, 3, 0], 26, None, 0),
     (0x022, 'change threshold', 'log_ch_thr', 0, 1, 255, [7, 255, 1], 31, None, 1),

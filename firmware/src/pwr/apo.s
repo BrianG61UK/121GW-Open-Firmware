@@ -98,7 +98,7 @@ FUNC pwr_apo_second
     ldrb r0, [r0]
     cbz r0, .Lpas_done
     mov r0, #PWR_APO_BEEP_TICKS
-    bl fn_0800EEA8                          @ 0x08024D0E; OF-63: gated by the buzzer setting (v2.05 pe7_on_with_timeout)
+    bl bzb_func_pulse                       @ 0x08024D0E; OF-63 gated (v2.05 pe7_on_with_timeout); IMP-54: sounds with qUiEt
     ldr r1, =v_200080E9
     ldrb r0, [r1]
     subs r0, r0, #1

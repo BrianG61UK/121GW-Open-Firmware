@@ -184,6 +184,10 @@ These checks confirm on hardware what the emulator cannot.
 41. Bluetooth after an update (F-1.22 with bootloader B-1.14, IMP-53; verified working on a meter 2026-11-07: B-1.14 installed by B-1.13, then the F-1.22 release build sent over Bluetooth, the meter came back with Bluetooth on without a key): a release build (BLE_AT_POWERUP 0) and B-1.14
    installed; update the firmware with the companion: after the restart Bluetooth is on and the companion confirms the
    update without a key.  Switch off and on: Bluetooth stays off (as before).
+42. Buzzer qUiEt (F-1.24, IMP-54; GitHub issue 28): on `SEt` hold SETUP, SETUP twice to page 3; hold SETUP, REL steps
+   `b-On` -> `b-OFF` -> `qUiEt` -> `b-On`; save `qUiEt`.  Keys (RANGE, HOLD, REL) are silent; DIODE: a 0.6 V diode gives
+   the double beep, shorted probes the tone; auto-hold captures with a beep; continuity still beeps.  Switch off and on:
+   still `qUiEt`.  Back to `b-On`: the keys beep again.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

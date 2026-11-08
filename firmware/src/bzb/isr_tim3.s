@@ -21,7 +21,8 @@
 @ Clobbers : r0-r3, r12 (stacked by the exception entry)
 @ Context  : IRQ29, priority 0x50 (preemption 1); preempts sys_tim2_isr and main
 @ RAM      : writes 0x200080CF = 1 (1 ms flag), 0x2000022E (window counter, u16), 0x20007FB4, 0x20008079,
-@            0x2000807A; reads 0x2000803A (power-off pending stops the countdown), 0x20007FB6, 0x20008078;
+@            0x2000807A; reads 0x2000803A (power-off pending stops the countdown), 0x20007FB6, 0x20008078, bzb_class
+@            (IMP-54: with the setting qUiEt only the phases of a measurement pattern sound);
 @            production: hy_restart_ticks (HY) decremented while not 0 (this handler is its only decrementer)
 @ Spec     : DESIGN.md 3.4 (IRQ29 row), 4.5, 6.4
 @ Deviation: IMP-06 (production: the wait of the HY3131 counter restart, v2.05 delay(10000) 0x0800BFCE, is counted
@@ -78,8 +79,15 @@ FUNC bzb_tim3_isr
     ldr r2, =v_20008079
     strb r0, [r2]                           @ buzzer on (0x080247C6)
     ldr r0, =v_20008078
+    ldrb r0, [r0]                           @ r0 = buzzer setting
+    cmp r0, #1
+    beq .Lt3_sound                          @ b-On: every phase sounds
+    cmp r0, #2
+    bne .Lt3_done                           @ b-OFF: silent phase
+    ldr r0, =bzb_class
     ldrb r0, [r0]
-    cbz r0, .Lt3_done                       @ buzzer setting off: silent phase
+    cbz r0, .Lt3_done                       @ qUiEt (IMP-54): the phases of a key pattern stay silent
+.Lt3_sound:
     movs r0, #BZB_PE7
     ldr r2, =(GPIOE_BASE + GPIO_BSRRL)
     strh r0, [r2]                           @ PE7 high (0x080247D4)

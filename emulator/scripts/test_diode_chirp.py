@@ -3,8 +3,9 @@ mres/diode.s at 0x08007EF6; SETUP page CHIrP, item 42; EEPROM 0x02C).  Idea: Git
 
     python -I emulator/scripts/test_diode_chirp.py [image]                default firmware/build/EEVBlog.bin
 
-The double beep of DIODE is fn_0800EE6C (v2.05's "refused" pattern); every call of it is counted (a code hook on its
-address from build/121gw.map), per phase of a probe sequence on the 3 V range: leads open at the start, a 0.60 V diode,
+The double beep of DIODE is v2.05's "refused" pattern, fn_0800EE6C, and since IMP-54 (F-1.24) its measurement form
+bzb_func_double (it sounds with the buzzer setting qUiEt); every call of the one the image has is counted (a code hook
+on its address from build/121gw.map), per phase of a probe sequence on the 3 V range: leads open at the start, a 0.60 V diode,
 lifted, the diode again, a drift to 0.75 V, a 40 ms bounce, a short, the diode again.  A phase lasts 2 s, longer than
 v2.05's chirp lockout (100 TIM2 ticks, about 1 s), so each phase shows what its own change does.
   C1 off (EEPROM 0x02C = 0, the default): v2.05's jump chirp, a beep on every change of more than 1000 counts; the code
@@ -21,6 +22,7 @@ RUN LIMIT: 1 run of this script (3 boots).
 The helpers are those of test_backlight_timer.py.
 """
 import os
+import re
 import sys
 
 sys.dont_write_bytecode = True                       # keep the tree free of __pycache__
@@ -50,7 +52,10 @@ ON = [0, 1, 0, 1, 0, 0, 0, 1]
 
 def boot(image, chirp):
     e = T.make(image, {EE_DIAL5_MODE: 11, EE_CHIRP: chirp})
-    addr = T.symbol(os.path.join(os.path.dirname(os.path.abspath(image)), '121gw.map'), 'fn_0800EE6C')
+    mp = os.path.join(os.path.dirname(os.path.abspath(image)), '121gw.map')
+    with open(mp) as f:
+        name = 'bzb_func_double' if re.search(r'\sbzb_func_double$', f.read(), re.M) else 'fn_0800EE6C'
+    addr = T.symbol(mp, name)
     e.calls = [0]
 
     def hook(uc, address, size, user):

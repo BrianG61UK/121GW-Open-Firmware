@@ -85,7 +85,7 @@ FUNC mres_chirp_mean
     strb r0, [r4, #CS_LATCHED]              @ latched
     movs r0, #0
     strb r0, [r4, #CS_IN]
-    bl fn_0800EE6C                          @ the double beep (v2.05's chirp; OF-63: gated by the buzzer setting)
+    bl bzb_func_double                      @ the double beep (v2.05's chirp; OF-63 gated, IMP-54: sounds with qUiEt)
     b .Lcm_done
 .Lcm_away:
     ldr r4, =chirp_state

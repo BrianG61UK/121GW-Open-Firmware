@@ -307,11 +307,11 @@ FUNC lt_tick
     beq .Ltk_ret                            @ the first verdict: no beep
     cmp r4, #LT_V_PASS
     bne 6f
-    bl fn_0800EE50                          @ back within the limits: accept beep
+    bl bzb_func_accept                      @ back within the limits: accept beep (IMP-54: a measurement beep)
     b .Ltk_ret
 6:  cmp r5, #LT_V_PASS
     bne .Ltk_ret                            @ HI <-> Lo: no new beep
-    bl fn_0800EE6C                          @ out of the limits: refusal pattern
+    bl bzb_func_double                      @ out of the limits: refusal pattern (IMP-54: a measurement beep)
 .Ltk_ret:
     pop {r4, r5, r6, pc}
 ENDFUNC lt_tick

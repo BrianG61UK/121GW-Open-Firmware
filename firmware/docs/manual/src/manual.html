@@ -373,7 +373,8 @@ functions.</p>
 <p class="where"><b>Where:</b> diode · settings page <span class="lcd">CHIrP</span> (sub display), value on the main display</p>
 <p>With <span class="lcd">on</span> the diode double beep sounds once per diode contact, and not while it stays
 connected, with open probes, a reversed diode or when you lift the probes. <span class="lcd">oFF</span> (the default)
-keeps the beep as before. With the buzzer page set to <span class="lcd">b-oFF</span> the chirp is silent too.
+keeps the beep as before. With the buzzer page set to <span class="lcd">b-oFF</span> the chirp is silent too; with
+<span class="lcd">qUiEt</span> it sounds while the keys stay silent.
 Idea: GitHub user Cecilius.</p>
 </div><div class="pics"><figure><img src="../img/setup_DIODE_42_CH1rP.png" alt=""><figcaption>CHIrP, off.</figcaption></figure></div></div>
 
@@ -425,8 +426,10 @@ to ±10 %), hold SETUP to save.</p>
 </div><div class="pics"><figure><img src="../img/setup_01_BAT6_0_edit.png" alt=""><figcaption>Adjusting the battery reading.</figcaption></figure></div></div>
 
 <h3 id="f-quiet">Quiet mode that is really quiet</h3>
-<p>With the buzzer off (settings page <span class="lcd">b-OFF</span>) the key beeps and info beeps are silent. The
-continuity beep and the safety warnings (wrong socket, high voltage) still sound.</p>
+<p>The buzzer page has three settings. <span class="lcd">b-On</span>: every beep. <span class="lcd">b-OFF</span>: the key
+beeps and info beeps are silent. <span class="lcd">qUiEt</span>: the keys are silent, but the meter still beeps for what
+it measures: the diode beeps, the auto-hold capture, the limit test, the auto power-off warning. In all three the
+continuity beep and the safety warnings (wrong socket, high voltage) sound.</p>
 
 <h3 id="f-fast">Faster measuring</h3>
 <p>The display updates more often than with the original firmware. In tests: currents, continuity and diode every
@@ -532,7 +535,7 @@ menu is locked while logging and while you look at stored readings.</p>
 <tr><th colspan="4">Meter pages (hold SETUP on SEt)</th></tr>
 <tr><td><span class="lcd">BAT5.0</span></td><td>Battery voltage, trim</td><td>all</td><td><a class="pg" href="#f-bat"></a></td></tr>
 <tr><td><span class="lcd">APO.30</span></td><td>Auto power-off: off, 1, 15, 30, 60 min</td><td>all</td><td></td></tr>
-<tr><td><span class="lcd">b-On</span></td><td>Buzzer on / off</td><td>all</td><td><a class="pg" href="#f-quiet"></a></td></tr>
+<tr><td><span class="lcd">b-On</span></td><td>Buzzer on / off / quiet keys (qUiEt)</td><td>all</td><td><a class="pg" href="#f-quiet"></a></td></tr>
 <tr><td><span class="lcd">Lcd-4</span></td><td>Display contrast</td><td>all</td><td></td></tr>
 <tr><td><span class="lcd">2026</span>, <span class="lcd">11-05</span>, <span class="lcd">14-30</span></td><td>Year; month and day; hour and minute</td><td>all</td><td></td></tr>
 <tr><td><span class="lcd">00000</span></td><td>Serial number (0–99999)</td><td>all</td><td><a class="pg" href="#serial"></a></td></tr>

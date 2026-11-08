@@ -149,7 +149,7 @@ FUNC fn_08007E84
     movs r0, #100                      @ 0x08007F58
     ldr r1, =v_200080B4                @ 0x08007F5A pool 0x080087DC = 0x200080B4
     strb r0, [r1, #0]                  @ 0x08007F5E
-    bl fn_0800EE6C                     @ 0x08007F60
+    bl bzb_func_double                 @ 0x08007F60 (v2.05 fn_0800EE6C; IMP-54: a measurement beep, sounds with qUiEt)
 .L08007F64:                              @ reached from 0x08007F1E b, 0x08007F42 bge, 0x08007F4C bne
     @ 0x2000805D = 1: new value
     movs r0, #1                        @ 0x08007F64
@@ -187,8 +187,9 @@ FUNC fn_08007E84
     cmp r0, #2
     blo .Ldi_done                           @ not yet confirmed
     mov.w r0, #500
-    bl fn_0800EEA8                          @ K = 2 confirmed: short-circuit tone, 500 TIM3 updates (v2.05 0x08007F0C);
-                                            @ OF-63: gated by the buzzer setting (v2.05 pe7_on_with_timeout)
+    bl bzb_func_pulse                       @ K = 2 confirmed: short-circuit tone, 500 TIM3 updates (v2.05 0x08007F0C);
+                                            @ OF-63: gated by the buzzer setting (v2.05 pe7_on_with_timeout);
+                                            @ IMP-54: a measurement beep, sounds with qUiEt
     b .Ldi_done
 .Ldi_out:
     movs r0, #0

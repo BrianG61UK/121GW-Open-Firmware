@@ -361,9 +361,19 @@ between `c` and `F`, hold **SETUP** to save. The same setting switches the TEMP 
 
 ## Buzzer off (original setting, both builds)
 
-SETUP page 3 shows `b-On` or `b-OFF`. With `b-OFF` the key beeps, the diode short tone, the auto-hold capture beep, the
-auto power-off warning and the power-off beep are silent. Continuity still beeps (it is a continuity tester), and so do
-the wrong-jack and high-voltage warnings. (The original also beeped for the diode, auto-hold and power-off with `b-OFF`.)
+SETUP page 3 (a meter page: on `SEt` hold SETUP, then SETUP twice) shows `b-On`, `b-OFF` or `qUiEt`. Hold SETUP until
+the value blinks, REL or PEAK to change, hold SETUP to save.
+
+- `b-On`: every beep.
+- `b-OFF`: the key beeps, the diode beeps (the double beep and the short tone), the auto-hold capture beep, the limit
+  test beeps, the auto power-off warning and the power-off beep are silent.
+- `qUiEt` (fast build F-1.24 on, GitHub issue 28): the keys are silent, the meter still beeps for what it measures: the
+  diode double beep (and the contact chirp), the diode short tone, the auto-hold capture, the limit test verdicts, the auto
+  power-off warning and the power-off beep.
+
+Continuity always beeps (it is a continuity tester), and so do the wrong-jack and high-voltage warnings. (The original
+also beeped for the diode short tone, auto-hold and power-off with `b-OFF`; `qUiEt` is close to that, with the diode
+double beep added.) A firmware older than F-1.24 reads a saved `qUiEt` as `b-OFF`.
 
 ## Faster responses without a setting
 

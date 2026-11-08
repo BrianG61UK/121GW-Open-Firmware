@@ -452,7 +452,8 @@ ENDFUNC fn_08011400
 @ Clobbers : r0-r3, r12, flags (AAPCS)
 @ Context  : main only
 @ RAM      : writes set_buzzer_on
-@ Spec     : EEPROM_MAP.md 4: EEPROM 0x01E: 1 gives 1, anything else 0
+@ Spec     : EEPROM_MAP.md 4: EEPROM 0x01E: 1 gives 1 (b-On), 2 gives 2 (qUiEt, IMP-54), anything else 0 (b-OFF);
+@            an older firmware reads the 2 as 0, silent, never louder than asked
 @ -----------------------------------------------------------------------------
 FUNC fn_08011410
     push {r4, lr}                           @ 08011410
@@ -460,11 +461,14 @@ FUNC fn_08011410
     bl eeprom_read_u8                       @ 08011414  read EEPROM byte at offset r0 [r0=30 (0x1E)]
     movs r4, r0                             @ 08011418
     uxtb r4, r4                             @ 0801141A
+    cmp r4, #0x2                            @ IMP-54: qUiEt kept as it is
+    beq .Lbz_load_store
     cmp r4, #0x1                            @ 0801141C  compare r4 with 1
     bne .L0801142A                          @ 0801141E  if r4 != 1
-    movs r0, #0x1                           @ 08011420
+.Lbz_load_store:
+    mov r0, r4                              @ 08011420  1 (v2.05 movs r0, #1) or 2
     ldr.w r1, =set_buzzer_on                @ 08011422
-    strb r0, [r1, #0x0]                     @ 08011426  set_buzzer_on = 1
+    strb r0, [r1, #0x0]                     @ 08011426  set_buzzer_on = 1 or 2
     b .L08011432                            @ 08011428
 .L0801142A:  @ reached from 0801141E bne (r4 != 1)
     movs r0, #0x0                           @ 0801142A
@@ -478,7 +482,7 @@ ENDFUNC fn_08011410
 @ -----------------------------------------------------------------------------
 @ fn_08011438 - save the buzzer enable to the EEPROM
 @ Replaces : 0x08011438 FUN_08011438 (v2.05)
-@ In       : r0 = 0 or 1
+@ In       : r0 = 0 b-OFF, 1 b-On or 2 qUiEt (IMP-54)
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags (AAPCS)
 @ Context  : main only

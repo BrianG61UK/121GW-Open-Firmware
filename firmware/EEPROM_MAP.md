@@ -148,7 +148,7 @@ Formats: BE = big-endian, written MSB first, one byte program at a time. "Boot" 
 | 0x01A | 1 | u8 | LCD contrast (0x20000237, lcd_init argument at 0x08024B5C..0x08024B62) | 0x0801125C (Boot) | 0x0801129E (FUN_08011294) via FUN_08015B54 0x08015BB2 | SETUP item 4 save (values 10..17, 0x08015B64, 0x08015B8E) | 12..17 kept, else 14 (0x08011264..0x0801127C): a saved 10 or 11 becomes 14 after power-up (DESIGN.md NF-17, switch, default v2.05) | SETTINGS |
 | 0x01B | 1 | u8 | VA "bd" option (0x200080A8) | 0x080113E0 (Boot) | 0x0801140A (FUN_08011400) via FUN_08016190 0x080161AC | SETUP item 11 save in modes 13, 14, 15, 22, 23, 24 | == 1 -> 1 else 0 | SETTINGS |
 | 0x01C..0x01D | 2 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
-| 0x01E | 1 | u8 | buzzer enable (0x20008078) | 0x08011414 (Boot), FUN_0800D190 0x0800D254 | 0x08011442 (FUN_08011438) via FUN_08015A74 0x08015AAA | SETUP item 3 save | == 1 -> 1 else 0 | SETTINGS |
+| 0x01E | 1 | u8 | buzzer enable (0x20008078) | 0x08011414 (Boot), FUN_0800D190 0x0800D254 | 0x08011442 (FUN_08011438) via FUN_08015A74 0x08015AAA | SETUP item 3 save | == 1 -> 1 else 0 (fast build F-1.24 on: 2 -> 2, qUiEt, IMP-54) | SETTINGS |
 | 0x01F | 1 | marker (hardware variant) | 0xA5 after an ACV range-0 calibration through FUN_0800F7B8; RAM 0x20008087 = (byte != 0xA5); flag 1 (byte not 0xA5) applies the second AC correction CORR70 in ACV range 0 (0x080074F8..0x08007506, 0x0800767A); part of cal.bin, so restoring another meter's cal.bin copies its marker; port: the flag is read back after the write (OF-62) | 0x080104C2 (Boot, store 0x08024DF2) | marker_1F_write 0x080104E4 (read-back verified), called at 0x0800F896; calbin_load | gain completion FUN_0800F7B8 in mode 2 range 0 (0x0800F882..0x0800F896) | != 0xA5 -> flag 1 | CAL |
 | 0x020 | 1 | - | never accessed by v2.05; port (production image only): bit 0 REL view, bits 2..1 logging trigger, bit 3 clock, bit 4 CAP anti-hunting, section 4.1 | calbin_save; port: set_relp_load | calbin_load; port: set_b20_store via nvm_write_setting | cal.bin restore; port: SETUP pages rEL, CL and HUnt save | port: 0xFF reads as 0; bits 0, 2..1, 3 and 4 used, other bits kept | RESTORE; SETTINGS in the production image only (4.1) |
 | 0x021 | 1 | - | never accessed by v2.05; port (production image only): continuity hold code, section 4.1 | calbin_save; port: set_bh_load | calbin_load; port: set_bh_edit via nvm_write_setting | cal.bin restore; port: SETUP page bH save | port: 0..3 kept, else 0 (100 ms) | RESTORE; SETTINGS in the production image only (4.1) |
@@ -328,7 +328,7 @@ per range family.
 | 8 | 0x08024E0E FUN_08011340 | 0x012 | 0 | 0, then forced 0 at 0x08024E78 |
 | 9 | 0x08024E12 FUN_08011394 | 0x014 | 0 | 0 unless < 4 |
 | 10 | 0x08024E16 FUN_080113DC | 0x01B | 0 | 0 unless 1 |
-| 11 | 0x08024E1A FUN_08011410 | 0x01E | 0 | 0 unless 1 |
+| 11 | 0x08024E1A FUN_08011410 | 0x01E | 0 | 0 unless 1 (F-1.24 on: or 2) |
 | 12 | 0x08024E1E FUN_08010F4C | 0x001 | 1708 | any value 1..65535 accepted; used only as decimal digits (0x0801B090, 0x0800C53C..0x0800C578, 0x0801F38A..0x0801F3C0) |
 | 13 | 0x08024E22 FUN_08010F8C | 0x003 | 0 | 0 unless < 100000 |
 

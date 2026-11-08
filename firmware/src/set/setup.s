@@ -724,7 +724,8 @@ ENDFUNC fn_08015A22
 @ Context  : main only (fn_080165F4)
 @ RAM      : writes set_buzzer_on, set_redraw
 @ Spec     : analysis/keys_setup.md 4 (SETUP menu)
-@ Note     : Up or down toggles set_buzzer_on; save writes EEPROM 0x01E (fn_08011438).
+@ Note     : Up or down steps set_buzzer_on round b-On (1) -> b-OFF (0) -> qUiEt (2) -> b-On, down the other way
+@            (IMP-54; v2.05 toggled 0 / 1); save writes EEPROM 0x01E (fn_08011438).
 @ -----------------------------------------------------------------------------
 FUNC fn_08015A74
     push {r4, lr}                           @ 08015A74
@@ -738,17 +739,28 @@ FUNC fn_08015A74
 .L08015A84:  @ reached from 08015A7C beq (r4 == 1)
     ldr.w r0, =set_buzzer_on                @ 08015A84
     ldrb r0, [r0, #0x0]                     @ 08015A88  r0 = set_buzzer_on
-    teq r0, #0x1                            @ 08015A8A  test set_buzzer_on ^ 1
-    beq .L08015A9A                          @ 08015A8E  if set_buzzer_on == 1
-    movs r0, #0x1                           @ 08015A90
-    ldr.w r1, =set_buzzer_on                @ 08015A92
-    strb r0, [r1, #0x0]                     @ 08015A96  set_buzzer_on = 1
+    @ IMP-54: three values in the order b-On (1), b-OFF (0), qUiEt (2); r1 = the next one, r4 = 1 up, 2 down
+    movs r1, #0x1                           @ any other value: b-On
+    cmp r4, #0x1
+    bne .Lbz_down
+    cmp r0, #0x1
+    it eq
+    moveq r1, #0x0                          @ up: b-On -> b-OFF
+    cmp r0, #0x0
+    it eq
+    moveq r1, #0x2                          @ up: b-OFF -> qUiEt (qUiEt -> b-On)
+    b .Lbz_store
+.Lbz_down:
+    cmp r0, #0x1
+    it eq
+    moveq r1, #0x2                          @ down: b-On -> qUiEt
+    cmp r0, #0x2
+    it eq
+    moveq r1, #0x0                          @ down: qUiEt -> b-OFF (b-OFF -> b-On)
+.Lbz_store:
+    ldr.w r0, =set_buzzer_on                @ 08015A92
+    strb r1, [r0, #0x0]                     @ 08015A96  set_buzzer_on = next
     b .L08015AAE                            @ 08015A98
-.L08015A9A:  @ reached from 08015A8E beq (set_buzzer_on == 1)
-    movs r0, #0x0                           @ 08015A9A
-    ldr.w r1, =set_buzzer_on                @ 08015A9C
-    strb r0, [r1, #0x0]                     @ 08015AA0  set_buzzer_on = 0
-    b .L08015AAE                            @ 08015AA2
 .L08015AA4:  @ reached from 08015A82 bne (r4 != 2)
     ldr.w r0, =set_buzzer_on                @ 08015AA4
     ldrb r0, [r0, #0x0]                     @ 08015AA8  r0 = set_buzzer_on
@@ -3167,7 +3179,7 @@ ENDFUNC fn_08018460
     .ltorg
 
 @ -----------------------------------------------------------------------------
-@ fn_08018490 - draw the buzzer state, "b-On " or "b-OFF" (item 3)
+@ fn_08018490 - draw the buzzer state, "b-On ", "b-OFF" or "qUiEt" (item 3; qUiEt IMP-54)
 @ Replaces : 0x08018490 FUN_08018490 (v2.05)
 @ In       : r0 = set_buzzer_on
 @ Out      : -
@@ -3184,7 +3196,13 @@ FUNC fn_08018490
     uxtb r4, r4                             @ 0801849A
     cmp r4, #0x0                            @ 0801849C  compare r4 with 0
     beq .L080184AC                          @ 0801849E  if r4 == 0
-    ldr.w r1, =v205_tab_080291C8            @ 080184A0
+    cmp r4, #0x2
+    bne 1f
+    ldr.w r1, =set_txt_quiet                @ IMP-54: qUiEt
+    movs r0, #0x1
+    bl lcd_draw_5char
+    b .L080184B6
+1:  ldr.w r1, =v205_tab_080291C8            @ 080184A0
     movs r0, #0x1                           @ 080184A4
     bl lcd_draw_5char                       @ 080184A6  draw 5 characters, r0 = 0 main (positions 5..9) or 1 secondary (0..4), r1 = text [r0=1]
     b .L080184B6                            @ 080184AA
@@ -3678,6 +3696,10 @@ ENDFUNC fn_0801871C
     .ltorg
 
     .section .rodata.set, "a", %progbits
+@ set_txt_quiet: the buzzer page's third value (IMP-54, GitHub issue 28): q U i E t (font a..z / A..Z of lcd/font.s;
+@ a capital I would draw as the right-hand segments, like a 1)
+set_txt_quiet:
+    .ascii "qUiEt"
     .balign 4
 @ IMP-05: continuity threshold codes (EEPROM 0x014, set_cont_code).  Display order DN 1, DN 5, DN 10, DN 30,
 @ DN 50, DN100, DN200, DN300, UP 1, UP 5, UP 10, UP 30, UP 50, UP100, UP200, UP300 (analysis/autorange_and_
