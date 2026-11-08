@@ -17,11 +17,12 @@ import sys
 import threading
 import time
 
-from . import frames
+from . import frames, oshold
 
 SERVICE = '0bd51666-e7cb-469b-8e4d-2742f1ba77cc'
 CHAR = 'e7add780-b042-4876-aae1-112855353cc1'
 SCAN_SECONDS = 6.0
+HELD_CHECK_AFTER = 2                    # searches without the meter before asking whether the system holds it
 STOP_NOTIFY_WAIT = 2.0                  # seconds for unsubscribing the notifications before a disconnect (issue 23)
 RETRY_SECONDS = 3.0
 WINDOWS_HINT_AFTER = 2                 # searches in a row without the meter before the Windows hint (GitHub issue 23)
@@ -140,6 +141,7 @@ class MeterLink:
         self.state, self.detail = 'idle', ''
         self.device = None                 # (address, name) of the connected or last connected meter
         self.found = []                    # [(address, name, rssi)] of the last scan
+        self.held = None                   # the last check whether the system still holds the meter (oshold.py)
         self.want = False                  # keep connected (reconnect after a loss)
         self.address = None                # meter chosen by the user; None = the first one found
         self._client = None
@@ -210,6 +212,14 @@ class MeterLink:
         if was == 'connected':
             self.stats.disconnect('disconnected by the user', user=True)
         self._set('idle')
+        if was == 'connected' and self.device:            # does the system still hold the meter? (issue 23)
+            asyncio.ensure_future(self._after_disconnect(self.device[0]))
+
+    async def _after_disconnect(self, address):
+        held, released, hint = await oshold.check_after_disconnect(address, SERVICE)
+        self.held = {'held': held, 'released': released, 'hint': hint, 'at': time.time()}
+        if hint and not self.want:                       # not when a new Connect is already searching
+            self._set('idle', hint)
 
     async def _end_task(self):
         """Cancel the connection task and wait until it has ended; it closes its own client (_keep's finally), so no
@@ -238,6 +248,7 @@ class MeterLink:
                 await asyncio.wait_for(client.stop_notify(CHAR), STOP_NOTIFY_WAIT)
         except Exception:                                # noqa: BLE001 - gone, not subscribed, or slow: disconnect anyway
             pass
+        oshold.prepare_close(client)                     # Windows: maintain_connection False (oshold.py)
         try:
             await client.disconnect()
         except Exception:
@@ -268,7 +279,16 @@ class MeterLink:
             pick = [f for f in found if self.address is None or f[0] == self.address]
             if not pick:
                 misses += 1
-                self._set('lost' if lost else 'scanning', not_found_text(misses))
+                text = not_found_text(misses)
+                if misses == HELD_CHECK_AFTER and self.device:   # not advertising: does the system hold it? (issue 23)
+                    state = await oshold.held(self.device[0], SERVICE)
+                    if state is True and await oshold.release(self.device[0]):
+                        text = 'the system still held the meter; BlueZ was asked to release it (searching again)'
+                    elif state is True:
+                        key = 'win32' if sys.platform == 'win32' else 'darwin' if sys.platform == 'darwin' else 'linux'
+                        text = oshold.HINT[key]
+                    self.held = {'held': state, 'released': False, 'hint': text if state else None, 'at': time.time()}
+                self._set('lost' if lost else 'scanning', text)
                 await asyncio.sleep(RETRY_SECONDS)
                 continue
             address, name, rssi = pick[0]

@@ -137,6 +137,12 @@ def link_details(app):
         from .app import RATE_PER_S
         w('reading rate     %d a second, set by the companion for this link (automatic, F-1.25; at most %d)' % (
             RATE_PER_S[ar['code']], RATE_PER_S[ar['ceiling']]))
+    hd = getattr(app.link, 'held', None)
+    if hd:
+        w('system hold      %s%s%s' % (
+            {True: 'the system still held the meter', False: 'released by the system', None: 'cannot be checked here'}[hd['held']],
+            '; BlueZ was asked to release it' if hd.get('released') else '',
+            time.strftime(' (checked %H:%M:%S)', time.localtime(hd['at']))))
     hint = app.link_hint()
     if hint:
         w('link note        ' + hint)
