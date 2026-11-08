@@ -10,7 +10,7 @@
    yellow only where you act or where something is lit, and the reading drawn as the meter's own LCD, unlit segments and
    all (gold on dark glass in the dark theme, black on light glass in the light theme).  Labels are sentence case; every
    number is mono with tabular figures.  System fonts only: the program works offline and looks native on each system.
-   The window opens at 1180 x 760 and can be made as small as 860 x 560; the layout follows its width and height. */
+   The page is laid out at one size, 1180 x 732 (the window's opening size), and scaled as a whole to the window (fitZoom). */
 :root {
   --body: #121416; --panel: #1a1d20; --panel-2: #212529; --line: #2b3035; --line-2: #3a4047;
   --ink: #eef0f2; --ink-2: #a7aeb6; --ink-3: #6b737c;
@@ -48,6 +48,7 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
+html { overflow: hidden; background: var(--body); }
 body { background: var(--body); color: var(--ink); font: 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased;
        display: grid; grid-template-columns: 76px minmax(0, 1fr); grid-template-rows: 60px auto minmax(0, 1fr) 30px;
        overflow: hidden; user-select: none; }
@@ -167,6 +168,7 @@ main { grid-column: 2; min-height: 0; min-width: 0; position: relative; }
 .btns { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .path { color: var(--ink-3); font-size: 12.5px; overflow-wrap: anywhere; margin-top: 8px; min-height: 0; }
 .path:empty { display: none; }
+.oneline { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: text; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .field { display: flex; gap: 8px; margin: 6px 0 4px; }
 .field input { flex: 1; }
@@ -184,20 +186,22 @@ main { grid-column: 2; min-height: 0; min-width: 0; position: relative; }
 .flags .mode { margin-left: auto; font: 700 11px/1 var(--sans); letter-spacing: .06em; color: var(--seg); opacity: .75; text-transform: uppercase; }
 .flags .age { font: 700 11px/1 var(--sans); letter-spacing: .04em; color: var(--seg); }
 .flags .warn { background: var(--seg); color: var(--lcd); }
-.value { display: flex; align-items: flex-end; gap: 16px; margin: 10px 0 4px; filter: drop-shadow(var(--lcd-glow)); min-width: 0; }
-svg.digits { height: clamp(64px, min(9.5vw, 17vh), 170px); width: auto; max-width: 100%; flex: 0 1 auto; display: block; }
-.unit { font: 300 clamp(26px, min(3.4vw, 6vh), 60px)/1 var(--sans); color: var(--seg); padding-bottom: 6px; min-width: 2ch; white-space: nowrap; }
-.sub { display: flex; align-items: flex-end; gap: 12px; justify-content: flex-end; min-height: 30px; filter: drop-shadow(var(--lcd-glow)); }
-.sub .lab { font: 700 10.5px/1 var(--sans); color: var(--seg); opacity: .7; margin-right: auto; align-self: center; letter-spacing: .06em; text-transform: uppercase; }
-svg.subdig { height: clamp(26px, min(2.8vw, 5vh), 48px); width: auto; display: block; }
+.value { display: flex; align-items: flex-end; gap: 16px; margin: 8px 0 0; filter: drop-shadow(var(--lcd-glow)); min-width: 0; }
+svg.digits { height: 112px; width: auto; max-width: 100%; flex: 0 1 auto; display: block; }
+.unit { font: 300 40px/1 var(--sans); color: var(--seg); padding-bottom: 6px; min-width: 2ch; white-space: nowrap; }
+.sub { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
+.subv { display: flex; align-items: flex-end; gap: 8px; }
+.sub .lab { font: 700 10.5px/1 var(--sans); color: var(--seg); opacity: .7; letter-spacing: .06em; text-transform: uppercase; }
+svg.subdig { height: 36px; width: auto; display: block; }
 .sub .unit2 { font: 500 18px/1 var(--sans); color: var(--seg); padding-bottom: 2px; min-width: 1ch; }
-.bar { display: grid; grid-template-columns: 14px repeat(26, minmax(0, 1fr)); gap: 3px; margin-top: 12px; align-items: end; }
+.barrow { display: flex; align-items: flex-end; gap: 12px; margin-top: 10px; }
+.bar { flex: 1; min-width: 0; display: grid; grid-template-columns: 14px repeat(26, minmax(0, 1fr)); gap: 3px; align-items: end; }
 .bar i { height: 12px; border-radius: 2px; background: var(--seg-off); }
 .bar i.on { background: var(--seg); }
 .bar i:nth-child(5n+2) { height: 16px; }
 .bar .sign { background: none; height: auto; font: 700 14px/12px var(--mono); color: var(--seg); text-align: center; }
-.scale { margin-top: 6px; text-align: right; font: 600 10.5px/12px var(--mono); color: var(--seg); opacity: .6; min-height: 12px; }
-.stale .value, .stale .sub, .stale .bar { opacity: .3; }
+.scale { text-align: right; font: 600 10.5px/12px var(--mono); color: var(--seg); opacity: .6; white-space: nowrap; flex: none; }
+.stale .value, .stale .barrow { opacity: .3; }
 svg .on { fill: var(--seg); } svg .off { fill: var(--seg-off); }
 svg.digits.blank .on { opacity: .3; }                  /* no reading: the dashes dim */
 svg.digits.ol .on { opacity: .8; }
@@ -213,10 +217,10 @@ svg.digits.ol .on { opacity: .8; }
 .keynote { display: flex; gap: 8px; align-items: center; padding: 0 18px 14px; margin-top: -4px; }
 .keynote:empty { display: none; }
 /* ---- LIVE: derived values */
-.derived { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-top: 16px; }
-.derived .card > .body { padding-top: 6px; }
-.dv { font: 400 24px/1.25 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
-.derived .seg { margin-top: 10px; }
+.derived { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.derived .card > .body { padding-top: 8px; }
+.dv { font: 400 20px/1 var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.derived .seg { margin-top: 0; }
 .verdict { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 99px; font: 700 11px/1 var(--sans);
            letter-spacing: .05em; background: var(--panel-2); color: var(--ink-3); }
 .verdict i { display: none; }
@@ -225,8 +229,11 @@ svg.digits.ol .on { opacity: .8; }
 .lim { display: flex; gap: 6px; margin-top: 8px; }
 .lim input { width: 0; flex: 1; height: 30px; text-align: right; }
 /* ---- LIVE: trend */
-.trendcard { margin-top: 16px; }
-.mini { position: relative; height: clamp(140px, 26vh, 340px); margin: 12px 14px 14px; border-radius: 10px; background: var(--panel-2); overflow: hidden; }
+/* LIVE fills the page: the trend takes the height that is left */
+#v-live > .grid { min-height: 100%; align-items: stretch; grid-template-columns: minmax(0, 1fr) clamp(220px, 24vw, 360px); }
+.livecol { gap: 16px; }
+.trendcard { flex: 1 1 0; min-height: 130px; display: flex; flex-direction: column; }
+.mini { position: relative; flex: 1; min-height: 60px; margin: 12px 14px 14px; border-radius: 10px; background: var(--panel-2); overflow: hidden; }
 canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .recline { display: flex; align-items: center; gap: 10px; }
 .recdot { width: 9px; height: 9px; border-radius: 50%; background: var(--line-2); display: block; flex: none; }
@@ -234,7 +241,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block
 
 /* ---- SCOPE */
 #v-scope.on { display: flex; flex-direction: column; }
-#v-scope > .card { flex: 1; display: flex; flex-direction: column; min-height: 320px; }
+#v-scope > .card { flex: 1; display: flex; flex-direction: column; min-height: 260px; }
 .tools { display: flex; gap: 16px; align-items: center; padding: 12px 14px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
 .tools .grp { display: flex; gap: 8px; align-items: center; }
 .tools input { width: 10ch; text-align: right; height: 30px; }
@@ -331,22 +338,6 @@ footer { grid-column: 2; display: flex; align-items: center; gap: 16px; padding:
 #msg .warn { margin-right: 8px; height: 18px; }
 footer .r { color: var(--ink-3); white-space: nowrap; }
 /* ---- window sizes */
-@media (max-width: 1240px) { header h1 span { display: none; } }
-@media (max-width: 1000px) { .lamp span { display: none; } .lamp { padding: 0 8px; } .chip { padding: 0 9px; } }
-@media (max-width: 1100px) {
-  .grid { grid-template-columns: minmax(0, 1fr); }
-  .side { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
-  .view { padding: 16px; } .band { margin: 12px 16px 0; } header { padding: 0 16px; } footer { padding: 0 16px; }
-}
-@media (max-width: 960px) {
-  .keys button { font-size: 11.5px; } .keys button small { display: none; }
-  .flags { gap: 8px; } .flags span[data-f] { font-size: 10px; }
-  .lcd { padding: 14px 16px; }
-  th, td { padding-left: 12px; padding-right: 12px; }
-  .cur { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .diag { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-height: 640px) { nav button { height: 50px; } .logo { margin-bottom: 6px; } }
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 10px; border: 2px solid var(--body); }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -394,14 +385,13 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
 <!-- LIVE -->
 <section class="view" id="v-live">
   <div class="grid">
-    <div class="stack" style="gap:0">
+    <div class="stack livecol">
       <div class="card">
         <div class="lcdwrap"><div class="lcd" id="readout">
           <div class="flags" id="flags"><span class="age" id="age"></span><span class="warn" id="olwarn" hidden>Overload</span><span class="mode" id="modename"></span></div>
-          <div class="value"><svg class="digits" id="digits" role="img" aria-label="reading"></svg><span class="unit" id="unit"></span></div>
-          <div class="sub"><span class="lab" id="sublabel"></span><svg class="subdig" id="subval" role="img" aria-label="sub display"></svg><span class="unit2" id="subunit"></span></div>
-          <div class="bar" id="bar"></div>
-          <div class="scale" id="scale"></div>
+          <div class="value"><svg class="digits" id="digits" role="img" aria-label="reading"></svg><span class="unit" id="unit"></span>
+            <div class="sub"><span class="lab" id="sublabel"></span><div class="subv"><svg class="subdig" id="subval" role="img" aria-label="sub display"></svg><span class="unit2" id="subunit"></span></div></div></div>
+          <div class="barrow"><div class="bar" id="bar"></div><div class="scale" id="scale"></div></div>
         </div></div>
         <div class="keys" id="keys">
           <button data-k="RANGE">Range</button><button data-k="HOLD">Hold</button><button data-k="REL">Rel</button>
@@ -411,10 +401,10 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
         <div class="keynote" id="keynote"></div>
       </div>
       <div class="derived">
-        <div class="card"><div class="eng">Relative</div><div class="body"><span class="dv" id="d-rel">—</span><span class="cap">% of the reference</span></div></div>
-        <div class="card"><div class="eng">Loop</div><div class="body"><span class="dv" id="d-loop">—</span>
-          <span class="seg" id="s-loop"><button data-v="4-20">4–20 mA</button><button data-v="0-20">0–20</button></span></div></div>
-        <div class="card"><div class="eng">Temperature</div><div class="body"><span class="dv" id="d-pt">—</span>
+        <div class="card"><div class="eng">Relative<span class="sp"></span><span class="dv" id="d-rel">—</span></div><div class="body"><span class="cap">% of the reference</span></div></div>
+        <div class="card"><div class="eng">Loop mA<span class="sp"></span><span class="dv" id="d-loop">—</span></div><div class="body">
+          <span class="seg" id="s-loop" title="loop current range, mA"><button data-v="4-20">4–20</button><button data-v="0-20">0–20</button></span></div></div>
+        <div class="card"><div class="eng">Temp.<span class="sp"></span><span class="dv" id="d-pt">—</span></div><div class="body">
           <span class="seg" id="s-pt"><button data-v="Pt100">Pt100</button><button data-v="Pt1000">Pt1000</button></span></div></div>
         <div class="card"><div class="eng">Limit<span class="sp"></span><span class="verdict" id="d-verdict"><i></i><span>—</span></span></div>
           <div class="body"><div class="lim"><input id="lim-lo" class="num" placeholder="low" aria-label="limit low" spellcheck="false"><input id="lim-hi" class="num" placeholder="high" aria-label="limit high" spellcheck="false"></div>
@@ -436,7 +426,7 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
       <div class="card"><div class="eng">Recording</div>
         <div class="body">
           <div class="recline"><i class="recdot" id="recdot"></i><span class="big" id="rectime" style="font-size:28px">00:00:00</span></div>
-          <div class="path num" id="recrows"></div>
+          <div class="path num oneline" id="recrows"></div>
           <div class="btns"><button id="rec2" style="flex:1">Record</button></div>
         </div></div>
     </div>
@@ -649,6 +639,26 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
 <footer><span id="msg">Meter on, Bluetooth on (hold PEAK), phone app closed.</span><span class="r num" id="sline"></span></footer>
 <script>
 'use strict';
+// ---------------------------------------------------------------- the page scales as a whole with the window
+// laid out for 1180 x 732 CSS px; the body is zoomed so that this fits the window in both directions, and given the window's
+// size in its own (zoomed) units, so the spare direction is filled by the layout instead of left empty.  LIVE and SCOPE
+// must show whole: when their content is still taller than the page (notices shown above it), the zoom goes down until it
+// fits.  The other pages are lists and scroll.  Called on resize, on a page change and when a notice appears or goes.
+const BASE_W = 1180, BASE_H = 732, FIT_VIEWS = ['v-live', 'v-scope'];
+let zoomNow = 1, bandSig = '';
+function fitZoom() {
+  const W = window.innerWidth, H = window.innerHeight, b = document.body;
+  const apply = z => { b.style.zoom = z; b.style.width = W / z + 'px'; b.style.height = H / z + 'px'; return z; };
+  let z = apply(Math.max(.4, Math.min(2, W / BASE_W, H / BASE_H)));
+  const v = document.querySelector('.view.on');
+  for (let i = 0; v && FIT_VIEWS.includes(v.id) && i < 3; i++) {
+    const over = v.scrollHeight - v.clientHeight;
+    if (over <= 1) break;
+    z = apply(Math.max(.4, H / (H / z + over + 2)));   // 2 px for rounding
+  }
+  zoomNow = z;
+}
+fitZoom();
 const $ = id => document.getElementById(id);
 const h = (tag, a, ...kids) => {
   const e = document.createElement(tag);
@@ -715,7 +725,7 @@ function setView(v) {
   document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
   if (v === 'card' && desk()) { cardSig = ''; send('card_refresh').catch(fail); }
   if (v === 'meter') readSettings();
-  render();
+  fitZoom(); render();
 }
 $('tabs').onclick = e => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); };
 const typing = () => /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement && document.activeElement.tagName);
@@ -843,6 +853,7 @@ function drawDerived(D) {
     const el = $(id); if (document.activeElement !== el && !el.dataset.edited) el.value = v === null || v === undefined ? '' : v;
   }
   $('lim-unit').textContent = L.unit ? 'lo · hi  ' + L.unit : 'lo · hi';
+  $('lim-lo').title = 'low limit' + (L.unit ? ' in ' + L.unit : ''); $('lim-hi').title = 'high limit' + (L.unit ? ' in ' + L.unit : '');
   const vd = $('d-verdict'), vv = L.verdict;
   vd.className = 'verdict' + (vv === 'PASS' ? ' pass' : '');
   vd.replaceChildren(h('i'), vv === 'HI' || vv === 'LO' ? h('span', {class: 'warn'}, vv) : h('span', {}, vv === 'PASS' ? 'PASS' : '—'));
@@ -924,13 +935,13 @@ darkQuery.addEventListener('change', () => { if (themePref === 'system' && apply
 
 /* o: {data, t1, win, auto, lo, hi, mini, cursors:[tA,tB]|null, unit}; returns the geometry for cursor mapping */
 function drawTrace(c, o) {
-  const w = c.clientWidth, hgt = c.clientHeight, dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, hgt = c.clientHeight, dpr = (window.devicePixelRatio || 1) * zoomNow;
   if (!w || !hgt) return null;
   if (c.width !== Math.round(w * dpr) || c.height !== Math.round(hgt * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(hgt * dpr); }
   const g = c.getContext('2d');
   g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, hgt);
-  const L = o.mini ? 20 : 68, R = w - 20, T = o.mini ? 28 : 20, B = hgt - (o.mini ? 20 : 28);
-  if (R - L < 40 || B - T < 40) return null;
+  const L = o.mini ? 12 : 68, R = w - (o.mini ? 12 : 20), T = o.mini ? 8 : 20, B = hgt - (o.mini ? 18 : 28);
+  if (R - L < 40 || B - T < (o.mini ? 30 : 40)) return null;
   const mono = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
   const t1 = o.t1, t0 = t1 - o.win;
   const i0 = lowerBound(o.data, t0), pts = o.data.slice(i0);
@@ -984,8 +995,9 @@ function drawTrace(c, o) {
   g.strokeStyle = PAL.ruleHi; g.strokeRect(L + .5, T + .5, R - L, B - T);
   g.fillStyle = PAL.dim; g.font = mono;
   if (o.mini) {
-    g.textAlign = 'right'; g.fillText(axisNum(hi), R, T - 8); g.fillText(axisNum(lo), R, B + 14);
-    g.textAlign = 'left'; g.fillText('−' + o.win + ' s', L, B + 14); g.textAlign = 'right'; g.fillText('0', R, B + 14);
+    // the scale's top and bottom inside the plot at the right, the time axis under it (they used to overlap at the corner)
+    g.textAlign = 'right'; g.fillText(axisNum(hi), R - 4, T + 11); g.fillText(axisNum(lo), R - 4, B - 5);
+    g.textAlign = 'left'; g.fillText('−' + o.win + ' s', L, B + 13); g.textAlign = 'right'; g.fillText('now', R, B + 13);
   } else {
     g.textAlign = 'right';
     for (let j = 0; j <= 8; j++) g.fillText(axisNum(hi - (hi - lo) * j / 8), L - 8, T + (B - T) * j / 8 + 3);
@@ -1030,10 +1042,11 @@ $('sc-cur').onclick = () => {
   drawScopeView();
 };
 const scopeCanvas = $('scope');
+const canvasX = e => { const r = scopeCanvas.getBoundingClientRect(); return (e.clientX - r.left) * (scopeCanvas.clientWidth / (r.width || 1)); };
 const curX = i => sc.geom ? sc.geom.L + (sc.geom.R - sc.geom.L) * (sc.cur[i] - sc.geom.t0) / (sc.geom.t1 - sc.geom.t0) : -1e9;
 scopeCanvas.onpointerdown = e => {
   if (!sc.cur || !sc.geom) return;
-  const x = e.clientX - scopeCanvas.getBoundingClientRect().left;
+  const x = canvasX(e);
   const d = [0, 1].map(i => Math.abs(curX(i) - x));
   const i = d[0] <= d[1] ? 0 : 1;
   if (d[i] > 12) return;
@@ -1041,7 +1054,7 @@ scopeCanvas.onpointerdown = e => {
 };
 scopeCanvas.onpointermove = e => {
   if (sc.drag === null || !sc.geom) return;
-  const x = e.clientX - scopeCanvas.getBoundingClientRect().left, G = sc.geom;
+  const x = canvasX(e), G = sc.geom;
   sc.cur[sc.drag] = G.t0 + (G.t1 - G.t0) * Math.max(0, Math.min(1, (x - G.L) / (G.R - G.L)));
   drawScopeView();
 };
@@ -1546,6 +1559,8 @@ function drawPrefs(P, C, S) {
 
 function render() {
   if (!state) return;
+  const bs = [...document.querySelectorAll('.band.show')].map(e => e.id).join();
+  if (bs !== bandSig) { bandSig = bs; requestAnimationFrame(fitZoom); }   // a notice came or went: the height changed
   if (state.prefs) setTheme(state.prefs.theme);
   const L = state.link || {state: 'idle'}, S = state.session || {stats: {}, trend: []}, M = state.meter || {};
   const U = state.update || {state: 'none'};
@@ -1567,7 +1582,7 @@ function render() {
     setText($('trendlabel'), 'Trend · last 10 minutes' + (S.stats_unit ? ' · ' + S.stats_unit : ''));
     $('recdot').className = 'recdot' + (S.recording ? ' on' : '');
     $('rectime').textContent = S.recording ? hms(state.now - S.rec_start) : '00:00:00';
-    setText($('recrows'), S.recording ? S.rec_rows + ' rows · ' + (S.rec_path || '') : '');
+    setText($('recrows'), S.recording ? S.rec_rows + ' rows · ' + String(S.rec_path || '').split(/[\\/]/).pop() : ''); $('recrows').title = S.recording ? S.rec_path || '' : '';
     setText($('rec2'), S.recording ? 'Stop' : 'Record');
     drawTrace($('trend'), {data: trend, t1: state.now, win: 600, auto: true, mini: true});
   }
@@ -1576,6 +1591,8 @@ function render() {
   else if (view === 'card') drawCard(state.card, state.now);
   else if (view === 'meter') { drawMeter(L, M, U, state.clock); drawSettings(state.settings); drawDiag(state.diag); }
   else if (view === 'prefs') drawPrefs(state.prefs, state.clock, S);
+  const vw = $('v-' + view);                        // content grew (a key note, a longer text): fit again
+  if (FIT_VIEWS.includes(vw.id) && vw.scrollHeight - vw.clientHeight > 1) fitZoom();
 }
 
 async function poll() {
@@ -1598,7 +1615,7 @@ async function poll() {
   render();
   setTimeout(poll, 150);
 }
-window.addEventListener('resize', render);
+window.addEventListener('resize', () => { fitZoom(); render(); });
 setView('live');
 poll();
 </script>
