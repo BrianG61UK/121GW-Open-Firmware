@@ -234,9 +234,9 @@ build check are changed with it.
    off on the owner's meter, USER 0xF0, so the measured battery voltage is the only guard).
 3. Just before writing: check slot A's CRC again.  Then, with interrupts off, from a routine in RAM: write pages 3, 2
    and 1 of the starter (erase, two half-pages, compare each).  The old bootloader still starts the firmware normally
-   after a power cut here (section 6 facts: its start without keys uses nothing in 0x08000100..0x080003FF; to be shown
-   in the emulator with the old bootloader and v2.05 before the first install is released); only its key update mode
-   is gone.  Last, page 0: erase and two half-pages, about 10 ms typical, 12 ms maximum (Table 35).  This is the only
+   after a power cut here (section 6 facts: its start without keys uses nothing in 0x08000100..0x080003FF); only its key
+   update mode is gone.  An emulator run of such a cut is not done (owner decision 2026-11-08: the writes take about
+   10 to 12 ms, far too short for anyone to switch off in, and nobody cuts power on purpose during an install).  Last, page 0: erase and two half-pages, about 10 ms typical, 12 ms maximum (Table 35).  This is the only
    moment where a power cut bricks the meter (page 0 then holds no valid vector table).
 4. Write the install request in the control area; reset.  The starter finds no valid bootloader mark, installs slot A
    (6.2), starts it.
