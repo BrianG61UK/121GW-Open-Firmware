@@ -10,6 +10,9 @@ on:
   push:
     branches: ['companion']
     tags: ['companion-v*']
+    # a push that changes only text or the README pictures builds nothing new: no run (owner 2026-11-08); GitHub does not
+    # apply path filters to tags, so a release tag always builds
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
   pull_request:
     branches: ['companion']
   workflow_dispatch:
