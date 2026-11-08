@@ -42,7 +42,7 @@ Recorded from a real 121GW with firmware F-1.07 over Bluetooth (nothing connecte
 | Transfer statistics | after a transfer (update, card file) one line on what it spent its time on: packets and seconds, packets sent again, missing answers, damaged packets, resynchronisations, late answers, the slowest answer; it stays on the METER view as "last transfer" and goes into the report |
 | Diagnostics | the meter's 26 SD card and transfer diagnosis values with their meaning (STATUS 0..25 on the page `Ld-bt`; a firmware before F-1.11 answers the first 21); STATUS 26..39 (the first write timeout, F-1.12) and 40..48 (the extended link diagnosis, F-1.15) are in the meter's firmware but are not shown here, except that the report carries the nine counters 40..48 when SETTINGS "Extended diagnosis" is on, and STATUS 49..55 (the clock measurement, F-1.17) likewise |
 
-The meter accepts one Bluetooth connection at a time: close the phone application before connecting.  Turn Bluetooth
+The meter accepts one Bluetooth connection at a time: close any other Bluetooth app for the meter before connecting.  Turn Bluetooth
 on at the meter with a long press of PEAK.  While the SETUP page `Ld` (firmware transfer) is shown the meter sends no
 readings.
 

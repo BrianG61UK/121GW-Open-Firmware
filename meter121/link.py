@@ -7,7 +7,7 @@ on Linux); the rest of the program calls the thread-safe methods below and reads
 
 States: 'idle' (not connecting), 'scanning', 'connecting', 'connected', 'lost' (the meter went away, e.g. its auto
 power-off; the link scans again by itself while `want` is set).  One central at a time: the meter accepts a single
-connection, so the phone application or another bridge must not be connected.
+connection, so no other Bluetooth app or bridge may be connected.
 """
 import asyncio
 import collections
@@ -27,7 +27,7 @@ HELD_CHECK_AFTER = 2                    # searches without the meter before aski
 STOP_NOTIFY_WAIT = 2.0                  # seconds for unsubscribing the notifications before a disconnect (issue 23)
 RETRY_SECONDS = 3.0
 WINDOWS_HINT_AFTER = 2                 # searches in a row without the meter before the Windows hint (GitHub issue 23)
-NOT_FOUND = 'no 121GW found: meter on, Bluetooth on (long PEAK), phone app closed?'
+NOT_FOUND = 'no 121GW found: meter on, Bluetooth on (long PEAK), other Bluetooth apps closed?'
 # a meter added in Windows Settings > Bluetooth & devices is kept connected by Windows; connected, the module does not
 # advertise, so no search finds it (the companion needs no pairing)
 NOT_FOUND_WINDOWS = ('no 121GW found: if Windows lists "121GW" as connected in Settings > Bluetooth & devices, remove it '
