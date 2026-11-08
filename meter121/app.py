@@ -74,6 +74,7 @@ XDIAG_WAIT = 2.0                                 # seconds to wait for the answe
 XDIAG_STATUS_FIRST, XDIAG_STATUS_COUNT = 40, 9   # page Ld STATUS indices of the nine values (ble/bft.s bft_diag_tab)
 CAREFUL_MIN_VERSION = (1, 1, 9)                  # firmware F-1.19: key codes 0x97 / 0x98, LIST max, CHUNK len (IMP-50)
 CAREFUL_MTU = 23                                 # the old BLE112 module negotiates only the minimum (the BGM220S: 247)
+LINK_HINT_RATE = 4.5                             # readings/s above which a BLE112 link is over its ~150 bytes/s (issue 30)
 LTEST_PHASE = 15.0                               # link test: seconds measured per phase (doubled frames on, off, on, off)
 LTEST_SETTLE = 1.5                               # link test: seconds after each switch before the counting starts
 
@@ -385,23 +386,47 @@ class Companion:
                 and v >= CAREFUL_MIN_VERSION)
 
     def _careful_connect(self):
-        """After the version question: an old BLE112 module (GitHub issue 9) gets careful mode: key code 0x97, the
-        meter then sends every status frame twice (the copy whose check is right is taken, the other dropped), and the
-        card requests use small answers (card.Card careful)."""
+        """After the version question: an old BLE112 module (GitHub issue 9) gets careful mode: the card requests use
+        small answers (card.Card careful), and the meter sends every status frame once: key code 0x98, which also ends the
+        doubling an older companion may have left switched on.  The second copy of every frame (0x97) did not help: the
+        link tests of GitHub issue 30 (two meters) gave the same readings per second with it and twice the damaged share at
+        2 readings/s, and at 20/s more damage and fewer readings (the module carries about 150 bytes/s)."""
         if not self.careful_wanted():
             return
         try:
             with self._ops('careful mode', need_desk=False, wait=LINK_WAIT):
                 if self.desk:
                     raise RuntimeError('page Ld owns the link')
-                if self._key_with_echo(0x97):
-                    self.careful_on = True
-                    self.event('careful mode on (old BLE112 Bluetooth module, MTU 23): frames twice, small card answers')
+                if self._key_with_echo(0x98):
+                    self.careful_on = False
+                    self.event('careful mode on (old BLE112 Bluetooth module, MTU 23): small card answers, readings once')
                     return
         except (RuntimeError, OSError, TimeoutError) as e:
-            self.event('careful mode: not switched on (%s)' % e)
+            self.event('careful mode: the meter was not told (%s)' % e)
             return
         self.event('careful mode: no echo after %d tries' % XDIAG_TRIES)
+
+    def link_hint(self):
+        """A note when the meter sends more readings than its Bluetooth module carries (GitHub issue 30): the old BLE112
+        (MTU 23) carries about 150 bytes/s, 19 bytes a reading, so 10 or 20 readings a second (setting bt) are partly
+        lost or damaged; 2 or 4 fit.  From the setting bt when the settings were read, else from the readings measured
+        (more than 4.5 a second over at least 20 of them).  None when nothing is wrong or nothing is known."""
+        if self.link.state != 'connected' or self.link.stats.mtu != CAREFUL_MTU:
+            return None
+        bt = next((it for it in (self.settings_st.get('items') or []) if it.get('code') == 'bt'), None)
+        sent = None
+        if bt is not None and isinstance(bt.get('value'), int):
+            sent = (2, 4, 10, 20)[bt['value']] if 0 <= bt['value'] <= 3 else None
+            if sent is not None and sent <= 4:
+                return None
+        else:
+            n, a, b = self._st_n, self._st_first, self._st_last
+            if n >= 20 and b > a and (n - 1) / (b - a) > LINK_HINT_RATE:
+                sent = '%.1f' % ((n - 1) / (b - a))
+        if sent is None:
+            return None
+        return ('this meter\'s Bluetooth module (BLE112) carries about 150 bytes a second, about 8 readings; the meter '
+                'sends %s a second, so readings get lost or damaged.  Set its page bt to 2 or 4 (meter settings, bt).' % sent)
 
     def _key_with_echo(self, code):
         """Send the key frame of `code` until the meter echoes it (XDIAG_TRIES tries of XDIAG_WAIT); True when echoed.
@@ -454,10 +479,10 @@ class Companion:
                         res.append({'doubled': on, 'seconds': round(t1 - t0, 2), 'bytes': b1 - b0, 'damaged': d1 - d0,
                                     'readings': n1 - n0})
                         self.ltest['results'] = list(res)
-                finally:                                 # also after a stop: the meter as careful mode wants it
-                    if self.link.state == 'connected' and not self.desk:
-                        want = self.careful_wanted()
-                        self.careful_on = self._key_with_echo(0x97 if want else 0x98) and want
+                finally:                                 # also after a stop: readings once again (careful mode sends no
+                    if self.link.state == 'connected' and not self.desk:   # copies since GitHub issue 30)
+                        self._key_with_echo(0x98)
+                        self.careful_on = False
             self.ltest = {'state': 'done', 'results': res, 'summary': link_test_summary(res), 'finished': time.time()}
             self.event('link test: ' + self.ltest['summary'])
         except (RuntimeError, OSError, TimeoutError) as e:
@@ -1379,6 +1404,7 @@ class Companion:
                 'can_leave_ld': bool(self.desk and self._leave_supported()),
                 'diag': dict(self.diag),
                 'ltest': dict(self.ltest),
+                'link_hint': self.link_hint(),
                 'trace_ui': TRACE_UI,
                 'card': dict(self.card_st, files=list(self.card_st['files']), locked_reason=self._lock_reason()),
                 'settings': dict(self.settings_st, locked_reason=self._lock_reason()),

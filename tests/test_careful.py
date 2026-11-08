@@ -167,14 +167,18 @@ class CarefulConnect(AppCase):
         self.app.version = 'F-1.19'
         self.assertFalse(self.app.careful_wanted())
 
-    def test_switched_on_at_the_connection(self):
+    def test_switched_on_at_the_connection_with_readings_once(self):
+        # GitHub issue 30: the second copy of every reading did not help (link tests on two meters): the meter is told
+        # 0x98 (readings once; also ends a doubling an older companion left on), the card answers stay small
         self.app.link.stats.mtu = 23
+        self.meter.dup_frames = True                     # left on by an older companion
         self.app._careful_connect()
-        self.assertTrue(self.app.careful_on)
-        self.assertTrue(self.meter.dup_frames)
-        self.assertIn(frames.key_frame(0x97), [bytes(k) for k in self.meter.keys])
+        self.assertFalse(self.app.careful_on)
+        self.assertFalse(self.meter.dup_frames)
+        self.assertIn(frames.key_frame(0x98), [bytes(k) for k in self.meter.keys])
+        self.assertNotIn(frames.key_frame(0x97), [bytes(k) for k in self.meter.keys])
         self.assertTrue(any('careful mode on' in t for _, t in self.app.events))
-        self.assertIn('careful mode     on:', report.build(self.app))
+        self.assertIn('careful mode     on: small card answers, readings once', report.build(self.app))
 
     def test_piece_statistics_in_the_report(self):
         self.addCleanup(card.LAST_CAREFUL.clear)
@@ -318,8 +322,8 @@ class LinkTest(AppCase):
         self.assertEqual(t['state'], 'done', t)
         self.assertEqual([r['doubled'] for r in t['results']], [True, False, True, False])
         codes = [frames._pair(bytes(k), 1) for k in self.meter.keys]
-        self.assertEqual(codes[-5:], [0x97, 0x98, 0x97, 0x98, 0x97])   # the last one: careful mode back on (MTU 23)
-        self.assertTrue(self.meter.dup_frames and self.app.careful_on)
+        self.assertEqual(codes[-5:], [0x97, 0x98, 0x97, 0x98, 0x98])   # the last one: readings once again (issue 30)
+        self.assertFalse(self.meter.dup_frames or self.app.careful_on)
         self.assertIn('doubled on:', t['summary'])
         self.assertIn('link test        careful mode', report.build(self.app))
 
@@ -336,6 +340,23 @@ class LinkTest(AppCase):
         t = self.wait_end()
         self.assertEqual(t['state'], 'error')
         self.assertIn('did not echo', t['error'])
+
+    def test_link_note_for_a_ble112_sending_too_fast(self):
+        a = self.app
+        a.link.state = 'connected'
+        a.settings_st = {'items': [{'code': 'bt', 'value': 3}]}          # 20 per second
+        self.assertIn('sends 20 a second', a.link_hint())
+        self.assertIn('link note', report.build(a))
+        a.settings_st = {'items': [{'code': 'bt', 'value': 1}]}          # 4 per second: fits
+        self.assertIsNone(a.link_hint())
+        a.settings_st = {'items': []}                                    # not read: the measured readings decide
+        a._st_n, a._st_first, a._st_last = 41, 100.0, 105.0              # 8 a second
+        self.assertIn('sends 8.0 a second', a.link_hint())
+        a._st_n, a._st_first, a._st_last = 21, 100.0, 110.0              # 2 a second
+        self.assertIsNone(a.link_hint())
+        a.link.stats.mtu = 247                                           # the newer module: no note
+        a.settings_st = {'items': [{'code': 'bt', 'value': 3}]}
+        self.assertIsNone(a.link_hint())
 
     def test_refused_without_the_firmware_or_on_page_ld(self):
         self.app.version = 'F-1.18'

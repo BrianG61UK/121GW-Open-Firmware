@@ -302,6 +302,9 @@ tr.empty:hover td { background: none; }
 .drop label.fbtn:hover { border-color: var(--ink-3); }
 .drop.over { border-color: var(--hol); background: var(--hol-soft); }
 .instnote { padding: 0 18px 14px; margin: 0; }
+/* a note on the link (GitHub issue 30: the meter sends more than its BLE112 module carries) */
+.hintnote { margin-top: 8px; padding: 8px 12px; border-radius: 10px; background: var(--hol-soft); border: 1px solid var(--hol-line);
+            font-size: 13px; color: var(--ink); }
 /* meter settings rows */
 .srow { display: grid; grid-template-columns: 6px 44px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); min-height: 44px; }
 .srow:last-child { border-bottom: 0; }
@@ -511,6 +514,7 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
     <div class="stack">
       <div class="card"><div class="meterhead"><div class="meterpic"><i></i></div>
         <div style="min-width:0;flex:1"><h2>EEVblog 121GW</h2><div class="cap" id="m-link">—</div>
+          <div class="hintnote" id="m-hint" hidden></div>
           <div class="facts">
             <div><span>Firmware</span><b id="m-fw">—</b></div><div><span>Bootloader</span><b id="m-bl">—</b></div>
             <div><span>Device</span><b id="m-dev">—</b></div><div><span>Companion</span><b id="m-app">—</b></div>
@@ -1391,6 +1395,7 @@ const UPTXT = {none: 'no information yet', available: 'update available', downlo
 function drawMeter(L, M, u, C) {
   $('m-fw').textContent = $('fw').textContent; $('m-bl').textContent = $('bl').textContent;
   setText($('m-dev'), L.device ? L.device[1] : '—'); $('m-dev').title = L.device ? L.device[0] : '';
+  $('m-hint').hidden = !state.link_hint; setText($('m-hint'), state.link_hint ? 'Bluetooth: ' + state.link_hint : '');
   setText($('m-link'), L.state === 'connected' ? 'Connected' + (L.detail ? ' · ' + L.detail : '') : L.state === 'idle' ? 'Not connected' : L.state);
   const hhmm = t => new Date(t * 1000).toTimeString().slice(0, 5);
   $('m-upd').textContent = u.state !== 'none' ? (UPTXT[u.state] || nz(u.state))

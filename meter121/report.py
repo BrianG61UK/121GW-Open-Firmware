@@ -127,11 +127,14 @@ def link_details(app):
     w('advertisement signal  %s' % sig)
     w('MTU              %s' % ('%d bytes (bleak client mtu_size)' % st['mtu'] if st['mtu'] is not None else
                                'not available from the Bluetooth backend'))
-    w('careful mode     %s' % ('on: every status frame twice, small card answers (old BLE112 module, MTU 23)'
+    w('careful mode     %s' % ('on: every status frame twice (the link test), small card answers (old BLE112 module, MTU 23)'
                                if getattr(app, 'careful_on', False) else
-                               'wanted, not on' if app.careful_wanted() else
+                               'on: small card answers, readings once (old BLE112 module, MTU 23)' if app.careful_wanted() else
                                'off (MTU %s; careful mode is for the old BLE112 module and firmware F-1.19 or newer)'
                                % (st['mtu'] if st['mtu'] is not None else 'unknown')))
+    hint = app.link_hint()
+    if hint:
+        w('link note        ' + hint)
     cs = card.LAST_CAREFUL
     if cs.get('pieces') or cs.get('again'):
         w('careful pieces   last card read: %d pieces, %d sent again; pieces by size: %s' % (
