@@ -69,7 +69,8 @@ NAME_ENCODING = 'latin-1'                          # the meter's names are bytes
 CHUNK = transfer.MAX_PAYLOAD                       # 232: bytes of one CHUNK answer (bft.s BFT_MAXPAY)
 WINDOW = 8192                                      # largest READ (bft.s BFT_STAGE_LEN)
 WINDOW_Z = 4096                                    # largest READZ (bftsd.s BFX_READZ_MAX)
-PROBE_WAIT, PROBE_TRIES = 3.0, 2                   # READZ asked once when the firmware version is not known
+PROBE_WAIT, PROBE_TRIES = 3.0, 1                   # READZ asked once when the firmware version is not known (a
+                                                   # lost answer costs only the packing: READ is used then)
 LAST_PACKED = {}                                   # the last packed card read: bytes read, bytes fetched (report.py)
 LIST_END = 0x8000                                  # LIST field flag: the end of the directory was reached
 NAME_CUT = 0x80                                    # LIST attr bit 7: a name above 63 bytes was cut to 63
@@ -262,7 +263,8 @@ CAREFUL_WAIT_START = 2.0
 CAREFUL_RTT_KEEP = 8
 LAST_CAREFUL = {}                                  # the last careful read: pieces, sends again, sizes used (report.py)
 CHUNK_PASSES = 2                                   # fetches of the chunks of one staging
-TIMEOUTS = {T_LIST: 15.0, T_READ: 30.0, T_CHUNK: 5.0, T_DELETE: 20.0, T_INFO: 30.0,    # f_getfree scans the FAT
+TIMEOUTS = {T_LIST: 15.0, T_READ: 30.0, T_READZ: 30.0, T_CHUNK: 5.0, T_DELETE: 20.0,   # READZ: read + pack
+            T_INFO: 30.0,                      # f_getfree scans the FAT
             T_FORMAT: 180.0}                   # f_mkfs writes the whole file system; the meter answers when done
 
 

@@ -320,6 +320,8 @@ class Link2Connect(AppCase):
         self.assertTrue(self.app.small_pieces())          # before link 2: careful pieces
         self.assertEqual(self.app._l2_answer_wait(), 0.0)
         self.app._link2_connect()
+        self.assertTrue(self.app.small_pieces())          # F-1.31 pauses link 2 on page Ld: its answers go plain
+        self.app.version = 'F-1.32'
         self.assertTrue(self.app.careful_wanted())
         self.assertFalse(self.app.small_pieces())         # TEXT blocks are repaired: the pieces of a new module
         blocks = -(-app_mod.L2_ANSWER_MAX // frames.L2_TEXT_MAX)

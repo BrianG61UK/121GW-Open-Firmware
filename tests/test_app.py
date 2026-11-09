@@ -189,6 +189,14 @@ class Diag(AppCase):
 
 
 class CardCommands(AppCase):
+    def setUp(self):
+        super().setUp()
+        # the version is not known here (as when the companion connects while page Ld is shown): the first read asks
+        # READZ once; this fake meter is older than F-1.32 and does not answer it, so the probe must not wait long
+        old = card.PROBE_WAIT
+        card.PROBE_WAIT = 0.2
+        self.addCleanup(setattr, card, 'PROBE_WAIT', old)
+
     def test_format(self):
         self.go_desk()
         with self.assertRaises(ValueError):                              # the typed word is required

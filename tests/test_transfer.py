@@ -172,6 +172,14 @@ class Packed(unittest.TestCase):
         first = struct.unpack_from('<HH', transfer.pack_stream(noise), 0)
         self.assertEqual(first, (transfer.PIECE, transfer.RAW_PIECE | transfer.PIECE))     # incompressible: raw
 
+    def test_only_blocks_the_meter_takes(self):
+        # byte 0: BFINAL bit 0, BTYPE bits 1..2, HLIT - 257 bits 3..7; byte 1: HDIST - 1 bits 0..4
+        self.assertTrue(transfer._meter_takes(bytes([29 << 3 | 5, 29, 0])))     # HLIT 286, HDIST 30
+        self.assertFalse(transfer._meter_takes(bytes([29 << 3 | 5, 30, 0])))    # HDIST 31
+        self.assertFalse(transfer._meter_takes(bytes([30 << 3 | 5, 0, 0])))     # HLIT 287
+        self.assertFalse(transfer._meter_takes(bytes([1 << 1 | 1, 0, 0])))      # fixed code
+        self.assertFalse(transfer._meter_takes(bytes([2 << 1, 0, 0])))          # dynamic, not final
+
 
 if __name__ == '__main__':
     unittest.main()

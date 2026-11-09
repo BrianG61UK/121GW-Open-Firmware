@@ -555,9 +555,12 @@ class Companion:
 
     def small_pieces(self):
         """True when card and settings answers must come in small pieces: an old BLE112 link (careful_wanted) without
-        link 2.  With link 2 on (F-1.31) the page Ld answers travel in TEXT blocks whose damaged bytes are repaired
-        (firmware ble/link2.s), so they come whole, in the large pieces of a new module."""
-        return self.careful_wanted() and not self.l2c.get('on')
+        link 2 on page Ld.  With link 2 on and F-1.32 or newer the page Ld answers travel in TEXT blocks whose damaged
+        bytes are repaired (firmware ble/link2.s), so they come whole, in the large pieces of a new module; F-1.31 pauses
+        link 2 on page Ld (its answers go plain)."""
+        v = releases.version_of_meter(self.version)
+        ld_blocks = self.l2c.get('on') and v is not None and v >= PACKED_MIN_VERSION
+        return self.careful_wanted() and not ld_blocks
 
     def careful_wanted(self):
         """True when the link is to an old BLE112 module (MTU 23) and the firmware knows careful mode (F-1.19 on)."""

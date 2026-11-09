@@ -59,11 +59,22 @@ def pack_stream(data, piece=PIECE):
         raw = data[p:p + piece]
         c = zlib.compressobj(9, zlib.DEFLATED, -11, 9)
         blk = c.compress(raw) + c.flush()             # Z_FINISH: the block ends in its last byte
-        if blk[0] & 7 == FINAL_DYNAMIC and len(blk) < len(raw):
+        if _meter_takes(blk) and len(blk) < len(raw):
             out += struct.pack('<HH', len(raw), len(blk)) + blk
         else:                                         # stored, fixed or several blocks: the raw bytes (flag 0x8000)
             out += struct.pack('<HH', len(raw), RAW_PIECE | len(raw)) + raw
     return bytes(out)
+
+
+def _meter_takes(blk):
+    """True when the block is what the meter's inflater takes (firmware/src/sys/zinf.s): one final block with the
+    dynamic code (BFINAL 1, BTYPE 2), HLIT at most 286 and HDIST at most 30 codes (zlib never writes more; another
+    deflate library might, and the meter would refuse the piece)."""
+    if len(blk) < 3 or blk[0] & 7 != FINAL_DYNAMIC:
+        return False
+    hlit = ((blk[0] >> 3) & 31) + 257
+    hdist = (blk[1] & 31) + 1
+    return hlit <= 286 and hdist <= 30
 
 
 def _packets(stream):
