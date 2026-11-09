@@ -16,6 +16,9 @@ FEATURES.md 2.10 and 2.11):
                    the nine u16 counters of the meter, little-endian (answer to key code 0x95, xdiag_values())
     FA     20      clock measurement (F-1.17 on):         XOR of all 20 bytes = 0
                    the meter's RC run clock measured against its crystal (answer to key code 0x96, mclock_values())
+    F5     21      status frame with error correction     Reed-Solomon, three parity bytes (fec_decode); F-1.29 on,
+                   (IMP-60, key code 0x9D): F5, the 17     only while the companion asks (old BLE112 module); handed on
+                   value bytes, 3 parity bytes             as the F2 frame with the same values
     B5 5B  8+n     answer of the file transfer (2.10)     CRC-16/CCITT-FALSE; type 0x81 = transfer / status answer
                    (transfer.py), type 0x82 = answer of the card and settings requests (card.py, settings.py); the
                    length byte [5] gives n, so both are taken the same way
@@ -52,6 +55,55 @@ MCLOCK_STATUS = {0: 'not measured since the meter was switched on', 1: 'measured
                  '6 % off: not used', 7: 'measured; the trimmed clock measured worse, the trim was taken back'}
 DAMAGED_KEEP = 20                       # skipped runs kept
 REPAIR_SHIFTS = (1, 2, 3)               # bit times a byte may arrive late and still be repaired (repair())
+FEC_START = 0xF5                        # IMP-60: first byte of a status frame with error correction
+FEC_LEN = 21                            # F5, 17 value bytes, 3 parity bytes
+
+# GF(256) with the polynomial 0x11D, alpha = 2 (the firmware's ble_rs_feed): antilog / log tables
+_EXP, _LOG = [0] * 512, [0] * 256
+_v = 1
+for _i in range(255):
+    _EXP[_i], _LOG[_v] = _v, _i
+    _v <<= 1
+    if _v & 0x100:
+        _v ^= 0x11D
+for _i in range(255, 512):
+    _EXP[_i] = _EXP[_i - 255]
+
+
+def _gmul(a, b):
+    return 0 if a == 0 or b == 0 else _EXP[_LOG[a] + _LOG[b]]
+
+
+def fec_decode(cw):
+    """The 21 bytes of an F5 frame as sent, or None.  The code has the roots 1, alpha, alpha^2 (generator
+    x^3 + 7x^2 + 14x + 8, distance 4): no error -> as received; one damaged byte at position 1..20 -> corrected; anything
+    else (two damaged bytes, or the start byte itself) -> None, never a wrong frame for two damaged bytes."""
+    if len(cw) != FEC_LEN or cw[0] != FEC_START:
+        return None
+    s = []
+    for k in range(3):
+        acc = 0
+        for b in cw:
+            acc = _gmul(acc, _EXP[k]) ^ b
+        s.append(acc)
+    if s == [0, 0, 0]:
+        return bytes(cw)
+    s0, s1, s2 = s
+    if not (s0 and s1 and s2) or _gmul(s1, s1) != _gmul(s0, s2):
+        return None                                  # not the pattern of a single damaged byte
+    power = (_LOG[s1] - _LOG[s0]) % 255              # alpha^power = S1 / S0: the damaged byte's power
+    pos = FEC_LEN - 1 - power
+    if not 1 <= pos < FEC_LEN:
+        return None
+    out = bytearray(cw)
+    out[pos] ^= s0
+    return bytes(out)
+
+
+def fec_as_status(cw):
+    """The F2 status frame with the values of a (corrected) F5 frame."""
+    body = bytes([0xF2]) + bytes(cw[1:18])
+    return body + bytes([_xor(body)])
 DAMAGED_BYTES = 32                      # bytes kept of one run (its real length is kept too)
 XDIAG_LEN = 20
 XDIAG_NAMES = ('bytes received', 'overruns (ORE)', 'noise flags (NE)', 'framing errors (FE)',
@@ -130,6 +182,10 @@ class Reassembler:
         self._last_kind = None           # kind of the last frame taken
         self._since_f2 = 0               # skipped bytes since (and including) the last skipped F2 byte, 0 if none
         self.repaired = 0                # status frames repaired (repair())
+        self.fec_frames = 0              # IMP-60: F5 frames taken (status frames with error correction)
+        self.fec_fixed = 0               # of them with one damaged byte corrected
+        self.plain_frames = 0            # F2 frames taken (the meter sends F2 when it has no error correction on)
+        self._out = None                 # the frame _take hands on when it differs from the bytes it consumes
         self._last_status = None         # the last good status frame, the reference of repair()
 
     def feed(self, chunk):
@@ -153,9 +209,10 @@ class Reassembler:
             self._end_run()              # a valid frame ends the run of skipped bytes before it
             kind, n = got
             self._last_kind, self._since_f2 = kind, 0
+            frame, self._out = (self._out if self._out is not None else bytes(self.buf[:n])), None
             if kind == STATUS:
-                self._last_status = bytes(self.buf[:n])
-            out.append((kind, bytes(self.buf[:n])))
+                self._last_status = frame
+            out.append((kind, frame))
             del self.buf[:n]
         return out
 
@@ -190,13 +247,26 @@ class Reassembler:
             if len(b) < 19:
                 return 'wait'
             if _xor(b[:19]) == 0:
+                self.plain_frames += 1
                 return (STATUS, 19)
             fixed = repair(bytes(b[:19]), self._last_status)
             if fixed is None:
                 return None
             b[:19] = fixed                # the repaired frame is taken in place of the damaged one
             self.repaired += 1
+            self.plain_frames += 1
             return (STATUS, 19)
+        if s == FEC_START:
+            if len(b) < FEC_LEN:
+                return 'wait'
+            cw = fec_decode(bytes(b[:FEC_LEN]))
+            if cw is None:
+                return None
+            self.fec_frames += 1
+            if cw != bytes(b[:FEC_LEN]):
+                self.fec_fixed += 1
+            self._out = fec_as_status(cw)
+            return (STATUS, FEC_LEN)
         if s in (0xF6, 0xF7):
             if len(b) < 7:
                 return 'wait'

@@ -403,18 +403,25 @@ class AutoRate(AppCase):
         self.window(760, 19)                               # one lost reading at 4 a second (2.5 %)
         self.assertEqual((self.app.arate['code'], self.meter.rate_code), (0, 0))
 
-    def test_steps_up_after_clean_windows_and_keeps_a_failed_rate_as_ceiling(self):
+    def test_steps_up_to_4_at_most(self):
+        """The BLE112 carries about 150 bytes/s: 4 a second is the highest rate tried (RATE_CAREFUL_MAX, IMP-60)."""
         self.app._careful_connect()
-        self.app.arate['win'] = None
-        for _ in range(2 * app_mod.RATE_UP_CLEAN + 1):
+        for _ in range(4 * app_mod.RATE_UP_CLEAN):
             self.window(380, 0)
-        self.assertEqual(self.app.arate['code'], 2)       # 10 a second after two clean minutes
-        self.window(1500, 100)                             # damage right after the step up
-        self.assertEqual((self.app.arate['code'], self.app.arate['ceiling']), (1, 1))
+        self.assertEqual(self.app.arate['code'], 1)       # 4 a second after a clean minute, never 10
+        self.assertEqual(self.codes(), [0x99, 0x9A])
+
+    def test_a_rate_failing_right_after_the_step_up_becomes_the_ceiling(self):
+        self.app._careful_connect()
+        for _ in range(app_mod.RATE_UP_CLEAN):
+            self.window(380, 0)
+        self.assertEqual(self.app.arate['code'], 1)
+        self.window(760, 40)                               # damage right after the step up
+        self.assertEqual((self.app.arate['code'], self.app.arate['ceiling']), (0, 0))
         for _ in range(3 * app_mod.RATE_UP_CLEAN):
-            self.window(760, 0)
-        self.assertEqual(self.app.arate['code'], 1)       # no going back to the rate that failed
-        self.assertEqual(self.codes(), [0x99, 0x9A, 0x9B, 0x9A])
+            self.window(380, 0)
+        self.assertEqual(self.app.arate['code'], 0)       # no going back to the rate that failed
+        self.assertEqual(self.codes(), [0x99, 0x9A, 0x99])
 
     def test_never_above_the_saved_rate(self):
         self.app._careful_connect()
@@ -447,3 +454,33 @@ class AutoRate(AppCase):
         self.assertTrue(any('set again' in t for _, t in self.app.events))
         self.window(380, 0)                                # back at the rate: no second reset
         self.assertEqual(self.app.arate['resets'], 1)
+
+
+class ErrorCorrection(AutoRate):
+    """IMP-60 (GitHub issue 30): on a BLE112 meter with F-1.29 the companion asks for status frames with three repair bytes
+    (key code 0x9D), asks again when the meter has left it, and reports the corrected readings."""
+    def setUp(self):
+        super().setUp()
+        self.meter.fec_fw = True
+        self.app.version = 'F-1.29'
+
+    def test_switched_on_with_f129(self):
+        self.app._careful_connect()
+        self.assertTrue(self.app.fec_on and self.meter.fec_on)
+        self.assertIn('error correction on (F-1.29)', report.build(self.app))
+
+    def test_not_with_older_firmware(self):
+        self.app.version = 'F-1.28'
+        self.app._careful_connect()
+        self.assertFalse(self.app.fec_on or self.meter.fec_on)
+
+    def test_asked_again_when_the_meter_sends_plain_frames(self):
+        self.app._careful_connect()
+        r = self.app.link.reasm
+        self.window(380, 0)
+        self.meter.fec_on = False                          # the meter restarted: F2 frames again
+        r.plain_frames += 20
+        self.window(380, 0)
+        self.assertTrue(self.meter.fec_on)
+        self.assertTrue(any('error correction set again' in e for _, e in self.app.events))
+

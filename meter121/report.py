@@ -132,6 +132,10 @@ def link_details(app):
                                'on: small card answers, readings once (old BLE112 module, MTU 23)' if app.careful_wanted() else
                                'off (MTU %s; careful mode is for the old BLE112 module and firmware F-1.19 or newer)'
                                % (st['mtu'] if st['mtu'] is not None else 'unknown')))
+    if getattr(app, 'fec_on', False):
+        r = getattr(getattr(app, 'link', None), 'reasm', None)
+        w('error correction on (F-1.29): %s readings with repair bytes, %s of them corrected' % (
+            getattr(r, 'fec_frames', 0), getattr(r, 'fec_fixed', 0)))
     ar = getattr(app, 'arate', None) or {}
     if ar.get('code') is not None:
         from .app import RATE_PER_S

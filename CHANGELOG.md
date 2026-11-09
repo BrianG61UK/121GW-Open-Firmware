@@ -2,6 +2,8 @@
 
 What each release brought, newest first. The release page of a version shows only its own paragraphs.
 
+New in 1.2.35: readings from meters with the old BLE112 Bluetooth module are corrected (GitHub issue 30). With firmware 1.2.9 (F-1.29) the companion asks the meter to add three repair bytes to every reading and corrects any single damaged byte, also in the digits that change; a reading with two damaged bytes is dropped, never shown wrong. The reading rate on the old module now goes up to 4 a second at most (the module carries about 150 bytes a second). The report shows how many readings were corrected.
+
 New in 1.2.34: the companion says the right way to the meter's page Ld-bt (GitHub issue 34). Since firmware 1.2.2 (F-1.22) that page is one of the meter pages: press SETUP until SEt, hold SETUP until the long beep, then press SETUP until Ld-bt. The update notice and the card view said only "press SETUP until Ld-bt", which never gets there.
 
 New in 1.2.33: damaged readings from meters with the old BLE112 Bluetooth module are repaired (GitHub issue 30). On those meters a byte sometimes arrives shifted by one to three bits; when a reading fails its check because of one such byte, and the byte is one that did not change since the last good reading, the companion puts it back and keeps the reading instead of dropping it. Readings whose changing digits were hit are still dropped, never guessed. The report shows how many readings were repaired. Works with every firmware; firmware 1.2.8 also sends with two stop bits, which should make the damage rarer.

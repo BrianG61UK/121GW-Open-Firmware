@@ -67,6 +67,8 @@ EVENTS_KEEP = 300                                # events kept for the diagnosis
 BL_ASK_TRIES = 3                                 # bootloader questions (key code 0x92) until an answer counts as none
 DAILY = 86400.0                                  # update check "daily": seconds between two release checks
 HUNT_MIN_VERSION = (1, 1, 6)                     # firmware F-1.16: EEPROM 0x020 bit 4, the SETUP page HUnt (ble/bftset.s accepts 0..31)
+FEC_MIN_VERSION = (1, 2, 9)                      # firmware F-1.29: status frames with error correction (IMP-60, 0x9D)
+RATE_CAREFUL_MAX = 1                             # the old BLE112 module carries about 150 bytes/s: at most 4 readings a second
 ADAPT_MIN_VERSION = (1, 2, 5)                    # firmware F-1.25: the reading rate for this power-on, settings in pages (IMP-55)
 QUIET_MIN_VERSION = (1, 2, 4)                    # firmware F-1.24: the buzzer's third value qUiEt (ble/bftset.s accepts 0..2)
 XDIAG_MIN_VERSION = (1, 1, 5)                    # firmware F-1.15: key codes 0x93 / 0x94 / 0x95 and STATUS 40..48 (ble/xdiag.s)
@@ -179,6 +181,8 @@ class Companion:
         self._mclock_frame = None
         self._mclock_evt = threading.Event()
         self.careful_on = False                          # careful mode switched on in the meter (0x97) for this connection
+        self.fec_on = False                              # IMP-60: frames with error correction asked for (0x9D)
+        self._fec_win = None                             # (plain F2, F5) frames counted at the last rate window
         self._last_status = None                         # the last F2 frame, for its F3 copy (careful mode)
         self.xdiag = {'state': 'not read'}
         self.ltest = {'state': 'none'}                   # the link test: careful mode's doubled frames on against off
@@ -256,6 +260,8 @@ class Companion:
         self._frame_t = 0.0
         self.xdiag_on = False                            # the counting is told again at each connection
         self.careful_on = False                           # careful mode is asked for again at each connection
+        self.fec_on = False                               # IMP-60: error correction asked for again at each connection
+        self._fec_win = None
         self.arate = {'code': None}                       # the automatic rate starts again with careful mode
         self._st_n, self._st_first, self._st_last = 0, None, None
         if state == 'connected':
@@ -325,6 +331,11 @@ class Companion:
         and the settings in pages (GET start max), IMP-55, GitHub issue 30."""
         v = releases.version_of_meter(self.version)
         return self.fw_kind == 'fast' and v is not None and v >= ADAPT_MIN_VERSION
+
+    def _fec_supported(self):
+        """True when the meter runs F-1.29 or newer: status frames with error correction (IMP-60, key code 0x9D)."""
+        v = releases.version_of_meter(self.version)
+        return self.fw_kind == 'fast' and v is not None and v >= FEC_MIN_VERSION
 
     def _quiet_supported(self):
         """True when the connected meter runs F-1.24 or newer: only that firmware takes the buzzer's third value qUiEt
@@ -433,9 +444,12 @@ class Companion:
                     self.careful_on = False
                     self.event('careful mode on (old BLE112 Bluetooth module, MTU 23): small card answers, readings once')
                     if self._link_adapt_supported() and self._key_with_echo(0x99 + RATE_START):
-                        self.arate = {'code': RATE_START, 'ceiling': len(RATE_PER_S) - 1, 'clean': 0, 'since_up': None,
+                        self.arate = {'code': RATE_START, 'ceiling': RATE_CAREFUL_MAX, 'clean': 0, 'since_up': None,
                                       'win': None}
                         self.event('reading rate %d a second for this link (automatic, F-1.25)' % RATE_PER_S[RATE_START])
+                    if self._fec_supported() and self._key_with_echo(0x9D):
+                        self.fec_on = True
+                        self.event('error correction on: readings with three repair bytes (F-1.29)')
                     return
         except (RuntimeError, OSError, TimeoutError) as e:
             self.event('careful mode: the meter was not told (%s)' % e)
@@ -480,6 +494,15 @@ class Companion:
         a['win'] = (now, L.rx_bytes, L.rx_dropped)
         if nb <= 0:
             return
+        if self.fec_on:                                  # IMP-60: the meter dropped the error correction (a restart,
+            r = L.reasm                                  # a wake): plain F2 frames and no F5 in this window
+            cur = (r.plain_frames, r.fec_frames)
+            prev, self._fec_win = self._fec_win, cur
+            if prev is not None and cur[0] - prev[0] >= 3 and cur[1] == prev[1]:
+                with self._ops('error correction', need_desk=False, wait=0.0):
+                    if not self._key_with_echo(0x9D):
+                        raise RuntimeError('the meter did not echo the error correction')
+                self.event('error correction set again (the meter had left it)')
         sent = RATE_PER_S[a['code']] * frames.STATUS_LEN * (now - t0)   # bytes the set rate sends in this window
         if nb > RATE_OVER * sent + 200:                  # far more arrived: the meter no longer runs the set rate
             with self._ops('reading rate', need_desk=False, wait=0.0):

@@ -139,3 +139,56 @@ class Repair(unittest.TestCase):
         self.assertEqual(r.repaired, 0)
         self.assertGreater(r.dropped, 0)
 
+
+def f5(values):
+    """An F5 frame as the firmware sends it (ble_rs_feed: the shift-and-add encoder, written out here)."""
+    def mul2(x):
+        return ((x << 1) ^ (0x1D if x & 0x80 else 0)) & 0xFF
+    r2 = r1 = r0 = 0
+    data = bytes([0xF5]) + bytes(values)
+    for m in data:
+        fb = m ^ r2
+        m2 = mul2(fb)
+        m4 = mul2(m2)
+        m8 = mul2(m4)
+        r2, r1, r0 = r1 ^ m4 ^ m2 ^ fb, r0 ^ m8 ^ m4 ^ m2, m8
+    return data + bytes([r2, r1, r0])
+
+
+class ErrorCorrection(unittest.TestCase):
+    VALUES = GOOD[1:18]
+
+    def test_intact_frame_as_f2(self):
+        r = frames.Reassembler()
+        got = r.feed(f5(self.VALUES))
+        self.assertEqual(got, [(frames.STATUS, GOOD)])
+        self.assertEqual((r.fec_frames, r.fec_fixed, r.dropped), (1, 0, 0))
+
+    def test_every_single_damaged_byte_is_corrected(self):
+        cw = f5(self.VALUES)
+        for pos in range(1, frames.FEC_LEN):
+            for e in range(1, 256):
+                bad = bytearray(cw)
+                bad[pos] ^= e
+                self.assertEqual(frames.fec_decode(bytes(bad)), cw, (pos, e))
+
+    def test_two_damaged_bytes_are_never_a_wrong_frame(self):
+        import random
+        rnd = random.Random(30)
+        for _ in range(20000):
+            vals = bytes(rnd.randrange(256) for _ in range(17))
+            cw = f5(vals)
+            bad = bytearray(cw)
+            p, q = rnd.sample(range(1, frames.FEC_LEN), 2)
+            bad[p] ^= rnd.randrange(1, 256)
+            bad[q] ^= rnd.randrange(1, 256)
+            self.assertIsNone(frames.fec_decode(bytes(bad)))
+
+    def test_stream_of_f2_and_f5_with_damage(self):
+        bad = bytearray(f5(self.VALUES))
+        bad[7] = 0x8B                                                  # a changing digit hit: corrected now
+        r = frames.Reassembler()
+        got = r.feed(GOOD + f5(self.VALUES) + bytes(bad) + GOOD)
+        self.assertEqual([f for _, f in got], [GOOD] * 4)
+        self.assertEqual((r.fec_frames, r.fec_fixed, r.plain_frames, r.dropped), (2, 1, 2, 0))
+

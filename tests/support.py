@@ -76,6 +76,8 @@ class FakeMeter:
         self.dup_frames = False                        # 0x97 received: status frames twice
         self.adapt_fw = False                          # firmware F-1.25: key codes 0x99..0x9C (rate), GET start max (IMP-55)
         self.rate_code = None                          # the rate code set by 0x99..0x9C (None: the saved one)
+        self.fec_fw = False                            # firmware F-1.29: key codes 0x9D / 0x9E (frames F5, IMP-60)
+        self.fec_on = False
         self.get_pages = []                            # (start, max) of every paged GET
         self.mclock = {'hz0': 4187000, 'hz': 4194100, 'trim': -3, 'status': 1, 'steps': 6, 'brr': 218, 'cal_run': 0x9D,
                        'cal_now': 0x9D}
@@ -112,6 +114,8 @@ class FakeMeter:
                 self.dup_frames = frames._pair(pkt, 1) == 0x97
             if self.adapt_fw and 0x99 <= frames._pair(pkt, 1) <= 0x9C:
                 self.rate_code = frames._pair(pkt, 1) - 0x99
+            if self.fec_fw and frames._pair(pkt, 1) in (0x9D, 0x9E):
+                self.fec_on = frames._pair(pkt, 1) == 0x9D
             return
         if not self.on_ld:
             return
