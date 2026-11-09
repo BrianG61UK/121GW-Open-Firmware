@@ -232,6 +232,8 @@ These checks confirm on hardware what the emulator cannot.
 51. Packed card reads and updates (F-1.32, bootloader B-1.15, IMP-63; GitHub issue 30; card reads verified working on a
    meter with the newer module, 2026-11-09: the meter's log file 26110700.csv, 6159 bytes, read with READZ in 4 s, 1325
    bytes fetched (21.5 %), CRC-32 right; the companion connected while page Ld was shown and found READZ by asking;
+   with the packer at the highest setting (dynamic codes): 872 bytes fetched (14.2 %) in 3.2 s, both windows byte for
+   byte the reference model's (emulator/tools/zdyn.py), the file equal;
    updates verified working on the same meter: B-1.14 -> B-1.15 plain (98 packets in 16 s), then F-1.32 packed through
    B-1.15 by the companion (502 packets in 87 s, 115920 bytes sent for 180384 = 64 %, none sent again; plain: 780 in
    126 s), then B-1.15 packed (73 packets in 12 s, 16449 bytes for 22172 = 74 %); the meter reports F-1.32 / B-1.15): with the 121GW Companion 1.3.0
