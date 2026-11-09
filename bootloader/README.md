@@ -12,8 +12,8 @@ updates itself the same way.  The old way, with the card and the keys, still wor
 |---|---|
 | <img src="docs/card_update.gif" alt="Card update: -IAP-, douun with the bargraph, Good, the firmware starts" width="250"> | <img src="docs/format.gif" alt="Setup page Fr: Fr no, Fr yE, Fr oK" width="250"> |
 
-(Pictures from the emulator, time-lapse; the meter shows the same screens.)  Current release: **bl-v1.1.4**
-(bootloader B-1.14), with firmware **v1.2.2** (F-1.22) and the companion **companion-v1.2.25**. What each version brought: [CHANGELOG.md](CHANGELOG.md).
+(Pictures from the emulator, time-lapse; the meter shows the same screens.)  Current release: **bl-v1.1.5**
+(bootloader B-1.15, experimental: packed updates), with firmware **v1.3.2** (F-1.32) and the companion **companion-v1.3.0**. What each version brought: [CHANGELOG.md](CHANGELOG.md).
 
 ## What it does
 
