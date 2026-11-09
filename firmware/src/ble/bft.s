@@ -48,6 +48,13 @@
 @     written); 8 battery low or below 4.80 V (nothing written); 9 the install file or a flash step failed.  After
 @     status 0 to END the meter restarts and the starter installs the bootloader (bootloader/DESIGN.md 6.4).
 @     START payload: size(4) crc32(4) [kind(1)]: kind 0 or absent = firmware file (EEVBlog.bin), 1 = install file.
+@     Packed (IMP-63, F-1.32): kind | 0x80 = the DATA bytes are the packed stream of the file: pieces of raw length
+@     u16 (1 .. 2048), packed length u16 (1 .. 2064) and one final dynamic-code deflate block of exactly those bytes
+@     (sys/zinf.s), or packed length 0x8000 | raw length and the raw bytes themselves; cut into packets anywhere.  size and CRC-32 are those of the unpacked file; every piece header is checked against the
+@     bytes still due before it is unpacked; the unpacked bytes take the path of plain DATA bytes (staged, written
+@     to the card, checked at END as above).  A bad piece header, a piece that does not unpack to exactly its raw
+@     length, or stream bytes beyond the file: error 10 (shown LdE10), answer status 0x1A.  Every such error ends the
+@     transfer (a packet is never applied twice: pieces of it may already be staged).
 @ Buffers: the received bytes are collected in log_buf (8 KiB of its 10000 bytes, 0x20001240..0x2000394F; 0x20003950 is
 @ the BLE value ring, written all the time) and written to the card
 @ when the next packet might not fit; the card work uses the FIL objects of the log (log_fil, log_fil_new) and the
@@ -73,6 +80,11 @@
     .equ BFT_MIN_SIZE,      0x124           @ the 73-word vector table
     .equ BFT_MAX_SIZE,      0x4C000         @ image limit (link/121gw.ld: __image_end <= APP_LIMIT)
     .equ BFT_COPY_LEN,      4096            @ copy step
+    .equ BFT_ZBUF_OFF,      6144            @ packed: piece buffer at bft_stage + 6144 (2068 bytes: up to 8212 of the
+                                            @ 10000 of log_buf); the unpacked bytes are staged below 6144
+    .equ BFT_ZRAW_MAX,      2048            @ packed: raw bytes of one piece
+    .equ BFT_ZPACK_MAX,     2064            @ packed: packed bytes of one piece (zlib: at most 2048 + 5, stored)
+    .equ BFT_ZERR,          10              @ error: the packed stream is damaged
     .equ BFT_GAP_TICKS,     20              @ 200 ms without a byte ends a packet being assembled
     .equ BFT_COPY_TRIES,    3               @ attempts of the copy to EEVBlog.bin
     .equ BFT_FLUSH_TRIES,   10              @ card sessions for one collected write
@@ -129,6 +141,7 @@ bft_rx_head:    .space 2                    @ ring write index (USART2 handler)
 bft_rx_tail:    .space 2                    @ ring read index (main)
 bft_pos:        .space 2                    @ bytes of the packet assembled so far
 bft_seq:        .space 2                    @ packet number expected next
+bft_zfill:      .space 2                    @ packed: bytes of the current piece collected (header included)
 bft_diag:       .space 2                    @ last failed card write session: step << 8 | FatFs result
 bft_fails:      .space 2                    @ failed card write sessions of this transfer (repeated successfully or not)
 bft_alt_next:   .space 3                    @ u16 for the "next" field of the coming answer, and at +2 the flag 1 = use it
@@ -141,6 +154,7 @@ bft_pct:        .space 1                    @ percent shown
 bft_created:    .space 1                    @ the temporary file exists for this transfer
 bft_idle:       .space 1                    @ 10 ms ticks since the last received byte (TIM2, saturates at 255)
 bft_kind:       .space 1                    @ START kind: 0 firmware (EEVBlog.bin), 1 bootloader install (nvm/blinst.s)
+bft_zmode:      .space 1                    @ 1 = the DATA bytes are the packed stream (START kind bit 7, IMP-63)
     .global bft_reset_due
 bft_reset_due:  .space 1                    @ 1: restart once the link has been quiet for BFT_RESET_TICKS (install done)
 
@@ -1012,6 +1026,112 @@ LFUNC bft_sysreset
 ENDFUNC bft_sysreset
 
 @ -----------------------------------------------------------------------------
+@ bft_zdata - packed DATA (IMP-63): r1 stream bytes at r0 into the piece buffer; each complete piece is unpacked into
+@             the stage (sys/zinf.s), bft_staged and bft_recv advance by its raw length
+@ Out      : r0 = 0 done, 1 a card write failed (bft_flush), 10 the stream is damaged or goes beyond the file
+@ Clobbers : r0-r3, r12, flags (r4-r7 saved)
+@ Note     : a piece header is checked as soon as its 4 bytes are there: raw length 1 .. 2048, packed length
+@            1 .. 2064, raw length at most the bytes still due (so nothing is staged beyond the file).  A new piece
+@            may not start once the file is complete.  The unpacked piece goes to bft_stage + bft_staged, below the
+@            piece buffer at BFT_ZBUF_OFF: when it would not fit there, the staged bytes are written first.
+@ -----------------------------------------------------------------------------
+LFUNC bft_zdata
+    push {r4-r7, lr}
+    mov r4, r0                              @ r4 = next stream byte
+    mov r5, r1                              @ r5 = stream bytes left in the packet
+    ldr r6, =bft_zfill
+    ldr r7, =(bft_stage + BFT_ZBUF_OFF)     @ r7 = piece buffer (4-byte aligned)
+1:  cmp r5, #0
+    beq 8f
+    ldrh r0, [r6]                           @ bytes of the piece so far
+    cbnz r0, 2f
+    ldr r1, =bft_recv                       @ a new piece: only while bytes are still due
+    ldr r1, [r1]
+    ldr r2, =bft_size
+    ldr r2, [r2]
+    cmp r1, r2
+    bhs 9f
+2:  ldrb r1, [r4], #1
+    strb r1, [r7, r0]
+    adds r0, r0, #1
+    strh r0, [r6]
+    subs r5, r5, #1
+    cmp r0, #4
+    blo 1b
+    bne 3f
+    ldrh r1, [r7]                           @ the header is complete: its limits
+    ldrh r2, [r7, #2]
+    subs r3, r1, #1
+    cmp r3, #BFT_ZRAW_MAX
+    bhs 9f
+    tst r2, #0x8000
+    beq 5f
+    bic r2, r2, #0x8000                     @ a raw piece: exactly its raw length
+    cmp r2, r1
+    bne 9f
+5:  subs r3, r2, #1
+    movw r12, #BFT_ZPACK_MAX
+    cmp r3, r12
+    bhs 9f
+    ldr r3, =bft_recv
+    ldr r3, [r3]
+    add r3, r3, r1
+    ldr r12, =bft_size
+    ldr r12, [r12]
+    cmp r3, r12
+    bhi 9f                                  @ the piece would go beyond the file
+    b 1b
+3:  ldrh r2, [r7, #2]
+    bic r2, r2, #0x8000
+    adds r2, r2, #4
+    cmp r0, r2
+    blo 1b                                  @ the piece is not complete yet
+    ldrh r1, [r7]                           @ r1 = raw length
+    ldr r2, =bft_staged
+    ldr r3, [r2]
+    add r3, r3, r1
+    cmp r3, #BFT_ZBUF_OFF
+    bls 4f
+    bl bft_flush                            @ the staged bytes to the card first
+    cbz r0, 4f
+    movs r0, #1
+    pop {r4-r7, pc}
+4:  ldr r2, =bft_staged                     @ r2 = stage + staged
+    ldr r2, [r2]
+    ldr r3, =bft_stage
+    add r2, r2, r3
+    add r0, r7, #4
+    ldrh r1, [r7, #2]
+    ldrh r3, [r7]
+    tst r1, #0x8000
+    beq 6f
+5:  ldrb r1, [r0], #1                       @ a raw piece: copied
+    strb r1, [r2], #1
+    subs r3, r3, #1
+    bne 5b
+    b 7f
+6:  bl zinf                                 @ zinf(packed bytes, packed length, stage + staged, raw length)
+    cbnz r0, 9f
+7:
+    ldrh r1, [r7]
+    ldr r2, =bft_staged
+    ldr r3, [r2]
+    add r3, r3, r1
+    str r3, [r2]                            @ staged += raw length
+    ldr r2, =bft_recv
+    ldr r3, [r2]
+    add r3, r3, r1
+    str r3, [r2]                            @ received += raw length
+    movs r0, #0
+    strh r0, [r6]                           @ the next piece
+    b 1b
+8:  movs r0, #0
+    pop {r4-r7, pc}
+9:  movs r0, #BFT_ZERR
+    pop {r4-r7, pc}
+ENDFUNC bft_zdata
+
+@ -----------------------------------------------------------------------------
 @ bft_alt - the coming answer carries r0 (u16) in its "next" field
 @ Clobbers : r1, r2
 @ -----------------------------------------------------------------------------
@@ -1069,7 +1189,7 @@ LFUNC bft_packet
     bl blcmd_update_mode                    @ restart into the bootloader's update mode; returns only with EEVblog's
     b 1f
 5:  cmp r0, #BFT_T_LEAVE
-    bne 1f
+    bne 6f
     @ IMP-47: leave the page Ld from the companion (keys do not reach the meter while the page owns the link): what a
     @ SETUP short press on the page does (key/short.s .Lsh_setup_next without the beep): the next page (fn_08015410: Fr
     @ with the two-part bootloader, else CL, IMP-52) and a redraw of the setup page.  The answer (status 0) is queued first; bft_poll gives the link back on its next
@@ -1081,14 +1201,21 @@ LFUNC bft_packet
     ldr r1, =bft_redraw
     strb r0, [r1]
     pop {r4-r7, pc}
+6:  cmp r0, #0x1A
+    bne 1f
+    bl bfx_request                          @ 0x1A READZ: a card read, packed (IMP-63, ble/bftsd.s)
+    pop {r4-r7, pc}
 1:  movs r0, #3                             @ unknown type (or 0x18 without the two-part bootloader): not allowed
     b .Lpk_answer
 .Lpk_start:
     ldrb r0, [r4, #5]                       @ payload 8 bytes (firmware) or 9 (+ kind)
     movs r5, #0                             @ r5 = kind
+    movs r6, #0                             @ r6 = 1: packed (kind bit 7)
     cmp r0, #9
     bne 1f
     ldrb r5, [r4, #14]
+    lsrs r6, r5, #7
+    and r5, r5, #0x7F
     cmp r5, #1
     bhi .Lpk_refuse
     b 2f
@@ -1111,6 +1238,8 @@ LFUNC bft_packet
     bne .Lpk_refuse
 4:  ldr r1, =bft_kind
     strb r5, [r1]
+    ldr r1, =bft_zmode
+    strb r6, [r1]
     ldr r1, =bft_size
     str r0, [r1]
     adds r0, r4, #10
@@ -1125,6 +1254,8 @@ LFUNC bft_packet
     ldr r1, =bft_staged
     str r0, [r1]
     ldr r1, =bft_seq
+    strh r0, [r1]
+    ldr r1, =bft_zfill
     strh r0, [r1]
     ldr r1, =bft_fails
     strh r0, [r1]
@@ -1188,6 +1319,10 @@ LFUNC bft_packet
     movs r0, #0                             @ the previous packet again (its answer was lost): accepted, not stored
     b .Lpk_answer
 1:  ldrb r5, [r4, #5]                       @ r5 = payload length
+    ldr r0, =bft_zmode
+    ldrb r0, [r0]
+    cmp r0, #0
+    bne .Lpk_zdata
     ldr r0, =bft_recv
     ldr r6, [r0]                            @ r6 = received so far
     add r1, r6, r5
@@ -1225,6 +1360,7 @@ LFUNC bft_packet
     ldr r0, [r0]
     cmp r6, r0
     bne 5f
+.Lpk_dflush:
 4:  bl bft_flush
     cbz r0, 5f
     movs r0, #BFT_ST_ERR
@@ -1235,6 +1371,7 @@ LFUNC bft_packet
     bl bft_alt                              @ the answer reports the failed step and its FatFs result
     movs r0, #0x11
     b .Lpk_answer
+.Lpk_dpct:
 5:  @ percent for the page: recv * 100 / size, at most 99 until END has succeeded
     movs r0, #100
     muls r0, r6, r0                         @ <= 0x4C000 * 100: fits
@@ -1254,6 +1391,39 @@ LFUNC bft_packet
     strb r0, [r1]
 6:  movs r0, #0
     b .Lpk_answer
+.Lpk_zdata:
+    @ packed (IMP-63): the stream bytes through bft_zdata, which stages the unpacked pieces; then as plain DATA
+    adds r0, r4, #6
+    mov r1, r5
+    bl bft_zdata
+    cmp r0, #1
+    beq .Lpk_dcard                          @ a card write failed: error 1 as plain DATA
+    cbz r0, 1f
+    movs r0, #BFT_ST_ERR                    @ the stream is damaged: error 10, the transfer ends
+    movs r1, #BFT_ZERR
+    bl bft_set_state
+    movs r0, #(0x10 + BFT_ZERR)
+    b .Lpk_answer
+1:  ldr r2, =bft_seq
+    ldrh r3, [r2]
+    adds r3, r3, #1
+    strh r3, [r2]
+    ldr r0, =bft_recv
+    ldr r6, [r0]                            @ r6 = unpacked bytes received (for the percent)
+    ldr r0, =bft_size
+    ldr r0, [r0]
+    cmp r6, r0
+    beq .Lpk_dflush                         @ the file is complete: the rest to the card
+    b .Lpk_dpct
+.Lpk_dcard:
+    movs r0, #BFT_ST_ERR
+    movs r1, #1
+    bl bft_set_state
+    ldr r0, =bft_diag
+    ldrh r0, [r0]
+    bl bft_alt
+    movs r0, #0x11
+    b .Lpk_answer
 .Lpk_end:
     ldr r0, =bft_state
     ldrb r0, [r0]
@@ -1269,7 +1439,16 @@ LFUNC bft_packet
     ldr r1, [r1]
     cmp r0, r1
     bne .Lpk_order                          @ bytes missing: the answer names the packet expected
-    bl bft_flush                            @ anything left (normally written with the last DATA)
+    ldr r0, =bft_zfill
+    ldrh r0, [r0]
+    cmp r0, #0
+    beq 5f
+    movs r0, #BFT_ST_ERR                    @ packed: stream bytes after the last piece
+    movs r1, #BFT_ZERR
+    bl bft_set_state
+    movs r0, #(0x10 + BFT_ZERR)
+    b .Lpk_answer
+5:  bl bft_flush                            @ anything left (normally written with the last DATA)
     cbz r0, 2f
     ldr r0, =bft_diag
     ldrh r0, [r0]
@@ -1515,14 +1694,20 @@ FUNC set_bft_draw
     strb r0, [sp, #4]
     b .Lbd_draw
 .Lbd_err:
-    movs r0, #'E'                           @ "LdE n"
+    movs r0, #'E'                           @ "LdE n", "LdE1n" for 10 and above
     strb r0, [sp, #2]
-    movs r0, #' '
-    strb r0, [sp, #3]
     ldr r0, =bft_err
     ldrb r0, [r0]
-    adds r0, r0, #'0'
-    strb r0, [sp, #4]
+    movs r1, #10
+    udiv r2, r0, r1
+    mls r3, r2, r1, r0
+    cmp r2, #0
+    ite eq
+    moveq r2, #' '
+    addne r2, r2, #'0'
+    strb r2, [sp, #3]
+    adds r3, r3, #'0'
+    strb r3, [sp, #4]
 .Lbd_draw:
     movs r0, #1
     mov r1, sp

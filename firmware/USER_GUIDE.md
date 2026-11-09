@@ -181,7 +181,7 @@ Tip: with `L4-20` a sensor's output reads directly in percent of its range, for 
   bleak`). The meter shows the progress in percent (`Ld 45`), a full image takes a few minutes.
 - **Result:** `Ld oK` means the file is on the card as `EEVBlog.bin` and was read back correctly (the temporary file
   `BTLOAD.TMP` is deleted). `LdE n` means it was not stored (1 card problem, 2 the file arrived damaged, 3 not a firmware
-  file, 4 the copy failed, 5 the copy reads back differently); start the transfer again or copy the file with a computer.
+  file, 4 the copy failed, 5 the copy reads back differently, 10 a packed transfer arrived damaged); start the transfer again or copy the file with a computer.
   After `LdE 4` or `LdE 5` the card holds either the old `EEVBlog.bin` untouched or none at all (a partly written one is
   deleted, so the update key sequence then leaves the installed firmware unchanged).
 - **Then update as usual:** switch off, hold HOLD and MEM while switching on, then press SETUP. With the two-part
@@ -250,9 +250,17 @@ Nothing is written to the card except the deletes you confirm.  While the compan
 Early meters (v.01 boards, Bluegiga BLE112-A module) damage single bytes on the Bluetooth link and carry only about 150
 bytes a second. The 121GW Companion (1.3.0 or newer) recognises them by themselves and switches link 2 on: the readings
 come in small blocks with repair bytes, only what changed is sent, so the meter's full reading rate (bt) gets through and
-a damaged byte is repaired; the card list and downloads come in small pieces. Nothing to set; the Meter page and the
-report say "link 2". With older firmware the companion shows the readings as they come and suggests the update. Newer
-meters (BGM220S module) are not affected.
+a damaged byte is repaired; with F-1.32 the card list, downloads and settings come in the same repaired blocks. Nothing
+to set; the Meter page and the report say "link 2". With older firmware the companion shows the readings as they come
+and suggests the update. Newer meters (BGM220S module) are not affected.
+
+## Packed downloads and updates (F-1.32, bootloader B-1.15)
+
+With firmware F-1.32 the meter packs card files before it sends them (log files shrink to about a quarter), and with
+F-1.32 on page Ld or the bootloader B-1.15 the 121GW Companion sends updates packed (the firmware to about two thirds).
+Both work on every meter and every Bluetooth module; nothing to set. If anything arrives damaged the transfer stops with
+LdE10 (page Ld) or LdE 7 (update mode, which stays in update mode) and is simply sent again; the meter checks every
+update as before, so a damaged one is never used.
 
 ## Two-part bootloader (with the 121GW Companion)
 

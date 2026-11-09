@@ -19,7 +19,10 @@ blocks only when their version equals it, and rebuilds each reading as the statu
   L9 20 readings a second (0x9C), the default pace, a changing input and SETUP pressed through pages (settings versions,
      sub display changes): every reading delivered equals its built frame, in order; built = delivered + dropped
      (the drop counter of the STATE blocks); readings a second delivered reported
-RUN LIMIT: 1 run of this script (6 boots).  The helpers are those of test_careful.py.
+  L10 page Ld with link 2 on: the card LIST and a file read (the B5 answers of ble/bftsd.s) arrive in TEXT blocks and
+     equal the plain run's; no READ / STATE blocks while the page is shown; leaving the page (LEAVE): a STATE first,
+     then readings again
+RUN LIMIT: 1 run of this script (8 boots).  The helpers are those of test_careful.py.
 """
 import os
 import sys
@@ -30,6 +33,9 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, '..', 'tools'))
 import test_backlight_timer as T  # noqa: E402
 import test_careful as C  # noqa: E402
+import test_bft_files as F  # noqa: E402
+import test_bt_upload as U  # noqa: E402
+import btft  # noqa: E402
 from unicorn import UC_HOOK_CODE  # noqa: E402
 
 EXP, LOG = [0] * 512, [0] * 256
@@ -179,6 +185,50 @@ def stimulus(e, seconds):
     for v in values:
         e.command({'input': {'kind': 'V', 'value': v, 'ac': False}})
         e.advance(step)
+
+
+class L2Link:
+    """test_bt_upload.Link for link 2: the meter's bytes are decoded as blocks, the TEXT bytes go to the answer parser."""
+    def __init__(self, e, start):
+        self.e, self.start, self.parser, self.used = e, start, btft.AnswerParser(), 0
+        self.dec = None
+
+    def answers(self):
+        self.dec = Decoder()
+        self.dec.feed(bytes(self.e.ble_rx[self.start:]))
+        text = bytes(self.dec.text)
+        new, self.used = text[self.used:], len(text)
+        return self.parser.feed(new)
+
+    def send(self, pkt, timeout=20.0):
+        self.answers()
+        self.e.usart2.rx_feed(pkt)
+        t = 0.0
+        while t < timeout:
+            self.e.advance(0.05)
+            t += 0.05
+            got = self.answers()
+            if got:
+                return got[0]
+        return None
+
+
+def page_ld(image, card, link2):
+    """Emulator with `card`, Bluetooth on, (link 2 on,) the SETUP page Ld shown (test_bt_upload.open_page's steps)."""
+    T.Emulator.sdcard_path, T.Emulator.sdcard_mb = card, 64
+    e = T.make(image)
+    e.command({'dial': 2})
+    e.advance(3.0)
+    T.long_press(e, 'PEAK')
+    e.advance(1.0)
+    start = len(e.ble_rx)
+    if link2:
+        e.usart2.rx_feed(C.key_frame(0xA8))
+        e.advance(1.5)
+    e.m.uc.mem_write(U.ADDR_ITEM, bytes([21]))
+    T.press(e, 'SETUP', gap=0.6)
+    e.advance(1.0)
+    return e, start
 
 
 def plain_frames(e, n0):
@@ -340,6 +390,37 @@ def run_tests(image):
     secs = T.now(e9) - t9
     print('  20 a second: %d readings built in %.1f s, %d delivered (%.1f a second), %d blocks (%.1f a second), %d STATE' % (
         len(built), secs, len(d9.readings), len(d9.readings) / secs, len(d9.blocks), len(d9.blocks) / secs, len(states)))
+
+    print('L10 page Ld over link 2')
+    card, _expect = F.build_card()
+    ep, _ = page_ld(image, card, False)
+    fp = F.Files(U.Link(ep))
+    plain_list, _, _ = fp.list_all()
+    plain_read = fp.ask(btft.read_packet, 'SMALL.TXT', 0, 200)
+    card2, _ = F.build_card()
+    e10, start = page_ld(image, card2, True)
+    T.check('L10: page Ld shown', T.sub_text(e10) == 'LD-BT', T.sub_text(e10))
+    link = L2Link(e10, start)
+    n0 = len(e10.ble_rx)
+    f10 = F.Files(link)
+    l2_list, pages, _ = f10.list_all()
+    T.check('L10: the card LIST over link 2 equals the plain one', l2_list is not None and l2_list == plain_list,
+            '%s entries in %d pages' % (len(l2_list) if l2_list else None, pages))
+    r10 = f10.ask(btft.read_packet, 'SMALL.TXT', 0, 200)
+    T.check('L10: a file read over link 2 equals the plain one', r10 is not None and plain_read is not None
+            and btft.parse_read(r10) == btft.parse_read(plain_read), repr(r10)[:80])
+    d10 = Decoder()
+    d10.feed(bytes(e10.ble_rx[n0:]))
+    kinds = set(k for k, _ in d10.blocks)
+    T.check('L10: only TEXT blocks while the page is shown', kinds == {2}, repr(sorted(kinds)))
+    n1 = len(e10.ble_rx)
+    a = link.send(btft.packet(0x19, f10.next_seq(), b''))      # LEAVE: the next page (F-1.17)
+    e10.advance(3.0)
+    d11 = Decoder()
+    d11.feed(bytes(e10.ble_rx[n1:]))
+    types = [k for k, _ in d11.blocks]
+    T.check('L10: after leaving the page a STATE, then readings', 3 in types and 1 in types
+            and types.index(3) < types.index(1), repr(types[:8]))
 
     s = el.snapshot()
     T.check('no unmodelled access, no safety violation', s['unmodelled'] == 0 and not s['safety'],

@@ -680,7 +680,24 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   second fit in about 100 bytes a second (emulator: 260 of 263 readings delivered, the other 3 still queued at the end).
   Removed with it: the doubled frames (2.11 careful mode's F3), F5 (2.34) and the link-only rates (2.35); their key codes
   are accepted and do nothing.  Other apps never ask and keep the original status frames.
-- Test: emulator `test_link2.py` (L1..L9); companion tests (decoder, pace); HARDWARE_TEST 50.
+- Page Ld (F-1.32): the card and settings answers travel in TEXT blocks too (repaired like the rest), so the companion
+  asks for them in the large pieces of a new module; no readings while the page is shown, a STATE first when it is left.
+- Test: emulator `test_link2.py` (L1..L10); companion tests (decoder, pace, a card answer in damaged TEXT blocks);
+  HARDWARE_TEST 50.
+
+### 2.37 Packed card reads and packed updates (experimental, IMP-63, F-1.32 and bootloader B-1.15; GitHub issue 30)
+- Request (owner, 2026-11-09): compression for card downloads and for firmware and bootloader updates, done properly
+  and nothing left half finished.
+- Card: the companion reads files with READZ; the meter packs each piece of up to 4 KiB (deflate with the fixed code)
+  and sends it only when that is shorter; the companion unpacks and checks the CRC-32 of the original bytes.
+- Updates: the companion packs the image in pieces of 2 KiB (deflate, about 64 % of the firmware image); the meter's page
+  Ld (F-1.32) and the bootloader's update mode (B-1.15) unpack each piece and handle its bytes exactly as before, so the
+  checks at the end (CRC-32 of the file or of the flash, image check, firmware mark) are unchanged.  A damaged stream ends
+  the transfer with LdE10 (page Ld) or LdE 7 (update mode, which stays in update mode).  Older firmware and bootloaders
+  refuse the packed START before anything is erased, and the companion sends them the plain transfer.
+- Measured in the emulator (2026-11-09): a log file of 28268 bytes packed by the meter to 6764 (23.9 %); the F-1.32 image
+  in 500 packets instead of 778 on page Ld; through the bootloader 66.8 s instead of 100.1 s (487 packets instead of 764).
+- Test: emulator `test_packed.py` (Z1..Z4), bootloader `test_bootloader.py` B10..B12, companion tests; HARDWARE_TEST 51.
 
 ## 3. EEPROM bytes the features need
 

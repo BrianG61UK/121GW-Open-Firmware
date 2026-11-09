@@ -227,6 +227,12 @@ These checks confirm on hardware what the emulator cannot.
    link 2 comes back after it.  Disconnect, then another app: original status frames.  On a meter with the newer module the
    companion does not switch link 2 on (the report says careful mode off).
 
+51. Packed card reads and updates (F-1.32, bootloader B-1.15, IMP-63; GitHub issue 30): with the 121GW Companion 1.3.0
+   download a log file from the card: the report's "packed reads" line gives the bytes fetched for the bytes read, and
+   the file equals the card's (compare with a card reader).  Update the bootloader to B-1.15, then the firmware over
+   Bluetooth: the transfer line says "packed: n bytes sent for m"; the meter starts the new firmware.  Repeat on a meter
+   with the old BLE112 module (link 2 on): page Ld list, a download and an update work.
+
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).
 - To return to v2.05: flash the original image; settings and calibration stay readable (same EEPROM layout).

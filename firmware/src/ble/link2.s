@@ -41,7 +41,8 @@
 @ 8 or 7 ticks (the companion lowers it on loss, raises it slowly).
 @ On / off: 0xA8 asks for it (and arms the link watch, IMP-56, so a vanished companion frees the meter); it starts when
 @ the echo and any frame in flight are out.  0xFD (the companion's goodbye), ble_link_reset (Bluetooth off / on,
-@ wake) end it; page Ld suspends it (the card transfer keeps its own packets) and it starts again after the page.
+@ wake) end it.  On page Ld the card / settings answers of the file transfer (B5 packets) go in TEXT blocks like every
+@ other answer (repaired, at the pace); no readings and no STATE there; leaving the page sends a STATE first.
 @
 @ Context: l2_tick in the TIM2 interrupt; l2_frame (from the status frame builder) and l2_step in main; ble_tx_pump
 @ (USART2 interrupt) sends a built block (l2_blk while l2_blk_ready) and nothing else while link 2 is on.
@@ -79,6 +80,7 @@ l2_pace:        .space 1
 l2_state_due:   .space 1
 l2_ver:         .space 1
 l2_dropped:     .space 1
+l2_was_ld:      .space 1                @ bft_active at the last l2_step (page Ld left -> STATE due)
     .global l2_eh, l2_et                @ (global for the emulator test test_link2.py)
 l2_eh:          .space 1                @ reading queue head (main)
 l2_et:          .space 1                @ reading queue tail (main)
@@ -212,7 +214,11 @@ ENDFUNC l2_start
 @ -----------------------------------------------------------------------------
 FUNC l2_frame
     push {r4-r7, lr}
-    ldr r4, =ble_frame_b
+    ldr r0, =bft_active
+    ldrb r0, [r0]
+    cbz r0, 0f
+    pop {r4-r7, pc}                         @ page Ld: no readings (the display shows Ld)
+0:  ldr r4, =ble_frame_b
     ldr r5, =l2_tmp                         @ the 11 STATE bytes of this frame, built in l2_tmp
     ldrb r0, [r4, #5]
     and r0, r0, #0x3F
@@ -340,19 +346,18 @@ ENDFUNC l2_frame
 @ -----------------------------------------------------------------------------
 FUNC l2_step
     push {r4-r11, lr}
-    ldr r0, =bft_active
+    ldr r0, =bft_active                     @ page Ld left: a STATE first, so the readings decode at once
     ldrb r0, [r0]
-    cbz r0, 1f
-    ldr r1, =l2_on                          @ page Ld: blocks stop, they start again after the page
-    ldrb r0, [r1]
+    ldr r1, =l2_was_ld
+    ldrb r2, [r1]
+    strb r0, [r1]
+    cmp r2, #0
+    beq 1f
     cmp r0, #0
-    beq 9f
-    movs r0, #0
-    strb r0, [r1]
+    bne 1f
     movs r0, #1
-    ldr r1, =l2_req
+    ldr r1, =l2_state_due
     strb r0, [r1]
-    b 9f
 1:  ldr r0, =l2_req
     ldrb r0, [r0]
     cbz r0, 2f
@@ -397,7 +402,11 @@ FUNC l2_step
     beq 3f
     bl l2_build_text
     b 8f
-3:  ldr r0, =l2_eh                          @ readings queued under an older settings version go before the new STATE
+3:  ldr r0, =bft_active                     @ page Ld: only the answers (TEXT); no readings, no STATE there
+    ldrb r0, [r0]
+    cmp r0, #0
+    bne 9f
+    ldr r0, =l2_eh                          @ readings queued under an older settings version go before the new STATE
     ldrb r0, [r0]
     ldr r1, =l2_et
     ldrb r1, [r1]

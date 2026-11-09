@@ -259,6 +259,7 @@ FUNC ff16_tchar2uni
     pop {r3, r4, r5, r6, r7, pc}
 ENDFUNC ff16_tchar2uni
 
+    .if FF_FS_MINIMIZE <= 1                 @ ff.c: only for get_fileinfo
 @ -----------------------------------------------------------------------------
 @ put_utf - UINT put_utf(DWORD chr, TCHAR* buf, UINT szb): one Unicode character to OEM bytes (ANSI/OEM output)
 @ In       : r0 = chr, r1 = buf, r2 = szb (bytes available)
@@ -289,6 +290,8 @@ FUNC ff16_put_utf
 9:  movs r0, #0
     pop {r4, r5, r6, pc}
 ENDFUNC ff16_put_utf
+    .endif
+
 
 .if FF_FS_READONLY == 0
 @ -----------------------------------------------------------------------------

@@ -19,6 +19,8 @@
 @     0x14 INFO    -                                 free and total clusters, cluster size
 @     0x15 FORMAT  "FORMAT"(6)                       format the card as exFAT (f_mkfs, as the SETUP page Fr, set/fmt.s);
 @                                                    only with the two-part bootloader (EEVblog's cannot read exFAT)
+@     0x1A READZ   namelen(1) name offset(4) len(2)  as READ, len 1 .. 4096, and the bytes read are packed (IMP-63,
+@                                                    F-1.32): one raw deflate block with the fixed code (sys/zdef.s)
 @ Answer: B5 5B 82 seq(2) len(1) status(1) field(2) data crc16(2); seq = the request's seq, len = 3 + length of data,
 @     data <= 232 bytes, so an answer is at most 8 + 3 + 232 = 243 bytes (one Bluetooth write of 244 bytes; the transmit
 @     queue ble_txq of usart.s holds 256).  field and the data per request:
@@ -31,6 +33,12 @@
 @     READ   field = number of bytes read (below len at the end of the file; 0 at or after the end), data = CRC-32
 @            (IEEE 802.3, as zlib.crc32) of those bytes, 4 bytes.  The bytes stay in the staging buffer for CHUNK until
 @            the next READ or the next START of a firmware transfer.
+@     READZ  field = number of bytes read (as READ), data = CRC-32 of those bytes (as READ, 4), staged length (u16),
+@            method (u8): 1 = the staged bytes are the raw deflate stream of the bytes read (the companion unpacks it
+@            with zlib and checks length and CRC-32), 0 = the bytes read themselves (packing would not have made them
+@            shorter; also for 0 bytes read).  Packing: the bytes read at log_buf[0 .. n), the packed stream built at
+@            log_buf[4096 ..) with room n - 1 (so it is shorter or not used), then moved to log_buf[0 ..).  RAM only,
+@            after the card session (the link hears again).
 @     CHUNK  field = idx, data = the 232 bytes idx*232 .. of the staged data (fewer in the last chunk).
 @     DELETE field = 0, no data.
 @     FORMAT field = 0, no data; the answer comes when the card is formatted (seconds; the link is deaf meanwhile).
@@ -79,6 +87,8 @@
     .equ BFX_MAXDATA,       232             @ data bytes of one answer (= BFT_MAXPAY of bft.s)
     .equ BFX_NAME_MAX,      63              @ longest name accepted, and longest name shown by LIST
     .equ BFX_READ_MAX,      8192            @ largest READ (the staging buffer, BFT_STAGE_LEN of bft.s)
+    .equ BFX_READZ_MAX,     4096            @ largest READZ: the packed stream is built behind the bytes read
+    .equ BFX_T_READZ,       0x1A
     .equ BFX_ENTRY_HDR,     10              @ size(4) fdate(2) ftime(2) attr(1) namelen(1)
     .equ BFX_ST_NOTALLOWED, 3
     .equ BFX_ST_NOTFOUND,   0x20
@@ -463,8 +473,21 @@ ENDFUNC bfx_list
 @            refused (status 3); bfx_staged is cleared first, so a failed READ leaves nothing to CHUNK.
 @ -----------------------------------------------------------------------------
 LFUNC bfx_read
+    movs r0, #0
+    b bfx_read_any
+ENDFUNC bfx_read
+
+@ bfx_readz - READZ (IMP-63): as READ, the bytes read packed (sys/zdef.s); data CRC-32(4) staged(2) method(1)
+LFUNC bfx_readz
+    movs r0, #1
+    b bfx_read_any
+ENDFUNC bfx_readz
+
+@ bfx_read_any - READ (r0 = 0) or READZ (r0 = 1)
+LFUNC bfx_read_any
     push {r4-r7, lr}
-    sub sp, sp, #8                          @ [sp] bytes read
+    sub sp, sp, #8                          @ [sp] bytes read, [sp, #4] 1 = READZ
+    str r0, [sp, #4]
     movs r0, #0
     ldr r1, =bfx_staged
     strh r0, [r1]                           @ the old staged bytes are lost from here on
@@ -498,27 +521,35 @@ LFUNC bfx_read
     orr r5, r1, r2, lsl #8                  @ r5 = len
     subs r0, r5, #1
     movw r1, #(BFX_READ_MAX - 1)
+    ldr r2, [sp, #4]
+    cmp r2, #0
+    it ne
+    movwne r1, #(BFX_READZ_MAX - 1)
     cmp r0, r1
-    bhi .Lrd_arg                            @ 0 or above 8192
+    bhi .Lrd_arg                            @ 0 or above 8192 (READZ 4096)
     bl bft_card_begin
     ldr r0, =bfx_fil
     ldr r1, =bfx_path
     movs r2, #FA_READ
     bl fat_f_open
-    cbnz r0, .Lrd_f1
+    cmp r0, #0
+    bne .Lrd_f1
     ldr r0, =bfx_fil
     mov r1, r7
     bl fat_f_lseek
-    cbnz r0, .Lrd_f2
+    cmp r0, #0
+    bne .Lrd_f2
     ldr r0, =bfx_fil
     ldr r1, =bfx_stage
     mov r2, r5
     mov r3, sp
     bl fat_f_read
-    cbnz r0, .Lrd_f3
+    cmp r0, #0
+    bne .Lrd_f3
     ldr r0, =bfx_fil
     bl fat_f_close
-    cbnz r0, .Lrd_f5
+    cmp r0, #0
+    bne .Lrd_f5
     bl bft_card_end
     @ the CRC-32 of the bytes read, outside the card session (the SDIO block is off, the link hears again)
     ldr r5, [sp]                            @ r5 = bytes read
@@ -530,10 +561,43 @@ LFUNC bfx_read
     ldr r0, =bfx_ans
     adds r0, r0, #9
     bl bfx_put32
+    ldr r0, [sp, #4]
+    cbnz r0, .Lrd_pack
     ldr r0, =bfx_staged
     strh r5, [r0]                           @ the bytes can be fetched with CHUNK
     mov r1, r5                              @ field = bytes read
     movs r2, #4
+    movs r0, #0
+    b .Lrd_ret
+.Lrd_pack:
+    @ READZ: pack the r5 bytes read into log_buf + 4096 with room r5 - 1 (zdef returns 0: not shorter, method 0)
+    movs r6, #0                             @ r6 = method
+    mov r7, r5                              @ r7 = staged length
+    cmp r5, #2
+    blo 2f                                  @ 0 or 1 byte: as they are
+    ldr r0, =bfx_stage
+    mov r1, r5
+    add r2, r0, #BFX_READZ_MAX
+    subs r3, r5, #1
+    bl zdef
+    cbz r0, 2f
+    mov r7, r0                              @ packed: moved down to the start (r7 < r5 <= 4096: no overlap)
+    movs r6, #1
+    ldr r1, =bfx_stage
+    add r2, r1, #BFX_READZ_MAX
+1:  ldrb r3, [r2], #1
+    strb r3, [r1], #1
+    subs r0, r0, #1
+    bne 1b
+2:  ldr r0, =bfx_staged
+    strh r7, [r0]
+    ldr r0, =bfx_ans
+    strb r7, [r0, #13]                      @ data: CRC-32 at 9, staged u16 at 13, method at 15
+    lsrs r1, r7, #8
+    strb r1, [r0, #14]
+    strb r6, [r0, #15]
+    mov r1, r5                              @ field = bytes read
+    movs r2, #7
     movs r0, #0
     b .Lrd_ret
 .Lrd_f2:
@@ -570,7 +634,7 @@ LFUNC bfx_read
 .Lrd_ret:
     add sp, sp, #8
     pop {r4-r7, pc}
-ENDFUNC bfx_read
+ENDFUNC bfx_read_any
 
 @ -----------------------------------------------------------------------------
 @ bfx_chunk - CHUNK: 232 bytes of the staged data, or len bytes (IMP-50)
@@ -783,7 +847,7 @@ bfx_fmt_word:
     .section .text.bftsd, "ax", %progbits
 
 @ -----------------------------------------------------------------------------
-@ bfx_request - handle a request of type 0x10 .. 0x17 and queue the 0x82 answer
+@ bfx_request - handle a request of type 0x10 .. 0x17 or 0x1A (READZ) and queue the 0x82 answer
 @ In       : r0 = type
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags (AAPCS)
@@ -813,6 +877,8 @@ FUNC bfx_request
     beq .Lrq_get
     cmp r4, #BFX_T_PUT
     beq .Lrq_put
+    cmp r4, #BFX_T_READZ
+    beq .Lrq_readz
 .Lrq_refuse:
     movs r0, #BFX_ST_NOTALLOWED
     bl bfx_status
@@ -822,6 +888,9 @@ FUNC bfx_request
     b .Lrq_reply
 .Lrq_read:
     bl bfx_read
+    b .Lrq_reply
+.Lrq_readz:
+    bl bfx_readz
     b .Lrq_reply
 .Lrq_chunk:
     bl bfx_chunk

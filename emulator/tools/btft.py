@@ -15,6 +15,10 @@ Requests (payload):
     0x14 INFO   -
     0x16 GET    -                                  every setting: field = count, data = (id(2) value(1)) per setting
     0x17 PUT    id(2) value(1)                     one setting; the meter applies it as its setup page does
+    0x1A READZ  namelen(1) name offset(4) len(2)   as READ, len 1 .. 4096, packed (F-1.32, IMP-63): data = CRC-32(4)
+                                                   staged(2) method(1); method 1 = staged bytes are raw deflate
+Packed transfer (F-1.32, IMP-63): START kind | 0x80, the DATA bytes are pack_stream(file): pieces of raw length u16,
+packed length u16, one final dynamic-code deflate block of at most PIECE bytes (or 0x8000 | raw length, raw bytes); size and CRC-32 of START are those of the file.
 """
 import struct
 import zlib
@@ -22,6 +26,10 @@ from collections import namedtuple
 
 T_START, T_DATA, T_END, T_ABORT, T_STATUS, T_ANSWER = 1, 2, 3, 4, 5, 0x81
 T_LIST, T_READ, T_CHUNK, T_DELETE, T_INFO, T_FORMAT, T_GET, T_PUT, T_ANSWER2 = 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x82
+T_READZ = 0x1A                                      # READ, packed (firmware F-1.32, IMP-63)
+PIECE = 2048                                        # raw bytes of one piece of a packed transfer (bft.s BFT_ZRAW_MAX)
+PIECE_PACK_MAX = 2064                               # packed bytes of one piece (bft.s BFT_ZPACK_MAX)
+READZ_MAX = 4096                                    # largest READZ
 T_UPDMODE, T_LEAVE = 0x18, 0x19                     # restart into update mode; leave the page Ld (firmware F-1.17, IMP-47)
 FORMAT_WORD = b'FORMAT'      # the only payload FORMAT accepts (ble/bftsd.s)
 DIAG_NAMES = ['failed card sessions of the transfer', 'last card failure (step << 8 | FatFs result)',
@@ -31,7 +39,7 @@ MAX_PAYLOAD = 232
 STATUS_TEXT = {0: 'accepted', 1: 'CRC wrong', 2: 'not the expected packet', 3: 'not allowed now', 4: 'START refused (size)',
                5: 'beyond the announced size', 0x11: 'card could not be written', 0x12: 'length or CRC-32 wrong',
                0x13: 'not an application image', 0x14: 'copy to EEVBlog.bin failed', 0x15: 'EEVBlog.bin read back differs',
-               0x16: 'the received file could not be read back'}
+               0x16: 'the received file could not be read back', 0x1A: 'the packed stream is damaged'}
 MIN_SIZE, MAX_SIZE = 0x124, 0x4C000     # firmware limit (firmware/link/121gw.ld)
 CARD_STEP = {1: 'open', 2: 'seek', 3: 'write', 4: 'short write (card full?)', 5: 'close', 6: 'read back'}
 
@@ -132,6 +140,10 @@ def read_packet(seq, name, offset, length):
     return packet(T_READ, seq, _name_payload(name) + struct.pack('<IH', offset, length))
 
 
+def readz_packet(seq, name, offset, length):
+    return packet(T_READZ, seq, _name_payload(name) + struct.pack('<IH', offset, length))
+
+
 def chunk_packet(seq, idx):
     return packet(T_CHUNK, seq, struct.pack('<H', idx))
 
@@ -177,6 +189,38 @@ def parse_read(a):
     return a.field, struct.unpack('<I', a.data)[0]
 
 
+def parse_readz(a):
+    """(bytes read, CRC-32 of them, staged length, method) of a READZ answer."""
+    crc, staged, method = struct.unpack('<IHB', a.data)
+    return a.field, crc, staged, method
+
+
+def unpack_readz(staged, n, method):
+    """The n bytes read from the staged bytes of a READZ (method 1: one raw deflate stream that ends exactly)."""
+    if method == 0:
+        return staged
+    d = zlib.decompressobj(-15)
+    out = d.decompress(staged)
+    if not d.eof or d.unused_data or len(out) != n:
+        raise ValueError('READZ stream: eof %s, %d unused bytes, %d of %d bytes' % (d.eof, len(d.unused_data), len(out), n))
+    return out
+
+
+def pack_stream(data, piece=PIECE):
+    """The packed stream of a transfer: per piece raw length u16, packed length u16, then one final dynamic-code
+    deflate block (zlib level 9, window 2 KiB, Z_FINISH), or 0x8000 | raw length and the raw bytes."""
+    out = bytearray()
+    for p in range(0, len(data), piece):
+        raw = data[p:p + piece]
+        c = zlib.compressobj(9, zlib.DEFLATED, -11, 9)
+        blk = c.compress(raw) + c.flush()
+        if blk[0] & 7 == 5 and len(blk) < len(raw):   # one final dynamic-code block: the only one zinf.s takes
+            out += struct.pack('<HH', len(raw), len(blk)) + blk
+        else:                                         # anything else: the raw bytes, packed length 0x8000 | raw
+            out += struct.pack('<HH', len(raw), 0x8000 | len(raw)) + raw
+    return bytes(out)
+
+
 def parse_info(a):
     """(sectors per cluster, free clusters, total clusters) of an INFO answer."""
     free, total = struct.unpack('<II', a.data)
@@ -193,8 +237,10 @@ def card_diag2(field):
     return 'step %s, FatFs result %d' % (CARD_STEP2.get(field >> 8, field >> 8), field & 0xFF)
 
 
-def start_packet(data):
-    return packet(T_START, 0, struct.pack('<II', len(data), zlib.crc32(data) & 0xFFFFFFFF))
+def start_packet(data, kind=None):
+    """START of `data`; kind None = the 8-byte form, else the kind byte (| 0x80 for a packed transfer)."""
+    payload = struct.pack('<II', len(data), zlib.crc32(data) & 0xFFFFFFFF)
+    return packet(T_START, 0, payload if kind is None else payload + bytes([kind]))
 
 
 def data_packets(data):
