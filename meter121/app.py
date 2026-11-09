@@ -165,6 +165,7 @@ class Companion:
         self._mclock_frame = None
         self._mclock_evt = threading.Event()
         self.l2c = {'on': False}                         # link 2 of this connection (IMP-62): on, pace index, clean windows
+        self._readz_probe = None                         # READZ support found by asking when the version is unknown
         self.xdiag = {'state': 'not read'}
         self._hb_quiet = False                           # IMP-56: no heartbeat bytes (a disconnect by the user is under way)
         self._hb_run = True                              # the heartbeat thread works (tests drive _hb_step themselves)
@@ -232,6 +233,7 @@ class Companion:
         self._frame_t = 0.0
         self.xdiag_on = False                            # the counting is told again at each connection
         self.l2c = {'on': False}                          # link 2 is asked for again at each connection
+        self._readz_probe = None                         # READZ support found by asking (card.Card, version unknown)
         self._st_n, self._st_first, self._st_last = 0, None, None
         if state == 'connected':
             self.fw_kind, self.version, self.mode = 'unknown', None, 'unknown'
@@ -536,6 +538,15 @@ class Companion:
         """True when the firmware packs card reads (READZ) and takes packed page Ld transfers (F-1.32 on, IMP-63)."""
         v = releases.version_of_meter(self.version)
         return self.fw_kind == 'fast' and v is not None and v >= PACKED_MIN_VERSION
+
+    def _packed_card(self):
+        """READZ for card reads: True from F-1.32; None while the version is not known (page Ld already shown at the
+        connection: card.Card asks once), then what that found for this connection; False otherwise."""
+        if self.packed_fw():
+            return True
+        if self.version is None and self.fw_kind != 'other':
+            return self._readz_probe
+        return False
 
     def packed_bl(self):
         """True when the two-part bootloader takes packed transfers in its update mode (B-1.15 on, IMP-63)."""
@@ -1306,7 +1317,10 @@ class Companion:
         def run():
             try:
                 with self._ops(op, wait=LINK_WAIT) as (_, client):
-                    st['result'] = job(card.Card(client, careful=self.small_pieces(), packed=self.packed_fw()), progress)
+                    c = card.Card(client, careful=self.small_pieces(), packed=self._packed_card())
+                    st['result'] = job(c, progress)
+                    if self.version is None and self.fw_kind != 'other':
+                        self._readz_probe = c.packed         # found by asking (page Ld shown at the connection)
                 st['progress'] = 1.0
             except (RuntimeError, ValueError, OSError, transfer.TransferError) as e:
                 st['error'] = str(e)

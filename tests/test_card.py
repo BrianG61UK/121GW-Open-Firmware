@@ -196,6 +196,24 @@ class PackedDownload(CardCase):
         path = self.card.download('LOG0002.CSV', self.tmp, 20000)
         self.assertEqual(slurp(path), sample_files()['LOG0002.CSV'][0])
 
+    def test_unknown_version_asks_once(self):
+        self.card = card.Card(make_client(self.meter), packed=None)      # page Ld shown at the connection
+        path = self.card.download('LOG0002.CSV', self.tmp, 20000)
+        self.assertEqual(slurp(path), sample_files()['LOG0002.CSV'][0])
+        self.assertTrue(self.card.packed)
+        self.assertEqual(self.count(card.T_READ), 0)
+
+    def test_unknown_version_older_firmware_reads_plain(self):
+        self.meter.readz_fw = False
+        old = (card.PROBE_WAIT, card.PROBE_TRIES)
+        card.PROBE_WAIT, card.PROBE_TRIES = 0.2, 1
+        self.addCleanup(lambda: setattr(card, 'PROBE_WAIT', old[0]) or setattr(card, 'PROBE_TRIES', old[1]))
+        self.card = card.Card(make_client(self.meter), packed=None)
+        path = self.card.download('LOG0002.CSV', self.tmp, 20000)
+        self.assertEqual(slurp(path), sample_files()['LOG0002.CSV'][0])
+        self.assertIs(self.card.packed, False)
+        self.assertEqual(self.count(card.T_READ), 3)                    # windows of 8192 again
+
     def test_answer_forms(self):
         with self.assertRaises(card.CardError):
             card.parse_readz(100, b'\0' * 4)                               # the 4-byte READ answer

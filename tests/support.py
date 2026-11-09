@@ -135,6 +135,8 @@ class FakeMeter:
             ok = idx < len(self.diag)
             self._out(transfer.packet(0x81, seq, bytes([0 if ok else 3]) + struct.pack('<H', self.diag[idx] if ok else 0)))
             return
+        if rtype == card.T_READZ and not self.readz_fw:
+            return                                     # firmware before F-1.32: 0x1A is "not allowed", a 0x81 answer
         status, field, data = self._handle(rtype, payload)
         if self.drop_next:
             self.drop_next -= 1

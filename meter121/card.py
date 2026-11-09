@@ -69,6 +69,7 @@ NAME_ENCODING = 'latin-1'                          # the meter's names are bytes
 CHUNK = transfer.MAX_PAYLOAD                       # 232: bytes of one CHUNK answer (bft.s BFT_MAXPAY)
 WINDOW = 8192                                      # largest READ (bft.s BFT_STAGE_LEN)
 WINDOW_Z = 4096                                    # largest READZ (bftsd.s BFX_READZ_MAX)
+PROBE_WAIT, PROBE_TRIES = 3.0, 2                   # READZ asked once when the firmware version is not known
 LAST_PACKED = {}                                   # the last packed card read: bytes read, bytes fetched (report.py)
 LIST_END = 0x8000                                  # LIST field flag: the end of the directory was reached
 NAME_CUT = 0x80                                    # LIST attr bit 7: a name above 63 bytes was cut to 63
@@ -318,11 +319,15 @@ class Card:
     def __init__(self, client, careful=False, packed=False):
         """`careful`: the meter has the old BLE112 module and firmware F-1.19 or newer (app.py): LIST in pages of
         CAREFUL_LIST_MAX entries and CHUNK in adaptive pieces (CAREFUL_SIZES), each sent up to CAREFUL_RETRIES times.
-        `packed`: firmware F-1.32 or newer: file reads with READZ in windows of WINDOW_Z (the meter packs them)."""
+        `packed`: firmware F-1.32 or newer: file reads with READZ in windows of WINDOW_Z (the meter packs them); None:
+        the version is not known (the companion connected while page Ld was shown, which does not answer the version
+        question): the first read asks READZ once (PROBE_WAIT); firmware before F-1.32 answers no 0x82 to it (type 0x1A
+        is "not allowed" there, answered with a 0x81 answer), so READ is used from then on.  self.packed holds the
+        result."""
         self.c = client
         self.careful = careful
         self.packed = packed
-        if packed:
+        if packed is not False:
             LAST_PACKED.clear()
             LAST_PACKED.update(read=0, fetched=0)
         self._size = CAREFUL_START                     # kept from window to window of one Card
@@ -490,12 +495,24 @@ class Card:
         return bytes(buf)
 
     def window(self):
-        return WINDOW_Z if self.packed else WINDOW
+        return WINDOW if self.packed is False else WINDOW_Z
+
+    def _probe_packed(self, name, offset, length):
+        """packed None: one READZ decides (an answer of any status: the firmware knows READZ; none: it does not)."""
+        try:
+            self.c.request(T_READZ, read_request(name, offset, length), timeout=PROBE_WAIT, retries=PROBE_TRIES)
+            self.packed = True
+        except CardError:
+            if self.c.cancelled:
+                raise
+            self.packed = False
 
     def read_window(self, name, offset, length):
         """Up to `length` (<= self.window()) bytes of the file from `offset`, checked against the CRC-32 the meter gave."""
         if not 0 < length <= self.window():
             raise ValueError('window length 1..%d' % self.window())
+        if self.packed is None:
+            self._probe_packed(name, offset, length)
         if self.packed:
             return self._read_window_z(name, offset, length)
         for _ in range(WINDOW_TRIES):
