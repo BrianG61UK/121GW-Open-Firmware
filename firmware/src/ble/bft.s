@@ -1439,16 +1439,8 @@ LFUNC bft_packet
     ldr r1, [r1]
     cmp r0, r1
     bne .Lpk_order                          @ bytes missing: the answer names the packet expected
-    ldr r0, =bft_zfill
-    ldrh r0, [r0]
-    cmp r0, #0
-    beq 5f
-    movs r0, #BFT_ST_ERR                    @ packed: stream bytes after the last piece
-    movs r1, #BFT_ZERR
-    bl bft_set_state
-    movs r0, #(0x10 + BFT_ZERR)
-    b .Lpk_answer
-5:  bl bft_flush                            @ anything left (normally written with the last DATA)
+    bl bft_flush                            @ anything left (normally written with the last DATA; packed: bft_zdata
+                                            @ refuses stream bytes once the file is complete, so no partial piece)
     cbz r0, 2f
     ldr r0, =bft_diag
     ldrh r0, [r0]

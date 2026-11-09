@@ -162,10 +162,16 @@ ENDFUNC l2_off
 @ l2_start - link 2 on: everything reset, the first block will be a STATE
 @ Context  : main (l2_step, with the transmitter idle and the echo queue empty)
 @ Clobbers : r0-r3
+@ Note     : l2_want is tested again with the interrupts masked: a 0xFD (l2_off from the receive interrupt) between
+@            l2_step's test and here leaves link 2 off
 @ -----------------------------------------------------------------------------
 LFUNC l2_start
     mrs r3, primask
     cpsid i
+    ldr r1, =l2_want
+    ldrb r0, [r1]
+    cmp r0, #0
+    beq 8f                                  @ the companion said goodbye meanwhile
     movs r0, #0
     ldr r1, =l2_req
     strb r0, [r1]
@@ -201,7 +207,7 @@ LFUNC l2_start
     movs r0, #1
     ldr r1, =l2_on
     strb r0, [r1]
-    msr primask, r3
+8:  msr primask, r3
     bx lr
 ENDFUNC l2_start
 

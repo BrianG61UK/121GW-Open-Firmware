@@ -11,8 +11,8 @@
 @ Strict: the stream must be that one block, use exactly srclen bytes (the block ends in the last byte; the bits after
 @ it in that byte are padding) and produce exactly dstlen bytes.  Every read is checked against the end of the source, every
 @ written byte and every match length against the end of the destination, every distance against the bytes already
-@ produced; a code that is not in the table, an over-subscribed code, a bad dynamic header, a stored block whose
-@ LEN / NLEN differ: an error, never a wrong byte outside the destination.  The destination may be partly written
+@ produced; a block other than one final dynamic-code block, a code that is not in the table, an over-subscribed code,
+@ a bad dynamic header: an error, never a wrong byte outside the destination.  The destination may be partly written
 @ when an error is returned.
 @
 @ Huffman decoding as tinf (J. Ibsen): the code lengths give per length the number of codes (counts) and the symbols
@@ -42,11 +42,11 @@
 
     .equ ZE_SRC,    1               @ the source ended inside the stream
     .equ ZE_TYPE,   2               @ not one final dynamic-code block
-    .equ ZE_CODE,   4               @ a code not in the table, or a symbol out of range
-    .equ ZE_TREE,   5               @ over-subscribed code lengths, or a bad dynamic header
-    .equ ZE_DIST,   6               @ a distance before the start of the destination
-    .equ ZE_OVER,   7               @ more bytes than dstlen
-    .equ ZE_END,    8               @ source bytes left after the block, or fewer bytes than dstlen
+    .equ ZE_CODE,   3               @ a code not in the table, or a symbol out of range
+    .equ ZE_TREE,   4               @ over-subscribed code lengths, or a bad dynamic header
+    .equ ZE_DIST,   5               @ a distance before the start of the destination
+    .equ ZE_OVER,   6               @ more bytes than dstlen
+    .equ ZE_END,    7               @ source bytes left after the block, or fewer bytes than dstlen
 
     .section .bss_port.zinf, "aw", %nobits
     .balign 4
@@ -60,7 +60,7 @@ zinf_clord:     .byte 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14,
 @ -----------------------------------------------------------------------------
 @ zinf - unpack the raw deflate stream r0 (r1 bytes) into r2 (exactly r3 bytes)
 @ In       : r0 source, r1 source length, r2 destination, r3 destination length
-@ Out      : r0 = 0 done, else ZE_* (1 .. 8)
+@ Out      : r0 = 0 done, else ZE_* (1 .. 7)
 @ Clobbers : r0-r3, r12, flags (r4-r11 saved)
 @ Stack    : 36 + 24 bytes of locals + 24 in the helpers
 @ -----------------------------------------------------------------------------
@@ -197,7 +197,7 @@ FUNC zinf
     movs r0, #ZE_TREE
     b zi_fail
 
-@ compressed data of a fixed or dynamic block: literals, matches, end of block
+@ compressed data of the block: literals, matches, end of block
 .Lzi_data:
     addw r0, r4, #ZC_LCNT
     addw r1, r4, #ZC_LSYM

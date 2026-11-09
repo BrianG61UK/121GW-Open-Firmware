@@ -20,7 +20,8 @@
 @     0x15 FORMAT  "FORMAT"(6)                       format the card as exFAT (f_mkfs, as the SETUP page Fr, set/fmt.s);
 @                                                    only with the two-part bootloader (EEVblog's cannot read exFAT)
 @     0x1A READZ   namelen(1) name offset(4) len(2)  as READ, len 1 .. 4096, and the bytes read are packed (IMP-63,
-@                                                    F-1.32): one raw deflate block with the fixed code (sys/zdef.s)
+@                                                    F-1.32): one raw deflate block, dynamic or fixed code, whichever
+@                                                    is shorter (sys/zdef.s)
 @ Answer: B5 5B 82 seq(2) len(1) status(1) field(2) data crc16(2); seq = the request's seq, len = 3 + length of data,
 @     data <= 232 bytes, so an answer is at most 8 + 3 + 232 = 243 bytes (one Bluetooth write of 244 bytes; the transmit
 @     queue ble_txq of usart.s holds 256).  field and the data per request:
@@ -38,7 +39,7 @@
 @            with zlib and checks length and CRC-32), 0 = the bytes read themselves (packing would not have made them
 @            shorter; also for 0 bytes read).  Packing: the bytes read at log_buf[0 .. n), the packed stream built at
 @            log_buf[4096 ..) with room n - 1 (so it is shorter or not used), then moved to log_buf[0 ..).  RAM only,
-@            after the card session (the link hears again).
+@            before the card session ends, on its 32 MHz clock (the link is deaf until then; the sender waits).
 @     CHUNK  field = idx, data = the 232 bytes idx*232 .. of the staged data (fewer in the last chunk).
 @     DELETE field = 0, no data.
 @     FORMAT field = 0, no data; the answer comes when the card is formatted (seconds; the link is deaf meanwhile).
@@ -550,8 +551,8 @@ LFUNC bfx_read_any
     bl fat_f_close
     cmp r0, #0
     bne .Lrd_f5
-    bl bft_card_end
-    @ the CRC-32 of the bytes read, outside the card session (the SDIO block is off, the link hears again)
+    @ the CRC-32 of the bytes read (and for READZ the packing) still on the card-session clock (PLL 32 MHz, eight
+    @ times the run clock); the link is deaf until bft_card_end, which the sender waits for anyway (stop and wait)
     ldr r5, [sp]                            @ r5 = bytes read
     mvn r0, #0
     ldr r1, =bfx_stage
@@ -565,6 +566,7 @@ LFUNC bfx_read_any
     cbnz r0, .Lrd_pack
     ldr r0, =bfx_staged
     strh r5, [r0]                           @ the bytes can be fetched with CHUNK
+    bl bft_card_end                         @ SDIO off, run clock: the link hears again
     mov r1, r5                              @ field = bytes read
     movs r2, #4
     movs r0, #0
@@ -596,6 +598,7 @@ LFUNC bfx_read_any
     lsrs r1, r7, #8
     strb r1, [r0, #14]
     strb r6, [r0, #15]
+    bl bft_card_end                         @ SDIO off, run clock: the link hears again
     mov r1, r5                              @ field = bytes read
     movs r2, #7
     movs r0, #0

@@ -11,8 +11,12 @@ The page Ld as test_bt_upload.py (card image, Bluetooth on, SETUP page Ld); the 
      "LdE10", EEVBlog.bin unchanged; the next START is accepted again.
   Z3 READZ of a log file as log/csv.s writes it (rows of 45 .. 50 bytes): windows of 4096, method 1, unpacked equal to
      the file, CRC-32 right; the packed share printed.  An incompressible file: method 0, the bytes themselves.
-     Offset at the end: 0 bytes, staged 0.  READZ with len 4097: status 0x22.
+     Offset at the end: 0 bytes, staged 0.  READZ with len 4097: status 0x22.  Every packed window is byte for
+     byte the output of the reference model emulator/tools/zdyn.py (dynamic or fixed code, whichever is shorter).
   Z4 READ (0x11) of the same file unchanged (the CRC-32 answer of 4 bytes, 8192 bytes at most).
+  Z5 READZ edge cases (zeros, abc repeated, 1 / 2 / 3 bytes, two symbols, machine code, exactly 4096 bytes of a log):
+     method and bytes as the model (method 0 when packing is not shorter), unpacked equal to the file; the time to the
+     answer printed.
 RUN LIMIT: 1 run of this script (2 boots).
 """
 import os
@@ -30,6 +34,7 @@ import test_backlight_timer as T  # noqa: E402
 import test_bt_upload as U  # noqa: E402
 import test_bft_files as F  # noqa: E402
 import btft  # noqa: E402
+import zdyn  # noqa: E402
 from emu.sdcard import format_fat32  # noqa: E402
 from diff.fat32 import Volume, fat_date, fat_time  # noqa: E402
 
@@ -50,6 +55,10 @@ def log_text(rows):
 LOG = log_text(600)
 _R = random.Random(7)
 NOISE = bytes(_R.randrange(256) for _ in range(3000))
+_R2 = random.Random(11)
+EDGE = {'ZEROS.BIN': bytes(4096), 'ABC.TXT': b'abc' * 1000, 'ONE.TXT': b'A', 'TWO.TXT': b'AA', 'THREE.TXT': b'AAA',
+        'AB.TXT': bytes(_R2.choice(b'ab') for _ in range(4000)), 'IMAGE.BIN': None,    # filled from the image
+        'EXACT.CSV': LOG[:4096]}
 
 
 def new_card():
@@ -59,6 +68,8 @@ def new_card():
         v.add_file('EEVBLOG.BIN', U.OLD, fat_date(2026, 11, 1), fat_time(12, 0, 0))
         v.add_file('26110900.CSV', LOG, fat_date(2026, 11, 9), fat_time(10, 0, 0))
         v.add_file('NOISE.BIN', NOISE, fat_date(2026, 11, 9), fat_time(10, 0, 0))
+        for name, data in EDGE.items():
+            v.add_file(name, data, fat_date(2026, 11, 9), fat_time(10, 0, 0))
     return card
 
 
@@ -81,6 +92,7 @@ def send_stream(link, data, stream, again=None):
 
 def run_tests(image):
     data = open(image, 'rb').read()
+    EDGE['IMAGE.BIN'] = data[8192:8192 + 4096]                 # machine code: packs to about three quarters
     card = new_card()
     e, link = U.open_page(image, card)
 
@@ -140,6 +152,8 @@ def run_tests(image):
         piece = btft.unpack_readz(raw, n, method)
         T.check('Z3: READZ at %d: method 1, CRC-32 right' % off, method == 1 and zlib.crc32(piece) == crc,
                 'method %d' % method)
+        T.check('Z3: READZ at %d: the bytes of the reference model (zdyn.py)' % off,
+                raw == zdyn.compress(LOG[off:off + btft.READZ_MAX])[0], '%d bytes' % len(raw))
         out += piece
         packed += staged
     T.check('Z3: the log file unpacked equals the file', out == LOG, '%d of %d bytes' % (len(out), len(LOG)))
@@ -153,6 +167,22 @@ def run_tests(image):
     T.check('Z3: offset at the end: 0 bytes, staged 0', a.status == 0 and btft.parse_readz(a)[:3:2] == (0, 0), repr(a))
     a = f.ask(btft.readz_packet, 'NOISE.BIN', 0, btft.READZ_MAX + 1)
     T.check('Z3: len 4097 refused (0x22)', a.status == 0x22, repr(a))
+
+    print('Z5 READZ edge cases: every file as it is, packed exactly as the reference model where that is shorter')
+    for name, data in EDGE.items():
+        t0 = T.now(e)
+        a = f.ask(btft.readz_packet, name, 0, btft.READZ_MAX)
+        dt = T.now(e) - t0
+        if not isinstance(a, btft.Answer2) or a.status != 0:
+            T.check('Z5 %s: READZ answered' % name, False, repr(a))
+            continue
+        n, crc, staged, method = btft.parse_readz(a)
+        raw = f.read_chunks(staged) if staged else b''
+        model, _kind = zdyn.compress(data)
+        want = (1, model) if len(data) >= 2 and len(model) < len(data) else (0, data)
+        T.check('Z5 %s (%d bytes): method %d, %d staged, as the model, unpacks to the file' % (name, len(data), method,
+                staged), (method, raw) == want and btft.unpack_readz(raw, n, method) == data and n == len(data)
+                and zlib.crc32(data) == crc, 'model %d bytes, answer after %.2f s' % (len(model), dt))
 
     print('Z4 READ unchanged')
     a = f.read('26110900.CSV', 0, 8192)

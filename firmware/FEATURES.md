@@ -552,9 +552,9 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   bytes to the computer; the newer BGM220S module (v.03 boards) does not. The damage happens inside the old module
   (its own sleep and clock handling, per the Bluegiga and TI documents); the meter cannot keep it awake.
 - What it does: the 121GW Companion (1.2.20) recognises the old module by the packet size the link negotiates (MTU 23)
-  and switches careful mode on: the meter sends every status frame twice and the companion keeps the copy that checks
-  out; the card file list and downloads come in small pieces, each asked for again when damaged. Newer meters are not
-  affected (nothing changes for them).
+  and switches careful mode on: the card file list and downloads come in small pieces, each asked for again when
+  damaged. Newer meters are not affected (nothing changes for them). (Until F-1.30 the meter also sent every status
+  frame twice for the companion to keep the copy that checks out; link 2, 2.36, replaced that in F-1.31.)
 
 ### 2.25 DIODE contact chirp (implemented, IMP-51, F-1.21; off by default; idea: GitHub PR 22)
 - Request (GitHub PR 22): in DIODE the double beep reports a jump of the reading (v2.05: more than 1000 counts against
@@ -657,7 +657,8 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   and drops a reading with two, never showing a wrong value.  21 instead of 19 bytes per reading; the companion keeps
   the rate at 4 a second at most on the old module (it carries about 150 bytes a second).  Other apps never ask and
   keep the F2 frames; 0xFD (the companion's goodbye) and Bluetooth off / on end it.
-- Test: emulator `test_fec.py`; companion tests (every single damaged byte, 20000 double damages); HARDWARE_TEST 48.
+- Test (until F-1.30; the test went with the feature): emulator `test_fec.py`; companion tests (every single damaged
+  byte, 20000 double damages); HARDWARE_TEST 48.
 
 ### 2.35 Link-only reading rates 5 to 8 a second (IMP-61, F-1.30; replaced by 2.36 in F-1.31)
 - Request (owner, 2026-11-09): with error correction every reading of the old BLE112 module arrived at 4 a second;
@@ -666,7 +667,8 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   2 / 4 / 10 / 20).  The companion starts at the rate it saved for that meter, else 7; a window that loses readings
   (after error correction) moves it one rate down; three windows with every reading arrived and the rate is saved for
   the meter in the companion's settings.
-- Test: emulator `test_fec.py` E8 (each rate's frame count); companion tests (RateSearch); HARDWARE_TEST 49.
+- Test (until F-1.30; the test went with the feature): emulator `test_fec.py` E8 (each rate's frame count); companion
+  tests (RateSearch); HARDWARE_TEST 49.
 
 ### 2.36 Link 2 for the old BLE112 module (experimental, IMP-62, F-1.31; GitHub issue 30)
 - Request (owner, 2026-11-09): one design for everything the meter sends instead of a fix per feature; each kind of
@@ -688,16 +690,20 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 ### 2.37 Packed card reads and packed updates (experimental, IMP-63, F-1.32 and bootloader B-1.15; GitHub issue 30)
 - Request (owner, 2026-11-09): compression for card downloads and for firmware and bootloader updates, done properly
   and nothing left half finished.
-- Card: the companion reads files with READZ; the meter packs each piece of up to 4 KiB (deflate with the fixed code)
-  and sends it only when that is shorter; the companion unpacks and checks the CRC-32 of the original bytes.
+- Card: the companion reads files with READZ; the meter packs each piece of up to 4 KiB with deflate at the highest
+  setting (owner 2026-11-09, "max compression level": the search of zlib's level 9 and Huffman codes built for each
+  piece, or the fixed code when that is shorter) and sends it only when that is shorter; the companion unpacks and
+  checks the CRC-32 of the original bytes.
 - Updates: the companion packs the image in pieces of 2 KiB (deflate, about 64 % of the firmware image); the meter's page
   Ld (F-1.32) and the bootloader's update mode (B-1.15) unpack each piece and handle its bytes exactly as before, so the
   checks at the end (CRC-32 of the file or of the flash, image check, firmware mark) are unchanged.  A damaged stream ends
   the transfer with LdE10 (page Ld) or LdE 7 (update mode, which stays in update mode).  Older firmware and bootloaders
   refuse the packed START before anything is erased, and the companion sends them the plain transfer.
-- Measured in the emulator (2026-11-09): a log file of 28268 bytes packed by the meter to 6764 (23.9 %); the F-1.32 image
-  in 500 packets instead of 778 on page Ld; through the bootloader 66.8 s instead of 100.1 s (487 packets instead of 764).
-- Test: emulator `test_packed.py` (Z1..Z4), bootloader `test_bootloader.py` B10..B12, companion tests; HARDWARE_TEST 51.
+- Measured in the emulator (2026-11-09): a log file of 28268 bytes packed by the meter to 4001 (14.2 %; 23.9 % with the
+  first packer, the fixed code only); the F-1.32 image in 500 packets instead of 778 on page Ld; through the bootloader
+  66.8 s instead of 100.1 s (487 packets instead of 764).
+- Test: emulator `test_packed.py` (Z1..Z5: the meter's packed bytes equal those of the reference model
+  `emulator/tools/zdyn.py` in every window), bootloader `test_bootloader.py` B10..B12, companion tests; HARDWARE_TEST 51.
 
 ## 3. EEPROM bytes the features need
 

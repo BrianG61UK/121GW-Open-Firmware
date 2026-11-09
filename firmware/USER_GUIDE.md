@@ -256,7 +256,7 @@ and suggests the update. Newer meters (BGM220S module) are not affected.
 
 ## Packed downloads and updates (F-1.32, bootloader B-1.15)
 
-With firmware F-1.32 the meter packs card files before it sends them (log files shrink to about a quarter), and with
+With firmware F-1.32 the meter packs card files before it sends them (log files shrink to about 14 %), and with
 F-1.32 on page Ld or the bootloader B-1.15 the 121GW Companion sends updates packed (the firmware to about two thirds).
 Both work on every meter and every Bluetooth module; nothing to set. If anything arrives damaged the transfer stops with
 LdE10 (page Ld) or LdE 7 (update mode, which stays in update mode) and is simply sent again; the meter checks every
