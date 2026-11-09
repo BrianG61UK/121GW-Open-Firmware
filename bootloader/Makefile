@@ -2,8 +2,9 @@
 # Makefile - build of the two-part bootloader (bootloader/DESIGN.md)
 #
 #   make            build/starter.bin (1024 bytes, padded with 0x00 = erased flash) and build/bootloader.bin (the
-#                   bootloader for 0x08000400), sizes and SHA-256; build/install.bin (first install file) and
-#                   build/blimage.bin (bootloader image for an update over Bluetooth)
+#                   bootloader for 0x08000400), sizes and SHA-256; build/install.bin (first install file); the
+#                   bootloader image for an update over Bluetooth is build/bootloader.bin itself (the release names it
+#                   blimage.bin, .github/workflows/bootloader.yml)
 #   make test       the emulator tests: starter, bootloader, first install (tests/test_*.py; the first-install test
 #                   needs EEVblog's bootloader images, which are not in the repository)
 # The bootloader links objects of the firmware build (SD driver, FatFs R0.16, GPIO, clock, LCD font): `make` in
