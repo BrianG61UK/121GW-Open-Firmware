@@ -221,13 +221,17 @@ These checks confirm on hardware what the emulator cannot.
    disconnect and connect: it starts at the saved rate.  A report shows the steps in its events.
 50. Link 2 (F-1.31, IMP-62; GitHub issue 30; verified working on a meter with the newer module, link 2 switched on by a
    script, 2026-11-09: 60 s at bt 20: 1197 readings (19.9 a second) in 299 blocks (5.0 a second), 0 corrected, 0 lost;
-   pace 14 ticks: 7.1 blocks a second, 19.9 readings a second; after 0xFD the original status frames): a meter with the old BLE112 module and companion 1.3.0: the Meter page says
+   pace 14 ticks: 7.1 blocks a second, 19.9 readings a second; after 0xFD the original status frames; F-1.32, page Ld
+   with link 2 on, reached by remote keys: card list in 0.6 s, the log file 26110700.csv by READZ in 20.5 s, equal to
+   the download over the plain link, 104 TEXT blocks, 0 corrected, 0 lost; after LEAVE 102 readings in 5 s): a meter with the old BLE112 module and companion 1.3.0: the Meter page says
    "link 2, 5.0 blocks a second"; readings flow at the meter's bt rate (also bt 20); after 10 minutes a report: link 2
    blocks, corrected, lost, readings, the pace (it rises after clean minutes, falls on loss).  Page Ld (card list) works and
    link 2 comes back after it.  Disconnect, then another app: original status frames.  On a meter with the newer module the
    companion does not switch link 2 on (the report says careful mode off).
 
-51. Packed card reads and updates (F-1.32, bootloader B-1.15, IMP-63; GitHub issue 30): with the 121GW Companion 1.3.0
+51. Packed card reads and updates (F-1.32, bootloader B-1.15, IMP-63; GitHub issue 30; card reads verified working on a
+   meter with the newer module, 2026-11-09: the meter's log file 26110700.csv, 6159 bytes, read with READZ in 4 s, 1325
+   bytes fetched (21.5 %), CRC-32 right; the companion connected while page Ld was shown and found READZ by asking): with the 121GW Companion 1.3.0
    download a log file from the card: the report's "packed reads" line gives the bytes fetched for the bytes read, and
    the file equals the card's (compare with a card reader).  Update the bootloader to B-1.15, then the firmware over
    Bluetooth: the transfer line says "packed: n bytes sent for m"; the meter starts the new firmware.  Repeat on a meter
