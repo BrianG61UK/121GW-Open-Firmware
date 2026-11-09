@@ -169,7 +169,10 @@ Read `firmware/HARDWARE_TEST.md` first; it is the procedure and checklist.
 - `emulator/API.md`: HTTP API (`GET /state`, `POST /input`), Python API, options, what direct boot does not reproduce.
 - `emulator/diff/run.py` compares two firmware images scenario by scenario (see its docstring); it needs the original v2.05
   image as the reference.
-- CI (`.github/workflows/emulator.yml`) builds the packages above on a tag and attaches them to the release.
+- CI (`.github/workflows/emulator.yml`) builds the packages above on a tag and attaches them to the release (only
+  then: a branch push builds no packages).  A push runs only the emulator test scripts its changes can affect
+  (`.github/scripts/plan_emulator_tests.py` lists the sources of each script and the shared parts that run them all);
+  a release tag runs none, the push of the same commit tested it.
 
 ## Licence
 

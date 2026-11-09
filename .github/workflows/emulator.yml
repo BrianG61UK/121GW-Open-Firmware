@@ -34,6 +34,11 @@ env:
 jobs:
   firmware:
     name: Firmware builds for the emulator
+    # the emulator packages (macos, windows, linux need this job) are built only for a release tag or a run started by
+    # hand: a branch push never used them (owner 2026-11-09: "you wasting resources and my time"); the guard of this
+    # job that refuses any Intel macOS build (check_no_intel_mac.py: there is none, macOS arm64 only) also runs in
+    # firmware.yml on every push
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -52,12 +57,34 @@ jobs:
           path: dist
           if-no-files-found: error
 
+  plan:
+    # which test scripts this push needs (owner 2026-11-09: "you wasting resources and my time"): the scripts whose
+    # sources, own file or the shared parts changed (.github/scripts/plan_emulator_tests.py holds the list per script);
+    # all of them for a new branch, a force push or a run started by hand
+    name: Emulator tests this change needs
+    if: github.ref_type != 'tag'
+    runs-on: ubuntu-24.04
+    outputs:
+      scripts: ${{ steps.plan.outputs.scripts }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          BEFORE: ${{ github.event_name == 'push' && github.event.before || github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: |
+          s=$(python3 -I .github/scripts/plan_emulator_tests.py "$BEFORE" "$GITHUB_SHA")
+          echo "scripts=$s" >> "$GITHUB_OUTPUT"
+          echo "$s"
+
   tests:
     # Emulator tests of the production image that need no original EEVblog image (direct boot, synthetic EEPROM, the
-    # table data of the build): one job per script, in parallel.  Not on release tags and no release job needs it, so a
-    # slow runner cannot hold up a release; a failure fails the push / pull request run.
+    # table data of the build): one job per script the plan names, in parallel.  Not on release tags (the push of the
+    # same commit tested it) and no release job needs it; a failure fails the push / pull request run.
     name: Emulator test ${{ matrix.script }}
-    if: github.ref_type != 'tag'
+    needs: plan
+    if: github.ref_type != 'tag' && needs.plan.outputs.scripts != '[]'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
@@ -65,15 +92,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # test_sd_errors.py in two jobs of its case groups (all five cases in one job ran past the job limit on slow
-        # runners; owner decision 2026-11-07)
-        script: [test_sd_scr.py, 'test_sd_errors.py --cases write,read,burst20', 'test_sd_errors.py --cases forced,burst_all',
-                 test_dcv_fast.py, test_bft_files.py, test_bft_settings.py,
-                 test_calbin_ident.py, test_sd_capacity.py, test_sd_slow.py, test_sd_clock.py,
-                 test_cap_timeout.py, test_cap_antihunt.py, test_ble_overrun.py, test_xdiag.py, test_msical.py, test_apo_wake.py,
-                 test_apo_time.py, test_careful.py, test_bargraph.py, test_diode_chirp.py, test_setup_walks.py,
-                 test_buzzer_off.py, test_heartbeat.py, test_power_pairs.py, test_link2.py,
-                 test_packed.py]
+        # the scripts and their sources: .github/scripts/plan_emulator_tests.py (test_sd_errors.py in two jobs of its
+        # case groups: all five cases in one job ran past the job limit on slow runners; owner decision 2026-11-07)
+        script: ${{ fromJSON(needs.plan.outputs.scripts) }}
     steps:
       - uses: actions/checkout@v7
       - name: Production build (firmware/build/EEVBlog.bin and 121gw.map, the symbols the tests read; dist/v205_tables.json)
