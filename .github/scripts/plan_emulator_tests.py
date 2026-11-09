@@ -59,6 +59,10 @@ SCRIPTS = {
     'test_power_pairs.py': ['firmware/src/cal/', 'firmware/src/pwr/', 'firmware/src/ui/'],
     'test_link2.py': CAREFUL,
     'test_packed.py': FILES + ['emulator/tools/zdyn.py', 'firmware/src/sys/zdef.s', 'firmware/src/sys/zinf.s'],
+    # the firmware update over page Ld (first install of the two-part bootloader, meters on EEVblog's bootloader):
+    # ble/bft.s writes the file to the card (sd, ff16), the helper btft.py and the card image tools
+    'test_bt_upload.py': ['firmware/src/ble/', 'firmware/src/sd/', 'firmware/src/ff16/', 'emulator/tools/btft.py',
+                          'emulator/scripts/test_bt_upload.py', 'firmware/src/sys/zinf.s'],
 }
 
 
