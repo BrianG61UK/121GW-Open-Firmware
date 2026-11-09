@@ -210,15 +210,20 @@ These checks confirm on hardware what the emulator cannot.
    meter, 0 framing / noise / overrun errors, 0 rejected frames): on any meter, send a firmware over Bluetooth (page `Ld-bt`, the
    companion) and run the link test: no damaged packets, the meter receives as before.  On a meter with the old BLE112
    module: connect the companion for 10 minutes and save a report; "skipped as damaged" against the report of F-1.27.
-48. Error correction (F-1.29, IMP-60; GitHub issue 30; verified working on a meter with the newer module, 2026-11-08: key
+48. Error correction (F-1.29, IMP-60, replaced by IMP-62 in F-1.31; GitHub issue 30; verified working on a meter with the newer module, 2026-11-08: key
    0x9D, 30 s at 20 readings a second: 599 F5 frames, every one a codeword, 0 bytes dropped; 0x9E: F2 frames again): on a meter with the old BLE112 module, connect companion 1.2.35
    for 10 minutes and save a report: "error correction on", readings with repair bytes and how many were corrected;
    "skipped as damaged" against the report of F-1.28.  On any meter: Disconnect, then another app: plain readings.
-49. Link rate search (F-1.30, IMP-61; GitHub issue 30; the rates verified working on a meter with the newer module,
+49. Link rate search (F-1.30, IMP-61, replaced by IMP-62 in F-1.31; GitHub issue 30; the rates verified working on a meter with the newer module,
    2026-11-09, error correction on, 20 s each: 0xA1 100 readings (99.8 expected), 0xA2 117 (117.4), 0xA3 142 (142.6),
    0xA4 166 (166.3), 0 bytes dropped): a meter with the old BLE112 module and companion 1.2.36: the Meter
    page says readings 7 a second, trying; within a minute or two "found and saved" (or a lower rate after steps down);
    disconnect and connect: it starts at the saved rate.  A report shows the steps in its events.
+50. Link 2 (F-1.31, IMP-62; GitHub issue 30): a meter with the old BLE112 module and companion 1.3.0: the Meter page says
+   "link 2, 5.0 blocks a second"; readings flow at the meter's bt rate (also bt 20); after 10 minutes a report: link 2
+   blocks, corrected, lost, readings, the pace (it rises after clean minutes, falls on loss).  Page Ld (card list) works and
+   link 2 comes back after it.  Disconnect, then another app: original status frames.  On a meter with the newer module the
+   companion does not switch link 2 on (the report says careful mode off).
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

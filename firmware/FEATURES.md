@@ -649,7 +649,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Test: emulator `test_bt_upload.py`, `test_careful.py`, `test_ble_overrun.py`; HARDWARE_TEST 47 (a BLE112 meter: the
   companion's report, damaged bytes before and after).
 
-### 2.34 Status frames with error correction (experimental, IMP-60, F-1.29; GitHub issue 30)
+### 2.34 Status frames with error correction (IMP-60, F-1.29; replaced by 2.36 in F-1.31)
 - Request (owner, 2026-11-08): readings from the old BLE112 module still arrive damaged about 3 % of the time, often in the
   digits that change, which the companion's repair of 1.2.33 cannot restore; repair data inside each reading.
 - What it does: while the companion asks (key code 0x9D, only on BLE112 links), every reading is sent as an F5 frame:
@@ -659,7 +659,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   keep the F2 frames; 0xFD (the companion's goodbye) and Bluetooth off / on end it.
 - Test: emulator `test_fec.py`; companion tests (every single damaged byte, 20000 double damages); HARDWARE_TEST 48.
 
-### 2.35 Link-only reading rates 5 to 8 a second (experimental, IMP-61, F-1.30; GitHub issue 30)
+### 2.35 Link-only reading rates 5 to 8 a second (IMP-61, F-1.30; replaced by 2.36 in F-1.31)
 - Request (owner, 2026-11-09): with error correction every reading of the old BLE112 module arrived at 4 a second;
   find the highest rate each meter's link carries, starting at 7, and keep it.
 - What it does: key codes 0xA1..0xA4 set 5, 6, 7 or 8 readings a second for the link (the saved bt rate and page bt keep
@@ -667,6 +667,20 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   (after error correction) moves it one rate down; three windows with every reading arrived and the rate is saved for
   the meter in the companion's settings.
 - Test: emulator `test_fec.py` E8 (each rate's frame count); companion tests (RateSearch); HARDWARE_TEST 49.
+
+### 2.36 Link 2 for the old BLE112 module (experimental, IMP-62, F-1.31; GitHub issue 30)
+- Request (owner, 2026-11-09): one design for everything the meter sends instead of a fix per feature; each kind of
+  data at the rate it changes (the serial once, settings on change, the battery seldom, the reading as a difference);
+  done the way proven protocols do it (research: ATM cell delineation, Sparkplug birth certificate, IEC 60870-5-104
+  report by exception, CCSDS Reed-Solomon blocks).
+- What it does: on request (key code 0xA8; the companion asks only on old-module links) the meter sends 20-byte blocks
+  with three repair bytes at a steady pace: STATE (settings and serial, on change and every 2 s), READ (a full reading,
+  then differences; each block decodes on its own) and TEXT (the answers).  One damaged byte per block is repaired, two
+  are always detected; a lost block costs only its readings.  At the default 5 blocks a second the meter's 20 readings a
+  second fit in about 100 bytes a second (emulator: 260 of 263 readings delivered, the other 3 still queued at the end).
+  Removed with it: the doubled frames (2.11 careful mode's F3), F5 (2.34) and the link-only rates (2.35); their key codes
+  are accepted and do nothing.  Other apps never ask and keep the original status frames.
+- Test: emulator `test_link2.py` (L1..L9); companion tests (decoder, pace); HARDWARE_TEST 50.
 
 ## 3. EEPROM bytes the features need
 

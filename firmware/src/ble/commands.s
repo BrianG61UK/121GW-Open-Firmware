@@ -40,11 +40,13 @@
     .equ BLE_XDOFF_CODE,    0x94             @ extended link diagnosis off (F4 39 34 39 34; ble/xdiag.s)
     .equ BLE_XDGET_CODE,    0x95             @ extended link diagnosis counters request, answered with F9 (F4 39 35 39 35)
     .equ BLE_CKGET_CODE,    0x96             @ clock measurement request, answered with FA (F4 39 36 39 36; sys/msical.s)
-    .equ BLE_DUPON_CODE,    0x97             @ careful mode on: each status frame twice (F4 39 37 39 37; IMP-50)
-    .equ BLE_DUPOFF_CODE,   0x98             @ careful mode off (F4 39 38 39 38)
-    .equ BLE_FECON_CODE,    0x9D             @ IMP-60: status frames with error correction (F5, 21 bytes) on
-    .equ BLE_FECOFF_CODE,   0x9E             @ IMP-60: off (plain F2 frames)
-    .equ BLE_RATE4_CODE,    0xA1             @ IMP-61: 0xA1..0xA4 the link-only rate codes 4..7 (5, 6, 7, 8 per second)
+    .equ BLE_DUPON_CODE,    0x97             @ IMP-50 (removed by IMP-62): accepted, does nothing (older companions send it)
+    .equ BLE_DUPOFF_CODE,   0x98             @ IMP-50 (removed by IMP-62): accepted, does nothing
+    .equ BLE_L2ON_CODE,     0xA8             @ IMP-62: link 2 on (ble/link2.s)
+    .equ BLE_PACE0_CODE,    0xAA             @ IMP-62: 0xAA..0xB2 the block pace (index 0..8 into l2_pace_tab)
+    .equ BLE_FECON_CODE,    0x9D             @ IMP-60 (removed by IMP-62): accepted, does nothing
+    .equ BLE_FECOFF_CODE,   0x9E             @ IMP-60 (removed by IMP-62): accepted, does nothing
+    .equ BLE_RATE4_CODE,    0xA1             @ IMP-61 (removed by IMP-62): 0xA1..0xA4 accepted, do nothing
     .equ BLE_RATE0_CODE,    0x99             @ IMP-55: 0x99..0x9C set the frame rate code 0..3 (2, 4, 10, 20 per second)
                                              @ for this link: ble_rate_link, not ble_rate or EEPROM 0x015 (the companion's
                                              @ automatic rate for a damaging link, GitHub issue 30)
@@ -247,39 +249,32 @@ FUNC fn_0800C332
     bne 8f
     bl ck_send                              @ 0x96: clock measurement frame FA (IMP-46)
     b .L0800C46C
-8:  cmp r0, #BLE_DUPON_CODE
+8:  cmp r0, #BLE_L2ON_CODE
     bne 9f
-    movs r0, #1
-    ldr r1, =ble_dup_on
-    strb r0, [r1]                           @ 0x97: careful mode on (IMP-50; one byte, read by the USART2 handler)
+    bl l2_request                           @ 0xA8: link 2 (IMP-62, ble/link2.s)
     b .L0800C46C
-9:  cmp r0, #BLE_DUPOFF_CODE
-    bne 10f
-    movs r0, #0
-    ldr r1, =ble_dup_on
-    strb r0, [r1]                           @ 0x98: careful mode off
+9:  subs r1, r0, #BLE_PACE0_CODE
+    cmp r1, #8
+    bhi 10f
+    mov r0, r1
+    bl l2_set_pace                          @ 0xAA..0xB2: the block pace of link 2
     b .L0800C46C
-10: cmp r0, #BLE_FECON_CODE
-    bne 11f
-    movs r0, #1
-    ldr r1, =ble_fec_on
-    strb r0, [r1]                           @ 0x9D: frames with error correction (IMP-60; latched per frame by ble_tx_pump)
-    b .L0800C46C
-11: cmp r0, #BLE_FECOFF_CODE
-    bne .Lkey_rate
-    movs r0, #0
-    ldr r1, =ble_fec_on
-    strb r0, [r1]                           @ 0x9E: plain F2 frames again
-    b .L0800C46C
+10: cmp r0, #BLE_DUPON_CODE                 @ codes of removed features (IMP-50, IMP-60, IMP-61): accepted, nothing done;
+    beq .L0800C46C                          @ they must not reach the key routine (a remote key restarts the backlight
+    cmp r0, #BLE_DUPOFF_CODE                @ countdown and clears a pending message)
+    beq .L0800C46C
+    cmp r0, #BLE_FECON_CODE
+    beq .L0800C46C
+    cmp r0, #BLE_FECOFF_CODE
+    beq .L0800C46C
+    subs r1, r0, #BLE_RATE4_CODE
+    cmp r1, #3
+    bls .L0800C46C
 .Lkey_rate:
     subs r1, r0, #BLE_RATE0_CODE            @ r1 = rate code (a code below 0x99 wraps to a large number)
     cmp r1, #3
-    bls 12f
-    subs r1, r0, #BLE_RATE4_CODE            @ IMP-61: 0xA1..0xA4 -> codes 4..7
-    cmp r1, #3
     bhi 1f                                  @ not a rate code: a key of the meter
-    adds r1, r1, #4
-12: adds r1, r1, #1
+    adds r1, r1, #1
     ldr r2, =ble_rate_link
     strb r1, [r2]                           @ IMP-55: the link rate, code + 1 (one byte, read by the TIM2 interrupt through
                                             @ ble_rate_code; ble_rate_tick restarts a count above the new period).  The

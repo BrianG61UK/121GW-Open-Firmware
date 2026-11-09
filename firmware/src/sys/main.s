@@ -258,6 +258,8 @@ FUNC sys_main
     cbz r0, .Lmain_step12
     bl fn_0800C332                          @ 0x08024D56
 .Lmain_step12:
+    bl l2_step                              @ IMP-62: link 2 builds its next block (after the command step: an echo
+                                            @ and its answer go out first; ble/link2.s)
     @ step 12: SD log write
     @ IMP-06 (LOG, W8_to_W1.md item 3): the write is a state machine, one v2.05 session attempt (log_session_once) per
     @ pass, so a failing card no longer blocks the loop for up to 40 attempts in a row.  The attempt order, the retry

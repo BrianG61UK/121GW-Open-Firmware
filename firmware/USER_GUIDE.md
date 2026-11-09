@@ -245,12 +245,14 @@ Nothing is written to the card except the deletes you confirm.  While the compan
   diagnosis** on, the report has a section "meter clock": the clock as found, after the trim, and the resulting serial
   speed. Nothing to set; nothing is stored.
 
-## Old Bluetooth module (careful mode, F-1.19 or newer)
+## Old Bluetooth module (link 2, F-1.31 or newer)
 
-Early meters (v.01 boards, Bluegiga BLE112-A module) damage single bytes on the Bluetooth link. The 121GW Companion
-(1.2.20 or newer) recognises them by themselves and switches careful mode on: every reading is sent twice and the card
-list and downloads come in small pieces. Nothing to set; the report says "careful mode on". Newer meters (BGM220S
-module) are not affected.
+Early meters (v.01 boards, Bluegiga BLE112-A module) damage single bytes on the Bluetooth link and carry only about 150
+bytes a second. The 121GW Companion (1.3.0 or newer) recognises them by themselves and switches link 2 on: the readings
+come in small blocks with repair bytes, only what changed is sent, so the meter's full reading rate (bt) gets through and
+a damaged byte is repaired; the card list and downloads come in small pieces. Nothing to set; the Meter page and the
+report say "link 2". With older firmware the companion shows the readings as they come and suggests the update. Newer
+meters (BGM220S module) are not affected.
 
 ## Two-part bootloader (with the 121GW Companion)
 

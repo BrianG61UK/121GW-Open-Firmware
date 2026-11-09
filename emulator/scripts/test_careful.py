@@ -1,15 +1,12 @@
 """Induced emulator test of the careful mode for meters with the old BLE112 Bluetooth module (firmware IMP-50:
-ble/usart.s ble_tx_pump, ble/commands.s key codes 0x97 / 0x98, ble/bftsd.s LIST max and CHUNK len).
+ble/bftsd.s LIST max and CHUNK len; IMP-55 rates and settings pages).  The doubled status frames of IMP-50 (key codes
+0x97 / 0x98) were removed by IMP-62 (link 2, test_link2.py; L8 checks that the codes now do nothing).
 
     python -I emulator/scripts/test_careful.py [image]                default firmware/build/EEVBlog.bin
 
 Meters with the BLE112 module damage single bytes on the way from the meter to the computer (GitHub issue 9); the
 companion recognises them by the negotiated packet size (MTU 23) and then asks for small answers and for every status
-frame twice.  The firmware side:
-  K1 key code 0x97: echoed; each status frame (F2) is then followed at once by its copy, which starts with F3 (the XOR
-     byte adjusted) and has the same 17 value bytes
-  K2 key code 0x98: echoed; single frames again
-  K3 switching Bluetooth off and on clears the careful mode (RAM only)
+frame twice (until IMP-62).  The firmware side:
   K4 page Ld, LIST start(2) max(1): at most max entries per answer, the pages together equal the plain LIST (start(2));
      max 0 is refused (0x22)
   K5 CHUNK idx(2) len(1): the staged bytes idx*len .. (len bytes, fewer at the end), equal to the plain 232-byte
@@ -19,7 +16,7 @@ frame twice.  The firmware side:
   K7 (IMP-55) page Ld, settings GET start(1) max(1): at most max entries, field = entries | 0x8000 with the last setting,
      the pages together equal the plain GET; max 0 and start beyond the table refused (0x22); start = the table's
      length: no entry and the end
-RUN LIMIT: 1 run of this script (4 boots).
+RUN LIMIT: 1 run of this script (3 boots).
 The helpers are those of test_bft_files.py, test_bt_upload.py, test_ble_version.py and test_backlight_timer.py.
 """
 import os
@@ -72,55 +69,7 @@ def boot(image):
     return e
 
 
-def pairs(fr):
-    """Count of F2 frames followed at once (less than 15 ms after it ended) by their F3 copy: the same 17 value bytes."""
-    n = 0
-    for (t0, f0), (t1, f1) in zip(fr, fr[1:]):
-        if f0[0] == 0xF2 and f1[0] == 0xF3 and f0[1:18] == f1[1:18] and t1 - t0 < (FRAME * 10 / 19200) + 0.015:
-            n += 1
-    return n
-
-
-def copies(fr):
-    return sum(1 for _, f in fr if f[0] == 0xF3)
-
-
 def run_tests(image):
-    print('K1 / K2 / K3 the status frames')
-    e = boot(image)
-    T.check('Bluetooth on', T.rd(e, ADDR_BLE_ON) == 1)
-    n0 = len(e.ble_rx)
-    e.advance(3.0)
-    fr = frames_with_times(e, n0)
-    T.check('K1: without careful mode no copy is sent', copies(fr) == 0 and len(fr) >= 4, '%d frames' % len(fr))
-    n0 = len(e.ble_rx)
-    e.usart2.rx_feed(key_frame(0x97))
-    e.advance(0.5)
-    T.check('K1: 0x97 echoed', key_frame(0x97) in bytes(e.ble_rx[n0:]))
-    n0 = len(e.ble_rx)
-    e.advance(3.0)
-    fr = frames_with_times(e, n0)
-    T.check('K1: every frame followed by its F3 copy, back to back', len(fr) >= 8 and pairs(fr) * 2 >= len(fr) - 1,
-            '%d frames, %d pairs' % (len(fr), pairs(fr)))
-    e.usart2.rx_feed(key_frame(0x98))
-    e.advance(0.5)
-    n0 = len(e.ble_rx)
-    e.advance(3.0)
-    fr = frames_with_times(e, n0)
-    T.check('K2: after 0x98 single frames again', copies(fr) == 0 and len(fr) >= 4, '%d frames, %d copies' % (len(fr), copies(fr)))
-    e.usart2.rx_feed(key_frame(0x97))
-    e.advance(0.5)
-    T.long_press(e, 'PEAK')
-    e.advance(0.5)
-    T.long_press(e, 'PEAK')
-    e.advance(1.0)
-    T.check('K3: Bluetooth off and on again', T.rd(e, ADDR_BLE_ON) == 1)
-    n0 = len(e.ble_rx)
-    e.advance(3.0)
-    fr = frames_with_times(e, n0)
-    T.check('K3: careful mode cleared by switching Bluetooth on', copies(fr) == 0 and len(fr) >= 4,
-            '%d frames, %d copies' % (len(fr), copies(fr)))
-
     print('K6 frame rate for this power-on')
     e = boot(image)
     mp = os.path.join(os.path.dirname(os.path.abspath(image)), '121gw.map')

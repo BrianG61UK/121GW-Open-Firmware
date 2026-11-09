@@ -312,6 +312,7 @@ FUNC sys_tim2_isr
 .Lt2_ble_req:
     bl bft_tick                             @ IMP-28: idle time of the Bluetooth file transfer parser (every tick)
     bl hb_tick                              @ IMP-56: the link watch (ble/heartbeat.s)
+    bl l2_tick                              @ IMP-62: link 2's time base (ble/link2.s)
     @ IMP-09: a selected frame rate above 2 per second runs on its own counter (ble/rate.s); the 500 ms counter below
     @ then only serves its other users (500 ms flag, blink phases, jack-warning beep)
     bl ble_rate_code                        @ r0 = the rate in effect (IMP-55: the link rate, else the saved ble_rate)

@@ -636,9 +636,15 @@ FUNC build_status_packet_19b
     strb r0, [r1, #0x12]                    @ 0800C99A  ble_frame_b+18 = ble_xor
         bl ble_value_valid                   @ OF-34: r0 = 1 if the value is a reading @ 0800C99C
         cbz r0, .Lbsp_invalid                @ blank phase: keep the frame back @         
+        ldr r0, =l2_on
+        ldrb r0, [r0]
+        cbnz r0, .Lbsp_l2                    @ IMP-62: link 2 queues the reading instead of sending the frame
         movs r0, #1                         @         
         ldr r1, =ble_frame_ready            @         
         strb r0, [r1]                        @ OF-10: frame complete @         
+        b .Lbsp_invalid
+    .Lbsp_l2:
+        bl l2_frame
     .Lbsp_invalid:                          @         
         pop {r4, r5, r6, pc}                @         
 ENDFUNC build_status_packet_19b
