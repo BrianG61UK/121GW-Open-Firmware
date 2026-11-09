@@ -2,6 +2,8 @@
 
 What each release brought, newest first. The release page of a version shows only its own paragraphs.
 
+New in 1.2.37: the speed search for meters with the old BLE112 Bluetooth module is safer (GitHub issue 30). A speed counts as found only after a full minute in which every reading arrived; any later failure (readings lost, a speed change not confirmed, a stalled link) saves the next lower speed at once, so the next connection does not start at a speed that failed. Speeds saved by an older version of the companion are measured again after an update. While the meter shows page Ld the companion no longer asks its version (the meter cannot answer there); it asks once the page is left.
+
 New in 1.2.36: the companion finds the reading speed each meter with the old BLE112 Bluetooth module can carry (GitHub issue 30). With firmware 1.3.0 (F-1.30) and error correction on, it starts at 7 readings a second, steps down (6, 5, 4, 2) whenever a 10-second window loses readings, and once every reading arrives for 30 seconds it saves that speed for the meter; the next connection starts there. The Meter page shows whether the speed is being tried or found.
 
 New in 1.2.35: readings from meters with the old BLE112 Bluetooth module are corrected (GitHub issue 30). With firmware 1.2.9 (F-1.29) the companion asks the meter to add three repair bytes to every reading and corrects any single damaged byte, also in the digits that change; a reading with two damaged bytes is dropped, never shown wrong. The reading rate on the old module now goes up to 4 a second at most (the module carries about 150 bytes a second). The report shows how many readings were corrected.

@@ -88,7 +88,10 @@ PROBE_MIN_VERSION = (1, 3, 0)                    # firmware F-1.30: link-only ra
 PROBE_RATES = ((1 / (50 * 0.01002), 0x99, 2), (1 / (25 * 0.01002), 0x9A, 4), (1 / (20 * 0.01002), 0xA1, 5),
                (1 / (17 * 0.01002), 0xA2, 6), (1 / (14 * 0.01002), 0xA3, 7))
 PROBE_START = 4                                  # the first try on a meter with no saved rate: 7 a second (owner, 2026-11-09)
-PROBE_GOOD = 3                                   # windows in a row with every reading arrived: the rate is found and saved
+PROBE_GOOD = 6                                   # windows in a row with every reading arrived (1 minute): the rate is found
+                                                 # and saved; any later failure (lost readings, no echo, a stalled link)
+                                                 # saves the next lower rate at once (_probe_fail; issue 30: a rate held
+                                                 # 1.5 minutes, then the old module's link stalled)
 PROBE_SHARE = 0.95                               # share of the expected readings a window must bring (timing at the edges)
 RATE_START = 0                                   # automatic rate (IMP-55): the lowest, 2 a second, at the connection; up only
                                                  # after a clean minute (owner 2026-11-08: as few errors as possible)
@@ -286,7 +289,14 @@ class Companion:
         while True:
             self._asked.wait()
             echo_only = 0                                # answers with the echo but without a version frame
+            ld_noted = False
             while self.link.state == 'connected' and self.mode == 'unknown':
+                if self.desk:                            # page Ld: every byte goes to the transfer, the meter cannot
+                    if not ld_noted:                     # answer a version question there (issue 30): ask once it
+                        self.event('page Ld shown: the version is asked when the meter leaves it')   # leaves the page
+                        ld_noted = True
+                    time.sleep(1.0)
+                    continue
                 self._echo = self._ver = self._blver = None
                 try:
                     self.link.send(frames.VERSION_REQUEST)
@@ -359,7 +369,11 @@ class Companion:
         return dev[0] if dev else None
 
     def _probe_saved(self):
-        """Index into PROBE_RATES of the rate saved for this meter (settings 'link_rates', by its Bluetooth address)."""
+        """Index into PROBE_RATES of the rate saved for this meter (settings 'link_rates', by its Bluetooth address).
+        Rates saved by another version of this program are not used: after an update every meter is measured again
+        (owner, 2026-11-09)."""
+        if self.settings.get('link_rates_by') != report.app_version():
+            return None
         name = (self.settings.get('link_rates') or {}).get(self._probe_key())
         return next((i for i, r in enumerate(PROBE_RATES) if r[2] == name), None)
 
@@ -367,10 +381,26 @@ class Companion:
         key = self._probe_key()
         if key is None:
             return
+        if self.settings.get('link_rates_by') != report.app_version():
+            self.settings['link_rates'] = {}              # measured by an older version: start afresh
         rates = dict(self.settings.get('link_rates') or {})
         rates[key] = PROBE_RATES[idx][2]
         self.settings['link_rates'] = rates
+        self.settings['link_rates_by'] = report.app_version()
         save_settings(self.settings)
+
+    def _probe_fail(self, why):
+        """The rate in effect failed (readings lost, no echo, a stalled link): the next lower rate is saved at once, so
+        a new connection does not start at the rate that failed (issue 30)."""
+        a = self.arate
+        if not a.get('probe') or a['code'] == 0:
+            return None
+        new = a['code'] - 1
+        self._probe_save(new)
+        a.update(code=new, found=False, good=0, win=None, fr=None)
+        self.event('reading rate %d a second failed (%s); %d a second saved for the next try' % (
+            PROBE_RATES[new + 1][2], why, PROBE_RATES[new][2]))
+        return new
 
     def _probe_step(self, a, dt, nd):
         """One window of the rate search (IMP-61): every expected reading arrived and no byte was lost (after the error
@@ -398,15 +428,12 @@ class Companion:
                     name, int(PROBE_GOOD * RATE_WINDOW)))
             return
         a['good'] = 0
-        if a['code'] == 0:
+        new = self._probe_fail('%d of %.0f readings arrived, %d bytes lost' % (n, expect, nd))
+        if new is None:
             return
-        new = a['code'] - 1
         with self._ops('reading rate', need_desk=False, wait=0.0):
             if not self._key_with_echo(PROBE_RATES[new][1]):
                 raise RuntimeError('the meter did not echo the rate %d a second' % PROBE_RATES[new][2])
-        a.update(code=new, found=False, win=None, fr=None)
-        self.event('reading rate %d a second: %d of %.0f readings arrived, %d bytes lost; now %d a second' % (
-            name, n, expect, nd, PROBE_RATES[new][2]))
 
     def rate_per_s(self):
         """Readings a second of the automatic rate in effect, or None."""
@@ -675,6 +702,7 @@ class Companion:
             return
         self.hb['dead'] += 1
         self.event('the meter did not answer for %.0f s (3 questions): connecting again' % (time.time() - self._alive[0]))
+        self._probe_fail('the link stalled')             # a stalled link counts against the rate (issue 30)
         self._alive = (time.time(), L.rx_bytes)
         L.connect(L.device[0] if L.device else L.address)   # ends the dead connection, searches the same meter again
 

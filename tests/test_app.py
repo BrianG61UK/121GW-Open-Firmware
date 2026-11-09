@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import tempfile
+import threading
 import time
 import unittest
 
@@ -413,6 +414,27 @@ class VersionQuestion(AppCase):
         asked = self.answering(lost=99)
         self.assertEqual(self.app.fw_kind, 'other')
         self.assertEqual(len(asked), app_mod.VERSION_TRIES)
+
+    def test_not_asked_while_page_ld_is_shown(self):
+        """On page Ld every byte goes to the transfer: no version question there; asked once the page is left (issue 30)."""
+        self.app.desk = True
+        sent = []
+        orig = self.app.link.send
+        self.app.link.send = lambda pkt, **kw: sent.append(bytes(pkt))
+        self.app.fw_kind, self.app.version, self.app.mode = 'unknown', None, 'unknown'
+        self.app._asked.set()
+        time.sleep(1.5)
+        self.assertNotIn(bytes(frames.VERSION_REQUEST), sent)        # the page-Ld status probe may go, the version not
+        self.assertTrue(any('page Ld shown: the version is asked' in e for _, e in self.app.events))
+        self.app.link.send = orig
+        asked_box = []
+
+        def leave():
+            time.sleep(0.2)
+            self.app.desk = False
+        threading.Thread(target=leave, daemon=True).start()
+        asked_box.extend(self.answering(lost=0))
+        self.assertEqual(self.app.version, 'F-1.12')
 
 
 class Report(AppCase):

@@ -529,11 +529,13 @@ class RateSearch(AutoRate):
 
     def test_the_saved_rate_is_used_at_the_next_connection(self):
         self.app.settings['link_rates'] = {'AA:BB:CC:DD:EE:FF': 6}
+        self.app.settings['link_rates_by'] = report.app_version()
         self.app._careful_connect()
         self.assertEqual((self.per_s(), self.meter.rate_code, self.app.arate['found']), (6, 5, True))
 
     def test_a_found_rate_that_fails_later_is_replaced(self):
         self.app.settings['link_rates'] = {'AA:BB:CC:DD:EE:FF': 6}
+        self.app.settings['link_rates_by'] = report.app_version()
         self.app._careful_connect()
         self.window(59)
         self.window(30)                                    # the computer got busier: readings lost
@@ -549,4 +551,27 @@ class RateSearch(AutoRate):
     test_never_above_the_saved_rate = None
     test_paused_on_page_ld = None
     test_a_meter_that_left_the_set_rate_gets_it_again = None
+
+    def test_a_failure_saves_the_lower_rate_at_once(self):
+        self.app._careful_connect()
+        self.window(50)                                    # 7 a second fails in the first window
+        self.assertEqual(self.app.settings['link_rates'], {'AA:BB:CC:DD:EE:FF': 6})
+        self.assertFalse(self.app.arate['found'])
+
+    def test_a_stalled_link_counts_against_the_rate(self):
+        self.app.settings['link_rates'] = {'AA:BB:CC:DD:EE:FF': 7}
+        self.app.settings['link_rates_by'] = report.app_version()
+        self.app._careful_connect()
+        self.app._probe_fail('the link stalled')
+        self.assertEqual(self.app.settings['link_rates'], {'AA:BB:CC:DD:EE:FF': 6})
+        self.assertTrue(any('the link stalled' in e for _, e in self.app.events))
+
+    def test_rates_saved_by_another_version_are_measured_again(self):
+        self.app.settings['link_rates'] = {'AA:BB:CC:DD:EE:FF': 5}
+        self.app.settings['link_rates_by'] = 'companion-v1.2.36'
+        self.app._careful_connect()
+        self.assertEqual((self.per_s(), self.app.arate['found']), (7, False))   # the first try again
+        self.window(50)
+        self.assertEqual(self.app.settings['link_rates_by'], report.app_version())
+        self.assertEqual(self.app.settings['link_rates'], {'AA:BB:CC:DD:EE:FF': 6})
 
