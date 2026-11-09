@@ -377,6 +377,14 @@ class Link2:
                 readings += data
         return bytes(plain), readings
 
+    def flush(self):
+        """The bytes held while hunting (none while locked: a block in progress waits for its last bytes)."""
+        if self.locked:
+            return b''
+        out = bytes(self.buf)
+        self.buf.clear()
+        return out
+
     @staticmethod
     def _exact(cw):
         return (cw[0] >> 6) in (L2_READ, L2_TEXT, L2_STATE) and l2_syndromes(cw) == [0, 0, 0]

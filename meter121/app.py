@@ -337,7 +337,12 @@ class Companion:
             with self._ops('link 2', need_desk=False, wait=LINK_WAIT):
                 if self.desk:
                     raise RuntimeError('page Ld owns the link')
-                if not (self._key_with_echo(0xAA + idx) and self._key_with_echo(0xA8)):
+                if not self._key_with_echo(0xAA + idx):
+                    self.event('link 2: no echo after %d tries' % XDIAG_TRIES)
+                    return
+                self.link.l2_expected = True             # from the 0xA8 echo on the meter sends blocks
+                if not self._key_with_echo(0xA8):
+                    self.link.l2_expected = False
                     self.event('link 2: no echo after %d tries' % XDIAG_TRIES)
                     return
         except (RuntimeError, OSError, TimeoutError) as e:
@@ -917,6 +922,8 @@ class Companion:
         """Restart the meter into the bootloader's update mode (key code 0x91) unless it is there already."""
         if self.mode == 'bootloader':
             return
+        self.l2c = {'on': False}                         # the bootloader answers plain (a kept link keeps its decoder)
+        self.link.l2_expected = False
         try:
             self.link.send(frames.UPDATE_MODE_REQUEST)
         except Exception:                               # noqa: BLE001 - the meter restarts at once: the write's

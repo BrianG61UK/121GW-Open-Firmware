@@ -1,5 +1,7 @@
 """Reassembly of the answers of type 0x82 (card and settings requests) from notifications of any length; the link 2
 decoder (firmware F-1.31, IMP-62, GitHub issue 30)."""
+import threading
+import time
 import unittest
 
 from support import card, frames, settings
@@ -57,6 +59,39 @@ class Answers82(unittest.TestCase):
         from support import transfer
         self.assertIsNone(card.parse_answer(transfer.packet(0x81, 1, b'\x00\x00\x00')))   # a 0x81 frame is not a card answer
         self.assertIsNone(transfer.answer(answer(1, 0)))          # a 0x82 frame is not a transfer answer
+
+
+
+class LinkReceive(unittest.TestCase):
+    """meter121.link.MeterLink._rx (2026-11-09: an install over the bootloader lost its END answer and stalled on DATA
+    answers, because every byte went through the link 2 decoder, which holds up to 39 bytes back while it hunts)."""
+    def setUp(self):
+        from meter121 import link
+        self.link_mod = link
+        self.got = []
+        self.L = link.MeterLink(lambda kind, frame, t: self.got.append((kind, frame)))
+        self.answer = answer(7, card.ST_OK)                       # an 11-byte answer, nothing after it
+
+    def rx(self, data):
+        done = threading.Event()
+        self.L._loop.call_soon_threadsafe(lambda: (self.L._rx(data, time.time()), done.set()))
+        self.assertTrue(done.wait(2.0))
+
+    def test_without_link_2_an_answer_is_delivered_at_once(self):
+        self.rx(self.answer)
+        self.assertEqual(self.got, [(frames.BFT, self.answer)])
+
+    def test_with_link_2_hunting_a_last_answer_comes_after_the_idle_time(self):
+        self.L.l2_expected = True
+        self.rx(self.answer)
+        self.assertEqual(self.got, [])                            # held while hunting
+        time.sleep(self.link_mod.L2_IDLE_FLUSH + 0.3)
+        self.assertEqual(self.got, [(frames.BFT, self.answer)])
+
+    def test_with_link_2_blocks_are_decoded(self):
+        self.L.l2_expected = True
+        self.rx(state_block(0) + read_block(1))
+        self.assertEqual([f for k, f in self.got if k == frames.STATUS], EXPECT)
 
 
 if __name__ == '__main__':
@@ -236,4 +271,3 @@ class Link2(unittest.TestCase):
         d = frames.Link2()
         d.feed(state_block(0) + read_block(1) + read_block(3))
         self.assertEqual(d.stats['lost'], 1)
-

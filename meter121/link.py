@@ -26,6 +26,8 @@ WRITE_WAIT = 5.0                        # seconds a write may take before it cou
 HELD_CHECK_AFTER = 2                    # searches without the meter before asking whether the system holds it
 STOP_NOTIFY_WAIT = 2.0                  # seconds for unsubscribing the notifications before a disconnect (issue 23)
 RETRY_SECONDS = 3.0
+L2_IDLE_FLUSH = 0.5                 # s without a notification after which the hunting link 2 decoder lets its bytes go
+                                    # (the slowest block pace, 30 ticks, leaves 0.3 s between blocks)
 WINDOWS_HINT_AFTER = 2                 # searches in a row without the meter before the Windows hint (GitHub issue 23)
 NOT_FOUND = 'no 121GW found: meter on, Bluetooth on (long PEAK), other Bluetooth apps closed?'
 # a meter added in Windows Settings > Bluetooth & devices is kept connected by Windows; connected, the module does not
@@ -155,9 +157,44 @@ class MeterLink:
         self.rx_bytes = 0                  # bytes received in this connection
         self.rx_dropped = 0                # of them skipped while resynchronising (frames.Reassembler)
         self.l2 = frames.Link2()           # link 2 decoder (firmware F-1.31, IMP-62), in front of the Reassembler
+        self.l2_expected = False           # True once the companion asked for link 2 (app._link2_connect): only then
+                                           # do the bytes pass the decoder (hunting holds up to 39 bytes back)
+        self._l2_idle = None               # timer that releases held hunting bytes (L2_IDLE_FLUSH)
         self.stats = LinkStats()           # notification / write / disconnect statistics for the report
         self.pieces = collections.deque(maxlen=frames.DAMAGED_KEEP)   # damaged pieces of all connections (frames.Reassembler)
         self.reasm = frames.Reassembler(self.pieces)
+
+    def _rx(self, chunk, t):
+        """Bytes of one notification (event loop thread): through the link 2 decoder only while link 2 was asked for
+        (l2_expected), then the Reassembler; a decoder that hunts with bytes held lets them go after L2_IDLE_FLUSH."""
+        self.stats.notification(len(chunk))
+        self.rx_bytes += len(chunk)
+        if self._l2_idle is not None:
+            self._l2_idle.cancel()
+            self._l2_idle = None
+        if not self.l2_expected:
+            self._deliver(chunk, t)                       # link 2 not asked for: every byte as it came
+            return
+        l2 = self.l2
+        plain, readings = l2.feed(chunk)                  # link 2 blocks out, every other byte on
+        for frame, age in readings:
+            self.on_frame(frames.STATUS, frame, t - age)
+        self._deliver(plain, t)
+        if not l2.locked and l2.buf:
+            self._l2_idle = self._loop.call_later(L2_IDLE_FLUSH, self._l2_flush, l2)
+
+    def _l2_flush(self, l2):
+        """No notification for L2_IDLE_FLUSH while the decoder hunts: what it holds is plain (a last answer, or the
+        meter left link 2), not the start of a block stream."""
+        self._l2_idle = None
+        if l2 is self.l2:
+            self._deliver(l2.flush(), time.time())
+
+    def _deliver(self, plain, t):
+        got = self.reasm.feed(plain)
+        self.rx_dropped = self.reasm.dropped
+        for kind, frame in got:
+            self.on_frame(kind, frame, t)
 
     def damaged(self):
         """The last runs of bytes the reassembler skipped, oldest first: [(length, first bytes)]."""
@@ -300,21 +337,13 @@ class MeterLink:
             self.stats.advertised(rssi)                   # the advertisement's signal strength at discovery (dBm)
             self._set('connecting', name)
             gone = asyncio.Event()
-            reasm = self.reasm = frames.Reassembler(self.pieces)
-            l2 = self.l2 = frames.Link2()
+            self.reasm = frames.Reassembler(self.pieces)
+            self.l2 = frames.Link2()
+            self.l2_expected = False                      # a new connection: link 2 only when asked again
             self.rx_bytes = self.rx_dropped = 0
 
             def on_notify(_h, chunk):
-                t = time.time()
-                self.stats.notification(len(chunk))
-                self.rx_bytes += len(chunk)
-                plain, readings = l2.feed(bytes(chunk))      # link 2 blocks out, every other byte on
-                for frame, age in readings:
-                    self.on_frame(frames.STATUS, frame, t - age)
-                got = reasm.feed(plain)
-                self.rx_dropped = reasm.dropped
-                for kind, frame in got:
-                    self.on_frame(kind, frame, t)
+                self._rx(bytes(chunk), time.time())
 
             client = BleakClient(address, disconnected_callback=lambda _c: self._loop.call_soon_threadsafe(gone.set))
             self._client = client                         # known from here on, so a cancel closes it (_keep's finally)
