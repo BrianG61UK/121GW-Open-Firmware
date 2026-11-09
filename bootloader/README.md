@@ -81,6 +81,7 @@ installed.
 |---|---|---|
 | `-IAP-` on both displays, stays | no valid firmware (an update was interrupted) | send the firmware again with the companion, or use a card |
 | `LdE 2` / `LdE 3` / `LdE 6` | the image was refused (length or CRC wrong / not a firmware) or a flash write failed | send it again |
+| `LdE 7` in update mode (B-1.15) | a packed update arrived damaged; the meter stays in update mode | send it again |
 | blank display after a bootloader update | the new bootloader did not start | take the batteries out and put them back: the starter puts the previous bootloader back |
 | `LdE 7` at the first install | the meter does not have one of EEVblog's bootloaders | nothing was written; the bootloader is probably already installed |
 | `LdE 8` at the first install | battery too low | fresh batteries |
