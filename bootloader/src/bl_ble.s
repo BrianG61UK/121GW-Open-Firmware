@@ -19,8 +19,8 @@
 @             of exactly those bytes, or packed length 0x8000 | raw length and the raw bytes; cut into packets anywhere; size and CRC-32 are those of the unpacked image.  A piece header is checked
 @             against the bytes still due before anything is unpacked; a complete piece is unpacked
 @             (firmware/src/sys/zinf.s) and its bytes take the plain path (bl_stage, half-pages); END checks the flash
-@             as for a plain transfer.  A bad header, a piece that does not unpack to exactly its length, stream bytes
-@             beyond the image or after the last piece at END: LdE 7, status 0x17, back to waiting (an erased
+@             as for a plain transfer.  A bad header, a piece that does not unpack to exactly its length, or a stream
+@             byte once the image is complete (bl_zdata): LdE 7, status 0x17, back to waiting (an erased
 @             firmware stays without mark: the bootloader stays in update mode).
 @   3 END     all bytes sent: the flash is checked against the CRC-32; firmware: image check, firmware mark; bootloader:
 @             slot header, INSTALL record; the meter restarts 1.5 s after the END packet (RESET_DELAY, bl_main.s)
@@ -85,6 +85,7 @@ bl_staged:      .space 2                    @ bytes in bl_stage
 bl_state:       .space 1                    @ ST_WAIT, ST_RECV or ST_DONE
 bl_kind:        .space 1                    @ KIND_FW or KIND_BL of the running transfer
 bl_zmode:       .space 1                    @ 1 = the DATA bytes are the packed stream (START kind bit 7)
+    .balign 2
 bl_zfill:       .space 2                    @ packed: bytes of the current piece collected (header included)
     .balign 4
 bl_zbuf:        .space 4 + ZPACK_MAX        @ packed: the piece being collected (header, packed bytes)
@@ -482,9 +483,7 @@ LFUNC bl_packet
 2:  ldr r1, =bl_hdr_ver
     str r0, [r1]                            @ version word of the header written at END (bl_flash.s)
     ldrb r7, [r4, #14]                      @ r7 = kind; bit 7 = packed
-    lsrs r0, r7, #7
-    ldr r1, =bl_zmode
-    strb r0, [r1]
+    lsrs r5, r7, #7                         @ r5 = packed (stored at .Lp_start_go: a refused START changes nothing)
     and r7, r7, #0x7F
     cmp r7, #KIND_FW
     beq .Lp_start_fw
@@ -515,14 +514,16 @@ LFUNC bl_packet
     ldr r0, =FW_MARK                        @ the firmware mark first: from now on the bootloader stays in update mode
     add r1, r0, #0x100                      @ end of the mark page
     bl bl_erase
-    cbnz r0, .Lp_refuse_flash
+    cmp r0, #0
+    bne .Lp_refuse_flash
 @ then the image area, size rounded up to whole 256-byte pages
     ldr r0, =APP_BASE
     add r1, r6, #0xFF                       @ size rounded up to 256
     bic r1, r1, #0xFF
     add r1, r1, r0
     bl bl_erase
-    cbnz r0, .Lp_refuse_flash
+    cmp r0, #0
+    bne .Lp_refuse_flash
     ldr r0, =APP_BASE                       @ programming starts at APP_BASE
 @ common part of START: addresses, counters and state; the answer says accepted (status 0, next 0)
 .Lp_start_go:
@@ -534,6 +535,8 @@ LFUNC bl_packet
     str r6, [r1]                            @ image size
     ldr r1, =bl_kind
     strb r7, [r1]                           @ kind
+    ldr r1, =bl_zmode
+    strb r5, [r1]                           @ packed or plain
     movs r0, #0
     ldr r1, =bl_recv
     str r0, [r1]
@@ -675,11 +678,8 @@ LFUNC bl_packet
     ldr r1, =bl_seq
     ldrh r1, [r1]
     b .Lp_answer
-2:  ldr r0, =bl_zfill
-    ldrh r0, [r0]
-    cmp r0, #0
-    bne .Lp_zfail                           @ packed: stream bytes after the last piece
-    bl bl_end_check                         @ r0 = 0 or the END error n
+2:  bl bl_end_check                         @ r0 = 0 or the END error n (packed: bl_zdata refuses any stream byte
+                                            @ once the image is complete, so no partial piece can be left here)
     cbz r0, 3f
     ldr r1, =bl_show_err
     strb r0, [r1]

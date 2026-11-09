@@ -228,7 +228,8 @@ the piece (every piece of the F-1.31 and B-1.14 images, 2026-11-09).  bl_zdata c
 header as soon as it is complete (lengths in range, raw length at most the bytes still due, so nothing is ever
 programmed outside the area START erased), unpacks it with the firmware's inflater (firmware/src/sys/zinf.s, assembled
 into this build) into bl_zraw and feeds its bytes into the unchanged half-page path; bl_recv counts unpacked bytes.  END
-is unchanged (CRC-32 of the flash, then the mark or slot header) and also refuses stream bytes after the last piece.
+is unchanged (CRC-32 of the flash, then the mark or slot header); a stream byte once the image is complete is refused
+by bl_zdata when it arrives, so END never meets a partial piece.
 Any stream error: LdE 7, status 0x17, back to waiting; the firmware mark was erased at START, so the bootloader stays
 in update mode.  Older bootloaders refuse kind | 0x80 at START before anything is erased (kind check), so the companion
 asks the version (STATUS 0x80) and sends B-1.14 and older the plain transfer.  RAM: bl_zbuf 2068 + bl_zraw 2048 +
