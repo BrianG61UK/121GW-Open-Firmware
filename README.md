@@ -68,6 +68,9 @@ service BlueZ and opens the program in the browser.
 then `packaging/make_dmg.sh` (macOS), `packaging/windows/121gw_companion.iss` (Inno Setup) or
 `packaging/linux/build_appimage.sh` / `build_deb.sh`.
 
+CI (`.github/workflows/companion.yml`): every push runs the unit tests on macOS, Windows and Linux; the packages are
+built, started and checked only for a release tag `companion-vA.B.C` (or a run started by hand).
+
 ## How it works
 
 | File | |

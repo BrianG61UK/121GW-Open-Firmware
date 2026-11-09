@@ -1,6 +1,7 @@
 # Companion: PyInstaller one-folder program with everything it needs (Python, bleak with the system's backend, pywebview,
 # the page), packaged as macOS .dmg (Apple Silicon), Windows installer .exe (Inno Setup), Linux AppImage and .deb (x86_64).
-# The unit tests (tests/, no meter and no Bluetooth needed) run in every job before the packaging.  Every package is
+# The unit tests (tests/, no meter and no Bluetooth needed) run in every job; the packaging only on a release tag or a
+# run started by hand.  Every package is
 # started (or installed and started) and must answer on its local server, page and protections included
 # (.github/scripts/smoke.py), before it is uploaded.  On a tag companion-vA.B.C the packages are attached to that release,
 # created without the "latest" mark so the fast firmware release stays the default download of the repository.
@@ -27,6 +28,9 @@ concurrency:
 env:
   # tag companion-v1.2.3 -> 1.2.3 (step "Version"); any other ref -> dev
   REF_TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
+  # packages are built only for a release tag (or a run started by hand): a branch push runs the unit tests on the three
+  # systems and nothing else, its packages were never used (owner 2026-11-09: "you wasting resources and my time")
+  PACKAGE: ${{ github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
   PIP_PKGS: bleak==1.1.1 pywebview==6.1 pyinstaller==6.22.3 pillow certifi==2026.10.23
 
 jobs:
@@ -50,12 +54,15 @@ jobs:
       - name: Unit tests (frames, card, settings, derived values; no meter, no Bluetooth)
         run: python -I -m unittest discover -s tests
       - name: Icons and third-party licences
+        if: env.PACKAGE == 'true'
         run: |
           python -I packaging/make_icons.py build/icons
           python -I packaging/third_party.py build/THIRD_PARTY_LICENSES.txt
       - name: Application bundle
+        if: env.PACKAGE == 'true'
         run: APP_VERSION="$VER" APP_ICON="$PWD/build/icons/121gw-companion.icns" pyinstaller --noconfirm packaging/companion.spec
       - name: The bundle answers (page, state, protections)
+        if: env.PACKAGE == 'true'
         run: |
           set -euo pipefail
           "dist/121GW Companion.app/Contents/MacOS/121gw-companion" --no-open --port 8251 > app.log 2>&1 &
@@ -63,10 +70,13 @@ jobs:
           python -I .github/scripts/smoke.py http://127.0.0.1:8251 || { cat app.log; exit 1; }
           kill "$pid"
       - name: Disk image
+        if: env.PACKAGE == 'true'
         run: sh packaging/make_dmg.sh "dist/121GW Companion.app" build/THIRD_PARTY_LICENSES.txt "121GW-Companion-$VER-macos-arm64.dmg"
       - name: Checksum
+        if: env.PACKAGE == 'true'
         run: python -I .github/scripts/sha256sum.py 121GW-Companion-*.dmg > "121GW-Companion-$VER-macos-arm64.dmg.sha256"
       - uses: actions/upload-artifact@v7
+        if: env.PACKAGE == 'true'
         with:
           name: companion-macos
           path: 121GW-Companion-*
@@ -104,12 +114,15 @@ jobs:
       - name: Unit tests (frames, card, settings, derived values; no meter, no Bluetooth)
         run: python -I -m unittest discover -s tests
       - name: Icons and third-party licences
+        if: env.PACKAGE == 'true'
         run: |
           python -I packaging/make_icons.py build/icons
           python -I packaging/third_party.py build/THIRD_PARTY_LICENSES.txt
       - name: Program folder
+        if: env.PACKAGE == 'true'
         run: APP_VERSION="$VER" APP_ICON="$PWD/build/icons/121gw-companion.ico" pyinstaller --noconfirm packaging/companion.spec
       - name: Installer (Inno Setup)
+        if: env.PACKAGE == 'true'
         shell: pwsh
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
@@ -118,6 +131,7 @@ jobs:
             "/DLicenseFile=$PWD\LICENSE" "/DThirdParty=$PWD\build\THIRD_PARTY_LICENSES.txt" packaging\windows\121gw_companion.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Installed program answers (page, state, protections)
+        if: env.PACKAGE == 'true'
         shell: pwsh
         run: |
           $setup = Get-ChildItem "121GW-Companion-*-windows-x64.exe" | Select-Object -First 1
@@ -129,8 +143,10 @@ jobs:
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           if (-not $ok) { exit 1 }
       - name: Checksum
+        if: env.PACKAGE == 'true'
         run: python -I .github/scripts/sha256sum.py 121GW-Companion-*-windows-x64.exe > "121GW-Companion-$VER-windows-x64.exe.sha256"
       - uses: actions/upload-artifact@v7
+        if: env.PACKAGE == 'true'
         with:
           name: companion-windows
           path: 121GW-Companion-*
@@ -165,12 +181,15 @@ jobs:
       - name: Unit tests (frames, card, settings, derived values; no meter, no Bluetooth)
         run: python -I -m unittest discover -s tests
       - name: Icons and third-party licences
+        if: env.PACKAGE == 'true'
         run: |
           python -I packaging/make_icons.py build/icons
           python -I packaging/third_party.py build/THIRD_PARTY_LICENSES.txt
       - name: Program folder
+        if: env.PACKAGE == 'true'
         run: APP_VERSION="$VER" pyinstaller --noconfirm packaging/companion.spec
       - name: AppImage
+        if: env.PACKAGE == 'true'
         run: |
           set -euo pipefail
           curl -fsSL -o appimagetool.AppImage https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
@@ -179,6 +198,7 @@ jobs:
           sh packaging/linux/build_appimage.sh dist/121gw-companion build/THIRD_PARTY_LICENSES.txt \
             "121GW-Companion-$VER-linux-x86_64.AppImage" build/icons/121gw-companion.png "$PWD/appimagetool.AppImage"
       - name: The AppImage answers (page, state, protections)
+        if: env.PACKAGE == 'true'
         run: |
           set -euo pipefail
           ./"121GW-Companion-$VER-linux-x86_64.AppImage" --no-open --port 8251 > app.log 2>&1 &
@@ -186,6 +206,7 @@ jobs:
           python -I .github/scripts/smoke.py http://127.0.0.1:8251 || { cat app.log; exit 1; }
           kill "$pid"
       - name: Debian package, installed and started
+        if: env.PACKAGE == 'true'
         run: |
           set -euo pipefail
           deb="121GW-Companion-$VER-linux-amd64.deb"
@@ -197,8 +218,10 @@ jobs:
           kill "$pid"
           sudo apt-get remove -y 121gw-companion
       - name: Checksums
+        if: env.PACKAGE == 'true'
         run: for f in 121GW-Companion-*.AppImage 121GW-Companion-*.deb; do python -I .github/scripts/sha256sum.py "$f" > "$f.sha256"; done
       - uses: actions/upload-artifact@v7
+        if: env.PACKAGE == 'true'
         with:
           name: companion-linux
           path: 121GW-Companion-*
