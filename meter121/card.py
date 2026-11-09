@@ -20,6 +20,10 @@ sends the request again after its timeout.  The meter answers one request at a t
     0x14 INFO    -                                  field = sectors per cluster (512 bytes each), data = free clusters:u32
                                                     total clusters:u32 (a card whose free count is unknown is scanned:
                                                     the answer can take seconds)
+    0x1A READZ   namelen:u8 name offset:u32 len:u16 F-1.32 (IMP-63): as READ, len 1 .. 4096, the bytes packed by the
+                                                    meter; data = CRC-32:u32 of the bytes read, staged:u16, method:u8
+                                                    (1 = the staged bytes are one raw deflate stream, unpacked with
+                                                    zlib; 0 = the bytes read themselves); CHUNK fetches the staged bytes
 Statuses: 0 accepted, 3 not allowed now, 0x20 not found, 0x21 name refused, 0x22 argument refused, 0x23 protected
 (DELETE of cal.bin, EEVBlog.bin, BTLOAD.TMP), 0x24 card error with field = step << 8 | FatFs result (step 1 open,
 2 seek, 3 read, 4 delete, 5 getfree / close).
@@ -51,6 +55,7 @@ from . import transfer
 
 # ---------------------------------------------------------------------------------------------------- byte layouts
 T_LIST, T_READ, T_CHUNK, T_DELETE, T_INFO, T_FORMAT = 0x10, 0x11, 0x12, 0x13, 0x14, 0x15
+T_READZ = 0x1A                                     # READ, packed by the meter (firmware F-1.32, IMP-63)
 FORMAT_WORD = b'FORMAT'                            # the only payload the meter's FORMAT accepts (ble/bftsd.s)
 T_ANSWER = 0x82                                    # type byte of every answer to the requests above and to settings.py
 ST_OK, ST_NOT_NOW, ST_NOT_FOUND, ST_NAME, ST_ARG, ST_PROTECTED, ST_CARD, ST_NO_FORMAT = 0, 3, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25
@@ -63,6 +68,8 @@ CARD_STEP = {1: 'open', 2: 'seek', 3: 'read', 4: 'delete', 5: 'getfree / close',
 NAME_ENCODING = 'latin-1'                          # the meter's names are bytes; the permitted ones are ASCII
 CHUNK = transfer.MAX_PAYLOAD                       # 232: bytes of one CHUNK answer (bft.s BFT_MAXPAY)
 WINDOW = 8192                                      # largest READ (bft.s BFT_STAGE_LEN)
+WINDOW_Z = 4096                                    # largest READZ (bftsd.s BFX_READZ_MAX)
+LAST_PACKED = {}                                   # the last packed card read: bytes read, bytes fetched (report.py)
 LIST_END = 0x8000                                  # LIST field flag: the end of the directory was reached
 NAME_CUT = 0x80                                    # LIST attr bit 7: a name above 63 bytes was cut to 63
 ATTR_DIR, ATTR_VOLUME = 0x10, 0x08                 # FAT attribute bits (not files the meter can read)
@@ -139,6 +146,28 @@ def list_answer(entries, end):
         raw = name.encode(NAME_ENCODING)
         data += struct.pack('<IHHBB', size, date, tm, attr | (NAME_CUT if cut else 0), len(raw)) + raw
     return len(entries) | (LIST_END if end else 0), data
+
+
+def parse_readz(field, data):
+    """(bytes read, crc32 of them, staged length, method) from the field and data of a READZ answer."""
+    if len(data) != 7:
+        raise CardError('READZ answer has %d bytes of data, expected 7' % len(data))
+    crc, staged, method = struct.unpack('<IHB', data)
+    if method not in (0, 1) or (method == 0 and staged != field) or (method == 1 and not 0 < staged < field):
+        raise CardError('READZ answer: method %d, %d staged for %d bytes read' % (method, staged, field))
+    return field, crc, staged, method
+
+
+def unpack_readz(staged, n, method):
+    """The n bytes read, from the staged bytes of a READZ; None when the stream does not unpack to exactly n bytes."""
+    if method == 0:
+        return staged
+    d = zlib.decompressobj(-15)
+    try:
+        out = d.decompress(staged, n + 1)
+    except zlib.error:
+        return None
+    return out if d.eof and not d.unused_data and not d.unconsumed_tail and len(out) == n else None
 
 
 def parse_read(field, data):
@@ -243,11 +272,12 @@ class Client:
         self.send, self.answers = send, answers
         self.seq = 0
         self.cancelled = False
+        self.min_timeout = 0.0                         # link 2 (app.py): the time a whole answer takes at the block pace
 
     def request(self, rtype, payload=b'', timeout=None, retries=RETRIES):
         """(status, field, data) of the answer to the request; CardError after `retries` sends without an answer.  The
         status is returned as it is (the caller decides)."""
-        timeout = timeout or TIMEOUTS.get(rtype, 10.0)
+        timeout = max(timeout or TIMEOUTS.get(rtype, 10.0), self.min_timeout)
         self.seq = (self.seq + 1) & 0xFFFF
         seq = self.seq
         pkt = transfer.packet(rtype, seq, payload)
@@ -285,11 +315,16 @@ def _atomic_json(path, obj):
 
 
 class Card:
-    def __init__(self, client, careful=False):
+    def __init__(self, client, careful=False, packed=False):
         """`careful`: the meter has the old BLE112 module and firmware F-1.19 or newer (app.py): LIST in pages of
-        CAREFUL_LIST_MAX entries and CHUNK in adaptive pieces (CAREFUL_SIZES), each sent up to CAREFUL_RETRIES times."""
+        CAREFUL_LIST_MAX entries and CHUNK in adaptive pieces (CAREFUL_SIZES), each sent up to CAREFUL_RETRIES times.
+        `packed`: firmware F-1.32 or newer: file reads with READZ in windows of WINDOW_Z (the meter packs them)."""
         self.c = client
         self.careful = careful
+        self.packed = packed
+        if packed:
+            LAST_PACKED.clear()
+            LAST_PACKED.update(read=0, fetched=0)
         self._size = CAREFUL_START                     # kept from window to window of one Card
         self._rtts = collections.deque(maxlen=CAREFUL_RTT_KEEP)
         self._most = CAREFUL_LIST_MAX                  # entries per careful LIST answer, kept from page to page
@@ -454,10 +489,15 @@ class Card:
                     self._size, good = bigger, 0
         return bytes(buf)
 
+    def window(self):
+        return WINDOW_Z if self.packed else WINDOW
+
     def read_window(self, name, offset, length):
-        """Up to `length` (<= WINDOW) bytes of the file from `offset`, checked against the CRC-32 the meter gave."""
-        if not 0 < length <= WINDOW:
-            raise ValueError('window length 1..%d' % WINDOW)
+        """Up to `length` (<= self.window()) bytes of the file from `offset`, checked against the CRC-32 the meter gave."""
+        if not 0 < length <= self.window():
+            raise ValueError('window length 1..%d' % self.window())
+        if self.packed:
+            return self._read_window_z(name, offset, length)
         for _ in range(WINDOW_TRIES):
             n, crc = parse_read(*self.c.ok(T_READ, read_request(name, offset, length)))
             if n == 0:
@@ -470,11 +510,27 @@ class Card:
                     return data
         raise CardError('CRC-32 of %s at offset %d did not match after %d tries' % (name, offset, WINDOW_TRIES))
 
+    def _read_window_z(self, name, offset, length):
+        """read_window with READZ: the staged bytes fetched, unpacked, checked against the CRC-32 of the bytes read."""
+        for _ in range(WINDOW_TRIES):
+            n, crc, staged, method = parse_readz(*self.c.ok(T_READZ, read_request(name, offset, length)))
+            if n == 0:
+                return b''
+            if n > length:
+                raise CardError('READZ read %d bytes, more than the %d asked' % (n, length))
+            for _ in range(CHUNK_PASSES):
+                data = unpack_readz(self._chunks(staged), n, method)
+                if data is not None and zlib.crc32(data) & 0xFFFFFFFF == crc:
+                    LAST_PACKED['read'] += n
+                    LAST_PACKED['fetched'] += staged
+                    return data
+        raise CardError('CRC-32 of %s at offset %d did not match after %d tries' % (name, offset, WINDOW_TRIES))
+
     def read_file(self, name, size, write, progress=None):
         """Read `size` bytes of the file through `write(bytes)` in checked windows; progress(done_bytes) after each."""
         offset = 0
         while offset < size:
-            data = self.read_window(name, offset, min(WINDOW, size - offset))
+            data = self.read_window(name, offset, min(self.window(), size - offset))
             if not data:
                 raise CardError('%s is shorter than listed (%d of %d bytes)' % (name, offset, size))
             write(data)

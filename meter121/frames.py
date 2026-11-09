@@ -45,6 +45,7 @@ MCLOCK_STATUS = {0: 'not measured since the meter was switched on', 1: 'measured
 DAMAGED_KEEP = 20                       # skipped runs kept
 L2_LEN = 20                             # link 2: block length (firmware ble/link2.s)
 L2_READ, L2_TEXT, L2_STATE = 1, 2, 3    # block types (H bits 7..6)
+L2_TEXT_MAX = 15                        # answer bytes in one TEXT block (payload: n, then up to 15 bytes)
 L2_TICK_S = 0.01002                     # the meter's TIM2 tick (ages and reading periods are counted in it)
 L2_LOSE = 3                             # bad blocks in a row: the decoder lets the bytes go to the Reassembler and hunts
 
@@ -383,7 +384,7 @@ class Link2:
     def _block(self, b):
         typ, p = b[0] >> 6, b[1:17]
         if typ == L2_TEXT:
-            if p[0] > 15:
+            if p[0] > L2_TEXT_MAX:
                 raise ValueError('TEXT length')
             return 'text', bytes(p[1:1 + p[0]])
         if typ == L2_STATE:

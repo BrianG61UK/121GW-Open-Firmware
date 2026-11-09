@@ -127,7 +127,8 @@ def link_details(app):
     w('advertisement signal  %s' % sig)
     w('MTU              %s' % ('%d bytes (bleak client mtu_size)' % st['mtu'] if st['mtu'] is not None else
                                'not available from the Bluetooth backend'))
-    w('careful mode     %s' % ('on: small card answers (old BLE112 module, MTU 23)' if app.careful_wanted() else
+    w('careful mode     %s' % ('on: small card answers (old BLE112 module, MTU 23)' if app.small_pieces() else
+                               'link 2: card and settings answers in repaired blocks, large pieces' if app.careful_wanted() else
                                'off (MTU %s; careful mode is for the old BLE112 module and firmware F-1.19 or newer)'
                                % (st['mtu'] if st['mtu'] is not None else 'unknown')))
     c = getattr(app, 'l2c', None) or {}
@@ -151,6 +152,10 @@ def link_details(app):
             {True: 'the system still held the meter', False: 'released by the system', None: 'cannot be checked here'}[hd['held']],
             '; BlueZ was asked to release it' if hd.get('released') else '',
             time.strftime(' (checked %H:%M:%S)', time.localtime(hd['at']))))
+    cp = card.LAST_PACKED
+    if cp.get('read'):
+        w('packed reads     last card read: %d bytes fetched for %d read (%.0f %%, F-1.32 READZ)' % (
+            cp['fetched'], cp['read'], 100.0 * cp['fetched'] / cp['read']))
     cs = card.LAST_CAREFUL
     if cs.get('pieces') or cs.get('again'):
         w('careful pieces   last card read: %d pieces, %d sent again; pieces by size: %s' % (

@@ -1,6 +1,8 @@
 """Card list / download / delete / info and the sync, against a fake meter that implements the protocol in Python."""
 import json
 import os
+import struct
+import zlib
 import shutil
 import tempfile
 import unittest
@@ -163,6 +165,49 @@ class Download(CardCase):
         for bad in ('../x', 'a/b', 'a\\b', 'CON', 'nul.txt', '', 'x.part', card.MANIFEST, 'c:x', 'a ', 'a.'):
             with self.assertRaises(card.CardError, msg=bad):
                 self.card.download(bad, self.tmp, 1)
+
+
+class PackedDownload(CardCase):
+    """READZ (firmware F-1.32, IMP-63): windows of 4096, the staged bytes unpacked with zlib, the CRC-32 checked."""
+    def setUp(self):
+        super().setUp()
+        self.meter.readz_fw = True
+        self.card = card.Card(make_client(self.meter), packed=True)
+
+    def test_log_file_packed(self):
+        path = self.card.download('LOG0002.CSV', self.tmp, 20000)
+        self.assertEqual(slurp(path), sample_files()['LOG0002.CSV'][0])
+        self.assertEqual(self.count(card.T_READZ), 5)                   # 4 x 4096 + 3616
+        self.assertEqual(self.count(card.T_READ), 0)
+        self.assertEqual(card.LAST_PACKED['read'], 20000)
+        self.assertLess(card.LAST_PACKED['fetched'], 20000)
+
+    def test_incompressible_bytes_come_as_they_are(self):
+        import random
+        r = random.Random(5)
+        noise = bytes(r.randrange(256) for _ in range(3000))
+        self.meter.files['NOISE.BIN'] = (noise, fat_date(2026, 11, 9), fat_time(10, 0, 0))
+        path = self.card.download('NOISE.BIN', self.tmp, 3000)
+        self.assertEqual(slurp(path), noise)
+        self.assertEqual(card.LAST_PACKED['fetched'], 3000)
+
+    def test_damaged_stream_is_fetched_again(self):
+        self.meter.corrupt_chunk_once = True                            # a wrong byte in the packed stream
+        path = self.card.download('LOG0002.CSV', self.tmp, 20000)
+        self.assertEqual(slurp(path), sample_files()['LOG0002.CSV'][0])
+
+    def test_answer_forms(self):
+        with self.assertRaises(card.CardError):
+            card.parse_readz(100, b'\0' * 4)                               # the 4-byte READ answer
+        with self.assertRaises(card.CardError):
+            card.parse_readz(100, struct.pack('<IHB', 0, 100, 1))         # packed but not shorter
+        self.assertEqual(card.parse_readz(100, struct.pack('<IHB', 7, 100, 0)), (100, 7, 100, 0))
+        self.assertIsNone(card.unpack_readz(b'\x03\x00', 5, 1))           # an empty stream for 5 bytes
+        z = zlib.compressobj(9, zlib.DEFLATED, -15)
+        s = z.compress(b'abcabcabc') + z.flush()
+        self.assertEqual(card.unpack_readz(s, 9, 1), b'abcabcabc')
+        self.assertIsNone(card.unpack_readz(s + b'\0', 9, 1))              # bytes after the stream
+        self.assertIsNone(card.unpack_readz(s, 8, 1))                      # one byte more than read
 
 
 class Delete(CardCase):

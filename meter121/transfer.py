@@ -6,6 +6,12 @@ Answer: B5 5B 81 seq(2) 03 status next(2) crc16(2).  Stop and wait: every packet
 The transfer works only while the meter shows the SETUP page Ld ("Ld-bt"); there the meter checks length, CRC-32 and the
 image header at END and writes the file as EEVBlog.bin.  Timeouts and retries are those of the sender that wrote a
 firmware image to a meter over Bluetooth (155 kB in 159 to 172 s, 2026-11-04).
+
+Packed (IMP-63): firmware F-1.32 (page Ld) and bootloader B-1.15 (update mode) take START kind | 0x80: the DATA bytes are
+then pack_stream(file), pieces of PIECE raw bytes behind a header raw length u16, packed length u16: packed with zlib
+(raw deflate, Z_FINISH) when that gives one final dynamic-code block shorter than the piece (the only block the
+meter's inflater takes, firmware/src/sys/zinf.s), else the raw bytes with packed length 0x8000 | raw length; START keeps the size and CRC-32 of the file itself, and the meter checks them
+on the unpacked bytes as for a plain transfer.  The firmware image packs to about 64 % (2026-11-09, F-1.31 image).
 """
 import queue
 import struct
@@ -17,6 +23,11 @@ from .frames import crc16
 T_START, T_DATA, T_END, T_STATUS = 1, 2, 3, 5
 T_LEAVE = 0x19                                   # leave the page Ld as a SETUP press does (firmware F-1.17, ble/bft.s)
 MAX_PAYLOAD = 232
+PACKED = 0x80                                    # START kind bit 7: the DATA bytes are the packed stream
+PIECE = 2048                                     # raw bytes of one piece (bft.s BFT_ZRAW_MAX, bl_ble.s ZRAW_MAX)
+PIECE_PACK_MAX = 2064                            # packed bytes of one piece the meter takes
+FINAL_DYNAMIC = 5                                # first 3 bits of a piece the meter unpacks: BFINAL 1, BTYPE 2 (zinf.s)
+RAW_PIECE = 0x8000                               # packed length flag: the piece is its raw bytes
 TIMEOUT_DATA = 20.0
 TIMEOUT_END = 120.0
 RETRIES = 8
@@ -26,10 +37,12 @@ STATUS_TEXT = {0: 'accepted', 1: 'CRC wrong', 2: 'not the expected packet', 3: '
                0x15: 'EEVBlog.bin read back differs', 0x16: 'the received file could not be read back',
                0x17: "the meter does not have one of EEVblog's bootloaders (already replaced?)",
                0x18: 'battery too low for the bootloader install: put in fresh batteries',
-               0x19: 'the bootloader install failed (the file or a flash step)'}
+               0x19: 'the bootloader install failed (the file or a flash step)',
+               0x1A: 'the packed data was damaged (nothing was kept; send the file again)'}
 BOOT_STATUS_TEXT = {0: 'accepted', 1: 'CRC wrong', 2: 'not the expected packet', 3: 'not allowed now', 4: 'refused',
                     5: 'beyond the announced size', 0x12: 'length or CRC-32 of the written image wrong',
-                    0x13: 'not a firmware image', 0x16: 'flash write or check failed'}
+                    0x13: 'not a firmware image', 0x16: 'flash write or check failed',
+                    0x17: 'the packed data was damaged (the meter stays in update mode; send it again)'}
 KIND_FIRMWARE, KIND_INSTALL, KIND_BOOTLOADER = 0, 1, 2
 BOOT_VERSION_INDEX = 0x80                     # STATUS index answered only by the bootloader (bl_ble.s)
 TIMEOUT_START = 30.0                          # the bootloader erases the target before it answers START
@@ -37,6 +50,24 @@ TIMEOUT_START = 30.0                          # the bootloader erases the target
 
 class TransferError(Exception):
     pass
+
+
+def pack_stream(data, piece=PIECE):
+    """The packed stream of `data` (module docstring): per piece raw length u16, packed length u16, raw deflate."""
+    out = bytearray()
+    for p in range(0, len(data), piece):
+        raw = data[p:p + piece]
+        c = zlib.compressobj(9, zlib.DEFLATED, -11, 9)
+        blk = c.compress(raw) + c.flush()             # Z_FINISH: the block ends in its last byte
+        if blk[0] & 7 == FINAL_DYNAMIC and len(blk) < len(raw):
+            out += struct.pack('<HH', len(raw), len(blk)) + blk
+        else:                                         # stored, fixed or several blocks: the raw bytes (flag 0x8000)
+            out += struct.pack('<HH', len(raw), RAW_PIECE | len(raw)) + raw
+    return bytes(out)
+
+
+def _packets(stream):
+    return [packet(T_DATA, n, stream[i:i + MAX_PAYLOAD]) for n, i in enumerate(range(0, len(stream), MAX_PAYLOAD))]
 
 
 def new_stats():
@@ -51,6 +82,8 @@ def new_stats():
 def stats_text(st, dropped=None):
     """One line for the page."""
     parts = ['%d packets in %.0f s' % (st['packets'], st['seconds'])]
+    if st.get('sent') and st.get('file') and st['sent'] != st['file']:
+        parts.append('packed: %d bytes sent for %d (%.0f %%)' % (st['sent'], st['file'], 100.0 * st['sent'] / st['file']))
     repeats = st['sends'] - st['packets']
     parts.append('%d sent again' % repeats if repeats > 0 else 'none sent again')
     if st['timeouts']:
@@ -147,22 +180,25 @@ class Sender:
         if status:
             raise TransferError('leave page Ld: %s' % STATUS_TEXT.get(status, status))
 
-    def run(self, data, kind=None):
+    def run(self, data, kind=None, packed=False):
         """Send `data` as EEVBlog.bin, or with kind 1 as the first-install file of the two-part bootloader (firmware
-        F-1.03 on: the meter writes it to flash and restarts); returns the number of card sessions the meter had to
-        repeat."""
-        pkts = [packet(T_DATA, n, data[i:i + MAX_PAYLOAD]) for n, i in enumerate(range(0, len(data), MAX_PAYLOAD))]
-        self.total, self.done = len(data), 0
-        self.stats = dict(new_stats(), packets=len(pkts) + 2)    # START, the data, END
+        F-1.03 on: the meter writes it to flash and restarts); `packed` (firmware F-1.32 on): as the packed stream.
+        Returns the number of card sessions the meter had to repeat."""
+        stream = pack_stream(data) if packed else data
+        pkts = _packets(stream)
+        self.total, self.done = len(stream), 0
+        self.stats = dict(new_stats(), packets=len(pkts) + 2, file=len(data), sent=len(stream))  # START, data, END
         t0 = time.monotonic()
         try:
-            return self._run(pkts, data, kind)
+            return self._run(pkts, data, kind, packed)
         finally:
             self.stats['seconds'] = time.monotonic() - t0
 
-    def _run(self, pkts, data, kind):
+    def _run(self, pkts, data, kind, packed=False):
         start = struct.pack('<II', len(data), zlib.crc32(data) & 0xFFFFFFFF)
-        if kind is not None:
+        if packed:
+            start += bytes([(kind or 0) | PACKED])
+        elif kind is not None:
             start += bytes([kind])
         status, _ = self._ask(packet(T_START, 0, start), 0, TIMEOUT_DATA)
         if status:
@@ -177,7 +213,7 @@ class Sender:
             if status:
                 raise TransferError('packet %d: %s' % (n, STATUS_TEXT.get(status, status)))
             n += 1
-            self.done = min(len(data), n * MAX_PAYLOAD)
+            self.done = min(self.total, n * MAX_PAYLOAD)
         status, info = self._ask(packet(T_END, len(pkts)), len(pkts), TIMEOUT_END)
         if status in (0x14, 0x15):
             raise TransferError('%s: the card holds the old EEVBlog.bin untouched or none at all; do not use the update keys,'
@@ -204,13 +240,15 @@ class BootSender(Sender):
     """The bootloader's update protocol: START (the meter erases, then answers), DATA with two packets in flight, END
     (the meter checks the flash and restarts half a second after its answer)."""
 
-    def run(self, data, kind=KIND_FIRMWARE, version=None):
-        pkts = [packet(T_DATA, n, data[i:i + MAX_PAYLOAD]) for n, i in enumerate(range(0, len(data), MAX_PAYLOAD))]
-        self.total, self.done = len(data), 0
-        self.stats = dict(new_stats(), packets=len(pkts) + 2)    # START, the data, END
+    def run(self, data, kind=KIND_FIRMWARE, version=None, packed=False):
+        """`packed` (bootloader B-1.15 on): the DATA packets carry the packed stream."""
+        stream = pack_stream(data) if packed else data
+        pkts = _packets(stream)
+        self.total, self.done = len(stream), 0
+        self.stats = dict(new_stats(), packets=len(pkts) + 2, file=len(data), sent=len(stream))  # START, data, END
         t0 = time.monotonic()
         try:
-            return self._run_boot(pkts, data, kind, version)
+            return self._run_boot(pkts, data, kind | (PACKED if packed else 0), version)
         finally:
             self.stats['seconds'] = time.monotonic() - t0
 
@@ -259,7 +297,7 @@ class BootSender(Sender):
                     new = max(acked + 1, min(nxt, nxt_send))
                     inflight = max(0, inflight - (new - acked))
                     acked = new
-                    self.done = min(len(data), acked * MAX_PAYLOAD)
+                    self.done = min(self.total, acked * MAX_PAYLOAD)
                 elif status == 0 and seq < acked:
                     st['stray'] += 1
                     inflight = max(0, inflight - 1)   # the answer to a repeated packet: its slot is free again

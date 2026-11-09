@@ -2,6 +2,7 @@
 chosen by the negotiated MTU (23 = BLE112, 247 = BGM220S), the card requests with small answers; link 2 (firmware
 F-1.31, IMP-62, GitHub issue 30): key codes 0xAA + pace and 0xA8 at the connection, the pace control.  The program's settings file is the test's
 own (AppCase patches app.config_path)."""
+import queue
 import threading
 import time
 import unittest
@@ -103,6 +104,20 @@ class CardPieces(unittest.TestCase):
         self.assertEqual(card.list_request(5, 4), b'\x05\x00\x04')
         self.assertEqual(card.chunk_request(2), b'\x02\x00')
         self.assertEqual(card.chunk_request(2, 48), b'\x02\x00\x30')
+
+
+class PackedGates(AppCase):
+    """IMP-63: packed card reads and page Ld transfers from F-1.32, packed update-mode transfers from B-1.15."""
+    def test_versions(self):
+        self.app.fw_kind = 'fast'
+        for v, want in (('F-1.31', False), ('F-1.32', True), ('F-1.40', True)):
+            self.app.version = v
+            self.assertEqual(self.app.packed_fw(), want, v)
+        self.app.fw_kind = 'other'                       # EEVblog's firmware
+        self.assertFalse(self.app.packed_fw())
+        for b, want in (('B-1.14', False), ('B-1.15', True), ('EEV', False), (None, False)):
+            self.app.bl = b
+            self.assertEqual(self.app.packed_bl(), want, b)
 
 
 class CarefulConnect(AppCase):
@@ -300,6 +315,24 @@ class Link2Connect(AppCase):
         self.window(blocks=0, readings=20)                 # readings, but no block: plain frames again
         self.assertEqual(self.codes().count(0xA8), n + 1)
         self.assertTrue(any('link 2 set again' in e for _, e in self.app.events))
+
+    def test_large_pieces_with_link_2(self):
+        self.assertTrue(self.app.small_pieces())          # before link 2: careful pieces
+        self.assertEqual(self.app._l2_answer_wait(), 0.0)
+        self.app._link2_connect()
+        self.assertTrue(self.app.careful_wanted())
+        self.assertFalse(self.app.small_pieces())         # TEXT blocks are repaired: the pieces of a new module
+        blocks = -(-app_mod.L2_ANSWER_MAX // frames.L2_TEXT_MAX)
+        want = 2.0 * blocks * app_mod.PACE_TICKS[app_mod.PACE_START] * frames.L2_TICK_S + 1.0
+        self.assertAlmostEqual(self.app._l2_answer_wait(), want)
+        self.assertIn('careful mode     link 2: card and settings answers in repaired blocks', report.build(self.app))
+        c = card.Client(lambda _b: None, None)
+        c.min_timeout = 0.6
+        c.answers = queue.Queue()
+        t0 = time.monotonic()
+        with self.assertRaises(card.CardError):
+            c.request(card.T_CHUNK, card.chunk_request(0), timeout=0.1, retries=1)
+        self.assertGreaterEqual(time.monotonic() - t0, 0.6)   # a short timeout is raised to the link 2 answer time
 
     def test_paused_on_page_ld(self):
         self.app._link2_connect()

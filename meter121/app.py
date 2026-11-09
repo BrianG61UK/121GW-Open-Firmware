@@ -76,12 +76,15 @@ XDIAG_STATUS_FIRST, XDIAG_STATUS_COUNT = 40, 9   # page Ld STATUS indices of the
 CAREFUL_MIN_VERSION = (1, 1, 9)                  # firmware F-1.19: key codes 0x97 / 0x98, LIST max, CHUNK len (IMP-50)
 CAREFUL_MTU = 23                                 # the old BLE112 module negotiates only the minimum (the BGM220S: 247)
 L2_MIN_VERSION = (1, 3, 1)                       # firmware F-1.31: link 2 (IMP-62, key codes 0xA8 and 0xAA..0xB2)
+PACKED_MIN_VERSION = (1, 3, 2)                   # firmware F-1.32: READZ and packed page Ld transfers (IMP-63)
+PACKED_MIN_BOOTLOADER = (1, 1, 5)                # bootloader B-1.15: packed transfers in update mode (IMP-63)
 PACE_TICKS = (30, 25, 20, 17, 14, 12, 10, 8, 7)  # link 2 block pace in TIM2 ticks (firmware l2_pace_tab; key 0xAA + index)
 PACE_START = 2                                   # 20 ticks, 5 blocks a second (about 100 bytes/s; the worst link seen carried
                                                  # 7.5 indications a second of up to 20 bytes)
 PACE_WINDOW = 10.0                               # seconds of one judgement of the pace
 PACE_UP_CLEAN = 3                                # windows without a lost block before one step faster
 PACE_DOWN = 2                                    # steps slower at a lost block or a stalled link (as TCP: down fast, up slowly)
+L2_ANSWER_MAX = 243                              # bytes of the largest page Ld answer (ble/bftsd.s: 8 + 3 + 232)
 HB_SEND = 5.0                                    # IMP-56: the byte 0xFE ("still here") when nothing was written for this long
 HB_ON, HB_OFF = b'\xFE', b'\xFD'                 # the meter's watch: on (kept alive by any byte) / off before a disconnect
 ALIVE_GAP = 8.0                                  # seconds without a byte from the meter (outside page Ld) before asking it
@@ -515,6 +518,31 @@ class Companion:
         self.event('page Ld left by the program (LEAVE request)')
         return {'ok': True}
 
+    def _l2_answer_wait(self):
+        """Seconds a card or settings request waits at least with link 2 on: twice the blocks of the largest answer
+        (243 bytes, 15 in each TEXT block) at the block pace, plus a second; 0 without link 2."""
+        c = self.l2c
+        if not c.get('on'):
+            return 0.0
+        blocks = -(-L2_ANSWER_MAX // frames.L2_TEXT_MAX)
+        return 2.0 * blocks * PACE_TICKS[c['pace']] * frames.L2_TICK_S + 1.0
+
+    def packed_fw(self):
+        """True when the firmware packs card reads (READZ) and takes packed page Ld transfers (F-1.32 on, IMP-63)."""
+        v = releases.version_of_meter(self.version)
+        return self.fw_kind == 'fast' and v is not None and v >= PACKED_MIN_VERSION
+
+    def packed_bl(self):
+        """True when the two-part bootloader takes packed transfers in its update mode (B-1.15 on, IMP-63)."""
+        v = releases.version_of_bootloader(self.bl)
+        return v is not None and v >= PACKED_MIN_BOOTLOADER
+
+    def small_pieces(self):
+        """True when card and settings answers must come in small pieces: an old BLE112 link (careful_wanted) without
+        link 2.  With link 2 on (F-1.31) the page Ld answers travel in TEXT blocks whose damaged bytes are repaired
+        (firmware ble/link2.s), so they come whole, in the large pieces of a new module."""
+        return self.careful_wanted() and not self.l2c.get('on')
+
     def careful_wanted(self):
         """True when the link is to an old BLE112 module (MTU 23) and the firmware knows careful mode (F-1.19 on)."""
         v = releases.version_of_meter(self.version)
@@ -835,7 +863,8 @@ class Companion:
         else:
             self._sender = transfer.Sender(self.link.send)
             self._wait_ld()
-            self._send_tracked(lambda: self._sender.run(data), len(data), text)
+            packed = self.packed_fw()
+            self._send_tracked(lambda: self._sender.run(data, packed=packed), len(data), text)
             u.update(message='%s is on the SD card. To install: switch the meter off, hold HOLD and MEM while '
                              'switching it on, then press SETUP.' % text)
 
@@ -859,7 +888,9 @@ class Companion:
             self._sender = transfer.Sender(self.link.send)
             self._wait_ld()
             try:
-                self._send_tracked(lambda: self._sender.run(first, kind=transfer.KIND_INSTALL), len(first), text)
+                packed = self.packed_fw()
+                self._send_tracked(lambda: self._sender.run(first, kind=transfer.KIND_INSTALL, packed=packed), len(first),
+                                   text)
             except transfer.TransferError as e:
                 # F-1.03 as first built could restart before its END answer went out (2026-11-04): the meter's own
                 # report after the restart decides
@@ -944,7 +975,8 @@ class Companion:
 
     def _boot_send(self, data, kind, version, text):
         self._sender = transfer.BootSender(self.link.send)
-        self._send_tracked(lambda: self._sender.run(data, kind, version), len(data), text)
+        packed = self.packed_bl()
+        self._send_tracked(lambda: self._sender.run(data, kind, version, packed=packed), len(data), text)
 
     def _send_tracked(self, job, total, text):
         u = self.update
@@ -954,7 +986,7 @@ class Companion:
         th = threading.Thread(target=lambda: box.setdefault('r', self._guard(job)), daemon=True)
         th.start()
         while th.is_alive():
-            u.update(done=sender.done)
+            u.update(done=sender.done, total=sender.total or total)   # packed: the bytes of the stream sent
             time.sleep(0.2)
         dropped = max(0, self.link.rx_dropped - dropped0)
         self.last_transfer = dict(sender.stats, what=text, rx_dropped=dropped, ok=not isinstance(box.get('r'), Exception),
@@ -962,7 +994,7 @@ class Companion:
         self.event('transfer of %s: %s' % (text, self.last_transfer['text']))
         if isinstance(box.get('r'), Exception):
             raise box['r']
-        u.update(done=total)
+        u.update(done=sender.total or total, total=sender.total or total)
         self._sender = None
 
     @staticmethod
@@ -1154,6 +1186,7 @@ class Companion:
         self._bft_what = what
         sender = self._ops_sender = transfer.Sender(self.link.send)
         client = card.Client(self.link.send, self._ext_answers)
+        client.min_timeout = self._l2_answer_wait()
         self._card_client = client
         while not self._ext_answers.empty():
             self._ext_answers.get_nowait()
@@ -1238,7 +1271,7 @@ class Companion:
         try:
             with self._ops('settings', wait=LINK_WAIT) as (_, client):
                 items = job(meter_settings.Settings(client, hunt=self._hunt_supported(), quiet=self._quiet_supported(),
-                                                    paged=self.careful_wanted() and self._link_adapt_supported()))
+                                                    paged=self.small_pieces() and self._link_adapt_supported()))
         except (RuntimeError, ValueError, OSError) as e:
             self.settings_st['error'] = str(e)
             raise
@@ -1266,7 +1299,7 @@ class Companion:
         def run():
             try:
                 with self._ops(op, wait=LINK_WAIT) as (_, client):
-                    st['result'] = job(card.Card(client, careful=self.careful_wanted()), progress)
+                    st['result'] = job(card.Card(client, careful=self.small_pieces(), packed=self.packed_fw()), progress)
                 st['progress'] = 1.0
             except (RuntimeError, ValueError, OSError, transfer.TransferError) as e:
                 st['error'] = str(e)

@@ -203,6 +203,26 @@ class Link2(unittest.TestCase):
         plain, _got = d.feed(state_block(0) + block(2, 1, [len(echo)] + list(echo)))
         self.assertEqual(plain, echo)
 
+    def test_a_whole_card_answer_in_text_blocks_with_damage(self):
+        # page Ld over link 2 (F-1.31): a full CHUNK answer (243 bytes) in TEXT blocks of 15, one damaged byte in each
+        # block after the lock, notifications of 20 bytes at other boundaries than the blocks'
+        frame = answer(0x0102, card.ST_OK, bytes(range(232)), field=7)
+        blocks = bytearray(state_block(0))
+        for n, i in enumerate(range(0, len(frame), frames.L2_TEXT_MAX), 1):
+            part = frame[i:i + frames.L2_TEXT_MAX]
+            b = bytearray(block(2, n & 0x3F, [len(part)] + list(part)))
+            if n > 1:
+                b[(n * 7) % 20] ^= 0x24
+            blocks += b
+        d, r = frames.Link2(), frames.Reassembler()
+        out = []
+        cuts = [0] + list(range(3, len(blocks), 20)) + [len(blocks)]
+        for lo, hi in zip(cuts, cuts[1:]):
+            plain, _got = d.feed(bytes(blocks[lo:hi]))
+            out += r.feed(plain)
+        self.assertEqual(out, [(frames.BFT, frame)])
+        self.assertEqual(d.stats['corrected'], len(range(0, len(frame), frames.L2_TEXT_MAX)) - 1)
+
     def test_back_to_plain_after_three_bad_blocks(self):
         d = frames.Link2()
         d.feed(self.stream())

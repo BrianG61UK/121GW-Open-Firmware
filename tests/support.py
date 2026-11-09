@@ -70,6 +70,8 @@ class FakeMeter:
         self.fast_mclock = False                       # firmware F-1.17: key code 0x96 answered with FA (sys/msical.s)
         self.fast_leave = False                        # firmware F-1.17: the page Ld request LEAVE (type 0x19)
         self.careful_fw = False                        # firmware F-1.19: LIST max, CHUNK len
+        self.readz_fw = False                          # firmware F-1.32: READZ (0x1A), packed card reads
+        self.readz_count = 0
         self.damage_over = None                        # answers with more data bytes than this never arrive intact
         self.damage_rate = 0.0                         # chance per answer byte to be damaged (the answer is then lost)
         self.rng = random.Random(9)                    # fixed seed: the same losses in every run
@@ -154,7 +156,8 @@ class FakeMeter:
         return struct.pack('<IHHBB', min(len(f[0]), 0xFFFFFFFF), f[1], f[2], attr | (0x80 if cut else 0), len(raw)) + raw
 
     def _handle(self, rtype, p):
-        if self.logging and rtype in (card.T_LIST, card.T_READ, card.T_DELETE, card.T_INFO, card.T_FORMAT, settings.T_PUT):
+        if self.logging and rtype in (card.T_LIST, card.T_READ, card.T_READZ, card.T_DELETE, card.T_INFO, card.T_FORMAT,
+                                      settings.T_PUT):
             return card.ST_NOT_NOW, 0, b''
         if rtype == card.T_LIST:
             most = self.page
@@ -172,6 +175,28 @@ class FakeMeter:
                 data += e
                 count += 1
             return card.ST_OK, count | (card.LIST_END if count == len(names) else 0), data
+        if rtype == card.T_READZ and self.readz_fw:
+            # as the meter (ble/bftsd.s): READ of at most 4096 bytes, packed into one fixed-code deflate block when
+            # that is shorter (zlib with Z_FIXED stands in for sys/zdef.s), else the bytes themselves
+            self.staged = b''
+            if not p or len(p) != p[0] + 7:
+                return card.ST_ARG, 0, b''
+            name = p[1:1 + p[0]].decode('latin-1')
+            offset, length = struct.unpack_from('<IH', p, 1 + p[0])
+            if not name_ok(name):
+                return card.ST_NAME, 0, b''
+            if not 1 <= length <= card.WINDOW_Z:
+                return card.ST_ARG, 0, b''
+            found = [n for n in self.files if n.lower() == name.lower()]
+            if not found:
+                return card.ST_NOT_FOUND, 0, b''
+            raw = self.files[found[0]][0][offset:offset + length]
+            c = zlib.compressobj(6, zlib.DEFLATED, -12, 8, zlib.Z_FIXED)
+            z = c.compress(raw) + c.flush()
+            method = 1 if len(raw) >= 2 and len(z) < len(raw) else 0
+            self.staged = z if method else raw
+            self.readz_count += 1
+            return card.ST_OK, len(raw), struct.pack('<IHB', zlib.crc32(raw) & 0xFFFFFFFF, len(self.staged), method)
         if rtype == card.T_READ:
             self.staged = b''                          # a failed READ leaves nothing to CHUNK
             if not p or len(p) != p[0] + 7:
