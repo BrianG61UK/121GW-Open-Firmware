@@ -659,6 +659,15 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   keep the F2 frames; 0xFD (the companion's goodbye) and Bluetooth off / on end it.
 - Test: emulator `test_fec.py`; companion tests (every single damaged byte, 20000 double damages); HARDWARE_TEST 48.
 
+### 2.35 Link-only reading rates 5 to 8 a second (experimental, IMP-61, F-1.30; GitHub issue 30)
+- Request (owner, 2026-11-09): with error correction every reading of the old BLE112 module arrived at 4 a second;
+  find the highest rate each meter's link carries, starting at 7, and keep it.
+- What it does: key codes 0xA1..0xA4 set 5, 6, 7 or 8 readings a second for the link (the saved bt rate and page bt keep
+  2 / 4 / 10 / 20).  The companion starts at the rate it saved for that meter, else 7; a window that loses readings
+  (after error correction) moves it one rate down; three windows with every reading arrived and the rate is saved for
+  the meter in the companion's settings.
+- Test: emulator `test_fec.py` E8 (each rate's frame count); companion tests (RateSearch); HARDWARE_TEST 49.
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |

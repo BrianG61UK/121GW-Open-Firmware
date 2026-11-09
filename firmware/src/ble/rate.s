@@ -40,8 +40,8 @@
 @ SETUP page bt (owner SET; read by sys_tim2_isr and ble_rate_tick)
     .global ble_rate
 ble_rate:       .space 1
-@ ble_rate_link: IMP-55, the rate for this link set by the companion (key codes 0x99..0x9C): 0 none (the saved ble_rate
-@ applies), 1..4 = code + 1.  Written by main (ble/commands.s, cleared by set/bt.s at every load of the saved rate and
+@ ble_rate_link: IMP-55, the rate for this link set by the companion (key codes 0x99..0x9C, codes 0..3; IMP-61 key codes
+@ 0xA1..0xA4, the link-only codes 4..7): 0 none (the saved ble_rate applies), 1..8 = code + 1.  Written by main (ble/commands.s, cleared by set/bt.s at every load of the saved rate and
 @ at every action of the page bt); read through ble_rate_code by the TIM2 interrupt.  The saved ble_rate, the page bt,
 @ the settings GET and the EEPROM byte 0x015 never see it (critique 2026-11-08).
     .global ble_rate_link
@@ -57,6 +57,12 @@ ble_rate_table:
     .byte 25, 15                            @ 1: 4 per second
     .byte 10, 5                             @ 2: 10 per second
     .byte 5, 3                              @ 3: 20 per second
+    @ IMP-61 (GitHub issue 30): link-only rates for the old BLE112 module (about 150 bytes a second), set only by the
+    @ companion; never saved, never on the page bt.  Period in 10.02 ms ticks, the build 5 ticks before the start
+    .byte 20, 15                            @ 4: 5 per second (4.99)
+    .byte 17, 12                            @ 5: 6 per second (5.87)
+    .byte 14, 9                             @ 6: 7 per second (7.13)
+    .byte 12, 7                             @ 7: 8 per second (8.32)
     .size ble_rate_table, . - ble_rate_table
 
     .section .text.ble.rate, "ax", %progbits
@@ -64,7 +70,7 @@ ble_rate_table:
 @ -----------------------------------------------------------------------------
 @ ble_rate_code - the frame rate code in effect: the link rate of IMP-55 when one is set, else the saved ble_rate
 @ In       : -
-@ Out      : r0 = code 0..3
+@ Out      : r0 = code 0..7 (4..7 only as a link rate, IMP-61)
 @ Clobbers : r0, flags
 @ Context  : TIM2 interrupt (sys_tim2_isr, ble_rate_tick)
 @ -----------------------------------------------------------------------------
@@ -73,7 +79,7 @@ FUNC ble_rate_code
     ldrb r0, [r0]
     cbz r0, 1f
     subs r0, r0, #1                         @ the link rate: code + 1 stored
-    and r0, r0, #3
+    and r0, r0, #7
     bx lr
 1:  ldr r0, =ble_rate
     ldrb r0, [r0]
@@ -97,7 +103,7 @@ ENDFUNC ble_rate_code
 FUNC ble_rate_tick
     push {r4, lr}
     bl ble_rate_code                        @ r0 = the rate in effect (IMP-55: the link rate, else the saved one)
-    and r0, r0, #3                          @ index inside the 4-entry table
+    and r0, r0, #7                          @ index inside the 8-entry table
     ldr r1, =ble_rate_table
     add r1, r1, r0, lsl #1                  @ 2 bytes per code
     ldrb r2, [r1]                           @ r2 = period

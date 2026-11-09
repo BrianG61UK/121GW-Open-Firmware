@@ -14,7 +14,9 @@ independent encoder (polynomial division with log / antilog tables, not the firm
   E5 0x9D, then the companion's goodbye byte 0xFD: F2 frames again
   E6 0x9D, then Bluetooth off and on (long PEAK twice): F2 frames again
   E7 0x9D with the link rate 20 a second (0x9C): at least 36 F5 frames in 2 s, all codewords
-RUN LIMIT: 1 run of this script (5 boots).  The helpers are those of test_careful.py.
+  E8 the link-only rates of IMP-61 (key codes 0xA1..0xA4: periods of 20, 17, 14, 12 TIM2 ticks): F5 frames in 6 s
+     within one of 6 s / (period x 10.02 ms); then 0x99 (2 a second) again
+RUN LIMIT: 1 run of this script (6 boots).  The helpers are those of test_careful.py.
 """
 import os
 import sys
@@ -152,6 +154,24 @@ def run_tests(image):
     T.check('E7: 20 a second with parity: at least 36 F5 frames in 2 s', len(f5) >= 36 and not f2,
             '%d F5, %d F2' % (len(f5), len(f2)))
     T.check('E7: every one with the independent parity', all(f[18:] == parity(f[:18]) for f in f5))
+
+    print('E8 link-only rates')
+    e = C.boot(image)
+    e.usart2.rx_feed(C.key_frame(0x9D))
+    e.advance(1.0)
+    for code, period in ((0xA1, 20), (0xA2, 17), (0xA3, 14), (0xA4, 12)):
+        e.usart2.rx_feed(C.key_frame(code))
+        e.advance(1.0)
+        n0 = len(e.ble_rx)
+        f2, f5, raw = kinds(e, n0, 6.0)
+        want = 6.0 / (period * 0.01002)
+        T.check('E8: key code 0x%02X: %.1f frames expected in 6 s' % (code, want), abs(len(f5) - want) <= 1.0 and not f2,
+                '%d F5, %d F2' % (len(f5), len(f2)))
+    e.usart2.rx_feed(C.key_frame(0x99))
+    e.advance(1.0)
+    n0 = len(e.ble_rx)
+    f2, f5, raw = kinds(e, n0, 6.0)
+    T.check('E8: 0x99: 2 a second again', 11 <= len(f5) <= 13, '%d F5' % len(f5))
 
     s = e.snapshot()
     T.check('no unmodelled access, no safety violation', s['unmodelled'] == 0 and not s['safety'],

@@ -2,6 +2,8 @@
 
 What each release of the firmware and the emulator brought, newest first. The release page of a version shows only its own paragraphs.
 
+New in v1.3.0 (F-1.30, experimental): more readings a second for meters with the old BLE112 Bluetooth module (GitHub issue 30). The meter gets four extra speeds for the companion only, 5, 6, 7 and 8 readings a second (the bt setting keeps 2, 4, 10 and 20). The 121GW Companion 1.2.36 starts at 7, steps down when readings are lost, and remembers the speed each meter can do.
+
 New in v1.2.9 (F-1.29, experimental): readings with repair data for meters with the old BLE112 Bluetooth module (GitHub issue 30). When the 121GW Companion (1.2.35) asks for it, the meter adds three repair bytes to every reading; the companion then corrects any single damaged byte of a reading, also in the digits that change, and drops a reading with two damaged bytes instead of showing a wrong value. Only the companion switches it on, only for the old module; other apps and meters with the newer module get the usual readings.
 
 New in v1.2.8 (F-1.28, experimental): the meter sends to its Bluetooth module with two stop bits instead of one (GitHub issue 30). On meters with the old BLE112 module some bytes arrived shifted by one to three bits, always a byte that followed straight after another one; the second stop bit gives the module a short pause before every byte. Sending is about 9 % slower, which the link never needs; receiving is unchanged.
