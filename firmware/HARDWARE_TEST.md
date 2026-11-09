@@ -214,7 +214,9 @@ These checks confirm on hardware what the emulator cannot.
    0x9D, 30 s at 20 readings a second: 599 F5 frames, every one a codeword, 0 bytes dropped; 0x9E: F2 frames again): on a meter with the old BLE112 module, connect companion 1.2.35
    for 10 minutes and save a report: "error correction on", readings with repair bytes and how many were corrected;
    "skipped as damaged" against the report of F-1.28.  On any meter: Disconnect, then another app: plain readings.
-49. Link rate search (F-1.30, IMP-61; GitHub issue 30): a meter with the old BLE112 module and companion 1.2.36: the Meter
+49. Link rate search (F-1.30, IMP-61; GitHub issue 30; the rates verified working on a meter with the newer module,
+   2026-11-09, error correction on, 20 s each: 0xA1 100 readings (99.8 expected), 0xA2 117 (117.4), 0xA3 142 (142.6),
+   0xA4 166 (166.3), 0 bytes dropped): a meter with the old BLE112 module and companion 1.2.36: the Meter
    page says readings 7 a second, trying; within a minute or two "found and saved" (or a lower rate after steps down);
    disconnect and connect: it starts at the saved rate.  A report shows the steps in its events.
 
