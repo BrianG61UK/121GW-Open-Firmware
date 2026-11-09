@@ -82,6 +82,14 @@ HB_ON, HB_OFF = b'\xFE', b'\xFD'                 # the meter's watch: on (kept a
 ALIVE_GAP = 8.0                                  # seconds without a byte from the meter (outside page Ld) before asking it
 OFFLINE_AFTER = 60.0                             # seconds the link may stay down before "the meter is offline" (3 x 20 s)
 RATE_PER_S = (2, 4, 10, 20)                      # readings per second of the rate codes 0..3 (page bt; key codes 0x99 + code)
+PROBE_MIN_VERSION = (1, 3, 0)                    # firmware F-1.30: link-only rates 5..8 a second (IMP-61, key codes 0xA1..0xA4)
+# IMP-61: the rates the companion tries on an old BLE112 module with error correction, slowest first: (readings per second
+# as the meter times them: period in TIM2 ticks of 10.02 ms, ble/rate.s), key code, the rate's name in readings a second
+PROBE_RATES = ((1 / (50 * 0.01002), 0x99, 2), (1 / (25 * 0.01002), 0x9A, 4), (1 / (20 * 0.01002), 0xA1, 5),
+               (1 / (17 * 0.01002), 0xA2, 6), (1 / (14 * 0.01002), 0xA3, 7))
+PROBE_START = 4                                  # the first try on a meter with no saved rate: 7 a second (owner, 2026-11-09)
+PROBE_GOOD = 3                                   # windows in a row with every reading arrived: the rate is found and saved
+PROBE_SHARE = 0.95                               # share of the expected readings a window must bring (timing at the edges)
 RATE_START = 0                                   # automatic rate (IMP-55): the lowest, 2 a second, at the connection; up only
                                                  # after a clean minute (owner 2026-11-08: as few errors as possible)
 RATE_WINDOW = 10.0                               # seconds of one judgement
@@ -332,6 +340,81 @@ class Companion:
         v = releases.version_of_meter(self.version)
         return self.fw_kind == 'fast' and v is not None and v >= ADAPT_MIN_VERSION
 
+    def _probe_start(self):
+        """IMP-61: with error correction on and F-1.30 or newer, the reading rate is found for this meter: the rate saved
+        for it, else 7 a second, then one step down whenever a window loses readings (_probe_step)."""
+        v = releases.version_of_meter(self.version)
+        if not (self.fw_kind == 'fast' and v is not None and v >= PROBE_MIN_VERSION):
+            return
+        saved = self._probe_saved()
+        idx = saved if saved is not None else PROBE_START
+        if not self._key_with_echo(PROBE_RATES[idx][1]):
+            return
+        self.arate = {'probe': True, 'code': idx, 'good': 0, 'found': saved is not None, 'win': None, 'fr': None}
+        self.event('reading rate %d a second for this link (%s)' % (
+            PROBE_RATES[idx][2], 'found earlier for this meter' if saved is not None else 'first try, F-1.30'))
+
+    def _probe_key(self):
+        dev = self.link.device
+        return dev[0] if dev else None
+
+    def _probe_saved(self):
+        """Index into PROBE_RATES of the rate saved for this meter (settings 'link_rates', by its Bluetooth address)."""
+        name = (self.settings.get('link_rates') or {}).get(self._probe_key())
+        return next((i for i, r in enumerate(PROBE_RATES) if r[2] == name), None)
+
+    def _probe_save(self, idx):
+        key = self._probe_key()
+        if key is None:
+            return
+        rates = dict(self.settings.get('link_rates') or {})
+        rates[key] = PROBE_RATES[idx][2]
+        self.settings['link_rates'] = rates
+        save_settings(self.settings)
+
+    def _probe_step(self, a, dt, nd):
+        """One window of the rate search (IMP-61): every expected reading arrived and no byte was lost (after the error
+        correction) -> good; PROBE_GOOD good windows in a row -> the rate is found and saved for this meter.  Readings
+        lost -> one rate down (a found rate too: it is saved again once the lower one holds)."""
+        r = self.link.reasm
+        fr = r.fec_frames + r.plain_frames
+        n, a['fr'] = (fr - a['fr'] if a['fr'] is not None else None), fr
+        if n is None:
+            return
+        per_s, key, name = PROBE_RATES[a['code']]
+        expect = per_s * dt
+        if n > RATE_OVER * expect + 5:                   # far more readings: the meter no longer runs the set rate
+            with self._ops('reading rate', need_desk=False, wait=0.0):
+                if not self._key_with_echo(key):
+                    raise RuntimeError('the meter did not echo the rate %d a second' % name)
+            self.event('reading rate %d a second set again (%d readings in %.0f s: the meter had left it)' % (name, n, dt))
+            return
+        if nd == 0 and n >= PROBE_SHARE * expect:
+            a['good'] += 1
+            if a['good'] >= PROBE_GOOD and not a['found']:
+                a['found'] = True
+                self._probe_save(a['code'])
+                self.event('reading rate %d a second found for this meter (every reading arrived for %d s); saved' % (
+                    name, int(PROBE_GOOD * RATE_WINDOW)))
+            return
+        a['good'] = 0
+        if a['code'] == 0:
+            return
+        new = a['code'] - 1
+        with self._ops('reading rate', need_desk=False, wait=0.0):
+            if not self._key_with_echo(PROBE_RATES[new][1]):
+                raise RuntimeError('the meter did not echo the rate %d a second' % PROBE_RATES[new][2])
+        a.update(code=new, found=False, win=None, fr=None)
+        self.event('reading rate %d a second: %d of %.0f readings arrived, %d bytes lost; now %d a second' % (
+            name, n, expect, nd, PROBE_RATES[new][2]))
+
+    def rate_per_s(self):
+        """Readings a second of the automatic rate in effect, or None."""
+        a = self.arate
+        if a.get('code') is None:
+            return None
+        return PROBE_RATES[a['code']][2] if a.get('probe') else RATE_PER_S[a['code']]
+
     def _fec_supported(self):
         """True when the meter runs F-1.29 or newer: status frames with error correction (IMP-60, key code 0x9D)."""
         v = releases.version_of_meter(self.version)
@@ -450,6 +533,7 @@ class Companion:
                     if self._fec_supported() and self._key_with_echo(0x9D):
                         self.fec_on = True
                         self.event('error correction on: readings with three repair bytes (F-1.29)')
+                        self._probe_start()
                     return
         except (RuntimeError, OSError, TimeoutError) as e:
             self.event('careful mode: the meter was not told (%s)' % e)
@@ -486,6 +570,8 @@ class Companion:
             return
         if a['win'] is None:
             a['win'] = (now, L.rx_bytes, L.rx_dropped)
+            if a.get('probe'):
+                a['fr'] = L.reasm.fec_frames + L.reasm.plain_frames
             return
         t0, b0, d0 = a['win']
         if now - t0 < RATE_WINDOW:
@@ -503,6 +589,8 @@ class Companion:
                     if not self._key_with_echo(0x9D):
                         raise RuntimeError('the meter did not echo the error correction')
                 self.event('error correction set again (the meter had left it)')
+        if a.get('probe'):
+            return self._probe_step(a, now - t0, nd)
         sent = RATE_PER_S[a['code']] * frames.STATUS_LEN * (now - t0)   # bytes the set rate sends in this window
         if nb > RATE_OVER * sent + 200:                  # far more arrived: the meter no longer runs the set rate
             with self._ops('reading rate', need_desk=False, wait=0.0):
@@ -1604,7 +1692,8 @@ class Companion:
                 'ltest': dict(self.ltest),
                 'link_hint': self.link_hint(),
                 'offline': self.offline,
-                'arate': ({'per_s': RATE_PER_S[self.arate['code']], 'ceiling_per_s': RATE_PER_S[self.arate['ceiling']]}
+                'arate': ({'per_s': self.rate_per_s(), 'found': bool(self.arate.get('found')),
+                           'ceiling_per_s': (None if self.arate.get('probe') else RATE_PER_S[self.arate['ceiling']])}
                           if self.arate.get('code') is not None else None),
                 'trace_ui': TRACE_UI,
                 'card': dict(self.card_st, files=list(self.card_st['files']), locked_reason=self._lock_reason()),

@@ -114,6 +114,8 @@ class FakeMeter:
                 self.dup_frames = frames._pair(pkt, 1) == 0x97
             if self.adapt_fw and 0x99 <= frames._pair(pkt, 1) <= 0x9C:
                 self.rate_code = frames._pair(pkt, 1) - 0x99
+            if self.fec_fw and 0xA1 <= frames._pair(pkt, 1) <= 0xA4:     # F-1.30: link-only rates 4..7 (IMP-61)
+                self.rate_code = frames._pair(pkt, 1) - 0xA1 + 4
             if self.fec_fw and frames._pair(pkt, 1) in (0x9D, 0x9E):
                 self.fec_on = frames._pair(pkt, 1) == 0x9D
             return

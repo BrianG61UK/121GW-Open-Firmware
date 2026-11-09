@@ -484,3 +484,69 @@ class ErrorCorrection(AutoRate):
         self.assertTrue(self.meter.fec_on)
         self.assertTrue(any('error correction set again' in e for _, e in self.app.events))
 
+
+class RateSearch(AutoRate):
+    """IMP-61: with error correction and F-1.30 the companion starts at 7 a second (or the rate saved for this meter),
+    steps down when a window loses readings, and saves the rate after three windows in which every reading arrived."""
+    def setUp(self):
+        super().setUp()
+        self.meter.fec_fw = True
+        self.app.version = 'F-1.30'
+        self.app.link.device = ('AA:BB:CC:DD:EE:FF', '121GW')
+        self.app.settings.pop('link_rates', None)
+
+    def window(self, readings, damaged=0):
+        """One window of RATE_WINDOW seconds in which `readings` status frames arrived and `damaged` bytes were lost."""
+        L = self.app.link
+        self.app._rate_step(self.t)
+        L.reasm.fec_frames += readings
+        L.rx_bytes += 21 * readings
+        L.rx_dropped += damaged
+        self.t += app_mod.RATE_WINDOW
+        self.app._rate_step(self.t)
+
+    def per_s(self):
+        return self.app.rate_per_s()
+
+    def test_first_try_7_then_found_and_saved(self):
+        self.app._careful_connect()
+        self.assertEqual((self.per_s(), self.meter.rate_code, self.app.arate['found']), (7, 6, False))
+        for _ in range(app_mod.PROBE_GOOD):
+            self.window(71)
+        self.assertTrue(self.app.arate['found'])
+        self.assertEqual(self.app.settings['link_rates'], {'AA:BB:CC:DD:EE:FF': 7})
+        self.assertIn('found for this meter and saved', report.build(self.app))
+
+    def test_lost_readings_step_down_until_every_reading_arrives(self):
+        self.app._careful_connect()
+        self.window(50)                                    # 7 a second: only 50 of 71 readings (the module's buffer overflowed)
+        self.assertEqual((self.per_s(), self.meter.rate_code), (6, 5))
+        self.window(40, damaged=21)                        # 6 a second: a reading lost beyond repair
+        self.assertEqual(self.per_s(), 5)
+        for _ in range(app_mod.PROBE_GOOD):
+            self.window(50)
+        self.assertEqual(self.app.settings['link_rates'], {'AA:BB:CC:DD:EE:FF': 5})
+
+    def test_the_saved_rate_is_used_at_the_next_connection(self):
+        self.app.settings['link_rates'] = {'AA:BB:CC:DD:EE:FF': 6}
+        self.app._careful_connect()
+        self.assertEqual((self.per_s(), self.meter.rate_code, self.app.arate['found']), (6, 5, True))
+
+    def test_a_found_rate_that_fails_later_is_replaced(self):
+        self.app.settings['link_rates'] = {'AA:BB:CC:DD:EE:FF': 6}
+        self.app._careful_connect()
+        self.window(59)
+        self.window(30)                                    # the computer got busier: readings lost
+        self.assertEqual((self.per_s(), self.app.arate['found']), (5, False))
+        for _ in range(app_mod.PROBE_GOOD):
+            self.window(50)
+        self.assertEqual(self.app.settings['link_rates'], {'AA:BB:CC:DD:EE:FF': 5})
+
+    # the AutoRate tests describe the controller of F-1.25..F-1.29; with F-1.30 the search above replaces it
+    test_starts_at_2_a_second_and_steps_down_on_damage = None
+    test_steps_up_to_4_at_most = None
+    test_a_rate_failing_right_after_the_step_up_becomes_the_ceiling = None
+    test_never_above_the_saved_rate = None
+    test_paused_on_page_ld = None
+    test_a_meter_that_left_the_set_rate_gets_it_again = None
+

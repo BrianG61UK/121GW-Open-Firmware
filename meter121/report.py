@@ -137,7 +137,10 @@ def link_details(app):
         w('error correction on (F-1.29): %s readings with repair bytes, %s of them corrected' % (
             getattr(r, 'fec_frames', 0), getattr(r, 'fec_fixed', 0)))
     ar = getattr(app, 'arate', None) or {}
-    if ar.get('code') is not None:
+    if ar.get('code') is not None and ar.get('probe'):
+        w('reading rate     %d a second, %s (F-1.30)' % (app.rate_per_s(), 'found for this meter and saved' if ar.get('found')
+                                                         else 'being tried: one step down when readings are lost'))
+    elif ar.get('code') is not None:
         from .app import RATE_PER_S
         w('reading rate     %d a second, set by the companion for this link (automatic, F-1.25; at most %d)' % (
             RATE_PER_S[ar['code']], RATE_PER_S[ar['ceiling']]))
