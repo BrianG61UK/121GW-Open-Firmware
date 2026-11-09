@@ -7,8 +7,8 @@ time": every push ran all 27 scripts, about 26 minutes, whatever had changed).
 A script runs when a file changed under one of its paths (SCRIPTS: the firmware sources it exercises and checks, its
 own file and the helper scripts it imports; from its docstring, its imports and the map symbols it reads, collected
 2026-11-09), or under a path every script depends on (ALL: the emulator core, the shared helper, the boot, clock,
-main loop and display code every run passes through, the build and the table generators, this file and the
-workflow).  An uncertain entry is kept broad: one script too many is wasted minutes, one too few is a missed bug.
+main loop and display code every run passes through, the build and the table generators, the workflow).  A change of
+this file runs the scripts whose entry is new or changed.  An uncertain entry is kept broad: one script too many is wasted minutes, one too few is a missed bug.
 Every script runs when BEFORE is empty, all zeros (a new branch) or not in the history (a force push).
 """
 import json
@@ -27,8 +27,8 @@ ALL = ['emulator/app.py', 'emulator/emu/', 'emulator/diff/', 'emulator/data/', '
        'firmware/src/sys/msical.s', 'firmware/src/sys/isr_tim2.s', 'firmware/src/sys/main.s', 'firmware/src/sys/fault.s',
        'firmware/src/sys/data_v205.s', 'firmware/src/inc/', 'firmware/src/brd/', 'firmware/src/lcd/', 'firmware/src/key/',
        'firmware/src/nvm/', 'firmware/src/cal/records.s', 'firmware/src/cal/cache.s', 'firmware/link/',
-       'firmware/Makefile', 'firmware/tools/', '.github/actions/', '.github/workflows/emulator.yml',
-       '.github/scripts/plan_emulator_tests.py', 'tables_v205.s']
+       'firmware/Makefile', 'firmware/tools/', '.github/actions/', '.github/workflows/emulator.yml', 'tables_v205.s']
+PLANNER = '.github/scripts/plan_emulator_tests.py'   # a change here runs the scripts whose entry is new or changed
 
 SCRIPTS = {
     'test_sd_scr.py': CARD,
@@ -83,6 +83,17 @@ def plan(changed):
     return out
 
 
+def entries_changed(before):
+    """The scripts whose entry in SCRIPTS differs from that of this file at BEFORE (new ones included)."""
+    old = subprocess.run(['git', 'show', '%s:%s' % (before, PLANNER)], capture_output=True, text=True)
+    if old.returncode:
+        return list(SCRIPTS)
+    space = {'__name__': 'old_planner'}
+    exec(compile(old.stdout, PLANNER, 'exec'), space)
+    prev = space.get('SCRIPTS', {})
+    return [s for s, paths in SCRIPTS.items() if prev.get(s) != paths]
+
+
 def main(argv):
     before, after = (argv + ['', ''])[:2]
     if run_all(before, after):
@@ -91,6 +102,8 @@ def main(argv):
         changed = subprocess.run(['git', 'diff', '--name-only', before, after], capture_output=True, text=True,
                                  check=True).stdout.split()
         scripts = plan(changed)
+        if PLANNER in changed:
+            scripts += [s for s in entries_changed(before) if s not in scripts]
     print(json.dumps(scripts))
     return 0
 
