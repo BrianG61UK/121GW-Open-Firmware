@@ -58,7 +58,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        script: [test_starter.py, test_bootloader.py]
+        # test_bootloader.py in four groups of its scenarios in parallel (all twelve in one job took 18 minutes, owner
+        # 2026-11-09: "you wasting resources and my time"); B10 stays with B3, whose time and packets it compares
+        script: [test_starter.py, 'test_bootloader.py B3 B10', 'test_bootloader.py B4 B1 B2', 'test_bootloader.py B11 B5',
+                 'test_bootloader.py B12 B9 B6 B7 B8']
     steps:
       - uses: actions/checkout@v7
       - name: Production build (firmware/build/EEVBlog.bin and 121gw.map; the objects the bootloader links)
