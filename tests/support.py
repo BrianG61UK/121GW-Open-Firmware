@@ -69,15 +69,15 @@ class FakeMeter:
         self.xdiag_lost = 0                            # F9 answers to swallow (a lost notification)
         self.fast_mclock = False                       # firmware F-1.17: key code 0x96 answered with FA (sys/msical.s)
         self.fast_leave = False                        # firmware F-1.17: the page Ld request LEAVE (type 0x19)
-        self.careful_fw = False                        # firmware F-1.19: LIST max, CHUNK len, key codes 0x97 / 0x98
+        self.careful_fw = False                        # firmware F-1.19: LIST max, CHUNK len
         self.damage_over = None                        # answers with more data bytes than this never arrive intact
         self.damage_rate = 0.0                         # chance per answer byte to be damaged (the answer is then lost)
         self.rng = random.Random(9)                    # fixed seed: the same losses in every run
-        self.dup_frames = False                        # 0x97 received: status frames twice
         self.adapt_fw = False                          # firmware F-1.25: key codes 0x99..0x9C (rate), GET start max (IMP-55)
         self.rate_code = None                          # the rate code set by 0x99..0x9C (None: the saved one)
-        self.fec_fw = False                            # firmware F-1.29: key codes 0x9D / 0x9E (frames F5, IMP-60)
-        self.fec_on = False
+        self.l2_fw = False                             # firmware F-1.31: key codes 0xA8 (link 2 on), 0xAA..0xB2 (pace)
+        self.l2_on = False
+        self.l2_pace = None
         self.get_pages = []                            # (start, max) of every paged GET
         self.mclock = {'hz0': 4187000, 'hz': 4194100, 'trim': -3, 'status': 1, 'steps': 6, 'brr': 218, 'cal_run': 0x9D,
                        'cal_now': 0x9D}
@@ -110,14 +110,12 @@ class FakeMeter:
                         self._out(xdiag_frame(self.xdiag_values))
             if self.fast_mclock and frames._pair(pkt, 1) == 0x96:
                 self._out(mclock_frame(self.mclock))
-            if self.careful_fw and frames._pair(pkt, 1) in (0x97, 0x98):
-                self.dup_frames = frames._pair(pkt, 1) == 0x97
             if self.adapt_fw and 0x99 <= frames._pair(pkt, 1) <= 0x9C:
                 self.rate_code = frames._pair(pkt, 1) - 0x99
-            if self.fec_fw and 0xA1 <= frames._pair(pkt, 1) <= 0xA4:     # F-1.30: link-only rates 4..7 (IMP-61)
-                self.rate_code = frames._pair(pkt, 1) - 0xA1 + 4
-            if self.fec_fw and frames._pair(pkt, 1) in (0x9D, 0x9E):
-                self.fec_on = frames._pair(pkt, 1) == 0x9D
+            if self.l2_fw and frames._pair(pkt, 1) == 0xA8:
+                self.l2_on = True
+            if self.l2_fw and 0xAA <= frames._pair(pkt, 1) <= 0xB2:
+                self.l2_pace = frames._pair(pkt, 1) - 0xAA
             return
         if not self.on_ld:
             return

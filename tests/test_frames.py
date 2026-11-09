@@ -1,5 +1,5 @@
-"""Reassembly of the answers of type 0x82 (card and settings requests) from notifications of any length; repair of
-status frames with one byte read late (GitHub issue 30)."""
+"""Reassembly of the answers of type 0x82 (card and settings requests) from notifications of any length; the link 2
+decoder (firmware F-1.31, IMP-62, GitHub issue 30)."""
 import unittest
 
 from support import card, frames, settings
@@ -73,122 +73,147 @@ class Certificates(unittest.TestCase):
         self.assertTrue(certifi.where().endswith('.pem'))
 
 
-# the frame the meter sent and ten damaged copies from the report of GitHub issue 30 (2026-11-08); byte 8 and the check
-# byte differ between frames of that run, so each damaged frame is given with its own sent form
-GOOD = bytes.fromhex('F2 17 81 23 45 01 00 00 00 69 01 02 BC 00 00 0E 40 00 9B')
-ISSUE30 = [
-    ('F2 17 81 23 45 01 00 00 00 69 01 02 BC 00 00 0E 08 00 9B', 16),
-    ('F2 17 81 23 45 01 00 00 01 69 01 02 BC 00 00 0E 40 40 9A', 17),
-    ('F2 8B 81 23 45 01 00 00 01 69 01 02 BC 00 00 0E 40 00 9A', 1),
-    ('F2 17 C0 23 45 01 00 00 00 69 01 02 BC 00 00 0E 40 00 9B', 2),
-    ('F2 17 81 91 45 01 00 00 01 69 01 02 BC 00 00 0E 40 00 9A', 3),
-    ('F2 8B 81 23 45 01 00 00 00 69 01 02 BC 00 00 0E 40 00 9B', 1),
-    ('F2 45 81 23 45 01 00 00 01 69 01 02 BC 00 00 0E 40 00 9A', 1),
-    ('F2 17 E0 23 45 01 00 00 00 69 01 02 BC 00 00 0E 40 00 9B', 2),
-    ('F2 17 C0 23 45 01 00 00 01 69 01 02 BC 00 00 0E 40 00 9A', 2),
-    ('F2 17 81 48 45 01 00 00 00 69 01 02 BD 00 00 0E 40 00 9A', 3),
-]
+# link 2 blocks built here with a parity from polynomial division (independent of the decoder's syndrome check)
+_EXP, _LOG = [0] * 512, [0] * 256
+_v = 1
+for _i in range(255):
+    _EXP[_i], _LOG[_v] = _v, _i
+    _v <<= 1
+    if _v & 0x100:
+        _v ^= 0x11D
+for _i in range(255, 512):
+    _EXP[_i] = _EXP[_i - 255]
 
 
-def checked(body):
-    return body[:18] + bytes([frames._xor(body[:18])])
+def _mul(a, b):
+    return 0 if a == 0 or b == 0 else _EXP[_LOG[a] + _LOG[b]]
 
 
-class Repair(unittest.TestCase):
-    def test_issue30_frames(self):
-        """All ten damaged frames of the report come back as the frame sent: the damaged byte restored, nothing else."""
-        for hexs, pos in ISSUE30:
-            bad = bytes.fromhex(hexs)
-            sent = bytearray(bad)
-            sent[pos] = GOOD[pos]
-            self.assertEqual(frames._xor(sent), 0, hexs)             # the sent form passes its own check
-            last = checked(bytes(sent[:12]) + GOOD[12:18])           # an earlier good frame of the run
-            self.assertEqual(frames.repair(bad, last), bytes(sent), hexs)
-
-    def test_stream(self):
-        """In a stream: a good frame, a damaged one, a good one: three status frames, one repaired, nothing dropped."""
-        bad = bytes.fromhex(ISSUE30[2][0])
-        prev = checked(bytes.fromhex('F2 17 81 23 45 01 00 00 01 69 01 02 BC 00 00 0E 40 00 00'))
-        r = frames.Reassembler()
-        got = r.feed(prev + bad + prev)
-        self.assertEqual([k for k, _ in got], [frames.STATUS] * 3)
-        self.assertEqual(got[1][1], prev)
-        self.assertEqual((r.repaired, r.dropped), (1, 0))
-
-    def test_not_repaired(self):
-        """No last frame, a changed reading byte, a damage that is no shift, two damaged bytes: skipped as before."""
-        last = GOOD
-        bad = bytearray(GOOD)
-        bad[1] = 0x8B                                                 # 0x17 one bit late
-        self.assertIsNone(frames.repair(bytes(bad), None))
-        changed = bytearray(GOOD)
-        changed[13] = 0x05                                            # a digit that changed ...
-        changed[18] = frames._xor(changed[:18])
-        hit = bytearray(changed)
-        hit[13] = 0x82                                                # ... and was hit: not the last frame's byte
-        self.assertIsNone(frames.repair(bytes(hit), last))
-        noshift = bytearray(GOOD)
-        noshift[2] = 0x7E                                             # 0x81 -> 0x7E is no late read
-        self.assertIsNone(frames.repair(bytes(noshift), last))
-        two = bytearray(GOOD)
-        two[1], two[3] = 0x8B, 0x91
-        self.assertIsNone(frames.repair(bytes(two), last))
-        r = frames.Reassembler()
-        r.feed(GOOD)
-        r.feed(bytes(two))
-        self.assertEqual(r.repaired, 0)
-        self.assertGreater(r.dropped, 0)
+def block(typ, seq, payload):
+    msg = [typ << 6 | seq] + list(payload) + [0] * (16 - len(payload))
+    r = msg + [0, 0, 0]
+    for i in range(17):
+        c = r[i]
+        if c:
+            for j, g in enumerate((7, 14, 8), 1):
+                r[i + j] ^= _mul(g, c)
+    return bytes(msg + r[17:])
 
 
-def f5(values):
-    """An F5 frame as the firmware sends it (ble_rs_feed: the shift-and-add encoder, written out here)."""
-    def mul2(x):
-        return ((x << 1) ^ (0x1D if x & 0x80 else 0)) & 0xFF
-    r2 = r1 = r0 = 0
-    data = bytes([0xF5]) + bytes(values)
-    for m in data:
-        fb = m ^ r2
-        m2 = mul2(fb)
-        m4 = mul2(m2)
-        m8 = mul2(m4)
-        r2, r1, r0 = r1 ^ m4 ^ m2 ^ fb, r0 ^ m8 ^ m4 ^ m2, m8
-    return data + bytes([r2, r1, r0])
+STATE7 = bytes([0x01, 0x02, 0x69, 0x01, 0x0E, 0x40, 0x00])     # [5]&3F [6]&3F [9] [13]&FB [15] [16] [17]
+IDENT = bytes([0x17, 0x81, 0x23, 0x45])
+SUB0 = (0x01, 0x00, 0xFA)
 
 
-class ErrorCorrection(unittest.TestCase):
-    VALUES = GOOD[1:18]
+def state_block(seq, ver=1, dropped=0):
+    return block(3, seq, [ver] + list(STATE7) + list(IDENT) + [5, 0x02, 0x0C, dropped])
 
-    def test_intact_frame_as_f2(self):
-        r = frames.Reassembler()
-        got = r.feed(f5(self.VALUES))
-        self.assertEqual(got, [(frames.STATUS, GOOD)])
-        self.assertEqual((r.fec_frames, r.fec_fixed, r.dropped), (1, 0, 0))
+
+def f2(v, bar, sub=SUB0, ovl=0, bsign=0):
+    a, neg = abs(v), v < 0
+    f = bytearray(19)
+    f[0] = 0xF2
+    f[1:5] = IDENT
+    f[5] = STATE7[0] | ((a >> 16) & 3) << 6
+    f[6] = STATE7[1] | ovl << 7 | (0x40 if neg else 0)
+    f[7], f[8] = (a >> 8) & 0xFF, a & 0xFF
+    f[9] = STATE7[2]
+    f[10:13] = bytes(sub)
+    f[13] = STATE7[3] | bsign << 2
+    f[14] = bar
+    f[15:18] = STATE7[4:7]
+    f[18] = frames._xor(f[:18])
+    return bytes(f)
+
+
+def read_block(seq, ver=1, age=3):
+    """1234 with bar 12, +2 and -1 (one byte each), +55 with bar 13 (the bar form)."""
+    return block(1, seq, [ver, age] + list(SUB0) + [0xE2, 0x00, 0x04, 0xD2, 12, 0x82, 0xBF, 0xC0 + 13, 55])
+
+
+def sub_block(seq, ver=1):
+    """-5 (absolute, negative), then a new sub display and -6 (one byte)."""
+    return block(1, seq, [ver, 0] + list(SUB0) + [0xE2, 0x80, 0x00, 0x05, 0, 0xF0, 0x02, 0x00, 0xFB, 0x80 | (-1 & 0x3F)])
+
+
+EXPECT = [f2(1234, 12), f2(1236, 12), f2(1235, 12), f2(1290, 13)]
+
+
+class Link2(unittest.TestCase):
+    def stream(self):
+        return state_block(0) + read_block(1)
+
+    def test_readings_rebuilt_as_status_frames(self):
+        d = frames.Link2()
+        plain, got = d.feed(self.stream())
+        self.assertEqual(plain, b'')
+        self.assertEqual([f for f, _ in got], EXPECT)
+        ages = [a for _, a in got]
+        self.assertAlmostEqual(ages[-1], 3 * frames.L2_TICK_S)
+        self.assertTrue(all(x > y for x, y in zip(ages, ages[1:])))  # older first
+
+    def test_negative_values_and_a_new_sub_display(self):
+        d = frames.Link2()
+        _plain, got = d.feed(state_block(0) + sub_block(1))
+        self.assertEqual([f for f, _ in got], [f2(-5, 0), f2(-6, 0, sub=(0x02, 0x00, 0xFB))])
 
     def test_every_single_damaged_byte_is_corrected(self):
-        cw = f5(self.VALUES)
-        for pos in range(1, frames.FEC_LEN):
-            for e in range(1, 256):
-                bad = bytearray(cw)
+        good = read_block(1)
+        for pos in range(20):
+            for e in (0x01, 0x80, 0xFF, 0x5A):
+                bad = bytearray(good)
                 bad[pos] ^= e
-                self.assertEqual(frames.fec_decode(bytes(bad)), cw, (pos, e))
+                self.assertEqual(frames.l2_correct(bytes(bad)), good, (pos, e))
 
-    def test_two_damaged_bytes_are_never_a_wrong_frame(self):
+    def test_two_damaged_bytes_never_a_wrong_block(self):
         import random
-        rnd = random.Random(30)
+        rnd = random.Random(62)
+        good = read_block(1)
         for _ in range(20000):
-            vals = bytes(rnd.randrange(256) for _ in range(17))
-            cw = f5(vals)
-            bad = bytearray(cw)
-            p, q = rnd.sample(range(1, frames.FEC_LEN), 2)
+            bad = bytearray(good)
+            p, q = rnd.sample(range(20), 2)
             bad[p] ^= rnd.randrange(1, 256)
             bad[q] ^= rnd.randrange(1, 256)
-            self.assertIsNone(frames.fec_decode(bytes(bad)))
+            self.assertIsNone(frames.l2_correct(bytes(bad)))
 
-    def test_stream_of_f2_and_f5_with_damage(self):
-        bad = bytearray(f5(self.VALUES))
-        bad[7] = 0x8B                                                  # a changing digit hit: corrected now
-        r = frames.Reassembler()
-        got = r.feed(GOOD + f5(self.VALUES) + bytes(bad) + GOOD)
-        self.assertEqual([f for _, f in got], [GOOD] * 4)
-        self.assertEqual((r.fec_frames, r.fec_fixed, r.plain_frames, r.dropped), (2, 1, 2, 0))
+    def test_plain_bytes_before_the_lock_pass_on(self):
+        d = frames.Link2()
+        key_echo = frames.key_frame(0xA8)
+        plain, got = d.feed(key_echo + self.stream())
+        self.assertEqual(plain, key_echo)
+        self.assertEqual(len(got), 4)
+
+    def test_a_damaged_block_after_the_lock_is_corrected_and_counted(self):
+        s = bytearray(self.stream() + read_block(2))
+        s[40 + 7] ^= 0x40
+        d = frames.Link2()
+        _plain, got = d.feed(bytes(s))
+        self.assertEqual([f for f, _ in got], EXPECT * 2)
+        self.assertEqual(d.stats['corrected'], 1)
+
+    def test_a_reading_of_another_version_is_never_shown(self):
+        d = frames.Link2()
+        _plain, got = d.feed(state_block(0, ver=1) + read_block(1, ver=2) + read_block(2, ver=1))
+        self.assertEqual([f for f, _ in got], EXPECT)
+        self.assertEqual(d.stats['stale'], 1)
+
+    def test_text_blocks_go_to_the_reassembler(self):
+        echo = frames.key_frame(0x90) + b'\xF6F-1311'
+        d = frames.Link2()
+        plain, _got = d.feed(state_block(0) + block(2, 1, [len(echo)] + list(echo)))
+        self.assertEqual(plain, echo)
+
+    def test_back_to_plain_after_three_bad_blocks(self):
+        d = frames.Link2()
+        d.feed(self.stream())
+        plain_frames = f2(1, 1) * 4                       # the meter left link 2: plain status frames
+        plain, got = d.feed(plain_frames)
+        self.assertEqual(got, [])
+        self.assertFalse(d.locked)
+        self.assertEqual(plain + bytes(d.buf), plain_frames)   # nothing lost; the tail waits for more bytes
+
+    def test_lost_block_counted_from_the_sequence(self):
+        d = frames.Link2()
+        d.feed(state_block(0) + read_block(1) + read_block(3))
+        self.assertEqual(d.stats['lost'], 1)
 

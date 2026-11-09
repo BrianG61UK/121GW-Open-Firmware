@@ -127,23 +127,20 @@ def link_details(app):
     w('advertisement signal  %s' % sig)
     w('MTU              %s' % ('%d bytes (bleak client mtu_size)' % st['mtu'] if st['mtu'] is not None else
                                'not available from the Bluetooth backend'))
-    w('careful mode     %s' % ('on: every status frame twice (the link test), small card answers (old BLE112 module, MTU 23)'
-                               if getattr(app, 'careful_on', False) else
-                               'on: small card answers, readings once (old BLE112 module, MTU 23)' if app.careful_wanted() else
+    w('careful mode     %s' % ('on: small card answers (old BLE112 module, MTU 23)' if app.careful_wanted() else
                                'off (MTU %s; careful mode is for the old BLE112 module and firmware F-1.19 or newer)'
                                % (st['mtu'] if st['mtu'] is not None else 'unknown')))
-    if getattr(app, 'fec_on', False):
-        r = getattr(getattr(app, 'link', None), 'reasm', None)
-        w('error correction on (F-1.29): %s readings with repair bytes, %s of them corrected' % (
-            getattr(r, 'fec_frames', 0), getattr(r, 'fec_fixed', 0)))
-    ar = getattr(app, 'arate', None) or {}
-    if ar.get('code') is not None and ar.get('probe'):
-        w('reading rate     %d a second, %s (F-1.30)' % (app.rate_per_s(), 'found for this meter and saved' if ar.get('found')
-                                                         else 'being tried: one step down when readings are lost'))
-    elif ar.get('code') is not None:
-        from .app import RATE_PER_S
-        w('reading rate     %d a second, set by the companion for this link (automatic, F-1.25; at most %d)' % (
-            RATE_PER_S[ar['code']], RATE_PER_S[ar['ceiling']]))
+    c = getattr(app, 'l2c', None) or {}
+    if c.get('on'):
+        from .app import PACE_TICKS
+        s = app.link.l2.stats
+        w('link 2           on (F-1.31): %.1f blocks a second; %d blocks, %d corrected, %d lost, %d stale; %d readings; '
+          'the meter dropped %d; locked %d time(s)' % (1.0 / (PACE_TICKS[c['pace']] * frames.L2_TICK_S), s['blocks'],
+                                                      s['corrected'], s['lost'], s['stale'], s['readings'],
+                                                      s['meter_dropped'], s['locks']))
+    note = app.link2_note()
+    if note:
+        w('link note        ' + note)
     hb = getattr(app, 'hb', None)
     if hb:
         w('heartbeat        %d "still here" bytes sent, %d alive questions, %d dead links reconnected%s' % (
@@ -154,9 +151,6 @@ def link_details(app):
             {True: 'the system still held the meter', False: 'released by the system', None: 'cannot be checked here'}[hd['held']],
             '; BlueZ was asked to release it' if hd.get('released') else '',
             time.strftime(' (checked %H:%M:%S)', time.localtime(hd['at']))))
-    hint = app.link_hint()
-    if hint:
-        w('link note        ' + hint)
     cs = card.LAST_CAREFUL
     if cs.get('pieces') or cs.get('again'):
         w('careful pieces   last card read: %d pieces, %d sent again; pieces by size: %s' % (
@@ -171,17 +165,6 @@ def link_details(app):
             (n - 1) / (b - a), n, b - a, bt or 'not read (SETTINGS of the meter)'))
     else:
         w('status frames    not measured yet (%d in this connection); meter setting bt: %s' % (n, bt or 'not read'))
-    lt = getattr(app, 'ltest', None) or {'state': 'none'}
-    if lt.get('results'):
-        w('link test        careful mode\'s doubled status frames on against off (%s)%s' % (
-            lt['state'], ': ' + lt['error'] if lt.get('error') else ''))
-        for r in lt['results']:
-            w('  doubled %-3s  %5.1f s  %7d bytes  %6d damaged (%4.1f %%)  %4d readings (%.2f/s)' % (
-                'on' if r['doubled'] else 'off', r['seconds'], r['bytes'], r['damaged'],
-                100.0 * r['damaged'] / r['bytes'] if r['bytes'] else 0.0, r['readings'],
-                r['readings'] / r['seconds'] if r['seconds'] else 0.0))
-        if lt.get('summary'):
-            w('  ' + lt['summary'])
     x = getattr(app, 'xdiag', None) or {'state': 'not read'}
     if x['state'] == 'values':
         w('meter counters   %s; %s' % (x['source'], 'the meter was told to count (key code 0x93) after this connection began'
@@ -223,8 +206,7 @@ def build(app, now=None):
     w('[link]')
     w('state       %s %s' % (L['state'], L.get('detail') or ''))
     w('name        %s' % ((L.get('device') or [None, '-'])[1] if L.get('device') else '-'))
-    w('received    %s bytes, %s skipped as damaged, %s status frames repaired' % (L.get('rx_bytes'), L.get('rx_dropped'),
-                                                                               L.get('rx_repaired', 0)))
+    w('received    %s bytes, %s skipped as damaged' % (L.get('rx_bytes'), L.get('rx_dropped')))
     w('')
     w('[link details]')
     out.extend(link_details(app))

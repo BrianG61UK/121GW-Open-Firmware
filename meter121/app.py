@@ -67,8 +67,6 @@ EVENTS_KEEP = 300                                # events kept for the diagnosis
 BL_ASK_TRIES = 3                                 # bootloader questions (key code 0x92) until an answer counts as none
 DAILY = 86400.0                                  # update check "daily": seconds between two release checks
 HUNT_MIN_VERSION = (1, 1, 6)                     # firmware F-1.16: EEPROM 0x020 bit 4, the SETUP page HUnt (ble/bftset.s accepts 0..31)
-FEC_MIN_VERSION = (1, 2, 9)                      # firmware F-1.29: status frames with error correction (IMP-60, 0x9D)
-RATE_CAREFUL_MAX = 1                             # the old BLE112 module carries about 150 bytes/s: at most 4 readings a second
 ADAPT_MIN_VERSION = (1, 2, 5)                    # firmware F-1.25: the reading rate for this power-on, settings in pages (IMP-55)
 QUIET_MIN_VERSION = (1, 2, 4)                    # firmware F-1.24: the buzzer's third value qUiEt (ble/bftset.s accepts 0..2)
 XDIAG_MIN_VERSION = (1, 1, 5)                    # firmware F-1.15: key codes 0x93 / 0x94 / 0x95 and STATUS 40..48 (ble/xdiag.s)
@@ -77,46 +75,18 @@ XDIAG_WAIT = 2.0                                 # seconds to wait for the answe
 XDIAG_STATUS_FIRST, XDIAG_STATUS_COUNT = 40, 9   # page Ld STATUS indices of the nine values (ble/bft.s bft_diag_tab)
 CAREFUL_MIN_VERSION = (1, 1, 9)                  # firmware F-1.19: key codes 0x97 / 0x98, LIST max, CHUNK len (IMP-50)
 CAREFUL_MTU = 23                                 # the old BLE112 module negotiates only the minimum (the BGM220S: 247)
+L2_MIN_VERSION = (1, 3, 1)                       # firmware F-1.31: link 2 (IMP-62, key codes 0xA8 and 0xAA..0xB2)
+PACE_TICKS = (30, 25, 20, 17, 14, 12, 10, 8, 7)  # link 2 block pace in TIM2 ticks (firmware l2_pace_tab; key 0xAA + index)
+PACE_START = 2                                   # 20 ticks, 5 blocks a second (about 100 bytes/s; the worst link seen carried
+                                                 # 7.5 indications a second of up to 20 bytes)
+PACE_WINDOW = 10.0                               # seconds of one judgement of the pace
+PACE_UP_CLEAN = 3                                # windows without a lost block before one step faster
+PACE_DOWN = 2                                    # steps slower at a lost block or a stalled link (as TCP: down fast, up slowly)
 HB_SEND = 5.0                                    # IMP-56: the byte 0xFE ("still here") when nothing was written for this long
 HB_ON, HB_OFF = b'\xFE', b'\xFD'                 # the meter's watch: on (kept alive by any byte) / off before a disconnect
 ALIVE_GAP = 8.0                                  # seconds without a byte from the meter (outside page Ld) before asking it
 OFFLINE_AFTER = 60.0                             # seconds the link may stay down before "the meter is offline" (3 x 20 s)
-RATE_PER_S = (2, 4, 10, 20)                      # readings per second of the rate codes 0..3 (page bt; key codes 0x99 + code)
-PROBE_MIN_VERSION = (1, 3, 0)                    # firmware F-1.30: link-only rates 5..8 a second (IMP-61, key codes 0xA1..0xA4)
-# IMP-61: the rates the companion tries on an old BLE112 module with error correction, slowest first: (readings per second
-# as the meter times them: period in TIM2 ticks of 10.02 ms, ble/rate.s), key code, the rate's name in readings a second
-PROBE_RATES = ((1 / (50 * 0.01002), 0x99, 2), (1 / (25 * 0.01002), 0x9A, 4), (1 / (20 * 0.01002), 0xA1, 5),
-               (1 / (17 * 0.01002), 0xA2, 6), (1 / (14 * 0.01002), 0xA3, 7))
-PROBE_START = 4                                  # the first try on a meter with no saved rate: 7 a second (owner, 2026-11-09)
-PROBE_GOOD = 6                                   # windows in a row with every reading arrived (1 minute): the rate is found
-                                                 # and saved; any later failure (lost readings, no echo, a stalled link)
-                                                 # saves the next lower rate at once (_probe_fail; issue 30: a rate held
-                                                 # 1.5 minutes, then the old module's link stalled)
-PROBE_SHARE = 0.95                               # share of the expected readings a window must bring (timing at the edges)
-RATE_START = 0                                   # automatic rate (IMP-55): the lowest, 2 a second, at the connection; up only
-                                                 # after a clean minute (owner 2026-11-08: as few errors as possible)
-RATE_WINDOW = 10.0                               # seconds of one judgement
-RATE_DOWN_SHARE = 0.01                           # damaged share of a window from which the rate goes one step down (one
-                                                 # lost reading at 10 a second)
-RATE_UP_CLEAN = 6                                # windows without one damaged byte before one step up
-RATE_OVER = 1.6                                  # bytes of a window above this times what the set rate sends: the meter is
-                                                 # not at that rate (its page bt, the menu timeout on bt, a wake cleared it;
-                                                 # GitHub issue 30, Mike's report 2026-11-08): the rate is set again
-RATE_RECENT_UP = 2                               # windows after a step up in which damage makes that rate the ceiling
-LINK_HINT_RATE = 4.5                             # readings/s above which a BLE112 link is over its ~150 bytes/s (issue 30)
-LTEST_PHASE = 15.0                               # link test: seconds measured per phase (doubled frames on, off, on, off)
-LTEST_SETTLE = 1.5                               # link test: seconds after each switch before the counting starts
 
-
-def link_test_summary(res):
-    """One line from the phases of the link test: per setting the share of damaged bytes and the readings per second."""
-    out = []
-    for on in (True, False):
-        ph = [r for r in res if r['doubled'] == on]
-        b, d, n, s = (sum(r[k] for r in ph) for k in ('bytes', 'damaged', 'readings', 'seconds'))
-        out.append('doubled %s: %.1f %% of %d bytes damaged, %.2f readings/s' % (
-            'on' if on else 'off', 100.0 * d / b if b else 0.0, b, n / s if s else 0.0))
-    return '; '.join(out)
 MCLOCK_MIN_VERSION = (1, 1, 7)                   # firmware F-1.17: key code 0x96 / frame FA, STATUS 49..55 (sys/msical.s)
 LEAVE_MIN_VERSION = (1, 1, 7)                    # firmware F-1.17: the page Ld request LEAVE (type 0x19, ble/bft.s)
 MCLOCK_STATUS_FIRST, MCLOCK_STATUS_COUNT = 49, 7 # page Ld STATUS indices of the clock measurement
@@ -191,13 +161,8 @@ class Companion:
         self._xdiag_evt = threading.Event()
         self._mclock_frame = None
         self._mclock_evt = threading.Event()
-        self.careful_on = False                          # careful mode switched on in the meter (0x97) for this connection
-        self.fec_on = False                              # IMP-60: frames with error correction asked for (0x9D)
-        self._fec_win = None                             # (plain F2, F5) frames counted at the last rate window
-        self._last_status = None                         # the last F2 frame, for its F3 copy (careful mode)
+        self.l2c = {'on': False}                         # link 2 of this connection (IMP-62): on, pace index, clean windows
         self.xdiag = {'state': 'not read'}
-        self.ltest = {'state': 'none'}                   # the link test: careful mode's doubled frames on against off
-        self.arate = {'code': None}                      # the automatic reading rate of this connection (IMP-55)
         self._hb_quiet = False                           # IMP-56: no heartbeat bytes (a disconnect by the user is under way)
         self._hb_run = True                              # the heartbeat thread works (tests drive _hb_step themselves)
         self.hb = {'sent': 0, 'probes': 0, 'dead': 0}    # heartbeat bytes sent, probes made, links found dead
@@ -212,18 +177,11 @@ class Companion:
         self.link = MeterLink(self._frame, self._state)
         threading.Thread(target=self._ask_version, name='version', daemon=True).start()
         threading.Thread(target=self._watch_desk, name='desk', daemon=True).start()
-        threading.Thread(target=self._rate_loop, name='rate', daemon=True).start()
+        threading.Thread(target=self._pace_loop, name='pace', daemon=True).start()
         threading.Thread(target=self._hb_loop, name='heartbeat', daemon=True).start()
         threading.Thread(target=self._recheck_releases, name='releases', daemon=True).start()
 
     def _frame(self, kind, frame, t):
-        if kind == frames.STATUS_COPY:                   # careful mode (F-1.19): the copy of the F2 frame just before
-            prev, self._last_status = self._last_status, None
-            if prev is not None and bytes(prev[1:18]) == bytes(frame[1:18]):
-                return                                   # that F2 frame arrived intact: the copy is not needed
-            kind, frame = frames.STATUS, frames.copy_as_status(frame)   # it was lost: the copy stands in for it
-        elif kind == frames.STATUS:
-            self._last_status = frame
         if kind == frames.STATUS:
             r = display.decode(frame, t)
             self.session.add(r)
@@ -270,10 +228,7 @@ class Companion:
         self.desk = False                                # a new connection or none: the page is not known any more
         self._frame_t = 0.0
         self.xdiag_on = False                            # the counting is told again at each connection
-        self.careful_on = False                           # careful mode is asked for again at each connection
-        self.fec_on = False                               # IMP-60: error correction asked for again at each connection
-        self._fec_win = None
-        self.arate = {'code': None}                       # the automatic rate starts again with careful mode
+        self.l2c = {'on': False}                          # link 2 is asked for again at each connection
         self._st_n, self._st_first, self._st_last = 0, None, None
         if state == 'connected':
             self.fw_kind, self.version, self.mode = 'unknown', None, 'unknown'
@@ -312,7 +267,7 @@ class Companion:
                     self.bl = self._ask_bootloader()
                     self.mode = 'firmware'
                     self._xdiag_connect()
-                    self._careful_connect()
+                    self._link2_connect()
                     self._check_release()
                     self._clock_on_connect()
                 elif self._echo is not None:
@@ -350,102 +305,130 @@ class Companion:
         v = releases.version_of_meter(self.version)
         return self.fw_kind == 'fast' and v is not None and v >= ADAPT_MIN_VERSION
 
-    def _probe_start(self):
-        """IMP-61: with error correction on and F-1.30 or newer, the reading rate is found for this meter: the rate saved
-        for it, else 7 a second, then one step down whenever a window loses readings (_probe_step)."""
-        v = releases.version_of_meter(self.version)
-        if not (self.fw_kind == 'fast' and v is not None and v >= PROBE_MIN_VERSION):
-            return
-        saved = self._probe_saved()
-        idx = saved if saved is not None else PROBE_START
-        if not self._key_with_echo(PROBE_RATES[idx][1]):
-            return
-        self.arate = {'probe': True, 'code': idx, 'good': 0, 'found': saved is not None, 'win': None, 'fr': None}
-        self.event('reading rate %d a second for this link (%s)' % (
-            PROBE_RATES[idx][2], 'found earlier for this meter' if saved is not None else 'first try, F-1.30'))
-
-    def _probe_key(self):
+    def _meter_key(self):
         dev = self.link.device
         return dev[0] if dev else None
 
-    def _probe_saved(self):
-        """Index into PROBE_RATES of the rate saved for this meter (settings 'link_rates', by its Bluetooth address).
-        Rates saved by another version of this program are not used: after an update every meter is measured again
-        (owner, 2026-11-09)."""
-        if self.settings.get('link_rates_by') != report.app_version():
-            return None
-        name = (self.settings.get('link_rates') or {}).get(self._probe_key())
-        return next((i for i, r in enumerate(PROBE_RATES) if r[2] == name), None)
+    # ------------------------------------------------------------------ link 2 (old BLE112 module, firmware F-1.31 on)
+    def l2_supported(self):
+        """True on an old BLE112 link (MTU 23, careful_wanted) with firmware F-1.31 or newer (link 2, IMP-62)."""
+        v = releases.version_of_meter(self.version)
+        return self.careful_wanted() and v is not None and v >= L2_MIN_VERSION
 
-    def _probe_save(self, idx):
-        key = self._probe_key()
+    def link2_note(self):
+        """A note for an old BLE112 module whose firmware has no link 2 (the readings come plain and may be lost)."""
+        if self.link.state == 'connected' and self.careful_wanted() and not self.l2_supported():
+            return ('this meter\'s old Bluetooth module damages and loses readings; firmware F-1.31 or newer sends them '
+                    'protected and faster (link 2): update the firmware')
+        return None
+
+    def _link2_connect(self):
+        """After the version question, on an old BLE112 link with F-1.31 or newer: the block pace saved for this meter
+        (else PACE_START), then key code 0xA8: from its echo on the meter sends link 2 blocks (frames.Link2 decodes them;
+        firmware ble/link2.s).  Each step waits for its echo."""
+        if not self.l2_supported():
+            return
+        idx = self._pace_saved()
+        idx = PACE_START if idx is None else idx
+        try:
+            with self._ops('link 2', need_desk=False, wait=LINK_WAIT):
+                if self.desk:
+                    raise RuntimeError('page Ld owns the link')
+                if not (self._key_with_echo(0xAA + idx) and self._key_with_echo(0xA8)):
+                    self.event('link 2: no echo after %d tries' % XDIAG_TRIES)
+                    return
+        except (RuntimeError, OSError, TimeoutError) as e:
+            self.event('link 2: the meter was not told (%s)' % e)
+            return
+        self.l2c = {'on': True, 'pace': idx, 'clean': 0, 'win': None}
+        self.event('link 2 on: readings in blocks with repair bytes, %.1f blocks a second' % (
+            1.0 / (PACE_TICKS[idx] * frames.L2_TICK_S)))
+
+    def _pace_saved(self):
+        """The pace index saved for this meter (settings 'link_paces' by its Bluetooth address), measured by this version
+        of the program; None if none (after an update every meter starts at PACE_START again)."""
+        if self.settings.get('link_paces_by') != report.app_version():
+            return None
+        v = (self.settings.get('link_paces') or {}).get(self._meter_key())
+        return v if isinstance(v, int) and 0 <= v < len(PACE_TICKS) else None
+
+    def _pace_save(self, idx):
+        key = self._meter_key()
         if key is None:
             return
-        if self.settings.get('link_rates_by') != report.app_version():
-            self.settings['link_rates'] = {}              # measured by an older version: start afresh
-        rates = dict(self.settings.get('link_rates') or {})
-        rates[key] = PROBE_RATES[idx][2]
-        self.settings['link_rates'] = rates
-        self.settings['link_rates_by'] = report.app_version()
+        if self.settings.get('link_paces_by') != report.app_version():
+            self.settings['link_paces'] = {}
+        paces = dict(self.settings.get('link_paces') or {})
+        paces[key] = idx
+        self.settings['link_paces'] = paces
+        self.settings['link_paces_by'] = report.app_version()
+        for old in ('link_rates', 'link_rates_by'):       # the reading rates of 1.2.36 / 1.2.37 (no longer used)
+            self.settings.pop(old, None)
         save_settings(self.settings)
 
-    def _probe_fail(self, why):
-        """The rate in effect failed (readings lost, no echo, a stalled link): the next lower rate is saved at once, so
-        a new connection does not start at the rate that failed (issue 30)."""
-        a = self.arate
-        if not a.get('probe') or a['code'] == 0:
-            return None
-        new = a['code'] - 1
-        self._probe_save(new)
-        a.update(code=new, found=False, good=0, win=None, fr=None)
-        self.event('reading rate %d a second failed (%s); %d a second saved for the next try' % (
-            PROBE_RATES[new + 1][2], why, PROBE_RATES[new][2]))
-        return new
+    def _pace_change(self, idx, why):
+        """Set the block pace index idx (clamped), tell the meter, save it for this meter."""
+        c = self.l2c
+        idx = max(0, min(len(PACE_TICKS) - 1, idx))
+        if idx == c['pace']:
+            return
+        with self._ops('link 2 pace', need_desk=False, wait=0.0):
+            if not self._key_with_echo(0xAA + idx):
+                raise RuntimeError('the meter did not echo the pace')
+        c['pace'], c['clean'] = idx, 0
+        self._pace_save(idx)
+        self.event('link 2: %.1f blocks a second (%s)' % (1.0 / (PACE_TICKS[idx] * frames.L2_TICK_S), why))
 
-    def _probe_step(self, a, dt, nd):
-        """One window of the rate search (IMP-61): every expected reading arrived and no byte was lost (after the error
-        correction) -> good; PROBE_GOOD good windows in a row -> the rate is found and saved for this meter.  Readings
-        lost -> one rate down (a found rate too: it is saved again once the lower one holds)."""
-        r = self.link.reasm
-        fr = r.fec_frames + r.plain_frames
-        n, a['fr'] = (fr - a['fr'] if a['fr'] is not None else None), fr
-        if n is None:
+    def _pace_fail(self, why):
+        """A stalled link: a slower pace saved at once, so the reconnection starts there."""
+        c = self.l2c
+        if not c.get('on'):
             return
-        per_s, key, name = PROBE_RATES[a['code']]
-        expect = per_s * dt
-        if n > RATE_OVER * expect + 5:                   # far more readings: the meter no longer runs the set rate
-            with self._ops('reading rate', need_desk=False, wait=0.0):
-                if not self._key_with_echo(key):
-                    raise RuntimeError('the meter did not echo the rate %d a second' % name)
-            self.event('reading rate %d a second set again (%d readings in %.0f s: the meter had left it)' % (name, n, dt))
-            return
-        if nd == 0 and n >= PROBE_SHARE * expect:
-            a['good'] += 1
-            if a['good'] >= PROBE_GOOD and not a['found']:
-                a['found'] = True
-                self._probe_save(a['code'])
-                self.event('reading rate %d a second found for this meter (every reading arrived for %d s); saved' % (
-                    name, int(PROBE_GOOD * RATE_WINDOW)))
-            return
-        a['good'] = 0
-        new = self._probe_fail('%d of %.0f readings arrived, %d bytes lost' % (n, expect, nd))
-        if new is None:
-            return
-        with self._ops('reading rate', need_desk=False, wait=0.0):
-            if not self._key_with_echo(PROBE_RATES[new][1]):
-                raise RuntimeError('the meter did not echo the rate %d a second' % PROBE_RATES[new][2])
+        idx = max(0, c['pace'] - PACE_DOWN)
+        c['pace'] = idx
+        self._pace_save(idx)
+        self.event('link 2: %s; %.1f blocks a second saved for the next connection' % (
+            why, 1.0 / (PACE_TICKS[idx] * frames.L2_TICK_S)))
 
-    def rate_per_s(self):
-        """Readings a second of the automatic rate in effect, or None."""
-        a = self.arate
-        if a.get('code') is None:
-            return None
-        return PROBE_RATES[a['code']][2] if a.get('probe') else RATE_PER_S[a['code']]
+    def _pace_loop(self):
+        while True:
+            time.sleep(1.0)
+            try:
+                self._pace_step(time.time())
+            except (RuntimeError, OSError, TimeoutError) as e:
+                self.event('link 2 pace: %s' % e)
 
-    def _fec_supported(self):
-        """True when the meter runs F-1.29 or newer: status frames with error correction (IMP-60, key code 0x9D)."""
-        v = releases.version_of_meter(self.version)
-        return self.fw_kind == 'fast' and v is not None and v >= FEC_MIN_VERSION
+    def _pace_step(self, now):
+        """Every PACE_WINDOW seconds (link 2 on): a lost block -> PACE_DOWN steps slower; PACE_UP_CLEAN clean windows ->
+        one step faster; readings but no blocks -> the meter left link 2 (a restart, a wake): asked again."""
+        c, L = self.l2c, self.link
+        if not c.get('on'):
+            return
+        if L.state != 'connected' or self.desk or self._update_active() or self.mode != 'firmware':
+            c['win'] = None
+            return
+        s = L.l2.stats
+        cur = (now, s['lost'], s['blocks'], self._st_n)
+        if c['win'] is None:
+            c['win'] = cur
+            return
+        t0, lost0, blocks0, st0 = c['win']
+        if now - t0 < PACE_WINDOW:
+            return
+        c['win'] = cur
+        if s['blocks'] == blocks0 and self._st_n > st0:
+            with self._ops('link 2', need_desk=False, wait=0.0):
+                if not (self._key_with_echo(0xAA + c['pace']) and self._key_with_echo(0xA8)):
+                    raise RuntimeError('the meter did not echo link 2')
+            self.event('link 2 set again (the meter had left it)')
+            return
+        lost = s['lost'] - lost0
+        if lost:
+            self._pace_change(c['pace'] - PACE_DOWN, '%d blocks lost in %.0f s' % (lost, PACE_WINDOW))
+            return
+        c['clean'] += 1
+        if c['clean'] >= PACE_UP_CLEAN and c['pace'] < len(PACE_TICKS) - 1:
+            self._pace_change(c['pace'] + 1, 'no block lost for %.0f s' % (PACE_UP_CLEAN * PACE_WINDOW))
 
     def _quiet_supported(self):
         """True when the connected meter runs F-1.24 or newer: only that firmware takes the buzzer's third value qUiEt
@@ -538,120 +521,6 @@ class Companion:
         return (self.link.stats.mtu == CAREFUL_MTU and self.fw_kind == 'fast' and v is not None
                 and v >= CAREFUL_MIN_VERSION)
 
-    def _careful_connect(self):
-        """After the version question: an old BLE112 module (GitHub issue 9) gets careful mode: the card requests use
-        small answers (card.Card careful), and the meter sends every status frame once: key code 0x98, which also ends the
-        doubling an older companion may have left switched on.  The second copy of every frame (0x97) did not help: the
-        link tests of GitHub issue 30 (two meters) gave the same readings per second with it and twice the damaged share at
-        2 readings/s, and at 20/s more damage and fewer readings (the module carries about 150 bytes/s)."""
-        if not self.careful_wanted():
-            return
-        try:
-            with self._ops('careful mode', need_desk=False, wait=LINK_WAIT):
-                if self.desk:
-                    raise RuntimeError('page Ld owns the link')
-                if self._key_with_echo(0x98):
-                    self.careful_on = False
-                    self.event('careful mode on (old BLE112 Bluetooth module, MTU 23): small card answers, readings once')
-                    if self._link_adapt_supported() and self._key_with_echo(0x99 + RATE_START):
-                        self.arate = {'code': RATE_START, 'ceiling': RATE_CAREFUL_MAX, 'clean': 0, 'since_up': None,
-                                      'win': None}
-                        self.event('reading rate %d a second for this link (automatic, F-1.25)' % RATE_PER_S[RATE_START])
-                    if self._fec_supported() and self._key_with_echo(0x9D):
-                        self.fec_on = True
-                        self.event('error correction on: readings with three repair bytes (F-1.29)')
-                        self._probe_start()
-                    return
-        except (RuntimeError, OSError, TimeoutError) as e:
-            self.event('careful mode: the meter was not told (%s)' % e)
-            return
-        self.event('careful mode: no echo after %d tries' % XDIAG_TRIES)
-
-    def _saved_rate(self):
-        """The meter's saved rate code (page bt) when the settings were read, else None."""
-        bt = next((it for it in (self.settings_st.get('items') or []) if it.get('code') == 'bt'), None)
-        v = bt.get('value') if bt else None
-        return v if isinstance(v, int) and 0 <= v < len(RATE_PER_S) else None
-
-    def _rate_loop(self):
-        """The automatic reading rate (IMP-55, GitHub issue 30): for a BLE112 meter with F-1.25 the rate of the readings
-        follows the damage of the link.  Every RATE_WINDOW seconds: RATE_DOWN_SHARE or more of the bytes damaged -> one
-        step down; RATE_UP_CLEAN windows without a damaged byte -> one step up, never above the saved rate (page bt) and
-        the ceiling; damage within RATE_RECENT_UP windows of a step up makes the lower rate the ceiling of this connection
-        (no back and forth).  Paused while page Ld is shown, an update or the link test runs."""
-        while True:
-            time.sleep(1.0)
-            try:
-                self._rate_step(time.time())
-            except (RuntimeError, OSError, TimeoutError) as e:
-                self.event('reading rate: %s' % e)
-
-    def _rate_step(self, now):
-        a = self.arate
-        L = self.link
-        if a.get('code') is None:
-            return
-        if (L.state != 'connected' or self.desk or self._update_active() or self.ltest.get('state') == 'running'
-                or self.mode != 'firmware'):
-            a['win'] = None                              # the window starts again afterwards
-            return
-        if a['win'] is None:
-            a['win'] = (now, L.rx_bytes, L.rx_dropped)
-            if a.get('probe'):
-                a['fr'] = L.reasm.fec_frames + L.reasm.plain_frames
-            return
-        t0, b0, d0 = a['win']
-        if now - t0 < RATE_WINDOW:
-            return
-        nb, nd = L.rx_bytes - b0, L.rx_dropped - d0
-        a['win'] = (now, L.rx_bytes, L.rx_dropped)
-        if nb <= 0:
-            return
-        if self.fec_on:                                  # IMP-60: the meter dropped the error correction (a restart,
-            r = L.reasm                                  # a wake): plain F2 frames and no F5 in this window
-            cur = (r.plain_frames, r.fec_frames)
-            prev, self._fec_win = self._fec_win, cur
-            if prev is not None and cur[0] - prev[0] >= 3 and cur[1] == prev[1]:
-                with self._ops('error correction', need_desk=False, wait=0.0):
-                    if not self._key_with_echo(0x9D):
-                        raise RuntimeError('the meter did not echo the error correction')
-                self.event('error correction set again (the meter had left it)')
-        if a.get('probe'):
-            return self._probe_step(a, now - t0, nd)
-        sent = RATE_PER_S[a['code']] * frames.STATUS_LEN * (now - t0)   # bytes the set rate sends in this window
-        if nb > RATE_OVER * sent + 200:                  # far more arrived: the meter no longer runs the set rate
-            with self._ops('reading rate', need_desk=False, wait=0.0):
-                if not self._key_with_echo(0x99 + a['code']):
-                    raise RuntimeError('the meter did not echo the rate %d a second' % RATE_PER_S[a['code']])
-            a['resets'] = a.get('resets', 0) + 1
-            self.event('reading rate %d a second set again (%d bytes in %.0f s: the meter had left it)' % (
-                RATE_PER_S[a['code']], nb, now - t0))
-            return
-        share = nd / nb
-        if a['since_up'] is not None:
-            a['since_up'] += 1
-        new = None
-        if share >= RATE_DOWN_SHARE and a['code'] > 0:
-            if a['since_up'] is not None and a['since_up'] <= RATE_RECENT_UP:
-                a['ceiling'] = a['code'] - 1             # this rate failed right after the step up: not again
-            new, a['clean'] = a['code'] - 1, 0
-        elif nd == 0:
-            a['clean'] += 1
-            cap = min(a['ceiling'], self._saved_rate() if self._saved_rate() is not None else len(RATE_PER_S) - 1)
-            if a['clean'] >= RATE_UP_CLEAN and a['code'] < cap:
-                new, a['clean'] = a['code'] + 1, 0
-        else:
-            a['clean'] = 0
-        if new is None:
-            return
-        with self._ops('reading rate', need_desk=False, wait=0.0):
-            if not self._key_with_echo(0x99 + new):
-                raise RuntimeError('the meter did not echo the rate %d a second' % RATE_PER_S[new])
-        up = new > a['code']
-        a['code'], a['since_up'] = new, (0 if up else None)
-        self.event('reading rate %d a second (automatic: %.1f %% of %d bytes damaged in %.0f s)' % (
-            RATE_PER_S[new], 100.0 * share, nb, RATE_WINDOW))
-
     def _hb_loop(self):
         """IMP-56 (owner design 2026-11-08, GitHub issue 23): every second, outside every lock (the link test holds the
         link for a minute, the heartbeat must not wait for it).  While connected and not on page Ld or in the bootloader:
@@ -688,7 +557,7 @@ class Companion:
         if not quiet and now - L.last_write >= HB_SEND:
             L.send(HB_ON, timeout=2.0)
             self.hb['sent'] += 1
-        if (quiet or self.mode != 'firmware' or self._update_active() or self.ltest.get('state') == 'running'
+        if (quiet or self.mode != 'firmware' or self._update_active()
                 or now - self._alive[0] < ALIVE_GAP):
             return
         try:
@@ -702,7 +571,7 @@ class Companion:
             return
         self.hb['dead'] += 1
         self.event('the meter did not answer for %.0f s (3 questions): connecting again' % (time.time() - self._alive[0]))
-        self._probe_fail('the link stalled')             # a stalled link counts against the rate (issue 30)
+        self._pace_fail('the link stalled')              # a stalled link counts against the pace (issue 30)
         self._alive = (time.time(), L.rx_bytes)
         L.connect(L.device[0] if L.device else L.address)   # ends the dead connection, searches the same meter again
 
@@ -717,30 +586,6 @@ class Companion:
                 pass
         self.link.disconnect()
 
-    def link_hint(self):
-        """A note when the meter sends more readings than its Bluetooth module carries (GitHub issue 30): the old BLE112
-        (MTU 23) carries about 150 bytes/s, 19 bytes a reading, so 10 or 20 readings a second (setting bt) are partly
-        lost or damaged; 2 or 4 fit.  From the setting bt when the settings were read, else from the readings measured
-        (more than 4.5 a second over at least 20 of them).  None when nothing is wrong or nothing is known."""
-        if self.link.state != 'connected' or self.link.stats.mtu != CAREFUL_MTU:
-            return None
-        if self.arate.get('code') is not None:           # F-1.25: the rate follows the link by itself
-            return None
-        bt = next((it for it in (self.settings_st.get('items') or []) if it.get('code') == 'bt'), None)
-        sent = None
-        if bt is not None and isinstance(bt.get('value'), int):
-            sent = (2, 4, 10, 20)[bt['value']] if 0 <= bt['value'] <= 3 else None
-            if sent is not None and sent <= 4:
-                return None
-        else:
-            n, a, b = self._st_n, self._st_first, self._st_last
-            if n >= 20 and b > a and (n - 1) / (b - a) > LINK_HINT_RATE:
-                sent = '%.1f' % ((n - 1) / (b - a))
-        if sent is None:
-            return None
-        return ('this meter\'s Bluetooth module (BLE112) carries about 150 bytes a second, about 8 readings; the meter '
-                'sends %s a second, so readings get lost or damaged.  Set its page bt to 2 or 4 (meter settings, bt).' % sent)
-
     def _key_with_echo(self, code):
         """Send the key frame of `code` until the meter echoes it (XDIAG_TRIES tries of XDIAG_WAIT); True when echoed.
         The caller holds the link (_ops)."""
@@ -754,53 +599,6 @@ class Companion:
             if self._key_echo == frame:
                 return True
         return False
-
-    def link_test(self):
-        """Start the link test (GitHub issue 30): does careful mode's second copy of every status frame help the link or
-        overload it?  Four phases of LTEST_PHASE seconds, the doubled frames on, off, on, off (alternating evens out a
-        drift of the radio conditions); each phase counts the bytes received, the bytes skipped as damaged and the
-        readings taken (an intact F2 frame, or its F3 copy standing in).  Afterwards the meter is set back as careful
-        mode wants it.  Needs firmware F-1.19 or newer (key codes 0x97 / 0x98) and the readings flowing (not page Ld)."""
-        v = releases.version_of_meter(self.version)
-        if self.link.state != 'connected' or self.mode != 'firmware':
-            raise RuntimeError('not connected to a meter')
-        if self.fw_kind != 'fast' or v is None or v < CAREFUL_MIN_VERSION:
-            raise RuntimeError('the link test needs firmware F-1.19 or newer')
-        if self.desk:
-            raise RuntimeError('leave the page Ld first: the test measures the readings')
-        if self.ltest.get('state') == 'running':
-            raise RuntimeError('the link test is running')
-        self.ltest = {'state': 'running', 'phase': 0, 'phases': 4, 'results': [], 'started': time.time()}
-        threading.Thread(target=self._run_link_test, name='link test', daemon=True).start()
-        return {'ok': True}
-
-    def _run_link_test(self):
-        L, res = self.link, []
-        try:
-            with self._ops('link test', need_desk=False, wait=LINK_WAIT):
-                try:
-                    for i, on in enumerate((True, False, True, False)):
-                        self.ltest['phase'] = i + 1
-                        if self.link.state != 'connected' or self.desk:
-                            raise RuntimeError('the link or the page changed during the test')
-                        if not self._key_with_echo(0x97 if on else 0x98):
-                            raise RuntimeError('the meter did not echo the switch (%s)' % ('on' if on else 'off'))
-                        time.sleep(LTEST_SETTLE)
-                        b0, d0, n0, t0 = L.rx_bytes, L.rx_dropped, self._st_n, time.time()
-                        time.sleep(LTEST_PHASE)
-                        b1, d1, n1, t1 = L.rx_bytes, L.rx_dropped, self._st_n, time.time()
-                        res.append({'doubled': on, 'seconds': round(t1 - t0, 2), 'bytes': b1 - b0, 'damaged': d1 - d0,
-                                    'readings': n1 - n0})
-                        self.ltest['results'] = list(res)
-                finally:                                 # also after a stop: readings once again (careful mode sends no
-                    if self.link.state == 'connected' and not self.desk:   # copies since GitHub issue 30)
-                        self._key_with_echo(0x98)
-                        self.careful_on = False
-            self.ltest = {'state': 'done', 'results': res, 'summary': link_test_summary(res), 'finished': time.time()}
-            self.event('link test: ' + self.ltest['summary'])
-        except (RuntimeError, OSError, TimeoutError) as e:
-            self.ltest = {'state': 'error', 'results': res, 'error': str(e)}
-            self.event('link test stopped: %s' % e)
 
     def _mclock_supported(self):
         """True when the connected meter runs F-1.17 or newer: only that firmware measures its clock (key code 0x96,
@@ -999,7 +797,7 @@ class Companion:
             if self.link.state == 'connected' and self.mode == 'firmware':
                 self._xdiag_connect()                    # the reconnection after the update asked while the update still
                                                          # owned the link, so the switch was refused (GitHub issue 9)
-                self._careful_connect()                  # the same for careful mode
+                self._link2_connect()                    # the same for link 2
         except (OSError, ValueError, RuntimeError, releases.ReleaseError, transfer.TransferError) as e:
             u.update(state='error', message=str(e))
             self.event('update stopped: %s' % e)
@@ -1702,7 +1500,7 @@ class Companion:
         L = self.link
         return {'now': time.time(),
                 'link': {'state': L.state, 'detail': L.detail, 'device': L.device, 'found': L.found,
-                         'rx_bytes': L.rx_bytes, 'rx_dropped': L.rx_dropped, 'rx_repaired': L.rx_repaired},
+                         'rx_bytes': L.rx_bytes, 'rx_dropped': L.rx_dropped},
                 'meter': {'firmware': self.fw_kind, 'version': self.version, 'bootloader': self.bl, 'mode': self.mode,
                           'xdiag': self.xdiag_on},
                 'update': dict(self.update),
@@ -1717,12 +1515,10 @@ class Companion:
                 'desk': self.desk,
                 'can_leave_ld': bool(self.desk and self._leave_supported()),
                 'diag': dict(self.diag),
-                'ltest': dict(self.ltest),
-                'link_hint': self.link_hint(),
                 'offline': self.offline,
-                'arate': ({'per_s': self.rate_per_s(), 'found': bool(self.arate.get('found')),
-                           'ceiling_per_s': (None if self.arate.get('probe') else RATE_PER_S[self.arate['ceiling']])}
-                          if self.arate.get('code') is not None else None),
+                'link2': ({'blocks_per_s': round(1.0 / (PACE_TICKS[self.l2c['pace']] * frames.L2_TICK_S), 1),
+                           'stats': dict(self.link.l2.stats)} if self.l2c.get('on') else None),
+                'link2_note': self.link2_note(),
                 'trace_ui': TRACE_UI,
                 'card': dict(self.card_st, files=list(self.card_st['files']), locked_reason=self._lock_reason()),
                 'settings': dict(self.settings_st, locked_reason=self._lock_reason()),
@@ -1818,8 +1614,6 @@ class Companion:
             return self.settings_put(self._arg(c, 'settings_put', 'id'), self._arg(c, 'settings_put', 'value'))
         if 'diag_read' in c:
             return self.diag_read()
-        if 'link_test' in c:
-            return self.link_test()
         if 'prefs_set' in c:
             return self.set_pref(self._arg(c, 'prefs_set', 'key'), self._arg(c, 'prefs_set', 'value'))
         if 'prefs_reset' in c:
