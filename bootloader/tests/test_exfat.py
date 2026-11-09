@@ -212,7 +212,8 @@ def main(argv):
     e.command({'dial': 2})
     e.advance(3.0)
     to_page(e, 39)
-    T.check('Ld -> rEL (item 22)', T.rd(e, ADDR_ITEM) == 22, 'item %d' % T.rd(e, ADDR_ITEM))
+    T.check('Ld -> CL (item 25; IMP-52: Fr only with the two-part bootloader)', T.rd(e, ADDR_ITEM) == 25,
+            'item %d' % T.rd(e, ADDR_ITEM))
 
     x6()
     x6(slow=True)

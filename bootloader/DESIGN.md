@@ -219,6 +219,21 @@ bootloader, a repeated install, or a rollback.
 "Both": bootloader first (6.3), then the firmware (section 5 item 4).  Firmware images also go to the bootloader
 directly over Bluetooth, never through the slots.
 
+### 6.3.1 Packed transfers (B-1.15, firmware IMP-63; GitHub issue 30; owner request 2026-11-09)
+
+START kind | 0x80 (firmware or bootloader image) means the DATA bytes are a packed stream: pieces of raw length u16
+(1..2048), packed length u16 (1..2064) and one final dynamic-code deflate block, or packed length 0x8000 | raw length and
+the raw bytes.  The companion packs with zlib and sends a piece packed only when zlib gives that one block shorter than
+the piece (every piece of the F-1.31 and B-1.14 images, 2026-11-09).  bl_zdata collects a piece in bl_zbuf, checks its
+header as soon as it is complete (lengths in range, raw length at most the bytes still due, so nothing is ever
+programmed outside the area START erased), unpacks it with the firmware's inflater (firmware/src/sys/zinf.s, assembled
+into this build) into bl_zraw and feeds its bytes into the unchanged half-page path; bl_recv counts unpacked bytes.  END
+is unchanged (CRC-32 of the flash, then the mark or slot header) and also refuses stream bytes after the last piece.
+Any stream error: LdE 7, status 0x17, back to waiting; the firmware mark was erased at START, so the bootloader stays
+in update mode.  Older bootloaders refuse kind | 0x80 at START before anything is erased (kind check), so the companion
+asks the version (STATUS 0x80) and sends B-1.14 and older the plain transfer.  RAM: bl_zbuf 2068 + bl_zraw 2048 +
+zinf_work 1060 bytes.
+
 ### 6.4 First install on a meter with EEVblog's bootloader (once per meter, done by this project's firmware)
 
 This adds flash writing to the application, against its rule "program flash is never written" (DESIGN.md 2.x, build
@@ -286,6 +301,13 @@ older bootloader, so after that one update Bluetooth still starts off.
 Starter 1024.  Bootloader (23296 bytes available): section 3 budget about 12900 + Bluetooth about 3000 (application's
 usart.o 1608, bft.o 2164, commands.o 635 hold more than needed) + slot/control-page code about 600 = about 16500,
 leaving about 6800 for exFAT, whose size is still unknown (FF_USE_LFN needed).  If exFAT does not fit, the owner decides.
+B-1.15 (2026-11-09): 22172 of 23296 bytes with the inflater (772 bytes of code, 19 of data) and bl_zdata.  To fit, the
+inflater takes only the one block kind the companion sends (6.3.1) and computes the length / distance bases by formula,
+and code nothing in the bootloader references (found by a reference scan of the linked image) is no longer linked: the
+FatFs directory functions (ff16_dirapi.s, 326 bytes, not assembled), sd/tables_v205.o (16 bytes, not linked),
+get_fileinfo / put_utf (FF_FS_MINIMIZE 2, as FatFs's own option) and disk_ioctl / get_fattime (SD_READ_ONLY, the write
+path).  Still in the image but unreferenced: three clock routines (230 bytes), sd_dma_start_tx (124), two gpio routines
+(58), in firmware objects linked as built.
 
 ### 6.7 No other way back for users
 

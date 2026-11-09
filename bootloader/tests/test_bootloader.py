@@ -13,6 +13,14 @@
   B8 card file that is not a firmware image: " FAIL", nothing erased, the old firmware still starts
   B9 bootloader update over Bluetooth (kind 2): slot, INSTALL record, the starter installs it, the new bootloader
      confirms itself (control record OK) and starts the firmware
+  B10 packed firmware over Bluetooth (IMP-63, B-1.15: START kind 0x80, the stream of pack_stream, two packets in
+     flight): the flash holds the image, the mark its length and CRC, the firmware runs; fewer packets and less time
+     than B3 (both printed)
+  B11 packed, damaged: a changed deflate byte -> status 0x17 (or 0x12 at END when the piece still unpacks to its length
+     with wrong bytes: the CRC-32 of the flash), "LdE 7" / "LdE 2", update mode kept; a piece header beyond the image
+     -> 0x17 before anything is programmed beyond it; a power cut in the middle of a packed transfer -> update mode;
+     then a packed transfer works
+  B12 packed bootloader update (kind 0x82): as B9
   6.5.1 (B3, B6, B7, B9): after an update over Bluetooth the release firmware starts with Bluetooth on (the note in
      RTC_BKP1R relayed by the bootloader); after the 30 s timeout start and a card update it stays off
 The data EEPROM must be unchanged after every test.
@@ -41,6 +49,22 @@ BOOT = open(os.path.join(BUILD, 'bootloader.bin'), 'rb').read()
 IMAGE_PATH = os.path.join(ROOT, 'firmware', 'build', 'EEVBlog.bin')
 APP = open(IMAGE_PATH, 'rb').read()
 KIND_FW, KIND_BL = 0, 2
+PACKED = 0x80                                         # START kind bit 7: the DATA bytes are the packed stream (B-1.15)
+
+
+def pack_stream(data, piece=2048):
+    """The packed stream (bl_ble.s, firmware/src/ble/bft.s): per piece raw length u16, packed length u16, one final
+    dynamic-code deflate block (zlib level 9, window 2 KiB, Z_FINISH), or 0x8000 | raw length and the raw bytes."""
+    out = bytearray()
+    for p in range(0, len(data), piece):
+        raw = data[p:p + piece]
+        c = zlib.compressobj(9, zlib.DEFLATED, -11, 9)
+        blk = c.compress(raw) + c.flush()
+        if blk[0] & 7 == 5 and len(blk) < len(raw):   # one final dynamic-code block (the only one zinf.s takes)
+            out += struct.pack('<HH', len(raw), len(blk)) + blk
+        else:
+            out += struct.pack('<HH', len(raw), 0x8000 | len(raw)) + raw
+    return bytes(out)
 
 
 def bl_version():
@@ -152,8 +176,9 @@ class Host:
         got = self.wait(1, timeout)
         return got[0] if got else None
 
-    def transfer(self, data, kind, version=None, cut_after=None):
-        """START, DATA with two packets in flight, END; returns (END answer, seconds of emulated time)."""
+    def transfer(self, data, kind, version=None, cut_after=None, stream=None):
+        """START, DATA with two packets in flight, END; returns (END answer, seconds of emulated time).  With `stream`
+        the DATA packets carry it (packed: kind | PACKED, size and CRC-32 those of `data`)."""
         t0 = T.now(self.e)
         pay = struct.pack('<IIB', len(data), zlib.crc32(data) & 0xFFFFFFFF, kind)
         if version is not None:
@@ -161,7 +186,8 @@ class Host:
         a = self.send(btft.packet(btft.T_START, 0, pay), timeout=30.0)
         if a is None or a[1] != 0:
             return a, 0.0
-        pkts = btft.data_packets(data)
+        pkts = btft.data_packets(data if stream is None else stream)
+        self.packets = len(pkts)
         inflight, n_sent, n_done = 0, 0, 0
         while n_done < len(pkts):
             while inflight < 2 and n_sent < len(pkts):
@@ -180,6 +206,9 @@ class Host:
                 return 'cut', 0.0
         a = self.send(btft.packet(btft.T_END, len(pkts)), timeout=30.0)
         return a, T.now(self.e) - t0
+
+
+B3_RESULT = []                                        # B3's seconds and packets (B10 compares)
 
 
 def check_ee(e, _ee0=None):
@@ -224,7 +253,9 @@ def b3(ee0):
     T.check('percent shown while receiving ("Ld nn"), "Ld oK" at the end',
             any(t.upper().startswith('LD') and t[2:].strip().isdigit() for t in seen)
             and 'LD OK' in {t.upper() for t in seen}, repr(sorted(seen)[-4:]))
-    print('     %d bytes in %.1f s emulated (%.0f B/s)' % (len(new), secs, len(new) / secs if secs else 0))
+    print('     %d bytes in %.1f s emulated (%.0f B/s), %d packets' % (len(new), secs, len(new) / secs if secs else 0,
+                                                               h.packets))
+    B3_RESULT[:] = [secs, h.packets]
     e.advance(2.0)
     T.check('flash holds the new image', flash(e, 0x08006000, len(new)) == new)
     T.check('firmware mark: length and CRC', flash(e, B.FW_MARK, 20) == fw_mark(new))
@@ -347,6 +378,77 @@ def b9(ee0):
     check_ee(e, ee0)
 
 
+def b10(ee0):
+    print('B10 packed firmware over Bluetooth')
+    e = meter(flash_image(mark=False, app=b''))
+    e.advance(2.0)
+    h = Host(e)
+    a, secs = h.transfer(APP, KIND_FW | PACKED, stream=pack_stream(APP))
+    T.check('END status 0', a is not None and a[1] == 0, repr(a))
+    print('     %d bytes in %.1f s emulated, %d packets (plain B3: %s)' % (len(APP), secs, h.packets,
+                                                                          B3_RESULT or 'not run'))
+    if B3_RESULT:
+        T.check('fewer packets and less time than plain', h.packets < B3_RESULT[1] and secs < B3_RESULT[0])
+    e.advance(2.0)
+    T.check('flash holds the new image', flash(e, 0x08006000, len(APP)) == APP)
+    T.check('firmware mark: length and CRC', flash(e, B.FW_MARK, 20) == fw_mark(APP))
+    T.check('the new firmware runs', app_running(e))
+    check_ee(e, ee0)
+
+
+def b11(ee0):
+    print('B11 packed transfer, damaged')
+    e = meter(flash_image(), keys=('MEM', 'HOLD'))
+    e.advance(1.0)
+    release(e)
+    good = pack_stream(APP)
+    raw0, plen0 = struct.unpack_from('<HH', good, 0)
+    bad = bytearray(good)
+    bad[4 + 60] ^= 0x5A
+    d = zlib.decompressobj(-15)
+    try:
+        out0 = d.decompress(bytes(bad[4:4 + plen0]))
+        z_bad = not d.eof or bool(d.unused_data) or len(out0) != raw0
+    except zlib.error:
+        z_bad = True
+    a, _ = Host(e).transfer(APP, KIND_FW | PACKED, stream=bytes(bad))
+    want = (0x17, 'LDE 7') if z_bad else (0x12, 'LDE 2')
+    T.check('changed deflate byte: status 0x%X' % want[0], a is not None and a[1] == want[0], repr(a))
+    e.advance(0.3)
+    T.check('"%s" shown' % want[1], texts(e)[0].upper() == want[1], repr(texts(e)))
+    p = 4 + plen0                                    # the first piece, then a header of 2048 raw bytes: beyond 3000
+    small = APP[:3000]
+    before = flash(e, 0x08006000 + 3072, 1024)        # beyond the area this START erases (3000 rounded to 3072)
+    a, _ = Host(e).transfer(small, KIND_FW | PACKED, stream=bytes(good[:p]) + struct.pack('<HH', 2048, 10) + b'\0' * 10)
+    T.check('piece header beyond the image: status 0x17', a is not None and a[1] == 0x17, repr(a))
+    T.check('nothing programmed after the first piece (erased: 0x00)', flash(e, 0x08006000 + 2048, 1024) == bytes(1024))
+    T.check('beyond the erased area nothing changed', flash(e, 0x08006000 + 3072, 1024) == before)
+    r, _ = Host(e).transfer(APP, KIND_FW | PACKED, cut_after=100, stream=good)
+    T.check('packed transfer cut after 100 packets', r == 'cut', repr(r))
+    power_cycle(e)
+    e.advance(2.0)
+    T.check('after the cut: update mode (firmware mark erased)', texts(e) == ('-1AP-', '-1AP-'), repr(texts(e)))
+    a, _ = Host(e).transfer(APP, KIND_FW | PACKED, stream=good)
+    e.advance(2.0)
+    T.check('packed transfer after the cut: END status 0, firmware runs', a is not None and a[1] == 0
+            and app_running(e), repr(a))
+    check_ee(e, ee0)
+
+
+def b12(ee0):
+    print('B12 packed bootloader update over Bluetooth')
+    e = meter(flash_image(), keys=('MEM', 'HOLD'))
+    e.advance(1.0)
+    release(e)
+    a, secs = Host(e).transfer(BOOT, KIND_BL | PACKED, version=0x00010001, stream=pack_stream(BOOT))
+    T.check('END status 0', a is not None and a[1] == 0, repr(a))
+    e.advance(4.0)
+    T.check('bootloader mark: version 1.0.1', B.parse_header(flash(e, B.MARK, 20)) == (len(BOOT), B.crc32(BOOT),
+                                                                                         0x00010001))
+    T.check('the firmware runs', app_running(e))
+    check_ee(e, ee0)
+
+
 def main(argv):
     """Run the scenarios named in argv (e.g. B3 B7), or all."""
     names = [a.upper() for a in argv] or list(SCENARIOS)
@@ -369,7 +471,8 @@ def _card_with(data):
     return path
 
 
-SCENARIOS = {n: globals()[n.lower()] for n in ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9']}
+SCENARIOS = {n: globals()[n.lower()] for n in ['B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11',
+                                                'B12']}
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))

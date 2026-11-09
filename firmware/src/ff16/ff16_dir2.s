@@ -574,6 +574,7 @@ FUNC ff16_dir_remove
 ENDFUNC ff16_dir_remove
 .endif
 
+    .if FF_FS_MINIMIZE <= 1                 @ ff.c: only for f_readdir / f_stat
 @ -----------------------------------------------------------------------------
 @ get_fileinfo - fill a FILINFO from the current directory entry (ff.c get_fileinfo)
 @ In       : r0 = dp, r1 = fno
@@ -793,6 +794,8 @@ FUNC ff16_get_fileinfo
 .Lgf_ret:
     pop {r4, r5, r6, r7, r8, r9, r10, pc}
 ENDFUNC ff16_get_fileinfo
+    .endif
+
 
 @ -----------------------------------------------------------------------------
 @ create_name - get the next path segment as an LFN in fs->lfnbuf and an SFN in dp->fn (ff.c create_name)

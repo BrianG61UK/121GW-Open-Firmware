@@ -14,6 +14,14 @@
 @             kind 2 bootloader image (1..0x5B00 bytes, into the slot not holding the running bootloader); the target
 @             is erased first (the firmware mark first of all), so the answer comes after the erase
 @   2 DATA    seq = packet number from 0; the bytes are programmed in half-pages as they arrive
+@             Packed (IMP-63, B-1.15): START kind | 0x80 = the DATA bytes are the packed stream of the image: pieces
+@             of raw length u16 (1 .. 2048), packed length u16 (1 .. 2064) and one final dynamic-code deflate block
+@             of exactly those bytes, or packed length 0x8000 | raw length and the raw bytes; cut into packets anywhere; size and CRC-32 are those of the unpacked image.  A piece header is checked
+@             against the bytes still due before anything is unpacked; a complete piece is unpacked
+@             (firmware/src/sys/zinf.s) and its bytes take the plain path (bl_stage, half-pages); END checks the flash
+@             as for a plain transfer.  A bad header, a piece that does not unpack to exactly its length, stream bytes
+@             beyond the image or after the last piece at END: LdE 7, status 0x17, back to waiting (an erased
+@             firmware stays without mark: the bootloader stays in update mode).
 @   3 END     all bytes sent: the flash is checked against the CRC-32; firmware: image check, firmware mark; bootloader:
 @             slot header, INSTALL record; the meter restarts 1.5 s after the END packet (RESET_DELAY, bl_main.s)
 @   4 ABORT   back to waiting (an erased firmware stays without mark: the bootloader stays in update mode)
@@ -22,7 +30,7 @@
 @             from the firmware
 @ Status: 0 accepted, 1 CRC wrong, 2 not the expected packet (next = expected), 3 not allowed now, 4 START refused,
 @         5 bytes beyond the size, 0x10 + n END failed: n = 2 length or CRC-32 wrong, 3 not a firmware image,
-@         6 flash write or check failed.
+@         6 flash write or check failed, 7 the packed stream is damaged (also as status 0x17 to a DATA packet).
 @ =============================================================================
 
     .syntax unified
@@ -39,6 +47,9 @@
     .equ ST_DONE,           2               @ END accepted: the restart is due
     .equ KIND_FW,           0               @ START kind: firmware image
     .equ KIND_BL,           2               @ START kind: bootloader image
+    .equ ZRAW_MAX,          2048            @ packed: raw bytes of one piece
+    .equ ZPACK_MAX,         2064            @ packed: packed bytes of one piece (zlib: at most 2048 + 5, stored)
+    .equ ZERR,              7               @ END / DATA error: the packed stream is damaged
     .equ GAP_TICKS,         20              @ 200 ms without a byte drops a packet being assembled
     .equ APB1_USART2,       0x00020000      @ RCC_APB1ENR bit 17
     .equ AHB_GPIOD,         0x00000008      @ RCC_AHBENR bit 3: GPIOD clock
@@ -73,6 +84,11 @@ bl_seq:         .space 2                    @ number of the next DATA packet exp
 bl_staged:      .space 2                    @ bytes in bl_stage
 bl_state:       .space 1                    @ ST_WAIT, ST_RECV or ST_DONE
 bl_kind:        .space 1                    @ KIND_FW or KIND_BL of the running transfer
+bl_zmode:       .space 1                    @ 1 = the DATA bytes are the packed stream (START kind bit 7)
+bl_zfill:       .space 2                    @ packed: bytes of the current piece collected (header included)
+    .balign 4
+bl_zbuf:        .space 4 + ZPACK_MAX        @ packed: the piece being collected (header, packed bytes)
+bl_zraw:        .space ZRAW_MAX             @ packed: the unpacked piece
 bl_last_pct:    .space 1                    @ percent shown, 200 = "Ld oK" shown, 0xFF = draw at the next chance
 bl_show_err:    .space 1                    @ END or flash error to show, 0 none
 bl_txt:         .space 5                    @ main display text
@@ -465,7 +481,11 @@ LFUNC bl_packet
     bl bl_le32
 2:  ldr r1, =bl_hdr_ver
     str r0, [r1]                            @ version word of the header written at END (bl_flash.s)
-    ldrb r7, [r4, #14]                      @ r7 = kind
+    ldrb r7, [r4, #14]                      @ r7 = kind; bit 7 = packed
+    lsrs r0, r7, #7
+    ldr r1, =bl_zmode
+    strb r0, [r1]
+    and r7, r7, #0x7F
     cmp r7, #KIND_FW
     beq .Lp_start_fw
     cmp r7, #KIND_BL
@@ -479,7 +499,8 @@ LFUNC bl_packet
     str r0, [r1]
     add r1, r0, #SLOT_SIZE                  @ the whole slot (header page and image) is erased
     bl bl_erase
-    cbnz r0, .Lp_refuse_flash               @ erase failed: START refused, back to waiting
+    cmp r0, #0
+    bne .Lp_refuse_flash                    @ erase failed: START refused, back to waiting
     ldr r0, =bl_slot
     ldr r0, [r0]
     add r0, r0, #SLOT_IMG                   @ the image starts behind the header page (SLOT_IMG)
@@ -519,6 +540,8 @@ LFUNC bl_packet
     ldr r1, =bl_seq
     strh r0, [r1]
     ldr r1, =bl_staged
+    strh r0, [r1]
+    ldr r1, =bl_zfill
     strh r0, [r1]
     movs r0, #0xFF                          @ the percent is drawn at the next redraw
     ldr r1, =bl_last_pct
@@ -560,6 +583,10 @@ LFUNC bl_packet
     mov r1, r6
     b .Lp_answer
 1:  ldrb r5, [r4, #5]                       @ r5 = payload length
+    ldr r0, =bl_zmode
+    ldrb r0, [r0]
+    cmp r0, #0
+    bne .Lp_zdata
     ldr r0, =bl_recv
     ldr r1, [r0]                            @ r1 = bytes received including this packet
     add r1, r1, r5
@@ -591,6 +618,30 @@ LFUNC bl_packet
     strh r6, [r2]
     movs r0, #0
     mov r1, r6                              @ next = the new expected number
+    b .Lp_answer
+@ packed DATA: the stream bytes through bl_zdata (pieces unpacked and programmed); a damaged stream ends the transfer
+.Lp_zdata:
+    adds r0, r4, #6
+    mov r1, r5
+    bl bl_zdata                             @ r0 = 0, 6 flash failed, ZERR stream damaged
+    cmp r0, #6
+    beq .Lp_flash_fail
+    cbnz r0, .Lp_zfail
+    adds r6, r6, #1                         @ next packet number expected
+    ldr r2, =bl_seq
+    strh r6, [r2]
+    movs r0, #0
+    mov r1, r6
+    b .Lp_answer
+.Lp_zfail:
+    movs r0, #ZERR
+    ldr r1, =bl_show_err
+    strb r0, [r1]
+    movs r0, #ST_WAIT
+    ldr r1, =bl_state
+    strb r0, [r1]
+    movs r0, #(0x10 + ZERR)
+    movs r1, #0
     b .Lp_answer
 @ a flash write failed: LdE 6 on the display, back to waiting, status 0x16 (0x10 + 6)
 .Lp_flash_fail:
@@ -624,7 +675,11 @@ LFUNC bl_packet
     ldr r1, =bl_seq
     ldrh r1, [r1]
     b .Lp_answer
-2:  bl bl_end_check                         @ r0 = 0 or the END error n
+2:  ldr r0, =bl_zfill
+    ldrh r0, [r0]
+    cmp r0, #0
+    bne .Lp_zfail                           @ packed: stream bytes after the last piece
+    bl bl_end_check                         @ r0 = 0 or the END error n
     cbz r0, 3f
     ldr r1, =bl_show_err
     strb r0, [r1]
@@ -652,7 +707,7 @@ ENDFUNC bl_packet
 @ -----------------------------------------------------------------------------
 @ bl_ble_draw - main display during a transfer (as the firmware's page Ld): "Ld nn" percent received with the
 @ bargraph, "Ld oK" when the image is checked (shown until the restart), "LdE n" after a failed END (n = END error 2, 3
-@ or 6) or a failed flash write (6); the sub display keeps "-IAP-"
+@ or 6), a failed flash write (6) or a damaged packed stream (7); the sub display keeps "-IAP-"
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags (r4, r5 saved)
 @ Context  : main, after every answer
@@ -792,6 +847,116 @@ bl_flush_stage_all:                         @ entry with r0 = 1: the partial hal
 8:  movs r0, #0
 9:  pop {r4-r6, pc}
 ENDFUNC bl_flush_stage
+
+@ -----------------------------------------------------------------------------
+@ bl_zdata - packed DATA (IMP-63): r1 stream bytes at r0 into bl_zbuf; each complete piece is unpacked into bl_zraw
+@            and programmed through bl_stage as plain DATA bytes; bl_recv advances by its raw length
+@ Out      : r0 = 0 done, 6 a flash write failed, ZERR the stream is damaged or goes beyond the image
+@ Clobbers : r0-r3, r12, flags (r4-r7 saved)
+@ Note     : the header is checked as soon as its 4 bytes are there (raw 1 .. 2048, packed 1 .. 2064, raw at most the
+@            bytes still due), so nothing beyond the erased image area is ever programmed; a new piece may not start
+@            once the image is complete
+@ -----------------------------------------------------------------------------
+LFUNC bl_zdata
+    push {r4-r7, lr}
+    mov r4, r0                              @ r4 = next stream byte
+    mov r5, r1                              @ r5 = stream bytes left
+    ldr r6, =bl_zfill
+    ldr r7, =bl_zbuf
+1:  cmp r5, #0
+    beq 8f
+    ldrh r0, [r6]
+    cbnz r0, 2f
+    ldr r1, =bl_recv                        @ a new piece: only while bytes are still due
+    ldr r1, [r1]
+    ldr r2, =bl_size
+    ldr r2, [r2]
+    cmp r1, r2
+    bhs 9f
+2:  ldrb r1, [r4], #1
+    strb r1, [r7, r0]
+    adds r0, r0, #1
+    strh r0, [r6]
+    subs r5, r5, #1
+    cmp r0, #4
+    blo 1b
+    bne 3f
+    ldrh r1, [r7]                           @ the header: its limits
+    ldrh r2, [r7, #2]
+    subs r3, r1, #1
+    cmp r3, #ZRAW_MAX
+    bhs 9f
+    tst r2, #0x8000
+    beq 5f
+    bic r2, r2, #0x8000                     @ a raw piece: exactly its raw length
+    cmp r2, r1
+    bne 9f
+5:  subs r3, r2, #1
+    movw r12, #ZPACK_MAX
+    cmp r3, r12
+    bhs 9f
+    ldr r3, =bl_recv
+    ldr r3, [r3]
+    add r3, r3, r1
+    ldr r12, =bl_size
+    ldr r12, [r12]
+    cmp r3, r12
+    bhi 9f
+    b 1b
+3:  ldrh r2, [r7, #2]
+    bic r2, r2, #0x8000
+    adds r2, r2, #4
+    cmp r0, r2
+    blo 1b
+    movs r0, #0
+    strh r0, [r6]                           @ the next piece starts after this one
+    ldr r2, =bl_recv
+    ldr r3, [r2]
+    ldrh r1, [r7]
+    add r3, r3, r1
+    str r3, [r2]                            @ received += raw length (an error below ends the transfer)
+    adds r2, r7, #4                         @ a raw piece: its bytes are the source
+    ldrh r1, [r7, #2]
+    tst r1, #0x8000
+    bne 6f
+    mov r0, r2                              @ zinf(packed bytes, packed length, bl_zraw, raw length)
+    ldr r2, =bl_zraw
+    ldrh r3, [r7]
+    bl zinf
+    cbnz r0, 9f
+    ldr r2, =bl_zraw
+6:  ldrh r1, [r7]                           @ r2 = next raw byte, r1 = raw bytes left
+4:  movs r3, #MAXPAY                        @ at most one packet's worth into the stage (it holds < 128 + 232)
+    cmp r1, r3
+    it lo
+    movlo r3, r1
+    sub r1, r1, r3
+    ldr r12, =bl_staged
+    ldrh r0, [r12]
+    push {r1}
+    ldr r1, =bl_stage
+    add r1, r1, r0
+    add r0, r0, r3
+    strh r0, [r12]
+5:  ldrb r0, [r2], #1
+    strb r0, [r1], #1
+    subs r3, r3, #1
+    bne 5b
+    push {r2}
+    bl bl_flush_stage                       @ every full half-page programmed
+    pop {r2}
+    pop {r1}
+    cbnz r0, 7f
+    cmp r1, #0
+    bne 4b
+    b 1b
+7:  movs r0, #6
+    pop {r4-r7, pc}
+8:  movs r0, #0
+    pop {r4-r7, pc}
+9:  movs r0, #ZERR
+    pop {r4-r7, pc}
+ENDFUNC bl_zdata
 
 @ -----------------------------------------------------------------------------
 @ bl_end_check - after the last byte: last half-page, CRC-32 of the programmed image, then mark or slot header

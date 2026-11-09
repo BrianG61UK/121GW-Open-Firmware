@@ -21,14 +21,19 @@ BUILD   := build
 
 FW      := ../firmware
 FW_OBJ  := $(FW)/build/obj/default
-FW_OBJS := $(addprefix $(FW_OBJ)/,sd/sdio.o sd/tables_v205.o brd/gpio.o sys/clock.o lcd/font.o)
+FW_OBJS := $(addprefix $(FW_OBJ)/,sd/sdio.o brd/gpio.o sys/clock.o lcd/font.o)
 # the SD driver of the firmware, assembled here read-only: SD_READ_ONLY 1 leaves out the card write path, which the
 # bootloader never calls (block write, write wait, ACMD22, disk_write, the write-timeout diagnosis; about 1.3 KB)
 SD_SRCS := $(addprefix $(FW)/src/sd/,diskio.s sdcard.s)
 SD_OBJS := $(patsubst $(FW)/src/sd/%.s,$(BUILD)/rosd_%.o,$(SD_SRCS))
-# FatFs R0.16 (exFAT, long names) of the firmware, assembled here read-only (DESIGN.md G4): FF_FS_READONLY 1, no mkfs
-FF_SRCS := $(addprefix $(FW)/src/ff16/,ff16_low.s ff16_dir1.s ff16_dir2.s ff16_file.s ff16_dirapi.s)
+# FatFs R0.16 (exFAT, long names) of the firmware, assembled here read-only (DESIGN.md G4): FF_FS_READONLY 1, no mkfs,
+# FF_FS_MINIMIZE 2 (no get_fileinfo / put_utf);
+# not the directory functions (ff16_dirapi.s: f_opendir, f_readdir, f_stat, f_closedir), which the bootloader never
+# calls (it opens EEVBlog.bin by name), nor sd/tables_v205.o, whose only table nothing here reads (2026-11-09)
+FF_SRCS := $(addprefix $(FW)/src/ff16/,ff16_low.s ff16_dir1.s ff16_dir2.s ff16_file.s)
 FF_OBJS := $(patsubst $(FW)/src/ff16/%.s,$(BUILD)/ro_%.o,$(FF_SRCS))
+# the inflater of the firmware (IMP-63: packed updates), the same source file as the firmware's page Ld uses
+ZI_OBJS := $(BUILD)/zinf.o
 BL_SRCS := $(wildcard src/bl_*.s)
 BL_OBJS := $(patsubst src/%.s,$(BUILD)/%.o,$(BL_SRCS))
 # the version stamped into install.bin: src/bl.inc BL_VERSION (one place; the release workflow reads it there too)
@@ -40,16 +45,19 @@ all: $(BUILD)/starter.bin $(BUILD)/bootloader.bin $(BUILD)/install.bin
 $(BUILD)/bl_%.o: src/bl_%.s src/bl.inc | $(BUILD)
 	$(AS) -mcpu=cortex-m3 -mthumb -mimplicit-it=never --fatal-warnings -I src -I $(FW)/src/inc -o $@ $<
 
+$(BUILD)/zinf.o: $(FW)/src/sys/zinf.s $(FW)/src/inc/macros.inc | $(BUILD)
+	$(AS) -mcpu=cortex-m3 -mthumb -mimplicit-it=never --fatal-warnings -I $(FW)/src/inc -o $@ $<
+
 $(BUILD)/ro_%.o: $(FW)/src/ff16/%.s $(FW)/src/inc/ff16x.inc | $(BUILD)
-	$(AS) -mcpu=cortex-m3 -mthumb -mimplicit-it=never --fatal-warnings --defsym FF_FS_READONLY=1 --defsym FF_USE_MKFS=0 \
+	$(AS) -mcpu=cortex-m3 -mthumb -mimplicit-it=never --fatal-warnings --defsym FF_FS_READONLY=1 --defsym FF_USE_MKFS=0 --defsym FF_FS_MINIMIZE=2 \
 	    -I $(FW)/src/inc -o $@ $<
 
 $(BUILD)/rosd_%.o: $(FW)/src/sd/%.s $(wildcard $(FW)/src/inc/*.inc) | $(BUILD)
 	$(AS) -mcpu=cortex-m3 -mthumb -mimplicit-it=never --fatal-warnings --defsym SD_READ_ONLY=1 \
 	    -I $(FW)/src/inc -o $@ $<
 
-$(BUILD)/bootloader.elf: $(BL_OBJS) $(FF_OBJS) $(SD_OBJS) $(FW_OBJS) link/bootloader.ld
-	$(LD) -T link/bootloader.ld -Map $(BUILD)/bootloader.map --no-warn-rwx-segments -o $@ $(BL_OBJS) $(FF_OBJS) $(SD_OBJS) $(FW_OBJS)
+$(BUILD)/bootloader.elf: $(BL_OBJS) $(ZI_OBJS) $(FF_OBJS) $(SD_OBJS) $(FW_OBJS) link/bootloader.ld
+	$(LD) -T link/bootloader.ld -Map $(BUILD)/bootloader.map --no-warn-rwx-segments -o $@ $(BL_OBJS) $(ZI_OBJS) $(FF_OBJS) $(SD_OBJS) $(FW_OBJS)
 
 $(BUILD)/bootloader.bin: $(BUILD)/bootloader.elf
 	$(OBJCOPY) -O binary -j .text -j .ramcode $< $@

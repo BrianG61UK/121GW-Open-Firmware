@@ -8,6 +8,9 @@
 @ Constants: every numeric #define of ff.c and ff.h evaluated for this configuration (gcc -dM).
 @ =============================================================================
 
+    .ifndef FF_FS_MINIMIZE                  @ FatFs ffconf.h FF_FS_MINIMIZE: 0 everything; 2 (the bootloader, which opens
+    .equ FF_FS_MINIMIZE, 0                  @ EEVBlog.bin by name) without f_opendir / f_readdir / f_stat and their
+    .endif                                  @ get_fileinfo / put_utf (ff.c compiles those only with FF_FS_MINIMIZE <= 1)
     .ifndef FF_FS_READONLY
     .equ FF_FS_READONLY, 0
     .endif

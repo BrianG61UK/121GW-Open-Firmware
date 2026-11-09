@@ -28,7 +28,7 @@
     .equ RTC_BKP1R,         0x40002854      @ RM0038 20.6.20 (RTC base + 0x50 + 4)
     .equ BKP_BT_MAGIC,      0x4E4F5442      @ "BTON" RTC_BKP1R: a Bluetooth update has ended, the firmware switches
                                             @ Bluetooth on (DESIGN.md 6.5.1; firmware sys/main.s, ble/bft.s)
-    .equ BL_VERSION,        0x00010104      @ this bootloader: 1.1.4 (major << 16 | minor << 8 | patch)
+    .equ BL_VERSION,        0x00010105      @ this bootloader: 1.1.5 (major << 16 | minor << 8 | patch)
 
     .equ BL_RAM_BASE,       0x20008100      @ RAM of the bootloader's own objects; below it the v2.05 addresses the
                                             @ firmware's SD driver uses (firmware/src/sd) are left to that driver

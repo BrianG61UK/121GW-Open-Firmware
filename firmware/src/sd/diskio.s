@@ -839,6 +839,7 @@ LFUNC sd_copy512
 ENDFUNC sd_copy512
     .ltorg
 
+    .if !SD_READ_ONLY                       @ get_fattime and disk_ioctl: only the write path
 @ -----------------------------------------------------------------------------
 @ get_fattime - time stamp of the file being created or written (FatFs get_fattime)
 @ Replaces  : 0x0802402E FUN_0802402E (v2.05), called by fat_f_open and fat_f_sync
@@ -937,4 +938,6 @@ FUNC disk_ioctl
     bx      lr                              @ 08024072 return
 ENDFUNC disk_ioctl
     .ltorg
+    .endif
+
 
