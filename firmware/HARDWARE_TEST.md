@@ -210,6 +210,9 @@ These checks confirm on hardware what the emulator cannot.
    meter, 0 framing / noise / overrun errors, 0 rejected frames): on any meter, send a firmware over Bluetooth (page `Ld-bt`, the
    companion) and run the link test: no damaged packets, the meter receives as before.  On a meter with the old BLE112
    module: connect the companion for 10 minutes and save a report; "skipped as damaged" against the report of F-1.27.
+48. Error correction (F-1.29, IMP-60; GitHub issue 30): on a meter with the old BLE112 module, connect companion 1.2.35
+   for 10 minutes and save a report: "error correction on", readings with repair bytes and how many were corrected;
+   "skipped as damaged" against the report of F-1.28.  On any meter: Disconnect, then another app: plain readings.
 
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).

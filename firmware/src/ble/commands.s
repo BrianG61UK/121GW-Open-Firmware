@@ -42,6 +42,8 @@
     .equ BLE_CKGET_CODE,    0x96             @ clock measurement request, answered with FA (F4 39 36 39 36; sys/msical.s)
     .equ BLE_DUPON_CODE,    0x97             @ careful mode on: each status frame twice (F4 39 37 39 37; IMP-50)
     .equ BLE_DUPOFF_CODE,   0x98             @ careful mode off (F4 39 38 39 38)
+    .equ BLE_FECON_CODE,    0x9D             @ IMP-60: status frames with error correction (F5, 21 bytes) on
+    .equ BLE_FECOFF_CODE,   0x9E             @ IMP-60: off (plain F2 frames)
     .equ BLE_RATE0_CODE,    0x99             @ IMP-55: 0x99..0x9C set the frame rate code 0..3 (2, 4, 10, 20 per second)
                                              @ for this link: ble_rate_link, not ble_rate or EEPROM 0x015 (the companion's
                                              @ automatic rate for a damaging link, GitHub issue 30)
@@ -251,10 +253,22 @@ FUNC fn_0800C332
     strb r0, [r1]                           @ 0x97: careful mode on (IMP-50; one byte, read by the USART2 handler)
     b .L0800C46C
 9:  cmp r0, #BLE_DUPOFF_CODE
-    bne .Lkey_rate
+    bne 10f
     movs r0, #0
     ldr r1, =ble_dup_on
     strb r0, [r1]                           @ 0x98: careful mode off
+    b .L0800C46C
+10: cmp r0, #BLE_FECON_CODE
+    bne 11f
+    movs r0, #1
+    ldr r1, =ble_fec_on
+    strb r0, [r1]                           @ 0x9D: frames with error correction (IMP-60; latched per frame by ble_tx_pump)
+    b .L0800C46C
+11: cmp r0, #BLE_FECOFF_CODE
+    bne .Lkey_rate
+    movs r0, #0
+    ldr r1, =ble_fec_on
+    strb r0, [r1]                           @ 0x9E: plain F2 frames again
     b .L0800C46C
 .Lkey_rate:
     subs r1, r0, #BLE_RATE0_CODE            @ r1 = rate code (a code below 0x99 wraps to a large number)

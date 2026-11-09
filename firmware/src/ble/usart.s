@@ -42,6 +42,8 @@
     .equ BLE_TX_IDLE,   0               @ nothing in transmission
     .equ BLE_TX_FRAME,  1               @ status frame being transmitted
     .equ BLE_TX_ECHO,   2               @ queued echo bytes being transmitted
+    .equ BLE_FEC_LEN,   21              @ IMP-60: F5 + 17 value bytes + 3 parity bytes
+    .equ BLE_FEC_DATA,  18              @ IMP-60: bytes fed to the encoder (F5 and the 17 value bytes)
     .equ BLE_SWS_HSE,   0x08            @ RCC_CFGR SWS = 10b: HSE is the system clock (RM0038 6.3.3)
 
     .section .bss_port.ble, "aw", %nobits
@@ -51,6 +53,17 @@
     .global ble_dup_on
 ble_dup_on:     .space 1                    @ 1 = send each status frame twice
 ble_dup_sent:   .space 1                    @ 1 = the second copy of the current frame is in transmission
+@ IMP-60 (GitHub issue 30): status frames with error correction for the old BLE112 module.  ble_fec_on is set and
+@ cleared by the key codes 0x9D / 0x9E (ble/commands.s), cleared by the companion's 0xFD (.Lrx_resync) and when
+@ Bluetooth is switched on or off (ble_link_reset); ble_fec_cur latches it at the start of each frame, so a change never
+@ alters a frame in flight.  A frame with it: F5, the 17 value bytes of the status frame (bytes 1..17), three
+@ Reed-Solomon parity bytes (21 bytes; no XOR byte): GF(256) with the polynomial 0x11D, alpha = 2, generator
+@ (x - 1)(x - 2)(x - 4) = x^3 + 7x^2 + 14x + 8, distance 4: the companion corrects any one damaged byte after the start
+@ byte and detects any two.  ble_rs: the encoder's registers R2, R1, R0 (ble_rs_feed), sent after byte 17 in that order.
+    .global ble_fec_on
+ble_fec_on:     .space 1                    @ 1 = the companion asked for frames with error correction
+ble_fec_cur:    .space 1                    @ 1 = the frame in transmission is such a frame (latched at its start)
+ble_rs:         .space 3                    @ Reed-Solomon parity registers R2, R1, R0 of the frame in transmission
     .balign 4
 @ BLE port RAM (owner BLE; DESIGN.md 5.1 .bss_port).  The v2.05 frame buffer ble_tx_frame (0x20007AE0) keeps its
 @ address; the builder works in ble_frame_b and the transmit side copies it (OF-10).
@@ -130,6 +143,8 @@ FUNC ble_link_reset
     strb r0, [r1]                           @ IMP-50: frames once, until the companion asks again
     ldr r1, =ble_dup_sent
     strb r0, [r1]
+    ldr r1, =ble_fec_on
+    strb r0, [r1]                           @ IMP-60: plain F2 frames until the companion asks again
     msr primask, r3                         @ restore the interrupt mask
     bx lr
 ENDFUNC ble_link_reset
@@ -302,6 +317,10 @@ FUNC ble_tx_pump
     ldrb r3, [r2]
     adds r3, r3, #1                         @ idx++ (v2.05 0x080247F2..0x080247FA)
     strb r3, [r2]
+    ldr r0, =ble_fec_cur
+    ldrb r0, [r0]
+    cmp r0, #0
+    bne .Lpump_fec                          @ IMP-60: a frame with error correction
     cmp r3, #BLE_FRAME_LEN
     bhs .Lpump_framedone                    @ idx >= 19: the frame is complete (v2.05 0x08024800)
     ldr r1, =ble_tx_frame
@@ -327,7 +346,9 @@ FUNC ble_tx_pump
     strb r0, [r2]                           @ ble_tx_idx = 0 (r2 still points at it)
     movs r1, #0xF3                          @ the copy starts with 0xF3: the companion takes it only when the F2 frame
     b .Lpump_send                           @ before it was lost (its check byte is adjusted at byte 18)
-1:  movs r0, #BLE_TX_IDLE
+1:
+.Lpump_frameend:
+    movs r0, #BLE_TX_IDLE
     strb r0, [r5]                           @ the frame is finished
 .Lpump_idle_echo:
     ldrb r0, [r5]
@@ -359,8 +380,34 @@ FUNC ble_tx_pump
     strb r0, [r2]                           @ v2.05 0x08024638: transmit index = 0
     movs r0, #BLE_TX_FRAME
     strb r0, [r5]                           @ frame in transmission
-    ldr r1, =ble_tx_frame
+    ldr r2, =ble_rs
+    movs r0, #0
+    strb r0, [r2]
+    strb r0, [r2, #1]
+    strb r0, [r2, #2]                       @ IMP-60: the encoder starts at 0 for every frame
+    ldr r0, =ble_fec_on
+    ldrb r0, [r0]
+    ldr r2, =ble_fec_cur
+    strb r0, [r2]                           @ IMP-60: latched for this frame
+    cbz r0, 2f
+    movs r1, #0xF5                          @ IMP-60: the frame with error correction starts F5
+    bl ble_rs_feed
+    b .Lpump_send
+2:  ldr r1, =ble_tx_frame
     ldrb r1, [r1]                           @ byte 0 = 0xF2 (v2.05 0x0802464C)
+    b .Lpump_send
+.Lpump_fec:                                 @ IMP-60: r3 = index of the byte to send now (1..21)
+    cmp r3, #BLE_FEC_LEN
+    bhs .Lpump_frameend                     @ 21 bytes sent: the frame is finished (no F3 copy with error correction)
+    cmp r3, #BLE_FEC_DATA
+    bhs 3f
+    ldr r1, =ble_tx_frame
+    ldrb r1, [r1, r3]                       @ value bytes 1..17 as in the F2 frame
+    bl ble_rs_feed
+    b .Lpump_send
+3:  ldr r0, =ble_rs
+    subs r3, r3, #BLE_FEC_DATA
+    ldrb r1, [r0, r3]                       @ parity R2, R1, R0 (bytes 18, 19, 20)
     b .Lpump_send
 .Lpump_queue:
     ldr r2, =ble_txq_tail
@@ -403,6 +450,52 @@ FUNC ble_tx_pump
     bl fn_0800D170                          @ send r1 (bounded wait for TXE)
     pop {r4, r5, pc}
 ENDFUNC ble_tx_pump
+    .ltorg
+
+@ -----------------------------------------------------------------------------
+@ ble_rs_feed - IMP-60: one byte of a frame with error correction into the Reed-Solomon encoder
+@ In       : r1 = the byte being sent (kept)
+@ Out      : -
+@ Clobbers : r0, r2, r3, r12, flags (r4 saved)
+@ Context  : USART2 interrupt (ble_tx_pump)
+@ RAM      : ble_rs (R2, R1, R0)
+@ Note     : systematic encoder of g(x) = x^3 + 7x^2 + 14x + 8 over GF(256), polynomial 0x11D: fb = byte ^ R2;
+@            R2 = R1 ^ 7*fb; R1 = R0 ^ 14*fb; R0 = 8*fb.  Products from doubling: m2 = 2*fb, m4 = 2*m2, m8 = 2*m4
+@            (2*x = x << 1, ^ 0x1D when bit 7 was set); 7*fb = m4^m2^fb, 14*fb = m8^m4^m2.  No tables.
+@ -----------------------------------------------------------------------------
+LFUNC ble_rs_feed
+    push {r4, lr}
+    ldr r12, =ble_rs
+    ldrb r0, [r12]
+    eors r0, r0, r1                         @ fb = byte ^ R2
+    lsls r2, r0, #1
+    tst r2, #0x100
+    beq 1f
+    eor r2, r2, #0x1D
+1:  uxtb r2, r2                             @ m2 = 2 * fb
+    lsls r3, r2, #1
+    tst r3, #0x100
+    beq 2f
+    eor r3, r3, #0x1D
+2:  uxtb r3, r3                             @ m4 = 4 * fb
+    lsls r4, r3, #1
+    tst r4, #0x100
+    beq 3f
+    eor r4, r4, #0x1D
+3:  uxtb r4, r4                             @ m8 = 8 * fb
+    eors r0, r0, r2
+    eors r0, r0, r3                         @ r0 = 7 * fb
+    eors r2, r2, r3
+    eors r2, r2, r4                         @ r2 = 14 * fb
+    ldrb r3, [r12, #1]
+    eors r0, r0, r3                         @ new R2 = R1 ^ 7 * fb
+    strb r0, [r12]
+    ldrb r3, [r12, #2]
+    eors r2, r2, r3                         @ new R1 = R0 ^ 14 * fb
+    strb r2, [r12, #1]
+    strb r4, [r12, #2]                      @ new R0 = 8 * fb
+    pop {r4, pc}
+ENDFUNC ble_rs_feed
     .ltorg
 
 @ -----------------------------------------------------------------------------
@@ -529,6 +622,8 @@ FUNC ble_usart2_isr
     bne 2f
     movs r3, #0
     strb r3, [r1]                           @ 0xFD: the watch off (a clean disconnect)
+    ldr r1, =ble_fec_on
+    strb r3, [r1]                           @ IMP-60: and plain F2 frames for whoever connects next
 2:  movs r0, #0                             @ any other first byte: ignore it (v2.05 0x08024886)
     strb r0, [r2]
     b .Lisr_done

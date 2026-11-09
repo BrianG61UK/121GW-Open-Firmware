@@ -11,7 +11,9 @@
 @     1     4         25              15                      10
 @     2     10        10               5                       5
 @     3     20         5               3                       2     the build comes 3 ticks after the previous start,
-@                                                                    when that frame (9.9 ms at 19200 baud) is out
+@                                                                    when that frame is out (10.9 ms at 19200 baud
+@                                                                    with two stop bits, IMP-59; 12.0 ms for the 21
+@                                                                    bytes of an F5 frame, IMP-60)
 @
 @ Build and transmission stay those of the port (OF-10): the builder fills ble_frame_b and marks it complete, the start
 @ only requests a transmission, and the transmit pump copies the frame only when it is complete; a start that finds no

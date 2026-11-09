@@ -649,6 +649,16 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Test: emulator `test_bt_upload.py`, `test_careful.py`, `test_ble_overrun.py`; HARDWARE_TEST 47 (a BLE112 meter: the
   companion's report, damaged bytes before and after).
 
+### 2.34 Status frames with error correction (experimental, IMP-60, F-1.29; GitHub issue 30)
+- Request (owner, 2026-11-08): readings from the old BLE112 module still arrive damaged about 3 % of the time, often in the
+  digits that change, which the companion's repair of 1.2.33 cannot restore; repair data inside each reading.
+- What it does: while the companion asks (key code 0x9D, only on BLE112 links), every reading is sent as an F5 frame:
+  the 17 value bytes and three repair bytes (Reed-Solomon).  The companion corrects any one damaged byte of a reading
+  and drops a reading with two, never showing a wrong value.  21 instead of 19 bytes per reading; the companion keeps
+  the rate at 4 a second at most on the old module (it carries about 150 bytes a second).  Other apps never ask and
+  keep the F2 frames; 0xFD (the companion's goodbye) and Bluetooth off / on end it.
+- Test: emulator `test_fec.py`; companion tests (every single damaged byte, 20000 double damages); HARDWARE_TEST 48.
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
