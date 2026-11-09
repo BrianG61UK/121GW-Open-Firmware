@@ -219,7 +219,9 @@ These checks confirm on hardware what the emulator cannot.
    0xA4 166 (166.3), 0 bytes dropped): a meter with the old BLE112 module and companion 1.2.36: the Meter
    page says readings 7 a second, trying; within a minute or two "found and saved" (or a lower rate after steps down);
    disconnect and connect: it starts at the saved rate.  A report shows the steps in its events.
-50. Link 2 (F-1.31, IMP-62; GitHub issue 30): a meter with the old BLE112 module and companion 1.3.0: the Meter page says
+50. Link 2 (F-1.31, IMP-62; GitHub issue 30; verified working on a meter with the newer module, link 2 switched on by a
+   script, 2026-11-09: 60 s at bt 20: 1197 readings (19.9 a second) in 299 blocks (5.0 a second), 0 corrected, 0 lost;
+   pace 14 ticks: 7.1 blocks a second, 19.9 readings a second; after 0xFD the original status frames): a meter with the old BLE112 module and companion 1.3.0: the Meter page says
    "link 2, 5.0 blocks a second"; readings flow at the meter's bt rate (also bt 20); after 10 minutes a report: link 2
    blocks, corrected, lost, readings, the pace (it rises after clean minutes, falls on loss).  Page Ld (card list) works and
    link 2 comes back after it.  Disconnect, then another app: original status frames.  On a meter with the newer module the
