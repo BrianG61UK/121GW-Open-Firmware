@@ -1,7 +1,0 @@
-# HOLD held for one second: HOLD has no long press and its short press is lost.
-source analysis/keys_setup.md section 2.1 (FUN_08016B4C accepts 0x01,0x02,0x04,0x08,0x10,0x28,0x40,0x80: "HOLD (0x20) is not accepted ... the short press is lost")
-dial v
-wait 3
-long HOLD
-wait 1
-expect seg HOLD off

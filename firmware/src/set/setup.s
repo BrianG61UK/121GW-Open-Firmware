@@ -59,7 +59,7 @@
     .equ set_temp_celsius,      v_200080AB   @ temperature unit, 1 = degC, 0 = degF, EEPROM 0x010
     .equ set_temp_flag,         v_200080AE   @ temperature flag (BLE sub flag bit 7)
     .equ set_diode_15v,         v_200080B3   @ DIODE source 0 = 3 V, 1 = 15 V (EEPROM 0x012 read at boot, forced 0, OF-23)
-    .equ set_cont_code,         v_200080B6   @ continuity threshold code, EEPROM 0x014 (v2.05 0..3, port 0..15, IMP-05)
+    .equ set_cont_code,         v_200080B6   @ continuity threshold code, EEPROM 0x014 (0..17, IMP-05, IMP-64)
     .equ set_va_sub,            v_200080C2   @ VA sub-range flag 0 / non-zero (BLE helper selector)
     .equ set_va_sub2,           v_200080C7   @ VA sub-range flag (scales the item 12 value by 10 or 100)
     .equ set_va_ovl1,           v_200080CA   @ VA overload flag (s8)
@@ -94,6 +94,10 @@
     .equ SET_ITEM_CHIRP, 42                 @ IMP-51: DIODE contact chirp page CHIrP (DIODE only, between dSP and Lt)
     .equ SET_ITEM_SET, 43                   @ IMP-52: page SEt, the end of the measurement walk (long SETUP: the meter walk)
     .equ SET_ITEM_BACK, 44                  @ IMP-57: page bAcK, the end of the meter walk (GitHub issue 31)
+    .equ SET_ITEM_UT, 45                    @ IMP-64: user continuity threshold page th (BEEP, codes 16 and 17 only, after bH)
+    .equ SET_ITEM_UH, 46                    @ IMP-64: user continuity hysteresis page HY (after th)
+    .equ SET_CONT_CODES, 18                 @ IMP-05, IMP-64: continuity threshold codes 0..17
+    .equ SET_CONT_USER, 16                  @ IMP-64: the first user code (16 DNUSr, 17 UPUSr)
     .equ SET_ITEM_IN, 9                     @ v2.05's log interval page In; IMP-52: in the measurement walk after tr / Ch
     .equ SET_ITEM_LT, 27                    @ IMP-20: limit test pages Lt (27), Lo (28), HI (29), verdict (36)
     .equ SET_ITEM_LO, 28
@@ -227,7 +231,19 @@ FUNC fn_08015410
     b .Lsn_port_set
 .Lsn_not_lt:
     cmp r0, #SET_ITEM_BH
-    beq .Lsn_to_lt                          @ bH: next is Lt
+    bne 11f
+    ldr.w r0, =set_cont_code
+    ldrb r0, [r0, #0x0]
+    cmp r0, #SET_CONT_USER
+    blo .Lsn_to_lt                          @ bH with a fixed threshold: next is Lt
+    movs r0, #SET_ITEM_UT                   @ bH with a user code: next is th (IMP-64)
+    b .Lsn_port_set
+11: cmp r0, #SET_ITEM_UT
+    bne 12f
+    movs r0, #SET_ITEM_UH                   @ th: next is HY (IMP-64)
+    b .Lsn_port_set
+12: cmp r0, #SET_ITEM_UH
+    beq .Lsn_to_lt                          @ HY: next is Lt (IMP-64)
     cmp r0, #SET_ITEM_LP
     beq .Lsn_to_lt                          @ LP: next is Lt
     cmp r0, #SET_ITEM_RTD
@@ -1240,12 +1256,11 @@ ENDFUNC fn_08016190
 @ Clobbers : r0-r3, r12, flags (AAPCS)
 @ Context  : main only (fn_080165F4)
 @ RAM      : reads set_cont_code; writes set_redraw
-@ Spec     : analysis/keys_setup.md 4 (SETUP menu); analysis/autorange_and_scheduler.md 9 (UI order of the 16 codes)
-@ Deviation: IMP-05: the 16 codes cycle in the display order DN 1, DN 5, DN 10, DN 30, DN 50, DN100, DN200, DN300, UP
-@            1, UP 5, UP 10, UP 30, UP 50, UP100, UP200, UP300 (v2.05: codes 0..3 in code order); the code is edited
-@            in place (set_cont_code) and written by fn_080113CC
+@ Spec     : analysis/keys_setup.md 4 (SETUP menu); analysis/autorange_and_scheduler.md 9 (UI order of the 16 fixed codes)
+@ Deviation: IMP-05, IMP-64: the 18 codes cycle in the display order DN 1, DN 5, DN 10, DN 30, DN 50, DN100, DN200,
+@            DN300, DNUSr, UP 1, UP 5, UP 10, UP 30, UP 50, UP100, UP200, UP300, UPUSr; the code is edited in place (set_cont_code) and written by fn_080113CC
 @ Note     : The table set_cont_pos gives the display position of a code, set_cont_order the code of a display
-@            position; the position moves by +1 or -1 modulo 16.
+@            position; the position moves by +1 or -1 modulo 18.
 @ -----------------------------------------------------------------------------
 FUNC fn_08015C20
     push {r4, lr}                           @ 08015C20
@@ -1255,18 +1270,22 @@ FUNC fn_08015C20
     beq .Lcc_up
     cmp r4, #2                           @ down?
     bne .L08015C76                       @ neither: save (v2.05 0x08015C50)
-    movs r2, #15                         @ down: position - 1 = position + 15 (mod 16)
+    movs r2, #SET_CONT_CODES - 1         @ down: position - 1 = position + 17 (mod 18)
     b .Lcc_step
 .Lcc_up:
     movs r2, #1                          @ up: position + 1
 .Lcc_step:
     ldr.w r0, =set_cont_code
     ldrb r0, [r0]                        @ current code
-    ands r0, r0, #15                     @ keep the table index in range
+    cmp r0, #SET_CONT_CODES
+    it hs
+    movhs r0, #0                         @ keep the table index in range (load, edit and PUT keep the code below 18)
     ldr.w r1, =set_cont_pos
     ldrb r0, [r1, r0]                    @ its display position
     adds r0, r0, r2                      @ move one step
-    ands r0, r0, #15                     @ wrap at 16
+    cmp r0, #SET_CONT_CODES
+    it hs
+    subhs r0, r0, #SET_CONT_CODES        @ wrap at 18
     ldr.w r1, =set_cont_order
     ldrb r0, [r1, r0]                    @ the code at the new position
     ldr.w r1, =set_cont_code
@@ -1652,6 +1671,26 @@ FUNC fn_080165F4
     bl set_bh_edit                          @ up, down or save of the hold time
     b .L08016800
 .Lse_not_bh:
+    cmp r0, #SET_ITEM_UT                    @ IMP-64: the user continuity pages th (item 45) and HY (item 46)
+    beq 1f
+    cmp r0, #SET_ITEM_UH
+    bne .Lse_not_cu
+1:  uxtb r4, r4
+    cmp r4, #0x0                            @ query?
+    bne .Lse_cu_act
+    movs r0, #0x1
+    movs r5, r0                             @ query result: editable
+    b .L08016800
+.Lse_cu_act:
+    cmp r0, #SET_ITEM_UH                    @ r0 = the item
+    beq 2f
+    mov r0, r4
+    bl set_ut_edit                          @ up, down or save of the threshold
+    b .L08016800
+2:  mov r0, r4
+    bl set_uh_edit                          @ up, down or save of the hysteresis
+    b .L08016800
+.Lse_not_cu:
     cmp r0, #SET_ITEM_LP                    @ IMP-24: the current-loop page LP (item 37)
     bne .Lse_not_lp
     uxtb r4, r4
@@ -2481,6 +2520,13 @@ FUNC fn_0801797C
     bl set_bh_draw                          @ draw "bH" and the hold time
     b .L08017F26
 .Lsd_not_bh:
+    cmp r0, #SET_ITEM_UT                    @ IMP-64: the user continuity pages th (item 45) and HY (item 46)
+    beq 1f
+    cmp r0, #SET_ITEM_UH
+    bne .Lsd_not_cu
+1:  bl set_cu_draw                          @ draw "th" and the threshold, or "HY" and the hysteresis (r0 = item)
+    b .L08017F26
+.Lsd_not_cu:
     cmp r0, #SET_ITEM_LP                    @ IMP-24: the current-loop page LP (item 37)
     bne .Lsd_not_lp
     bl set_lp_draw
@@ -3668,16 +3714,15 @@ ENDFUNC fn_08018A00
 @ -----------------------------------------------------------------------------
 @ fn_0801871C - draw the continuity threshold text (item 10 of BEEP)
 @ Replaces : 0x0801871C FUN_0801871C (v2.05)
-@ In       : r0 = code 0..15
+@ In       : r0 = code 0..17
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags (AAPCS)
 @ Context  : main only
 @ RAM      : writes lcd_shadow, set_commit_req
 @ Spec     : analysis/keys_setup.md 4 (SETUP menu); analysis/autorange_and_scheduler.md 9
-@ Deviation: IMP-05: codes 0..15 (v2.05: 0..3, text pointers 0x08029200 etc.); codes above 15 draw nothing, as v2.05
-@            does for codes above 3
+@ Deviation: IMP-05, IMP-64: codes 0..17; codes above 17 draw nothing
 @ Note     : The text pointer comes from set_cont_text[code]: codes 0..3 point at the four v2.05 strings "DN 30", "UP
-@            30", "DN300", "UP300" (v205_tab_080291F8, 08029200, 08029208, 08029210), codes 4..15 at new strings of
+@            30", "DN300", "UP300" (v205_tab_080291F8, 08029200, 08029208, 08029210), codes 4..17 at new strings of
 @            the same 5-glyph format.
 @ -----------------------------------------------------------------------------
 FUNC fn_0801871C
@@ -3691,8 +3736,8 @@ FUNC fn_0801871C
     movs r0, #0x0                           @ 08018730
     bl fn_08017FB4                          @ 08018732  secondary display decimal point / unit setup, r0 = code [r0=0, r1=&lcd_shadow]
     uxtb r4, r4                             @ 08018736
-    cmp r4, #15                          @ IMP-05: codes 0..15
-    bhi .L08018776                       @ above 15: nothing drawn (v2.05 for codes above 3)
+    cmp r4, #SET_CONT_CODES - 1          @ IMP-05, IMP-64: codes 0..17
+    bhi .L08018776                       @ above 17: nothing drawn
     ldr.w r1, =set_cont_text
     ldr.w r1, [r1, r4, lsl #2]           @ pointer to the 5-character text of the code
     movs r0, #1                          @ secondary display
@@ -3712,16 +3757,22 @@ set_txt_quiet:
     .ascii "qUiEt"
     .balign 4
 @ IMP-05: continuity threshold codes (EEPROM 0x014, set_cont_code).  Display order DN 1, DN 5, DN 10, DN 30,
-@ DN 50, DN100, DN200, DN300, UP 1, UP 5, UP 10, UP 30, UP 50, UP100, UP200, UP300 (analysis/autorange_and_
-@ scheduler.md 9).  Codes 0..3 are the v2.05 codes (DN 30, UP 30, DN300, UP300).
+@ DN 50, DN100, DN200, DN300, DNUSr, UP 1, UP 5, UP 10, UP 30, UP 50, UP100, UP200, UP300, UPUSr (analysis/
+@ autorange_and_scheduler.md 9; IMP-64 the user codes 16 and 17).
     .global set_cont_order
 set_cont_order:                         @ display position -> code
-    .byte 4, 5, 6, 0, 7, 8, 9, 2, 10, 11, 12, 1, 13, 14, 15, 3
+    .byte 4, 5, 6, 0, 7, 8, 9, 2, 16, 10, 11, 12, 1, 13, 14, 15, 3, 17
     .size set_cont_order, . - set_cont_order
+    .if (. - set_cont_order) != SET_CONT_CODES
+    .error "set_cont_order needs one entry per continuity code"
+    .endif
     .global set_cont_pos
 set_cont_pos:                           @ code -> display position (inverse of set_cont_order)
-    .byte 3, 11, 7, 15, 0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14
+    .byte 3, 12, 7, 16, 0, 1, 2, 4, 5, 6, 9, 10, 11, 13, 14, 15, 8, 17
     .size set_cont_pos, . - set_cont_pos
+    .if (. - set_cont_pos) != SET_CONT_CODES
+    .error "set_cont_pos needs one entry per continuity code"
+    .endif
     .balign 4
     .global set_cont_text
 set_cont_text:                          @ code -> pointer to the 5-character text
@@ -3741,7 +3792,12 @@ set_cont_text:                          @ code -> pointer to the 5-character tex
     .word set_str_up50                  @ 13 "UP 50"
     .word set_str_up100                 @ 14 "UP100"
     .word set_str_up200                 @ 15 "UP200"
+    .word set_str_dnusr                 @ 16 "DNUSr" (IMP-64: the user threshold of the page th)
+    .word set_str_upusr                 @ 17 "UPUSr"
     .size set_cont_text, . - set_cont_text
+    .if (. - set_cont_text) != 4 * SET_CONT_CODES
+    .error "set_cont_text needs one text per continuity code"
+    .endif
 @ New texts: 5 glyphs followed by three zero bytes, the format of the v2.05 texts at 0x080291B8..0x08029210.
     .balign 4
 set_str_dn1:
@@ -3779,4 +3835,10 @@ set_str_up100:
     .byte 0, 0, 0
 set_str_up200:
     .ascii "UP200"
+    .byte 0, 0, 0
+set_str_dnusr:
+    .ascii "DNUSr"
+    .byte 0, 0, 0
+set_str_upusr:
+    .ascii "UPUSr"
     .byte 0, 0, 0

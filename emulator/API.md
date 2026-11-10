@@ -159,8 +159,7 @@ order is executed: `key`, `dial`, `jack`, `run`, `reset`, `sysreset`, `battery`,
 
 `{"key": NAME, "down": bool}`: press (`true`) or release (`false`) a key. Names: `MODE`, `SETUP`, `MINMAX`, `MEM`, `RANGE`,
 `HOLD`, `REL`, `PEAK`. A long press is a key held down for the firmware's long-press time: send `down: true`, let the machine run, send
-`down: false`. The differential harness holds a short press for 0.15 s and a long press for 1.0 s of emulated time
-(`emulator/diff/scenario.py`).
+`down: false`.
 
 ```
 curl -s -X POST localhost:8121/input -d '{"key":"RANGE","down":true}'
@@ -339,8 +338,7 @@ Output: `1.5000 V DCV 0`.
 The server and a script can share one `Emulator`: `from ui.server import serve; serve(emu, 8121); emu.loop()` serves the page while
 the loop runs it; a script then calls `emu.command(...)` / `emu.snapshot()` from another thread (both take the machine lock).
 
-`emulator/tools/smoke.py` checks a running emulator (it boots to a reading, every access modelled); `emulator/diff/run.py`
-compares two firmware images scenario by scenario (its docstring), and needs the original v2.05 image as the reference.
+`emulator/tools/smoke.py` checks a running emulator (it boots to a reading, every access modelled).
 
 ## 7. Errors and limits
 

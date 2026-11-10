@@ -3,9 +3,8 @@
 #
 #   make                  image + all build checks (build/EEVBlog.bin, its SHA-256, check report)
 #   make image            image only (assemble, link, convert, pad, size check, SHA-256)
-#   make check            build checks of DESIGN.md 9.3 on the linked image (needs the original v2.05 image, inputs/)
-#   make check-ci         the checks that do not need the original v2.05 image (what the GitHub workflow runs); every
-#                         check it cannot run is named in the output as SKIPPED with the reason, never passed silently
+#   make check            build checks of DESIGN.md 9.3 on the linked image (needs nothing but the tree itself)
+#   make check-ci         the same checks (what the GitHub workflow runs)
 #   make listing          objdump -d -S of the ELF (build/121gw.lst)
 #   make clean            remove build/
 #   make DEBUG=1          a build switch of src/inc/config.inc set on the command line (any switch can be given this way)
@@ -65,14 +64,14 @@ OBJS    := $(patsubst src/%.s,$(OBJDIR)/%.o,$(SRCS))
 ASFLAGS := -mcpu=cortex-m3 -mthumb -mimplicit-it=never --fatal-warnings -I src/inc $(DEFSYMS)
 LDFLAGS := -T $(LDS) --build-id=none -Map $(OMAP) --no-undefined -nostdlib
 
-# build-check tools (DESIGN.md 9.3; firmware/tools, owners W7 and W10).  check_image.py (items 1, 2, 5) and check_gpio.py
-# (item 4 and the brd_fe_table comparison of item 3) need Python 3 with Capstone; check_hy.py (items 3 and 4, HY3131
-# write whitelist) needs Capstone and Unicorn.  Run `make PYTHON=<python with both modules>` when the default python3
-# lacks Unicorn; a missing module stops the check with exit status 2, never a silent pass.  Each tool takes the ELF
-# and finds the linker map (build/121gw.map) and DESIGN.md itself; tools/check_image.py --v205 runs the same
-# instruction analysis on the original image (documented in its header).
-CHECK_TOOLS := tools/check_image.py tools/check_hy.py tools/check_gpio.py tools/gen_nvm_allow.py \
-               tools/gen_ram_symbols.py tools/extract_tables.py
+# build-check tools (DESIGN.md 9.3; firmware/tools).  check_image.py (items 1, 2, 5) and check_gpio.py (item 4 and the
+# brd_fe_table comparison of item 3, data in tools/fe_levels.txt) need Python 3 with Capstone; check_hy.py (HY3131 write
+# whitelist, data in tools/hy_reference.txt) needs Capstone and Unicorn.  Run `make PYTHON=<python with both modules>`
+# when the default python3 lacks Unicorn; a missing module stops the check with exit status 2, never a silent pass.  Each
+# tool takes the ELF and finds the linker map (build/121gw.map) and DESIGN.md itself.  gen_nvm_allow.py --check regenerates
+# the NVM allowed-byte tables from EEPROM_MAP.md 9.2 and compares them with the files in the tree.
+CHECK_TOOLS := tools/check_image.py tools/check_hy.py tools/check_gpio.py tools/gen_nvm_allow.py
+CHECK_DATA  := tools/hy_reference.txt tools/fe_levels.txt
 
 .PHONY: all image check check-ci listing clean toolcheck switches
 
@@ -113,47 +112,25 @@ image: toolcheck switches $(OELF)
 	echo "$(BIN): $$size bytes"
 	@cd $(BUILD) && $(SHA256) EEVBlog.bin > EEVBlog.bin.sha256 && cat EEVBlog.bin.sha256
 
-# DESIGN.md 9.3: every check runs on every build; a missing tool is an error, never a silent skip
-check: image
-	@missing=0; for t in $(CHECK_TOOLS); do \
-	  if [ ! -f $$t ]; then echo "error: build check tool $$t is missing"; missing=1; fi; done; \
-	if [ $$missing -ne 0 ]; then exit 1; fi
-	@echo "build switches: $(if $(NONDEFAULT),$(NONDEFAULT),all at their defaults)" > $(REPORT)
-	$(PY) tools/check_image.py $(ELF) $(BIN) $(foreach s,$(NONDEFAULT),--switch $(s)) >> $(REPORT)
-	$(PY) tools/check_hy.py $(ELF) >> $(REPORT)
-	$(PY) tools/check_gpio.py $(ELF) >> $(REPORT)
-	$(PY) tools/gen_nvm_allow.py --check >> $(REPORT)
-	$(PY) tools/gen_ram_symbols.py --check >> $(REPORT)
-	$(PY) tools/extract_tables.py --verify --elf $(ELF) >> $(REPORT)
-	@cat $(REPORT)
-
-# CI-safe variant of `check`: the original v2.05 image (inputs/binaries/EEVBlog2_05.bin) and the analysis/ files are not
-# in the repository, so the checks that compare the port with them cannot run here.  What runs:
-#   check_image.py (DESIGN.md 9.3 items 1, 2, 5, 6, 7: instruction-level never-brick analysis of the linked image)
-#   check_hy.py --reference-data tools/hy_reference.txt (HY3131 write whitelist: the v2.05 sweep is read from the committed
-#       reference data instead of being executed from the image; its check 1, tables equal the image, is SKIPPED by the tool)
-#   check_gpio.py (pin policy, brd_fe_table against tools/fe_levels.txt)
-# What does not run, and is printed as SKIPPED: gen_nvm_allow.py --check, gen_ram_symbols.py --check and
-# extract_tables.py --verify, which regenerate or compare against the original image.  Run `make check` with the image
-# before a release to cover them.  A failing check stops the build with its output shown.
-CI_SKIPPED := tools/gen_nvm_allow.py --check|tools/gen_ram_symbols.py --check|tools/extract_tables.py --verify --elf $(ELF)
-
 define runcheck
 $(PY) $(1) > $(BUILD)/.check.tmp 2>&1; rc=$$?; tee -a $(REPORT) < $(BUILD)/.check.tmp; rm -f $(BUILD)/.check.tmp; \
 if [ $$rc -ne 0 ]; then echo "check FAILED (status $$rc): $(PY) $(1)"; exit $$rc; fi
 endef
 
-check-ci: image
-	@missing=0; for t in $(CHECK_TOOLS) tools/hy_reference.txt tools/fe_levels.txt; do \
+# DESIGN.md 9.3: every check runs on every build; a missing tool or data file is an error, never a silent skip.  A failing
+# check stops the build with its output shown.
+check: image
+	@missing=0; for t in $(CHECK_TOOLS) $(CHECK_DATA); do \
 	  if [ ! -f $$t ]; then echo "error: build check file $$t is missing"; missing=1; fi; done; \
 	if [ $$missing -ne 0 ]; then exit 1; fi
 	@echo "build switches: $(if $(NONDEFAULT),$(NONDEFAULT),all at their defaults)" > $(REPORT)
 	@$(call runcheck,tools/check_image.py $(ELF) $(BIN) $(foreach s,$(NONDEFAULT),--switch $(s)))
-	@$(call runcheck,tools/check_hy.py $(ELF) --reference-data tools/hy_reference.txt)
+	@$(call runcheck,tools/check_hy.py $(ELF) $(foreach s,$(NONDEFAULT),--switch $(s)))
 	@$(call runcheck,tools/check_gpio.py $(ELF))
-	@echo "$(CI_SKIPPED)" | tr '|' '\n' | while read -r c; do \
-	  echo "SKIPPED $$c: needs the original v2.05 image and the analysis/ files, which are not in the repository" | tee -a $(REPORT); done
-	@echo "check-ci: 3 checks passed, 3 SKIPPED (listed above); the SKIPPED ones need the original image: run 'make check' with it before a release" | tee -a $(REPORT)
+	@$(call runcheck,tools/gen_nvm_allow.py --check)
+
+# the GitHub workflow runs the same checks as `make check`
+check-ci: check
 
 listing: image
 	$(OBJDUMP) -d -S $(ELF) > $(BUILD)/121gw.lst

@@ -26,7 +26,8 @@ The pages come in two groups (GitHub issue 24: one long walk had grown to about 
 
 **Measurement pages** (press **SETUP**): the temperature page → the function's own pages of the original (dBm in ACV,
 the continuity threshold in BEEP, the current option, `bd`) → `rEL` (REL mode) → `tc` (thermocouple type, TEMP only) →
-`dSP` (display level) → `bH` (continuity hold, BEEP only) → `LP` (4–20 mA view, DC mA only) → `Pt` (PT100 / PT1000
+`dSP` (display level) → `bH` (continuity hold, BEEP only) → `th`, `HY` (your continuity threshold and hysteresis, BEEP
+with `DNUSr` or `UPUSr` only) → `LP` (4–20 mA view, DC mA only) → `Pt` (PT100 / PT1000
 view, Ω only) → `HUnt` (capacitance anti-hunting, CAP only) → `CHIrP` (diode contact chirp, DIODE only) → `Lt`, `Lo`,
 `HI` (limit test; the verdict page while the test is on) → `tr`, `Ch` (logging trigger) → `In` (logging interval) →
 (while MIN/MAX is on: the statistics pages `n` and `Sd` and the time pages `tHI` and `tLo`) → `SEt` → back to the
@@ -315,11 +316,29 @@ The card update (HOLD + MEM at power-on, SETUP) keeps working with the two-part 
 
 - **Where:** in the continuity (BEEP) function, page `bH`: `bH100` (default, as the original), `bH 50`, `bH 25`, `bHOFF`.
 - **Effect:** how long the beep continues after the probes lose contact: 100, 50 or 25 ms, or with `bHOFF` about 15 ms,
-  the shortest time that still gives a clean, unbroken beep on a steady contact. The beep still starts 1 to 4 ms after
-  contact.
+  the shortest time that still gives a clean, unbroken beep on a steady contact. The beep still starts about 1 to 6 ms
+  after contact.
 
 Tip: `bH100` makes even the shortest touch audible (good for scratching along a trace); `bHOFF` shows intermittent
 contacts as broken beeps.
+
+## Continuity with your own threshold (beep on a short or on an open)
+
+- **Where:** in the continuity (BEEP) function, the threshold page (press SETUP once): besides the fixed thresholds
+  `DN  1` .. `DN300` and `UP  1` .. `UP300` there are `DNUSr` (after `DN300`) and `UPUSr` (after `UP300`).
+  - `DNUSr` beeps while the reading is at or below your threshold: a short, as the `DN` thresholds.
+  - `UPUSr` beeps while the reading is at or above it: an open. This finds intermittent connections: connect the probes
+    across the joint, cable or switch and the meter stays silent while it conducts and beeps when it breaks.
+- **Your threshold and hysteresis:** with `DNUSr` or `UPUSr` chosen, SETUP goes on from `bH` to two more pages:
+  - `th` the threshold, `th  1` .. `th500` Ω in 1 Ω steps (30 Ω until you set it);
+  - `HY` the hysteresis, `HY 0.1` .. `HY25.0` Ω in 0.1 Ω steps (5.0 Ω until you set it).
+  Hold SETUP to edit (the value blinks), REL raises, PEAK lowers (hold the key to step faster; both wrap around), hold
+  SETUP again to save; a short SETUP leaves without saving.
+- **Effect:** the beep starts at the threshold; once it sounds it continues until the reading is the hysteresis past the
+  threshold (above it for `DNUSr`, below it for `UPUSr`), so a reading close to the threshold does not make the beep
+  chatter. With `UPUSr` and a hysteresis as large as the threshold, the beep, once on, continues down to 0.01 Ω.
+- The beep hold time `bH` works for these too. The settings are kept in three spare bytes of the meter's memory, apart
+  from the calibration, the serial number and the other options.
 
 ## Capacitance anti-hunting (CAP)
 
@@ -421,7 +440,8 @@ single key (MEM, MODE then REL, SETUP, RANGE).
 
 The fast build also reacts faster, with no setting needed:
 
-- **Continuity beep:** 1 to 4 ms after contact (original: 6 to 22 ms), measured in the emulator.
+- **Continuity beep:** about 1 to 6 ms after contact (0.75 to 5.5 ms in the emulator, whose converter timing was
+  measured on a meter in 2026-11: a continuity reading every 3.9 ms).
 - **Diode short tone:** designed for about 20 ms (original: 0.38 s, measured).
 - **Readings:** DC and AC currents, diode, the continuity display and the lower AC volt ranges update every 100 ms, the
   highest AC volt range every 25 ms, by design (original: about 221 ms, measured).

@@ -29,12 +29,15 @@
 @     type 0x04 ABORT  back to waiting
 @     type 0x05 STATUS payload index(1): a diagnosis value in the answer's "next" field (bft_diag_tab: index 0 .. 55; 40 .. 48
 @                      are the extended link diagnosis counters and the battery voltage, ble/xdiag.s, IMP-44; 49 .. 55
-@                      the clock measurement, sys/msical.s, IMP-46)
+@                      the clock measurement, sys/msical.s, IMP-46; 56 .. 120 only in the diagnostic build HY_DIAG,
+@                      hy/hydiag.s)
 @     types 0x10 .. 0x15 SD card requests (LIST, READ, CHUNK, DELETE, INFO, FORMAT; ble/bftsd.s, IMP-36, IMP-39) and
 @     0x16 / 0x17 settings (GET, PUT; ble/bftset.s, IMP-37), answered with the type 0x82 answer described in ble/bftsd.s
 @     type 0x19 LEAVE    leave the page Ld as a SETUP press does (next page Fr or CL, IMP-52), answered with status 0 first (IMP-47)
 @     type 0x18 UPDMODE  restart into the two-part bootloader's update mode (blcmd_update_mode, IMP-42); no answer (the
 @                      meter restarts), status 3 without the two-part bootloader
+@     types 0x1B WHERE, 0x1C SHOW  the meter API (ble/bfapi.s, IMP-65), answered with type 0x82; the API also takes
+@                      GET / PUT / WHERE / SHOW outside the page Ld through the key / clock parser (ble/usart.s)
 @ Answer: B5 5B 81 seq(2) 03 status next(2) crc16(2), seq = the packet answered, next = the packet number expected
 @     (with status 0x11 instead: the failed step << 8 | its FatFs result, step 1 open, 2 seek, 3 write, 4 short write,
 @     5 close; with status 0 to END: the number of failed card sessions that were repeated successfully).
@@ -188,11 +191,57 @@ bft_diag_tab:   .word bft_fails, bft_diag, sd_dg_count, sd_dg_op, sd_dg_sta, sd_
                 .word xd_rx_bytes, xd_err_ore, xd_err_ne, xd_err_fe, xd_rx_dropped_hse, xd_bad_frames, xd_bft_crc_bad
                 .word xd_tx_q_full, pwr_bat_cv
                 .word ck_hz0, ck_hz0 + 2, ck_hz, ck_hz + 2, ck_trim, ck_steps, USART2_BASE + USART_BRR
+.if HY_DIAG
+    @ diagnostic build only (hy/hydiag.s): 56 marker 0x4844, 57 status, 58 / 59 AD1 reads, 60 / 61 time between them,
+    @ 62 frame max, 63 / 64 frame sum, 65 service-to-read max, 66 / 67 its sum, 68 .. 72 the gap histogram, 73 reads
+    @ not on MSI, 74 mode, 75 range, 76 .. 115 the latch results (4 x 10 u16), 116 .. 119 the sensitivity sample,
+    @ 120 trials left
+                .word hyd_marker, hyd_status, hyd_reads, hyd_reads + 2, hyd_time, hyd_time + 2
+                .word hyd_frame_max, hyd_frame_sum, hyd_frame_sum + 2, hyd_lat_max, hyd_lat_sum, hyd_lat_sum + 2
+                .word hyd_hist, hyd_hist + 2, hyd_hist + 4, hyd_hist + 6, hyd_hist + 8, hyd_notmsi, hyd_mode, hyd_range
+    .irp k, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58, 60, 62, 64, 66, 68, 70, 72, 74, 76, 78
+                .word hyd_res + \k
+    .endr
+                .word hyd_sens, hyd_sens + 2, hyd_sens + 4, hyd_sens + 6
+                .word hyd_left
+    @ 121 / 122 lowest, 123 / 124 highest per-sample value of the continuity decision, 125 / 126 their count
+                .word hyd_vmin, hyd_vmin + 2, hyd_vmax, hyd_vmax + 2, hyd_vcount, hyd_vcount + 2
+    @ 127 Q3 state, 128 events left, 129 periods, 130 min, 131 max, 132 / 133 sum, 134 below 2 ms, 135 timeouts, 136 flags
+                .word hyd_q3_state, hyd_q3_left, hyd_q3_n, hyd_q3_min, hyd_q3_max, hyd_q3_sum, hyd_q3_sum + 2
+                .word hyd_q3_fast, hyd_q3_to, hyd_q3_flags
+    @ 137 .. 166 the first 30 periods one by one, 167 batches not on MSI
+    .irp k, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38, 40, 42, 44, 46, 48, 50, 52, 54, 56, 58
+                .word hyd_q3_seq + \k
+    .endr
+                .word hyd_q3_notmsi
+.endif
+bft_diag_tab_end:
 bft_diag_wid:   .byte 2, 2, 2, 2, 2, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2
                 .byte 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2
                 .byte 2, 2, 2, 2, 2, 2, 2, 2, 2             @ 40 .. 48: nine u16 (IMP-44)
                 .byte 2, 2, 2, 2, 2, 2, 2                   @ 49 .. 55: the clock measurement (IMP-46)
+.if HY_DIAG
+                .byte 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 1   @ 56 .. 75
+                .byte 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2   @ 76 .. 95
+                .byte 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2   @ 96 .. 115
+                .byte 2, 2, 2, 2, 2                                                @ 116 .. 120
+                .byte 2, 2, 2, 2, 2, 2                                             @ 121 .. 126
+                .byte 1, 2, 2, 2, 2, 2, 2, 2, 2, 2                                 @ 127 .. 136 (Q3)
+                .byte 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2   @ 137 .. 156
+                .byte 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2                              @ 157 .. 167
+.endif
+bft_diag_wid_end:
+.if HY_DIAG
+    .equ BFT_DIAG_N, 168
+.else
     .equ BFT_DIAG_N, 56
+.endif
+    .if (bft_diag_tab_end - bft_diag_tab) != 4 * BFT_DIAG_N
+    .error "bft_diag_tab does not have BFT_DIAG_N entries"
+    .endif
+    .if (bft_diag_wid_end - bft_diag_wid) != BFT_DIAG_N
+    .error "bft_diag_wid does not have BFT_DIAG_N entries"
+    .endif
     .equ BFT_T_UPDMODE, 0x18                @ request: restart into the two-part bootloader's update mode (as key code
                                             @ 0x91, which the page Ld does not take: it owns the link)
     .equ BFT_T_LEAVE,   0x19                @ request: leave the page Ld as a SETUP press does (IMP-47)
@@ -244,7 +293,7 @@ FUNC bft_rx_byte
 ENDFUNC bft_rx_byte
 
 @ -----------------------------------------------------------------------------
-@ bft_tick - count the 10 ms ticks since the last received byte
+@ bft_tick - count the 10 ms ticks since the last received byte; advance the free-running api_ticks (IMP-65)
 @ Clobbers : r0, r1, flags
 @ Context  : TIM2 interrupt (sys_tim2_isr, every tick)
 @ -----------------------------------------------------------------------------
@@ -255,6 +304,10 @@ FUNC bft_tick
     it lo
     addlo r0, r0, #1
     strb r0, [r1]
+    ldr r1, =api_ticks
+    ldrh r0, [r1]
+    adds r0, r0, #1
+    strh r0, [r1]                           @ wraps at 65536 (655 s); the only writer of api_ticks (ble/bfapi.s)
     bx lr
 ENDFUNC bft_tick
 
@@ -1202,9 +1255,16 @@ LFUNC bft_packet
     strb r0, [r1]
     pop {r4-r7, pc}
 6:  cmp r0, #0x1A
-    bne 1f
+    bne 7f
     bl bfx_request                          @ 0x1A READZ: a card read, packed (IMP-63, ble/bftsd.s)
     pop {r4-r7, pc}
+7:  cmp r0, #0x1B
+    beq 8f
+    cmp r0, #0x1C
+    bne 1f
+8:  movs r1, #0                             @ IMP-65: WHERE and SHOW of the meter API on the page Ld too (ble/bfapi.s);
+    bl api_request                          @ SHOW to another page hands the link back on the next bft_poll pass, after
+    pop {r4-r7, pc}                         @ the answer was queued
 1:  movs r0, #3                             @ unknown type (or 0x18 without the two-part bootloader): not allowed
     b .Lpk_answer
 .Lpk_start:

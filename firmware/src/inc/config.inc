@@ -29,7 +29,7 @@
     .equ FW_VER_C1, '-'
     .equ FW_VER_C2, '1'
     .equ FW_VER_C3, '3'
-    .equ FW_VER_C4, '2'
+    .equ FW_VER_C4, '3'
 
     @ DEBUG = 1 sets DBGMCU_CR DBG_SLEEP | DBG_STOP | DBG_STANDBY at every start as v2.05 does (0x0801BEF8).
     @ Production (0) leaves DBGMCU_CR alone so STOP is the true low-current STOP (NF-18, RM0038 30.16.3).
@@ -64,6 +64,12 @@
     .equ SAFETY_PROBE, 0                @ SWITCH SAFETY_PROBE default 0 (probe image is never released)
     .endif
 
+    @ HY_DIAG = 1 builds the never-released diagnostic image of hy/hydiag.s: AD1 read timing and the HY3131 latch
+    @ experiment, key codes 0xA5 / 0xA6 / 0xA7, results on page Ld STATUS 56..120 (owner 2026-11-09 / 11-10).
+    .ifndef HY_DIAG
+    .equ HY_DIAG, 0                     @ SWITCH HY_DIAG default 0 (diagnostic image is never released)
+    .endif
+
 @ -----------------------------------------------------------------------------
 @ Hardware timing (BRD, SYS)
 @ -----------------------------------------------------------------------------
@@ -81,6 +87,12 @@
 
     @ Poll bound of the LCD status waits in the BRD power-down path (HW-07, DESIGN.md 4.3 rule 6: 0x8000).
     .equ LCD_WAIT_POLLS, 0x8000
+
+@ -----------------------------------------------------------------------------
+@ Meter API outside the page Ld (IMP-65): the parser of ble/usart.s and ble/bfapi.s share these
+@ -----------------------------------------------------------------------------
+    .equ API_MAXPAY, 4                  @ largest request payload (PUT two-byte form): 8 + 4 = 12 bytes <= ble_rx_buf (20)
+    .equ API_GAP_TICKS, 10              @ 10 ms ticks (api_ticks - api_rx_last) without a byte that drop a packet cut short (100 ms)
 
 @ -----------------------------------------------------------------------------
 @ Power-on window (CAL module, DESIGN.md 7.1)

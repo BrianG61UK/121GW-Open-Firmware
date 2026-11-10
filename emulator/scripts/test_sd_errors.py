@@ -24,7 +24,7 @@ sys.dont_write_bytecode = True                       # keep the tree free of __p
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_backlight_timer as T  # noqa: E402
 from emu.sdcard import format_fat32  # noqa: E402
-from diff.fat32 import FatError, Volume  # noqa: E402
+from emu.fat32 import FatError, Volume  # noqa: E402
 
 ADDR_LOGGING = 0x20007FE1
 ADDR_RANGE_MANUAL = 0x20008042

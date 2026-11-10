@@ -1,8 +1,0 @@
-# Long MEM with no SD card in the socket.
-source analysis/keys_setup.md section 2.2 MEM row (long press toggles logging 0x20007FE1 via FUN_0801657C; short press toggles the stored-data view, refused while the record count is 0) and MEM+HOLD row
-dial v
-wait 3
-long MEM
-wait 5
-long MEM
-wait 3

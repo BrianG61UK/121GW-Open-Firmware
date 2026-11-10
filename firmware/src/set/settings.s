@@ -7,7 +7,7 @@
 @ through the NVM readers (eeprom_read_u8 / eeprom_read_u16_be) with the v2.05 validation and defaults
 @ (EEPROM_MAP.md 4, 6); savers write only through set_nvm_store (NVM class SETTINGS), never directly.
 @ Deviations: OF-38/NF-17 (contrast 10 and 11 accepted, switch SET_ACCEPT_CONTRAST_10_11), OF-23 (0x012 not
-@ written), IMP-05 (continuity code 0..15).  Context: main only unless stated.
+@ written), IMP-05, IMP-64 (continuity code 0..17).  Context: main only unless stated.
 @ =============================================================================
 
     .syntax unified
@@ -33,7 +33,7 @@
     .equ set_item_timer,        v_200080AA   @ set to 100 by FUN_08015410 on entering item 12 and by FUN_0800D718; cleared by the display code; meaning UNPROVEN
     .equ set_temp_celsius,      v_200080AB   @ temperature unit, 1 = degC, 0 = degF, EEPROM 0x010
     .equ set_diode_15v,         v_200080B3   @ DIODE source 0 = 3 V, 1 = 15 V (EEPROM 0x012 read at boot, forced 0, OF-23)
-    .equ set_cont_code,         v_200080B6   @ continuity threshold code, EEPROM 0x014 (v2.05 0..3, port 0..15, IMP-05)
+    .equ set_cont_code,         v_200080B6   @ continuity threshold code, EEPROM 0x014 (0..17, IMP-05, IMP-64)
     .equ set_stage,             v_200080D6   @ date/time edit stage: 0 = month or hour, 1 = day or minute
     .equ set_year,              v_200080D7   @ year 0..99 (BCD-converted NJU6350 register 2)
     .equ set_month,             v_200080D8   @ month 1..12 (register 4)
@@ -348,7 +348,7 @@ ENDFUNC fn_08011340
 @ Context  : main only
 @ RAM      : writes set_cont_code
 @ Spec     : EEPROM_MAP.md 4: EEPROM 0x014 (analysis/autorange_and_scheduler.md 9)
-@ Deviation: IMP-05: codes 0..15 are kept (v2.05: 0..3, 0x080113A0 cmp #4); any other value gives 0 (DN 30)
+@ Deviation: IMP-05, IMP-64: codes 0..17 are kept; any other value gives 0 (DN 30)
 @ -----------------------------------------------------------------------------
 FUNC fn_08011394
     push {r4, lr}                           @ 08011394
@@ -356,8 +356,8 @@ FUNC fn_08011394
     bl eeprom_read_u8                       @ 08011398  read EEPROM byte at offset r0 [r0=20 (0x14)]
     movs r4, r0                             @ 0801139C
     uxtb r4, r4                             @ 0801139E
-        cmp r4, #16                          @ IMP-05: codes 0..15 (v2.05 0x080113A0: cmp r4, #4) @ 080113A0  compare r4 with 16 (0x10)
-    bge .L080113AC                          @ 080113A2  if r4 >=s 16 (0x10)
+    cmp r4, #18                             @ IMP-05, IMP-64: codes 0..17
+    bge .L080113AC                          @ 080113A2  if r4 >=s 18
     ldr.w r0, =set_cont_code                @ 080113A4
     strb r4, [r0, #0x0]                     @ 080113A8  set_cont_code = r4
     b .L080113B4                            @ 080113AA
@@ -373,12 +373,12 @@ ENDFUNC fn_08011394
 @ -----------------------------------------------------------------------------
 @ fn_080113CC - save the continuity threshold code to the EEPROM
 @ Replaces : 0x080113CC FUN_080113CC (v2.05)
-@ In       : r0 = code 0..15
+@ In       : r0 = code 0..17
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags (AAPCS)
 @ Context  : main only
 @ Spec     : EEPROM_MAP.md 4: EEPROM 0x014, class SETTINGS (the only writer of that byte, as v2.05)
-@ Deviation: IMP-05: the byte now holds 0..15
+@ Deviation: IMP-05, IMP-64: the byte now holds 0..17
 @ -----------------------------------------------------------------------------
 FUNC fn_080113CC
     push {r4, lr}                           @ 080113CC
@@ -535,7 +535,7 @@ ENDFUNC fn_08011384
 @            8 (ID) from set_id, 5 (year), 6 (month, day) and 7 (hour, minute) from the live time (edit stage
 @            cleared), 2, 3, 0 and, in BEEP, 10 re-read from the EEPROM (fn_080112A4, fn_08011410, fn_080112FC,
 @            fn_08011394); then a redraw is requested.  Nothing is written to the EEPROM.
-@ Note     : The call of fn_08011394 (item 10 in BEEP) now accepts the codes 0..15 (IMP-05).
+@ Note     : The call of fn_08011394 (item 10 in BEEP) now accepts the codes 0..17 (IMP-05, IMP-64).
 @ Note     : Production image only: item 20 (bL, set_bl_load), 21 (bt, set_bt_load), 22 (rEL, set_relp_load), 23 (tc,
 @            set_tc_load), 24 (dSP, set_dsp_load), 25 (CL, set_relp_load), 26 (bH, set_bh_load), 30 (tr, set_relp_load),
 @            31 (Ch, set_ch_load), 37 (LP, set_lp_load), 38 (Pt, set_rtd_load), 41 (HUnt, set_relp_load), 42 (CHIrP, set_chirp_load), 1 (battery trim, set_btrim_load) and 11 of ACV (dBm reference, set_dbm_load)
@@ -689,6 +689,16 @@ FUNC fn_0800D190
     bl set_chirp_load
     b .L0800D280
 .Lto_not_chirp:
+    cmp r0, #45                             @ IMP-64: the same for the page th (item 45; bytes 0x02D..0x02E)
+    bne .Lto_not_ut
+    bl set_ut_load
+    b .L0800D280
+.Lto_not_ut:
+    cmp r0, #46                             @ IMP-64: the same for the page HY (item 46; byte 0x02F)
+    bne .Lto_not_uh
+    bl set_uh_load
+    b .L0800D280
+.Lto_not_uh:
     cmp r0, #1                              @ IMP-27: the same for the battery trim (item 1)
     bne .Lto_not_btrim
     bl set_btrim_load

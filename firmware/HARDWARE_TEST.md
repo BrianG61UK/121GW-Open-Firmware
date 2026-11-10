@@ -242,6 +242,15 @@ These checks confirm on hardware what the emulator cannot.
    Bluetooth: the transfer line says "packed: n bytes sent for m"; the meter starts the new firmware.  Repeat on a meter
    with the old BLE112 module (link 2 on): page Ld list, a download and an update work.
 
+52. Continuity with your own threshold and hysteresis (F-1.33, IMP-64): dump the EEPROM first.  In BEEP, threshold page:
+   REL from `DN300` gives `DNUSr`, from `UP300` `UPUSr`; save `UPUSr`.  SETUP short from `bH`: `th 30`, then `HY 5.0`,
+   then `Lt` (with a fixed threshold `bH` goes straight to `Lt`).  Set `th` to 100 and save, `HY` to 2.0 and save.  With
+   resistors (or a decade box): 99 ohm silent, 101 ohm beeps, back to 99 ohm still beeps, 97.9 ohm silent; open leads
+   beep, shorted leads silent.  `DNUSr` with the same values: 101 silent, 99 beeps, 101 still beeps, 102.1 silent.  Power
+   off and on: `th100`, `HY 2.0` and the code kept.  With the 121GW Companion 1.3.1: the settings list shows th 100 ohm
+   and HY 2.0 ohm; change th to 250 there and the page shows `th250`.  Dump the EEPROM again: only 0x014, 0x02D, 0x02E
+   and 0x02F differ from the first dump.
+
 ## After the tests
 - Dump the EEPROM once more; only the bytes of the actions you performed may differ (settings, calibration you ran).
 - To return to v2.05: flash the original image; settings and calibration stay readable (same EEPROM layout).

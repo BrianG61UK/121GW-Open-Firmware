@@ -80,6 +80,8 @@ FUNC fn_08024DE0
     bl ah_reset                             @ IMP-45: no anti-hunting lock or counted timeout survives a STOP wake (RAM is kept in STOP)
     bl set_dsp_load                         @ IMP-12: load the display level (EEPROM 0x013)
     bl set_bh_load                          @ IMP-16: load the continuity hold time (EEPROM 0x021)
+    bl set_ut_load                          @ IMP-64: user continuity threshold (EEPROM 0x02D..0x02E)
+    bl set_uh_load                          @ IMP-64: user continuity hysteresis (EEPROM 0x02F)
     bl lt_reset                             @ IMP-20: limit test off, no limits (RAM only)
     bl set_ch_load                          @ IMP-21: logging change threshold (EEPROM 0x022)
     bl set_lp_load                          @ IMP-24: current-loop percent view of DCmA (EEPROM 0x028)

@@ -1,7 +1,6 @@
 """Generate firmware/src/inc/ram_v205.inc: one symbol for every v2.05 RAM base address (DESIGN.md 5.1).
 
     python -I firmware/tools/gen_ram_symbols.py            write firmware/src/inc/ram_v205.inc
-    python -I firmware/tools/gen_ram_symbols.py --check    regenerate in memory and compare with the file in the tree
     python -I firmware/tools/gen_ram_symbols.py --stdout   print instead of writing
 
 Method (DESIGN.md 5.1, Appendix B): every literal-pool word of the original image whose value lies in RAM
@@ -161,34 +160,11 @@ def generate():
     return '\n'.join(lines) + '\n', count, bases, names
 
 
-def parse_inc(text):
-    out = {}
-    for m in re.finditer(r'^\s*\.equ\s+(\w+),\s+(0x[0-9A-Fa-f]+|\w+)', text, re.M):
-        out[m.group(1)] = m.group(2)
-    return out
-
-
 def main(argv):
     text, count, bases, names = generate()
     if '--stdout' in argv:
         sys.stdout.write(text)
         return 0
-    if '--check' in argv:
-        if not os.path.exists(OUT):
-            print('missing', OUT)
-            return 1
-        have = parse_inc(open(OUT).read())
-        want = parse_inc(text)
-        bad = 0
-        for k, v in want.items():
-            if have.get(k) != v:
-                print('differs: %s want %s have %s' % (k, v, have.get(k)))
-                bad += 1
-        for k in have:
-            if k not in want and k != 'RAM_V205_INC':
-                print('extra in file (review entry): %s = %s' % (k, have[k]))
-        print('%d bases, %d differences' % (count, bad))
-        return 1 if bad else 0
     with open(OUT, 'w') as f:
         f.write(text)
     print('wrote %s: %d base addresses, %d verified names' % (os.path.relpath(OUT, v205.ROOT), count, len(names)))

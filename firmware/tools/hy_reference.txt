@@ -1,10 +1,10 @@
-# HY3131 frames requested by the original (v2.05) configuration routine 0x0800B974, one line per run of the sweep of
-# tools/check_hy.py (check 2): every mode 0..24, every range below range_count[mode], every combination of the RAM flags the
+# HY3131 write whitelist of tools/check_hy.py: the frames the configuration routine fn_0800B974 may request, one line per
+# (mode, range, flags) run: every mode 0..24, every range below range_count[mode], every combination of the RAM flags the
 # routine reads.  Line: run <mode> <range> <flags> <frame>[;<frame>...]
 #   flags  <RAM address>=<value>[,...] in ascending address order, or - for none
 #   frame  <first register hex>:<data bytes hex>
-# Source image SHA-256 8f885f12f567c2cccd9862d9fe26f127e2a674c9afbce9f7a38d441b3f396722 (firmware/ORIGINAL_FIRMWARE_ISSUES.md).
-# Written by: python3 -I tools/check_hy.py --reference --write-reference tools/hy_reference.txt
+# Plain data: check_hy.py only reads it.  The frames are the rows of firmware/src/hy/hy_rows.s plus the short writes; the
+# peak restart (0x29) and the IRQ acknowledge (0x1E, 1; values INTF_ACK in check_hy.py) are added by the tool.
 run 0 0 - 20:0000138a0540004d31012200090028a080c7082c;1E:0004;20:00;1B:0000e0;20:02
 run 0 0 0x20008098=0 20:0000138a0540004d31012200090028a080c7082c;1E:0004;20:00;1B:0000e0;20:02
 run 0 0 0x20008098=1 20:f6dd0083f541024d31012000090028b080c0382c;1E:0005;20:f0;1B:0000e0;20:f6

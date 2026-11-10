@@ -4,9 +4,9 @@
     python -I firmware/tools/gen_nvm_allow.py --check   regenerate in memory, compare with both files (build check)
     python -I firmware/tools/gen_nvm_allow.py --list    print the allowed offsets of every class as ranges
 
-Sources read and cross-checked (any mismatch stops the tool with exit status 1 and writes nothing):
-  EMAP header         range count per mode "1,4,4,2,..."   == RAM 0x20000000..0x20000018 of ram_init.txt
-  EMAP 5.1            record base table T (26 entries)      == u16 LE table at 0x08028EE8 in the original image
+Source read and checked (any mismatch stops the tool with exit status 1 and writes nothing); EEPROM_MAP.md is the only input:
+  EMAP header         range count per mode "1,4,4,2,..."
+  EMAP 5.1            record base table T (26 entries)
   EMAP 5.3            records listed per mode               == records computed from T and the range counts
   EMAP 9.2            the explicit offsets of each class row (SETTINGS, IDENT, USERZERO, CAL, RESTORE)
   EMAP 4              the list of bytes no v2.05 routine except calbin_save/calbin_load accesses: none of them
@@ -34,11 +34,11 @@ import sys
 
 sys.dont_write_bytecode = True                       # keep the tree free of __pycache__
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import v205  # noqa: E402
 
-OUT_S = os.path.join(v205.ROOT, 'firmware', 'src', 'nvm', 'nvm_allow.s')
-OUT_INC = os.path.join(v205.ROOT, 'firmware', 'src', 'inc', 'nvm_allow.inc')
-RAM_INIT = os.path.join(v205.ROOT, 'analysis', 'decompile', 'ram_init.txt')
+ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
+EEPROM_MAP = os.path.join(ROOT, 'firmware', 'EEPROM_MAP.md')
+OUT_S = os.path.join(ROOT, 'firmware', 'src', 'nvm', 'nvm_allow.s')
+OUT_INC = os.path.join(ROOT, 'firmware', 'src', 'inc', 'nvm_allow.inc')
 CLASSES = ['SETTINGS', 'IDENT', 'USERZERO', 'CAL', 'RESTORE']
 LIMIT = 0x500
 STRIDE = LIMIT // 8
@@ -59,19 +59,6 @@ def hex_ranges(text):
     return out
 
 
-def ram_init_bytes(addr, n):
-    vals = {}
-    for line in open(RAM_INIT):
-        if line.startswith(';') or not line.strip():
-            continue
-        p = line.split()
-        base = int(p[0], 16)
-        for i, h in enumerate(p[1:17]):
-            if re.fullmatch(r'[0-9a-f]{2}', h):
-                vals[base + i] = int(h, 16)
-    return [vals[addr + i] for i in range(n)]
-
-
 def port_only(emap):
     """Offsets of the port-only settings: the rows of the table in EMAP 4.1 (first cell = offset or range, last cell =
     class, which must be SETTINGS)."""
@@ -90,24 +77,22 @@ def port_only(emap):
 
 
 def build():
-    emap = open(v205.EEPROM_MAP).read()
+    emap = open(EEPROM_MAP).read()
     # range counts
     m = re.search(r'\(`analysis/decompile/ram_init.txt`\):\s*([\d,]+)\.', emap)
     if not m:
         raise Fail('EMAP: range count line not found')
     rc = [int(x) for x in m.group(1).split(',')]
-    if rc != ram_init_bytes(0x20000000, 25):
-        raise Fail('EMAP range counts differ from ram_init.txt: %r' % rc)
+    if len(rc) != 25:
+        raise Fail('EMAP: %d range counts, 25 expected' % len(rc))
     # T table
     tvals = []
     for line in emap.splitlines():
         if line.startswith('| T |'):
             tvals += [int(x, 16) for x in re.findall(r'0x([0-9A-Fa-f]{3})', line)]
-    img = v205.image()
-    timg = [int.from_bytes(v205.image_bytes(img, 0x08028EE8 + 2 * i, 2), 'little') for i in range(26)]
-    if tvals != timg:
-        raise Fail('EMAP 5.1 T differs from the image table 0x08028EE8: %r / %r' % (tvals, timg))
-    T = timg
+    if len(tvals) != 26:
+        raise Fail('EMAP 5.1: the T table has %d entries, 26 expected' % len(tvals))
+    T = tvals
     # records per mode computed
     rec = {}
     for mode in range(25):
@@ -267,7 +252,7 @@ def render(allow, port):
     s.append('@ Layout: one bitmap of NVM_ALLOW_LIMIT bits per class (NVM_ALLOW_STRIDE bytes), class order as in')
     s.append('@ nvm_allow.inc; bit (off & 7) of byte [class * NVM_ALLOW_STRIDE + (off >> 3)] = 1: class may write off.')
     if port:
-        s.append('@ Port-only settings (EMAP 4.1): %s.  v2.05 never writes them; SETTINGS allows them' % fmt(port))
+        s.append('@ Port-only settings (EMAP 4.1): %s.  SETTINGS allows them' % fmt(port))
         s.append('@ (written as "v2.05 bits | port-only bits", so the v2.05 part of the table stays visible).')
     s.append('@ Users: nvm_write_bytes and the store-time re-check of the byte program (src/nvm/nvm.s).')
     s.append('@ -----------------------------------------------------------------------------')
@@ -326,7 +311,7 @@ def main(argv):
         bad = 0
         for path, text in ((OUT_S, text_s), (OUT_INC, text_inc)):
             if not os.path.exists(path) or open(path).read() != text:
-                print('differs from the regenerated table: ' + os.path.relpath(path, v205.ROOT))
+                print('differs from the regenerated table: ' + os.path.relpath(path, ROOT))
                 bad = 1
         print('nvm_allow check: ' + ('FAIL' if bad else 'equal to EEPROM_MAP.md 9.2'))
         return bad
@@ -339,7 +324,7 @@ def main(argv):
         print('%-9s %4d bytes' % (c, len(allow[c])))
     if port:
         print('of which port-only (production image only): %s' % fmt(port))
-    print('wrote ' + os.path.relpath(OUT_S, v205.ROOT) + ', ' + os.path.relpath(OUT_INC, v205.ROOT))
+    print('wrote ' + os.path.relpath(OUT_S, ROOT) + ', ' + os.path.relpath(OUT_INC, ROOT))
     return 0
 
 

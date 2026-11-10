@@ -119,20 +119,19 @@ of any meter.
 
 ## Firmware
 - Build (GNU binutils arm-none-eabi 2.46, the `Makefile` refuses other versions): `cd firmware && make`. `make check` runs the never-brick,
-  HY3131-configuration and pin-policy checks and needs the original v2.05 image in `inputs/` (not in this repository);
-  `make check-ci` runs the checks that do not need it and names the ones it skips. Output: `firmware/build/EEVBlog.bin`.
+  HY3131 write-whitelist, pin-policy and allowed-byte-table checks; they need nothing but the tree (no original image);
+  `make check-ci` runs the same checks. Output: `firmware/build/EEVBlog.bin`.
   `sh firmware/tools/build_dist.sh <dir>` builds it into the layout of the release archive.
 - CI (`.github/workflows/firmware.yml`): on every push and pull request the firmware is built with GNU binutils 2.46.0
   (built from the release tarball, SHA-256 pinned; the packages of Ubuntu 24.04 and 26.04 are 2.42 and 2.45.50) and checked with `make check-ci`
-  (`check_image`, `check_hy` against the committed reference data `firmware/tools/hy_reference.txt`, `check_gpio`; skipped:
-  `gen_nvm_allow --check`, `gen_ram_symbols --check`, `extract_tables --verify`, which compare with the original image). On a
+  (`check_image`, `check_hy` against the committed whitelist data `firmware/tools/hy_reference.txt`, `check_gpio`,
+  `gen_nvm_allow --check`). On a
   tag `v*` the workflow publishes `firmware-<tag>.zip`.
 - `DESIGN.md` design and deviation list, `EEPROM_MAP.md` every EEPROM byte, `ORIGINAL_FIRMWARE_ISSUES.md` the defects
   found in v2.05 (with evidence), `OPTIMIZATIONS.md`, `FEATURES.md` user-visible features (keys, display, storage; implemented in the production build: backlight
   auto-off timer with remembered on/off state, selectable dBm reference, Bluetooth frame rate 2/4/10/20 per second,
   thermocouple type K/J/T/N/R/S, REL in percent, display level, 12-hour clock, statistics, continuity hold time, limit test, logging trigger, MIN/MAX times, 4–20 mA percent, PT100/PT1000, battery trim, exFAT cards with long file names and card format, bootloader install and update requests over Bluetooth, capacitance anti-hunting and the longer 100 nF wait, extended link diagnosis), `HARDWARE_TEST.md` checklist for the first run on a meter.
-- Status: the fast build is compared with v2.05 in the emulator's test scenarios; its differences are documented deviations
-  (`firmware/deviations.txt`) except three display differences still open (battery_low, mem_logging_sd, sd_insert_remove).
+- Status: the fast build is tested by the emulator test scripts (`emulator/scripts`).
   Verified on a meter, as `firmware/FEATURES.md` states for each feature (for example the limit test, the dBm reference, REL in
   percent, 20 readings per second, the logging trigger, statistics, backlight, the 12-hour clock, continuity hold time, firmware
   and bootloader updates over Bluetooth, the card format and the card clock, the companion's counters of the extended link
@@ -167,8 +166,6 @@ Read `firmware/HARDWARE_TEST.md` first; it is the procedure and checklist.
   `unicorn` and `capstone`. Own files: `--eeprom`, `--bootloader`, `--option-bytes`, `--v205-image`, `--app`, `--sdcard`;
   the original images are not included: they are read from a meter.
 - `emulator/API.md`: HTTP API (`GET /state`, `POST /input`), Python API, options, what direct boot does not reproduce.
-- `emulator/diff/run.py` compares two firmware images scenario by scenario (see its docstring); it needs the original v2.05
-  image as the reference.
 - CI (`.github/workflows/emulator.yml`) builds the packages above on a tag and attaches them to the release (only
   then: a branch push builds no packages).  A push runs only the emulator test scripts its changes can affect
   (`.github/scripts/plan_emulator_tests.py` lists the sources of each script and the shared parts that run them all);

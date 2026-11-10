@@ -10,6 +10,7 @@
 @
 @ IMP-04 (production): the decision is made on every conversion because the loop services every conversion (HY).  IMP-05
 @ (production): continuity codes 4..15 (ARS 9) in addition to the v2.05 codes 0..3; the thresholds are table driven (mres_beep_thr).
+@ IMP-64 (production): codes 16 DNUSr and 17 UPUSr use the user threshold and hysteresis of the pages th and HY (set/cu.s).
 @ =============================================================================
 
     .syntax unified
@@ -21,8 +22,9 @@
     .include "config.inc"
 
 
-    .equ MRES_BEEP_CODES, 16               @ continuity codes 0..15 (IMP-05)
-    .equ MRES_BEEP_UP_MASK, 0xFC0A         @ bit n = 1: code n is an "UP" code (beep while v >= threshold): 1, 3, 10..15
+    .equ MRES_BEEP_CODES, 18               @ continuity codes 0..15 (IMP-05) and the user codes 16, 17 (IMP-64)
+    .equ MRES_BEEP_TABLE, 16               @ codes with a row in mres_beep_thr
+    .equ MRES_BEEP_UP_MASK, 0x2FC0A        @ bit n = 1: code n is an "UP" code (beep while v >= threshold): 1, 3, 10..15, 17
 
     .section .text.mres.beep, "ax", %progbits
 
@@ -58,12 +60,15 @@ ENDFUNC fn_080078B8
 @ RAM      : reads  0x200080B6
 @            writes 0x200080B5
 @ Spec     : analysis/hy3131_modes_misc.md 6.3; autorange_and_scheduler.md 8, 9
-@ Deviation: IMP-04, IMP-05, IMP-16 (production: the hold time of the tone from the page bH, set_bh_ticks)
-@ t = fn_08007940() (start threshold when 0x200080B5 = 0, continue threshold when 1).  DN codes (0, 2, 4..9): tone while v <= t;
-@ UP codes (1, 3, 10..15): tone while v >= t.  Tone: 0x200080B5 = 1 and pe7_on_with_timeout(100); otherwise 0x200080B5 = 0.
+@ Deviation: IMP-04, IMP-05, IMP-16 (production: the hold time of the tone from the page bH, set_bh_ticks), IMP-64
+@ t = fn_08007940() (start threshold when 0x200080B5 = 0, continue threshold when 1).  DN codes (0, 2, 4..9, 16): tone while
+@ v <= t; UP codes (1, 3, 10..15, 17): tone while v >= t.  Tone: 0x200080B5 = 1 and pe7_on_with_timeout(100); otherwise 0x200080B5 = 0.
 @ -----------------------------------------------------------------------------
 FUNC fn_080078D8
     push {r3, r4, r5, lr}              @ 0x080078D8
+.if HY_DIAG
+    bl hyd_v_note                           @ diagnostic build: lowest / highest per-sample value (hy/hydiag.s; r0 kept)
+.endif
     movs r4, r0                        @ 0x080078DA
     bl fn_08007940                     @ 0x080078DC
     movs r5, r0                        @ 0x080078E0
@@ -72,9 +77,9 @@ FUNC fn_080078D8
     ldrb r0, [r0]
     cmp r0, #MRES_BEEP_CODES
     blo 1f
-    movs r0, #0                             @ code outside 0..15: DN 30
+    movs r0, #0                             @ code outside 0..17: DN 30
 1:
-    movw r1, #MRES_BEEP_UP_MASK
+    ldr r1, =MRES_BEEP_UP_MASK
     lsrs r1, r1, r0
     lsls r1, r1, #31                        @ bit 0 (the code's UP bit) to the sign flag
     bpl .L080078F6                          @ DN code
@@ -118,19 +123,26 @@ ENDFUNC fn_080078D8
 @ Replaces : 0x08007940 FUN_08007940 (v2.05)
 @ In       : - (reads 0x200080B5 state, 0x200080B6 code)
 @ Out      : r0 = threshold in 0.01 ohm (start value when 0x200080B5 = 0, continue value when 1)
-@ Clobbers : r0-r2, flags
+@ Clobbers : r0-r3, flags
 @ Context  : main only
 @ RAM      : reads  0x200080B5, 0x200080B6
 @ Spec     : analysis/autorange_and_scheduler.md 9 (codes 0..15)
-@ Deviation: IMP-05
-@ Codes 0..3 give the v2.05 values; 4..15 are the ARS 9 extension; a code of 16 or more (not reachable, SET accepts < 16) uses code 0.
+@ Deviation: IMP-05, IMP-64
+@ Codes 0..15 are the fixed thresholds (ARS 9); 16 and 17 the user threshold (set_cu_thr, set/cu.s); a code
+@ of 18 or more (not reachable, SET accepts < 18) uses code 0.
 @ -----------------------------------------------------------------------------
 FUNC fn_08007940
     ldr r1, =v_200080B6
     ldrb r1, [r1]                           @ continuity code
-    cmp r1, #MRES_BEEP_CODES
+    cmp r1, #MRES_BEEP_TABLE
     blo 1f
-    movs r1, #0                             @ code >= 16 is not a valid code: use code 0
+    cmp r1, #MRES_BEEP_CODES
+    bhs 3f                                  @ code >= 18 is not a valid code: use code 0
+    mov r0, r1                              @ IMP-64: 16 or 17, the user threshold
+    ldr r1, =v_200080B5
+    ldrb r1, [r1]                           @ tone state
+    b set_cu_thr                            @ r0 = threshold (tail call)
+3:  movs r1, #0
 1:
     ldr r2, =mres_beep_thr
     add r2, r2, r1, lsl #2                  @ entry of the code: u16 start, u16 continue

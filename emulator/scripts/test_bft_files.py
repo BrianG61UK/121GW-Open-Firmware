@@ -4,7 +4,7 @@ FEATURES.md 2.11 stage 6, firmware/src/ble/bftsd.s).
     python -I emulator/scripts/test_bft_files.py [image]            default firmware/build/EEVBlog.bin
 
 A 64 MiB FAT32 card image holds 34 root files: cal.bin, EEVBlog.bin, BTLOAD.TMP, a 20000-byte file, short 8.3 names and
-long file names (LFN entries written by this script; the card model of emu/sdcard.py and diff/fat32.py knows only 8.3
+long file names (LFN entries written by this script; the card model of emu/sdcard.py and emu/fat32.py knows only 8.3
 names), one of 70 bytes.  Bluetooth on, SETUP page Ld (item 39).  The host side is emulator/tools/btft.py (request
 builders and the parser of the type 0x82 answers); the helpers are those of test_bt_upload.py and test_backlight_timer.py.
   T1 gate: with logging on, with calibration mode on, and with another SETUP page shown, a request gets no answer at
@@ -38,7 +38,7 @@ import test_backlight_timer as T  # noqa: E402
 import test_bt_upload as U  # noqa: E402
 import btft  # noqa: E402
 from emu.sdcard import format_fat32  # noqa: E402
-from diff.fat32 import Volume, fat_date, fat_time  # noqa: E402
+from emu.fat32 import Volume, fat_date, fat_time  # noqa: E402
 
 ADDR_ITEM = 0x20008037
 ADDR_LOGGING = 0x20007FE1                            # bft_logging

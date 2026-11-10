@@ -40,6 +40,10 @@ a = Analysis(
     datas=[(os.path.join(root, 'ui', 'index.html'), 'ui'),
            (os.path.join(root, 'ui', 'assets'), os.path.join('ui', 'assets')),
            (os.path.join(root, 'data'), 'data'),
+           # the hardware-safety monitor's data next to emu/safety.py (its HERE): without them the packaged emulator
+           # logged "whitelist missing" and skipped the HY3131 and power checks (found 2026-11-10)
+           (os.path.join(root, 'emu', 'hy3131_whitelist'), 'emu'),
+           (os.path.join(root, 'emu', 'safety_allow.txt'), 'emu'),
            (os.path.join(repo, 'LICENSE'), '.')],
     hiddenimports=['ui.server'] + collect_submodules('unicorn')    # unicorn imports its arch modules by name
                   + (['webview', 'webview.platforms.cocoa'] if sys.platform == 'darwin' else []),

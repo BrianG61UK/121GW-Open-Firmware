@@ -936,8 +936,10 @@ ENDFUNC fn_0800CB04
 @ Clobbers : r0-r3, r12, flags (AAPCS)
 @ Context  : main only (builder)
 @ RAM      : reads acdc_active, ble_cont_code, ble_cur_opt, ble_diode_15v, ble_sub_dp, ble_sub_ovl, ble_sub_value,
-@            ble_va_sub, meter_mode; writes ble_frame_b
+@            ble_va_sub, meter_mode, set_ut_ohm; writes ble_frame_b
 @ Spec     : analysis/ble_packet.md 4
+@ Deviation: IMP-64: in BEEP the continuity codes 16 and 17 (frame codes 0xBA, 0xBB) carry the user threshold in ohm in
+@            the value bytes (0 for the codes 0..15)
 @ -----------------------------------------------------------------------------
 FUNC fn_0800CB44
     push {r3, r4, r5, lr}                   @ 0800CB44
@@ -986,7 +988,13 @@ FUNC fn_0800CB44
     add r0, r4                              @ 0800CBAE  r0 = &ble_frame_b + r4
     strb r5, [r0, #0x1]                     @ 0800CBB0  [r0+1] = 0
     movs r1, #0x0                           @ 0800CBB2
-    adds r0, r4, #0x2                       @ 0800CBB4  r0 = r4 + 2
+    ldr.w r0, =ble_cont_code                @ IMP-64: the user codes 16 and 17 carry the user threshold in ohm
+    ldrb r0, [r0, #0x0]
+    cmp r0, #16
+    blo 1f
+    ldr.w r1, =set_ut_ohm
+    ldrh r1, [r1, #0x0]                     @ r1 = threshold 1..500 ohm
+1:  adds r0, r4, #0x2                       @ 0800CBB4  r0 = r4 + 2
     uxtb r0, r0                             @ 0800CBB6
     bl fn_0800D100                          @ 0800CBB8  store |r1| big endian at frame bytes r0, r0+1 [r0=(r4 + 2), r1=0]
     b .L0800CCC2                            @ 0800CBBC

@@ -19,7 +19,6 @@ Checks (each prints PASS or FAIL):
   T5 auto power-off and wake with the backlight on: the flag 0x2000807B and PE8 agree after the wake and the first MODE
      long press switches the backlight on (OF-55)
 """
-import importlib.util
 import os
 import re
 import struct
@@ -31,9 +30,7 @@ ROOT = os.path.normpath(os.path.join(HERE, '..', '..'))
 sys.path.insert(0, os.path.join(ROOT, 'emulator'))
 from app import Emulator  # noqa: E402
 
-_spec = importlib.util.spec_from_file_location('eev_trace', os.path.join(ROOT, 'emulator', 'diff', 'trace.py'))
-_trace = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_trace)
+from emu import lcdtext as _trace  # noqa: E402
 DEC = _trace.LcdDecoder()                       # decodes the LCD words into display text ('b' reads as 'B', 'O' as '0')
 
 SYNTHETIC = open(os.path.join(ROOT, 'emulator', 'data', 'synthetic_eeprom.bin'), 'rb').read()

@@ -2,8 +2,7 @@
 
     python -I emulator/scripts/test_calbin_ident.py [image]      default firmware/build/EEVBlog.bin
 
-The restore of cal.bin (MEM + PEAK held at power-on, IMP-58, then PEAK and MODE; v2.05 MEM held alone:
-emulator/diff/scenarios/calbin_load.txt) writes the file over EEPROM 0x000..0x4AF.  The production image first compares the file's serial (bytes 0x003..0x006, u32 big
+The restore of cal.bin (MEM + PEAK held at power-on, IMP-58, then PEAK and MODE) writes the file over EEPROM 0x000..0x4AF.  The production image first compares the file's serial (bytes 0x003..0x006, u32 big
 endian) with the meter's own (RAM 0x20007D14, loaded at power-on).
   C1 meter serial 12345, file serial 12345, file byte 0x10 changed: restored ("SAvEd", EEPROM 0x10 changed).
   C2 meter serial 12345, file serial 54321 (another meter's file): refused ("-Err-"), EEPROM unchanged.
@@ -25,7 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_backlight_timer as T  # noqa: E402
 import test_bft_files as F  # noqa: E402
 from emu.sdcard import format_fat32  # noqa: E402
-from diff.fat32 import Volume  # noqa: E402
+from emu.fat32 import Volume  # noqa: E402
 
 
 def serial_bytes(n):

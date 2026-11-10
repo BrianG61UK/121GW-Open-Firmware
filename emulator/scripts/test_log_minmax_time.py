@@ -14,7 +14,7 @@ sys.dont_write_bytecode = True                       # keep the tree free of __p
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import test_log_trigger as L  # noqa: E402
 T = L.T
-from diff.fat32 import Volume  # noqa: E402
+from emu.fat32 import Volume  # noqa: E402
 
 
 def csv_lines(path):

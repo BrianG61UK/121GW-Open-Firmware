@@ -95,7 +95,7 @@
 @       word 0  v2.05 address of the table
 @       word 1  length in bytes
 @       word 2  address of the copy in this image
-@ The build check (DESIGN.md 9.3 item 3) compares each copy with inputs/binaries/EEVBlog2_05.bin.
+@ The records are data for tools that read the linked ELF; no build check compares the copies with another image.
 @ Place the macro immediately before the table label; it emits no bytes into the current section.
 @ -----------------------------------------------------------------------------
     .macro TABLE_V205 addr, len

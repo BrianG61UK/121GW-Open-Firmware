@@ -217,7 +217,12 @@ class Emulator:
         self.tim2, self.tim3 = Tim(0x40000000, 28, 'TIM2'), Tim(0x40000400, 29, 'TIM3')
         m.add_periph(0x40000000, 0x400, self.tim2)
         m.add_periph(0x40000400, 0x400, self.tim3)
-        self.tim11 = Tim11()                # MSI measurement against HSE_RTC (firmware IMP-46)
+        # TIM7 (basic timer, RM0038 chapter 19, 0x4000 1400, IRQ 44): its registers CR1, CR2, DIER, SR, EGR, CNT, PSC, ARR
+        # (Table 88) are a subset of the general-purpose timer's at the same offsets, so the Tim model serves; used only by
+        # the never-released diagnostic firmware build HY_DIAG (firmware/src/hy/hydiag.s)
+        self.tim7 = Tim(0x40001400, 44, 'TIM7', has_or=False)
+        m.add_periph(0x40001400, 0x400, self.tim7)
+        self.tim11 = Tim11()               # MSI measurement against HSE_RTC (firmware IMP-46)
         m.add_periph(0x40011000, 0x400, self.tim11)
         self.rcc.reset_hooks.setdefault('TIM11', []).append(self.tim11.reset)
         self.usart2 = USART(0x40004400, 38, 'USART2')
@@ -340,7 +345,7 @@ class Emulator:
             self.board.apply()                  # front-panel inputs drive their pins again
             self.exti.resync()
             for periph in (self.lcd, self.adc, self.dma1, self.dma2, self.sdio, self.usart2, self.tim2, self.tim3,
-                           self.tim11):
+                           self.tim7, self.tim11):
                 periph.reset()
             self.rtc.reset('system')            # after the RCC: it may have changed the RTC clock
             m.nvic.reset()

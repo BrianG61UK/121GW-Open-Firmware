@@ -36,7 +36,7 @@ import test_bft_files as F  # noqa: E402
 import btft  # noqa: E402
 import zdyn  # noqa: E402
 from emu.sdcard import format_fat32  # noqa: E402
-from diff.fat32 import Volume, fat_date, fat_time  # noqa: E402
+from emu.fat32 import Volume, fat_date, fat_time  # noqa: E402
 
 
 def log_text(rows):

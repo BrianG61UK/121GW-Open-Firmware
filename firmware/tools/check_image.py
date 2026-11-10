@@ -4,7 +4,6 @@
 Usage (from firmware/, as the Makefile does):
     python3 -I tools/check_image.py build/121gw.elf build/EEVBlog.bin [--map build/121gw.map] [--design DESIGN.md]
                                     [--switch NAME=value ...]   (build switches as the Makefile passes them)
-    python3 -I tools/check_image.py --v205 ../inputs/binaries/EEVBlog2_05.bin     (analysis mode, see below)
 Exit status 0 = every check passed, 1 = at least one violation, 2 = the tool could not do its job.  The report goes to
 standard output: the facts the checks rest on (counts, coverage), one line per violation, a final PASS or FAIL line.
 Needs Python 3 and Capstone (the same as the other tools of this directory).
@@ -61,11 +60,6 @@ What is checked
     characterised, see Checker.check_it_blocks).  No emulator component installs a read hook in normal runs (the MPU model
     installs one only when a region can deny a read), so the blocks are listed as notes; --strict-it turns them into
     violations for runs that do use a read hook.
-
-Analysis mode (--v205 BIN): the same instruction analysis on the original image (base 0x08006000, code ranges from
-analysis/decompile/bytemap.txt, no objects, so no object is allowed to use the FLASH registers).  The expected result
-is FAIL with the option-byte and key accesses of the original firmware (FLASH_OPTKEYR, FLASH_OBR and the OPTKEY
-values, DESIGN 3.1 / EEPROM_MAP 2.4); it shows that the checker finds what it exists to find.
 
 Roles of objects (from the linker map): "nvm" = any object in a directory named nvm; "sysclock" = sys/clock.o;
 "mpuguard" = sys/reset.o.  Without a map file every code address has no role, so the NVM and clock code fail:
@@ -333,27 +327,6 @@ def load_elf_image(path, mappath):
     img.mapiv = parse_map(mappath)
     img.finish()
     return img, elf
-
-
-def load_v205_image(binpath, base, bytemap):
-    img = Image()
-    img.kind = 'v205'
-    data = open(binpath, 'rb').read()
-    img.loads = [(base, data)]
-    for line in open(bytemap):
-        p = line.split()
-        if len(p) >= 4 and p[2] in ('data', 'padding'):
-            img.pools.append((int(p[0], 16), int(p[1], 16) + 1))
-        if len(p) >= 4 and p[2] == 'code':
-            a, b = int(p[0], 16), int(p[1], 16) + 1
-            if img.code and img.code[-1][1] == a:
-                img.code[-1] = (img.code[-1][0], b)
-            else:
-                img.code.append((a, b))
-            img.entries[a] = p[3]
-            img.names.append((a, p[3]))
-    img.finish()
-    return img
 
 
 # ---------------------------------------------------------------------------------------------------- decoding
@@ -1169,39 +1142,25 @@ def main(argv):
     ap.add_argument('--design', default='DESIGN.md')
     ap.add_argument('--strict-it', action='store_true', help='report IT blocks that trigger the Unicorn read-hook defect as violations')
     ap.add_argument('--switch', action='append', default=[], help='a build switch NAME=value as the Makefile passes it')
-    ap.add_argument('--v205', help='analysis mode: check the original image (raw binary)')
-    ap.add_argument('--base', default='0x08006000')
-    ap.add_argument('--bytemap', default='../analysis/decompile/bytemap.txt')
     a = ap.parse_args(argv)
     vio = []
     try:
-        if a.v205:
-            base = int(a.base, 0)
-            img = load_v205_image(a.v205, base, a.bytemap)
-            elf = None
-            print('check_image (analysis mode): %s base 0x%08X, %d code ranges' % (a.v205, base, len(img.code)))
-            print('note: the original has no object roles, so its EEPROM / FLASH_PECR / FLASH_PEKEYR / FLASH_SR driver '
-                  '(0x0801F9FC..0x0801FB60, eeprom byte layer 0x0801204C..) is reported as outside the NVM objects; the '
-                  'violations that matter are the OPTKEY / FLASH_OPTKEYR / FLASH_OBR / option-byte store / PECR bit 18 '
-                  '(OBL_LAUNCH) group of FUN_0801FA68, FUN_0801FA8E, FUN_0801FAA0, FUN_0801FAEE (EEPROM_MAP.md 2.4)')
+        if not a.elf or not a.bin:
+            ap.error('ELF and BIN are required')
+        mp = a.map or re.sub(r'\.elf$', '.map', a.elf)
+        img, elf = load_elf_image(a.elf, mp)
+        print('check_image: %s %s' % (a.elf, a.bin))
+        if img.mapiv is None:
+            print('warning: no linker map (%s): object roles unavailable, NVM and clock code will fail' % mp)
         else:
-            if not a.elf or not a.bin:
-                ap.error('ELF and BIN are required')
-            mp = a.map or re.sub(r'\.elf$', '.map', a.elf)
-            img, elf = load_elf_image(a.elf, mp)
-            print('check_image: %s %s' % (a.elf, a.bin))
-            if img.mapiv is None:
-                print('warning: no linker map (%s): object roles unavailable, NVM and clock code will fail' % mp)
-            else:
-                print('linker map: %d input-section intervals' % len(img.mapiv))
+            print('linker map: %d input-section intervals' % len(img.mapiv))
         insns, bad = decode_ranges(img)
         for s, e in bad:
             vio.append('DECODE undecodable bytes at 0x%08X (%s)' % (s, img.where(s)))
         print('code: %d ranges, %d instructions, %d function entries' % (len(img.code), len(insns), len(img.entries)))
-        if not a.v205:
-            for f in check_image_item1(img, elf, a.bin, vio):
-                print('item 1: ' + f)
-            vector_instruction_starts(img, insns, vio)
+        for f in check_image_item1(img, elf, a.bin, vio):
+            print('item 1: ' + f)
+        vector_instruction_starts(img, insns, vio)
         chk = Checker(img)
         chk.run(insns)
         it_hazards = chk.check_it_blocks(insns)
@@ -1236,9 +1195,8 @@ def main(argv):
         for addr, vid, msg in sorted(chk.v):
             obj = img.obj_at(addr)
             vio.append('%s %s (0x%08X%s): %s' % (vid, img.where(addr), addr, ' in ' + obj if obj else '', msg))
-        if not a.v205:
-            for f in check_symbols(img, a.design, vio):
-                print('item 5: ' + f)
+        for f in check_symbols(img, a.design, vio):
+            print('item 5: ' + f)
     except ToolError as e:
         print('check_image: ERROR %s' % e)
         return 2

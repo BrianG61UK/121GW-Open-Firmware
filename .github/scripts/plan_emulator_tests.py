@@ -21,7 +21,7 @@ FILES = ['emulator/scripts/test_bft_files.py'] + BT + CARD
 CAREFUL = ['emulator/scripts/test_careful.py'] + FILES
 VERSION = ['emulator/scripts/test_ble_version.py', 'firmware/src/ble/']
 
-ALL = ['emulator/app.py', 'emulator/emu/', 'emulator/diff/', 'emulator/data/', 'emulator/tools/prepare_data.py',
+ALL = ['emulator/app.py', 'emulator/emu/', 'emulator/data/', 'emulator/tools/prepare_data.py',
        'emulator/tools/gen_synthetic_eeprom.py', 'emulator/scripts/test_backlight_timer.py',
        'firmware/src/sys/reset.s', 'firmware/src/sys/vectors.s', 'firmware/src/sys/clock.s',
        'firmware/src/sys/msical.s', 'firmware/src/sys/isr_tim2.s', 'firmware/src/sys/main.s', 'firmware/src/sys/fault.s',
@@ -53,6 +53,10 @@ SCRIPTS = {
     'test_bargraph.py': ['firmware/src/mva/', 'firmware/src/mres/', 'firmware/src/ui/', 'firmware/src/mode/',
                          'firmware/src/func/'],
     'test_diode_chirp.py': ['firmware/src/mres/', 'firmware/src/set/', 'firmware/src/bzb/'],
+    # continuity decision, the user threshold pages and their remote settings (page Ld on a card: FILES)
+    'test_cont_user.py': FILES + ['firmware/src/mres/', 'firmware/src/bzb/'],
+    'test_meter_api.py': FILES + ['emulator/scripts/test_meter_api.py', 'firmware/src/set/', 'firmware/src/key/',
+                                  'firmware/src/mres/'],
     'test_setup_walks.py': ['firmware/src/set/', 'firmware/src/log/', 'firmware/src/func/'],
     'test_buzzer_off.py': ['firmware/src/bzb/', 'firmware/src/mres/', 'firmware/src/pwr/', 'firmware/src/set/'],
     'test_heartbeat.py': CAREFUL,

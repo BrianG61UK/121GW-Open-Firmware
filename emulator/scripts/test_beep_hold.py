@@ -70,12 +70,13 @@ def run_tests(image, a_code):
         T.check('code %d: tone ends %d ms after the last re-arm (within %d - 10.5 .. %d + 2 ms of the opening)' % (code, ms, ms, ms),
                 ok and ms - 10.5 <= min(offs) and max(offs) <= ms + 2.0, 'offs=%r' % (offs,))
         T.check('code %d: steady tone during the contact (no switching)' % code, max(chops) == 0, 'chops=%r' % (chops,))
-        # first contact to tone (2026-11-07, 60 contact phases, this emulator): v1.1.6 median 2.00 ms, 90 % 3.00 ms, max
-        # 6.50 ms (3 of 60 over 4 ms); F-1.22 median 2.00, 90 % 3.25, max 4.50 ms.  About 1 contact in 20 waits one or two
-        # conversions more (a longer main-loop task; cause not yet traced, owner: later), so the bound is on the median
-        # and an 8 ms worst case; the 10 phases here hit 6.5..7.0 ms since F-1.17 moved the start (ck_run)
-        T.check('code %d: tone after the contact: median <= 2.5 ms, each <= 8 ms' % code,
-                all(o is not None for o in ons) and statistics.median(ons) <= 2.5 and max(ons) <= 8.0, 'ons=%r' % (ons,))
+        # first contact to tone.  The HY3131 delivers a BEEP result every 3.91 ms (owner's meter 2026-11-10, Q3; the
+        # emulator follows since emu/hy3131.py AD1_CHOP_SETTLE_S; the earlier 1.5625 ms model gave a median of 2.00 ms).
+        # A contact lands anywhere in a conversion: the first result that holds it comes after up to two periods, then
+        # the service reads it (at most 0.69 ms after the event, meter Q2): bound 2 x 3.91 + 0.69 = 8.5 ms each; the
+        # 10 phases here gave 0.75..5.5 ms, median 4.0..4.25 ms (2026-11-10), bound on the median 5.0 ms.
+        T.check('code %d: tone after the contact: median <= 5.0 ms, each <= 8.5 ms' % code,
+                all(o is not None for o in ons) and statistics.median(ons) <= 5.0 and max(ons) <= 8.5, 'ons=%r' % (ons,))
 
     print('T2 the page bH')
     e = meter(image, 0)

@@ -220,7 +220,7 @@ ENDFUNC hy_row_equal
 
 @ -----------------------------------------------------------------------------
 @ hy_row_whitelisted - is a 20-byte row one that the v2.05 selector can produce?
-@ Replaces : new (DESIGN.md 4.1 item 1 run-time companion of the build check; emulator/diff/hy3131_whitelist)
+@ Replaces : new (DESIGN.md 4.1 item 1 run-time companion of the build check; emulator/emu/hy3131_whitelist)
 @ In       : r0 = pointer to the 20 bytes about to be written to registers 0x20..0x33
 @ Out      : r0 = 1 the row equals a row of one of the 15 v2.05 tables or one of the two derived rows, 0 otherwise
 @ Clobbers : r0-r3, r12, flags

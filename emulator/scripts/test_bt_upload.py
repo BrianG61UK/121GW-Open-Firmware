@@ -34,7 +34,7 @@ sys.path.insert(0, os.path.join(HERE, '..', 'tools'))
 import test_backlight_timer as T  # noqa: E402
 import btft  # noqa: E402
 from emu.sdcard import format_fat32  # noqa: E402
-from diff.fat32 import Volume, fat_date, fat_time  # noqa: E402
+from emu.fat32 import Volume, fat_date, fat_time  # noqa: E402
 
 ADDR_ITEM = 0x20008037
 ADDR_BLE_ENABLE = 0x2000802B

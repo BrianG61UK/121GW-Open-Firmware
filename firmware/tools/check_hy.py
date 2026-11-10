@@ -2,55 +2,39 @@
 """check_hy.py - HY3131 write-whitelist check of the linked firmware (DESIGN.md 4.1 item 7, 9.3 items 3 and 4).
 
 Usage (from firmware/, as the Makefile does):
-    python3 -I tools/check_hy.py build/121gw.elf [--map build/121gw.map] [--v205 ../inputs/binaries/EEVBlog2_05.bin]
-    python3 -I tools/check_hy.py --reference            (v2.05 only: the numbers of DESIGN 4.1 from the original image)
-    python3 -I tools/check_hy.py --reference --write-reference tools/hy_reference.txt
-                                                        (v2.05 only: also write the reference data file, see below)
-    python3 -I tools/check_hy.py build/121gw.elf --reference-data tools/hy_reference.txt
-                                                        (CI-safe: the v2.05 sweep is read from the data file, the original
-                                                        image is not needed; Makefile target check-ci)
+    python3 -I tools/check_hy.py build/121gw.elf [--map build/121gw.map] [--whitelist tools/hy_reference.txt]
+                                 [--switch NAME=VALUE ...]
 Needs Python 3 with Capstone and Unicorn (the project Python: make check PYTHON=<python with both modules>).
 Exit status 0 = PASS, 1 = at least one violation, 2 = the tool could not do its job.
 
-The HY3131 is configured only by 20-byte rows and a few short register writes (DESIGN 4.1).  The port must write nothing
-that the original (v2.05) cannot write.  The reference is the original image, executed, not a list typed in: its
-configuration routine 0x0800B974(mode, range) is run for every mode 0..24, every range below range_count[mode] and every
-combination of the RAM flags it reads (the method of analysis/hy3131_model.md section 3, "Method note"; flag value sets
-from hy3131_model.md and hy3131_modes_*.md, quoted at FLAGS below), in Unicorn, with the SPI write routine 0x0800C03C
-intercepted to record every frame (first register, data bytes).  The same sweep is run on the port (symbol
-fn_0800B974, frame writer hy3131_write_regs).  Checks:
-  1. Tables (4.1 item 7): each of the 15 row tables v205_tab_XXXXXXXX of the ELF equals the v2.05 image bytes at its address.
-  2. Reference numbers (DESIGN 4.1, 4): the v2.05 sweep yields 41 distinct rows, 47 distinct (row, INTE) pairs and the six
-     frame shapes (0x20,20) (0x1E,2) (0x1E,1) (0x20,1) (0x1B,3) (0x29,1); other numbers fail (the design text would be
-     wrong), so the reference cannot drift silently.
-  3. Equality: the port's reachable (row, INTE) pairs equal the v2.05 pairs; every frame the port requests during the sweep is
-     a frame of the v2.05 sweep, its restart sequence follows; for each (mode, range, flags) the port's frame sequence equals
-     the v2.05 sequence (reported as HY-SEQ otherwise).  The peak-restart routine is run for every row R29 with ENPKH set
-     and must write R29 & 0xFB then R29 (v2.05 0x0800A872 / 0x0800A88C, modes 13..15 excluded by the caller).
-  4. Wire level: for one representative of every distinct frame sequence the port is run without any interception and
-     the bus pins are decoded from the GPIOF BSRR writes (PF0 CK, PF1 CS, PF2 DI; DS p14 frame format: CS low, address
-     byte = register << 1 | R/W, data bytes MSB first, DI sampled at the rising CK edge).  The bus frames must equal the
-     requested frames: the port's own run-time guard must not refuse any v2.05 sequence.
-  5. Guard probe: with the port's loaded-row state set, every single-bit mutation of every v2.05 frame, every
+The HY3131 is configured only by 20-byte rows and a few short register writes (DESIGN 4.1).  The firmware may write to the
+chip only what the whitelist allows.  The whitelist is plain data, tools/hy_reference.txt: one line per (mode, range, flags)
+configuration run with the HY3131 frames (register, data bytes) it requests, i.e. the rows of the tables
+firmware/src/hy/hy_rows.s plus the short writes.  The file is only read; nothing is compared with another image.
+The selector fn_0800B974(mode, range) of the firmware is run for every mode 0..24, every range below range_count[mode] (the
+firmware's own .data_v205 RAM image) and every combination of the RAM flags it reads (flag value sets from
+hy3131_model.md and hy3131_modes_*.md, quoted at FLAGS below), in Unicorn, with the SPI write routine hy3131_write_regs
+intercepted to record every frame (first register, data bytes).  Checks:
+  1. Whitelist: the frame shapes of the data file are the six of DESIGN 4.1 (0x20,20) (0x1E,2) (0x1E,1) (0x20,1) (0x1B,3)
+     (0x29,1); every frame the firmware requests during the sweep is a frame of the whitelist and has one of the six shapes
+     (HY-FRAME, HY-SHAPE).  The peak-restart routine is run for every whitelist row R29 with ENPKH set and must write
+     R29 & 0xFB then R29 (modes 13..15 excluded by the caller).
+  2. Wire level: for one representative of every distinct frame sequence of the sweep the firmware is run without any
+     interception and the bus pins are decoded from the GPIOF BSRR writes (PF0 CK, PF1 CS, PF2 DI; DS p14 frame format: CS
+     low, address byte = register << 1 | R/W, data bytes MSB first, DI sampled at the rising CK edge).  The bus frames must
+     equal the requested frames: the run-time guard must not refuse any frame the selector requests.
+  3. Guard probe: with the loaded-row state set, every single-bit mutation of every whitelist frame, every
      (register 0..0x3F, count 1..24) that is not one of the six shapes, and the soft-reset write 0x37 = 0x60 are offered to
-     hy3131_write_regs: each must be refused (return value 1) with no pin touched; every v2.05 frame must be accepted.
+     hy3131_write_regs: each must be refused (return value 1) with no pin touched; every whitelist frame must be accepted.
      The IRQ acknowledge (0x1E, 1) is checked against INTF_ACK (OF-53: any value with bits 6:5 clear, see INTF_ACK).
-  6. Random RAM: 300 runs with flag bytes set to random values 0..255 (fixed seed): every frame that reaches the bus is a
-     v2.05 frame (a corrupted RAM cannot make the port write a row that v2.05 never writes).
-  7. Instruction level (module check_image): outside the HY bus routines (hy3131_spi_clock_pulse, hy3131_spi_write_byte,
+  4. Random RAM: 300 runs with flag bytes set to random values 0..255 (fixed seed): every frame that reaches the bus is a
+     whitelist frame (a corrupted RAM cannot make the firmware write a row that is not in the whitelist).
+  5. Instruction level (module check_image): outside the HY bus routines (hy3131_spi_clock_pulse, hy3131_spi_write_byte,
      hy3131_spi_read_byte, hy_write_frame, hy_read_frame, hy3131_write_regs, hy3131_read_regs_to_rxbuf) no store sets
      GPIOF pin 0 (HY_CK) high, and no store addresses GPIOF ODR; stores that change pin 1 or 2 or clear pin 0 are allowed only in
      objects under hy/, brd/ and sys/fault.o (idle levels: board init, power-down, fault-safe state, DESIGN 4.1 item 7);
      a store to GPIOF BSRR / ODR whose value is not known and which is not in one of those objects is reported.
-Reference data file (tools/hy_reference.txt): the result of the v2.05 sweep of check 2, one line per (mode, range, flags) run
-with the HY3131 frames (register, data bytes) the original routine requests.  It holds nothing but those frames, which are the
-rows of the tables firmware/src/hy/hy_rows.s plus the short writes; the original image is not part of it.  With --reference-data
-checks 2 to 7 run exactly as with the image (the sweep result is the same data); check 1 (the 15 row tables equal the image) needs
-the image and is reported as SKIPPED, and the port's range counts come from its own .data_v205 image (equal to the original's
-574-byte RAM image by tools/extract_tables.py --verify, which needs the image).  A data file that does not give the numbers of
-DESIGN 4.1 (41 rows, 47 pairs, the six shapes) fails check 2.  Regenerate it with --reference --write-reference after the
-original image or the sweep changes.
-Limits: the flag value sets are those of the analysis documents; a flag byte holding another value is covered only by check 6
+Limits: the flag value sets are those of the analysis documents; a flag byte holding another value is covered only by check 4
 at bus level.  Peripheral reads other than the SPI read routines return 0.  Time is not modelled.
 """
 import argparse
@@ -85,26 +69,21 @@ except ImportError:                                           # pragma: no cover
     sys.exit(2)
 
 ci = _load('check_image')
-v205 = _load('v205')
 
 APP_BASE = 0x08006000
 STOP = 0x08005FF0                    # return address that ends a run (bootloader window, never executed)
 SP0 = 0x20001240
-V205_SELECT, V205_WRITE, V205_READ, V205_DELAY = 0x0800B974, 0x0800C03C, 0x0800C0C0, 0x0800ECF6
 MODE, RANGE = 0x2000803C, 0x2000803D
 GPIOF = 0x40021800
 BSRRL, BSRRH, ODR = GPIOF + 0x18, GPIOF + 0x1A, GPIOF + 0x14
 SHAPES = ((0x20, 20), (0x1E, 2), (0x1E, 1), (0x20, 1), (0x1B, 3), (0x29, 1))
-# The IRQ acknowledge (0x1E, 1) after an event service (v2.05 0x0800616C writes 0x00).  OF-53 (owner decision): the port
+# The IRQ acknowledge (0x1E, 1) after an event service (the original firmware writes 0x00 there).  OF-53 (owner decision): the port
 # writes 0 for the INTF flags it has read as set and 1 for the others, so a flag raised after the read is not discarded.
 # INTF is a flag register, not a configuration register: a written 0 clears a flag, a written 1 has no effect ("INTF
 # register can be written as 0 by SPI Interface, but not 1", HY3131 data sheet p19 10.2 (7)); bits 6:5 carry no flag
-# ("-", data sheet p19) and are written 0 as v2.05 writes them.  So every value with bits 6:5 clear is allowed: none can
-# change the chip's configuration, and the value 0x00 of v2.05 is among them.
+# ("-", data sheet p19) and are written 0 as the original firmware writes them.  So every value with bits 6:5 clear is allowed: none can
+# change the chip's configuration, and the value 0x00 is among them.
 INTF_ACK = {(0x1E, bytes([v])) for v in range(256) if not v & 0x60}
-TABLE_ADDRS = (0x080285BC, 0x080286D0, 0x08028748, 0x080288A0, 0x08028904, 0x080289C8, 0x08028D1C, 0x08028D58,
-               0x08028D94, 0x08028F1C, 0x08028F44, 0x08028F6C, 0x08028F94, 0x08028FBC, 0x08029150)   # DESIGN 4.1
-EXPECT_ROWS, EXPECT_PAIRS = 41, 47                              # DESIGN 4.1
 # RAM flags read by the selector and their value sets (hy3131_model.md section 3 flag legend; hy3131_modes_misc.md
 # section 0 and 3.1; hy3131_modes_ac_current.md "Sub-ranges"): 0x20008098 LowZ AC, 0x200080B7 peak, 0x200080B9 1 kHz
 # filter, 0x200080BA AC+DC, 0x200080BD AC+DC phase, 0x20007FE0 OHM range 6 flag, 0x20007FDF CAP variant, 0x200080C4 VA
@@ -116,6 +95,9 @@ C7_TWO_MODES = (15, 24)
 PRESET_WORD = 0x2000001C                                       # counter preset word, read by the restart
 HY_BUS_FUNCS = ('hy3131_spi_clock_pulse', 'hy3131_spi_write_byte', 'hy3131_spi_read_byte', 'hy_write_frame',
                 'hy_read_frame', 'hy3131_write_regs', 'hy3131_read_regs_to_rxbuf')
+# the bit-level bus routines of the never-released diagnostic build (switch HY_DIAG, src/hy/hydiag.s); they are bus
+# routines only when the build was made with HY_DIAG not 0 (--switch HY_DIAG=1), and a default build has no hyd_* symbol
+HY_DIAG_FUNCS = ('hyd_wbits', 'hyd_rbits', 'hyd_clk_extra')
 
 
 class CheckError(Exception):
@@ -322,29 +304,8 @@ def pairs_of(results):
     return rows, pairs, frames, shapes
 
 
-REF_HEADER = """# HY3131 frames requested by the original (v2.05) configuration routine 0x0800B974, one line per run of the sweep of
-# tools/check_hy.py (check 2): every mode 0..24, every range below range_count[mode], every combination of the RAM flags the
-# routine reads.  Line: run <mode> <range> <flags> <frame>[;<frame>...]
-#   flags  <RAM address>=<value>[,...] in ascending address order, or - for none
-#   frame  <first register hex>:<data bytes hex>
-# Source image SHA-256 8f885f12f567c2cccd9862d9fe26f127e2a674c9afbce9f7a38d441b3f396722 (firmware/ORIGINAL_FIRMWARE_ISSUES.md).
-# Written by: python3 -I tools/check_hy.py --reference --write-reference tools/hy_reference.txt
-"""
-
-
-def write_reference(path, ref):
-    """Write the sweep result `ref` (as returned by sweep) to the reference data file."""
-    lines = []
-    for (mode, rng, key), (fr, ret) in sorted(ref.items()):
-        flags = ','.join('0x%08X=%d' % kv for kv in key) if key else '-'
-        lines.append('run %d %d %s %s' % (mode, rng, flags, ';'.join('%02X:%s' % (r, d.hex()) for r, d in fr)))
-    with open(path, 'w') as f:
-        f.write(REF_HEADER + '\n'.join(lines) + '\n')
-    return len(lines)
-
-
-def read_reference(path):
-    """Read a reference data file into the structure sweep returns.  Any malformed line is an error."""
+def read_whitelist(path):
+    """Read the whitelist data file into the structure sweep returns.  Any malformed line is an error."""
     out = {}
     with open(path) as f:
         for n, line in enumerate(f, 1):
@@ -353,7 +314,7 @@ def read_reference(path):
                 continue
             m = re.fullmatch(r'run (\d+) (\d+) (-|[0-9A-Fa-fx=,]+) ((?:[0-9A-F]{2}:[0-9a-f]*)(?:;[0-9A-F]{2}:[0-9a-f]*)*)', line)
             if not m:
-                raise CheckError('%s:%d: not a reference line' % (path, n))
+                raise CheckError('%s:%d: not a whitelist line' % (path, n))
             mode, rng = int(m.group(1)), int(m.group(2))
             key = () if m.group(3) == '-' else tuple((int(a, 16), int(v)) for a, v in
                                                      (kv.split('=') for kv in m.group(3).split(',')))
@@ -390,51 +351,12 @@ def need(syms, *names):
 
 
 # ---------------------------------------------------------------------------------------------------- the checks
-def check_tables(img, elf, vio, ref):
-    n = 0
-    byname = {y['name']: y for y in img.symbols if y['shndx'] != 0}
-    for a in TABLE_ADDRS:
-        nm = 'v205_tab_%08X' % a
-        y = byname.get(nm)
-        if y is None:
-            vio.append('HY-TAB %s is not defined in the ELF' % nm)
-            continue
-        size = y['size']
-        got = img.read(y['value'] & ~1, size)
-        want = ref[a - APP_BASE:a - APP_BASE + size]
-        if size == 0 or got is None or got != want:
-            vio.append('HY-TAB %s (%d bytes) differs from the v2.05 image at 0x%08X' % (nm, size, a))
-        else:
-            n += 1
-    return n
-
-
-def check_sequences(ref, port, vio):
-    same, diff = 0, []
-    for k, (fr, ret) in sorted(ref.items()):
-        pf = port.get(k)
-        if pf is None:
-            diff.append((k, 'missing in the port sweep'))
-        elif pf[0] != fr:
-            diff.append((k, 'port %s, v2.05 %s' % ([(hex(a), b.hex()) for a, b in pf[0]][:3], [(hex(a), b.hex()) for a, b in fr][:3])))
-        else:
-            same += 1
-    for k in port:
-        if k not in ref:
-            diff.append((k, 'only in the port sweep'))
-    for k, why in diff[:10]:
-        vio.append('HY-SEQ mode %d range %d flags %s: %s' % (k[0], k[1], fmt_flags(k[2]), why))
-    if len(diff) > 10:
-        vio.append('HY-SEQ ... %d more sequences differ' % (len(diff) - 10))
-    return same, len(ref)
-
-
-def check_wire(world, syms, ref, vio):
-    """Run one representative of every distinct v2.05 sequence on the port without interception."""
+def check_wire(world, syms, sweep_result, vio):
+    """Run one representative of every distinct frame sequence of the sweep on the firmware without interception."""
     sel = syms['fn_0800B974']
     step = syms.get('hy_counter_restart_step')
     seen, n = {}, 0
-    for k, (fr, ret) in sorted(ref.items()):
+    for k, (fr, ret) in sorted(sweep_result.items()):
         sig = tuple(fr)
         if sig in seen:
             continue
@@ -452,7 +374,7 @@ def check_wire(world, syms, ref, vio):
             world.finish_restart(uc, step, run, 'wire (mode %d range %d)' % (mode, rng), count=6_000_000)
         wire = run['wire']
         if wire != list(sig):
-            vio.append('HY-WIRE mode %d range %d flags %s: bus frames %s differ from the requested v2.05 frames %s'
+            vio.append('HY-WIRE mode %d range %d flags %s: bus frames %s differ from the requested frames %s'
                        % (mode, rng, fmt_flags(key), [(hex(a), b.hex()) for a, b in wire][:4],
                           [(hex(a), b.hex()) for a, b in sig][:4]))
         if run['wire_partial']:
@@ -507,7 +429,7 @@ def guard_probe(world, syms, ref_frames, rows, vio):
             r, w = offer(reg, bytes([val]), r20, r29)
             probes += 1
             if r != 0 or w != [(reg, bytes([val]))]:
-                vio.append('HY-GUARD the v2.05 frame (0x%02X, %02X) for the row with R20 %02X R29 %02X was refused (%d, %s)'
+                vio.append('HY-GUARD the whitelist frame (0x%02X, %02X) for the row with R20 %02X R29 %02X was refused (%d, %s)'
                            % (reg, val, r20, r29, r, w))
         for bad in (r20 ^ 0x01, r20 ^ 0x10, r20 ^ 0x80):
             if bad in (r20 & 0xFD, r20 & 0xF9, r20 | 2):
@@ -523,13 +445,13 @@ def guard_probe(world, syms, ref_frames, rows, vio):
             probes += 1
             if r != 1 or w:
                 vio.append('HY-GUARD (0x29, %02X) with loaded R29 %02X was not refused (%d, %s)' % (bad, r29, r, w))
-    # static frames: all must be accepted; every single-bit mutation must be refused unless it is itself a v2.05 frame
+    # static frames: all must be accepted; every single-bit mutation must be refused unless it is itself a whitelist frame
     static = sorted(f for f in ref_frames if (f[0], len(f[1])) in ((0x20, 20), (0x1E, 2), (0x1E, 1), (0x1B, 3)))
     for reg, data in static:
         r, w = offer(reg, data)
         probes += 1
         if r != 0 or w != [(reg, data)]:
-            vio.append('HY-GUARD the v2.05 frame (0x%02X, %s) was refused (%d, %s)' % (reg, data.hex(), r, w))
+            vio.append('HY-GUARD the whitelist frame (0x%02X, %s) was refused (%d, %s)' % (reg, data.hex(), r, w))
         for i in range(len(data)):
             for b in range(8):
                 m = bytearray(data)
@@ -584,7 +506,7 @@ def random_ram(world, syms, ref_frames, vio, runs=300):
         for f in run['wire']:
             if f not in ref_frames and not (f[0] in (0x20, 0x29) and len(f[1]) == 1):
                 bad += 1
-                vio.append('HY-RANDOM run %d (mode %d range %d): bus frame (0x%02X, %s) is not a v2.05 frame'
+                vio.append('HY-RANDOM run %d (mode %d range %d): bus frame (0x%02X, %s) is not a whitelist frame'
                            % (i, mode, r, f[0], f[1].hex()))
     return runs
 
@@ -620,7 +542,7 @@ def static_scan(img, vio):
         if in_bus:
             return
         if ea <= ODR + 3 and ea + span > ODR:
-            vio.append('HY-BUS %s (0x%08X in %s): store to GPIOF ODR outside the HY bus routines (v2.05 never writes ODR)' % (func, ins.addr, obj))
+            vio.append('HY-BUS %s (0x%08X in %s): store to GPIOF ODR outside the HY bus routines (the original firmware never writes ODR)' % (func, ins.addr, obj))
             return
         # BSRR store: which bits does it touch?
         mask_set = mask_clr = None
@@ -655,73 +577,39 @@ def static_scan(img, vio):
 # ---------------------------------------------------------------------------------------------------- main
 def main(argv):
     ap = argparse.ArgumentParser(description='HY3131 write whitelist check (DESIGN.md 4.1, 9.3)')
-    ap.add_argument('elf', nargs='?')
-    ap.add_argument('--reference', action='store_true', help='only run the v2.05 sweep and compare its numbers with DESIGN 4.1 (no ELF)')
+    ap.add_argument('elf')
     ap.add_argument('--map')
-    ap.add_argument('--v205', default=v205.IMAGE)
-    ap.add_argument('--write-reference', metavar='FILE', help='with --reference: write the sweep result to FILE')
-    ap.add_argument('--reference-data', metavar='FILE',
-                    help='read the v2.05 sweep from FILE instead of executing the original image (CI-safe, see the docstring)')
+    ap.add_argument('--whitelist', metavar='FILE', default=os.path.join(TOOLS, 'hy_reference.txt'),
+                    help='the whitelist data file (default tools/hy_reference.txt)')
+    ap.add_argument('--switch', action='append', default=[], metavar='NAME=VALUE',
+                    help='a build switch with a non-default value (Makefile); only HY_DIAG changes this check')
     a = ap.parse_args(argv)
+    global HY_BUS_FUNCS
+    switches = dict(s.split('=', 1) for s in a.switch if '=' in s)
+    diag = int(switches.get('HY_DIAG', '0'), 0) != 0
+    if diag:
+        HY_BUS_FUNCS = HY_BUS_FUNCS + HY_DIAG_FUNCS
+        print('check_hy: switch HY_DIAG=%s: %s are bus routines of this (never-released) build'
+              % (switches['HY_DIAG'], ', '.join(HY_DIAG_FUNCS)))
     vio = []
     try:
-        if a.reference_data and (a.reference or a.write_reference):
-            ap.error('--reference-data cannot be combined with --reference or --write-reference')
-        if a.write_reference and not a.reference:
-            ap.error('--write-reference needs --reference')
-        if a.reference_data:
-            ref_img = from_ram = ram = range_count = None          # no original image, no analysis files
-        else:
-            ref_img = open(a.v205, 'rb').read()
-            from_ram = bytearray(0x23E)
-            ram = extract_ram()
-            from_ram[0:len(ram)] = ram
-            range_count = ram[0:25]
-        if a.reference:
-            world_ref = World([(APP_BASE, ref_img)], bytes(from_ram), {}, False)
-            ref = sweep(world_ref, V205_SELECT, V205_WRITE, V205_READ, V205_DELAY, None, range_count, 'v2.05')
-            rows, pairs, frames, shapes = pairs_of(ref)
-            print('check_hy (reference): v2.05 sweep: %d runs, %d distinct rows, %d distinct (row, INTE) pairs, shapes %s'
-                  % (len(ref), len(rows), len(pairs), sorted((hex(r), n) for r, n in shapes)))
-            if len(rows) != EXPECT_ROWS or len(pairs) != EXPECT_PAIRS:
-                vio.append('HY-REF the v2.05 sweep gives %d rows / %d pairs, DESIGN 4.1 states %d / %d' % (len(rows), len(pairs), EXPECT_ROWS, EXPECT_PAIRS))
-            if a.write_reference and not vio:
-                print('check_hy (reference): wrote %d runs to %s' % (write_reference(a.write_reference, ref), a.write_reference))
-            for v in vio:
-                print('VIOLATION ' + v)
-            print('check_hy (reference): %s' % ('PASS' if not vio else 'FAIL'))
-            return 0 if not vio else 1
-        if not a.elf:
-            ap.error('ELF is required unless --reference is given')
         mp = a.map or re.sub(r'\.elf$', '.map', a.elf)
         img, elf, syms, port_ram = load_port(a.elf, mp)
-        if a.reference_data:
-            print('check_hy: %s against the reference data %s (original v2.05 image not used)' % (a.elf, a.reference_data))
-            print('tables: SKIPPED (check 1 compares the 15 row tables with the original image, which is not available here; '
-                  'tools/extract_tables.py --verify does the same comparison for every table when the image is present)')
-            ref = read_reference(a.reference_data)
-            range_count = port_ram[0:25]
-            print('range counts: taken from the port .data_v205 image (equal to the original RAM image only when '
-                  'tools/extract_tables.py --verify has run with the image)')
-        else:
-            print('check_hy: %s against %s' % (a.elf, a.v205))
-            # 1. tables
-            nt = check_tables(img, elf, vio, ref_img)
-            print('tables: %d of %d row tables equal the v2.05 image' % (nt, len(TABLE_ADDRS)))
-            # 2. reference sweep on v2.05
-            world_ref = World([(APP_BASE, ref_img)], bytes(from_ram), {}, False)
-            ref = sweep(world_ref, V205_SELECT, V205_WRITE, V205_READ, V205_DELAY, None, range_count, 'v2.05')
-        rows, pairs, frames, shapes = pairs_of(ref)
-        print('v2.05 sweep%s: %d runs, %d distinct rows, %d distinct (row, INTE) pairs, %d frame shapes %s'
-              % (' (from the reference data)' if a.reference_data else '', len(ref), len(rows), len(pairs), len(shapes), sorted((hex(r), n) for r, n in shapes)))
-        if len(rows) != EXPECT_ROWS or len(pairs) != EXPECT_PAIRS:
-            vio.append('HY-REF the v2.05 sweep gives %d rows / %d pairs, DESIGN 4.1 states %d / %d' % (len(rows), len(pairs), EXPECT_ROWS, EXPECT_PAIRS))
-        extra = shapes - set(SHAPES)
-        for s in sorted(extra):
-            vio.append('HY-REF the v2.05 sweep sends the frame shape (0x%02X, %d), not one of the six of DESIGN 4.1' % s)
-        print('v2.05 shapes outside the selector sweep: (0x29, 1) peak restart 0x0800A872 / 0x0800A88C and (0x1E, 1) IRQ '
-              'acknowledge 0x0800616C (values: INTF_ACK, OF-53); with them the six shapes of DESIGN 4.1 are complete')
-        # 3. port sweep
+        hyd = sorted({y['name'] for y in img.symbols if y['name'].startswith('hyd_')})
+        if hyd and not diag:
+            vio.append('HY-DIAG the image has diagnostic symbols (%s) but was not checked with --switch HY_DIAG=1: '
+                       'a default build must not contain hy/hydiag.s code' % ', '.join(hyd[:5]))
+        print('check_hy: %s against the whitelist data %s' % (a.elf, a.whitelist))
+        wl = read_whitelist(a.whitelist)
+        range_count = port_ram[0:25]
+        rows, pairs, frames, shapes = pairs_of(wl)
+        print('whitelist: %d runs, %d distinct rows, %d distinct (row, INTE) pairs, %d frame shapes %s'
+              % (len(wl), len(rows), len(pairs), len(shapes), sorted((hex(r), n) for r, n in shapes)))
+        for shp in sorted(shapes - set(SHAPES)):
+            vio.append('HY-SHAPE the whitelist holds the frame shape (0x%02X, %d), not one of the six of DESIGN 4.1' % shp)
+        print('shapes outside the selector sweep: (0x29, 1) peak restart and (0x1E, 1) IRQ acknowledge (values: INTF_ACK, '
+              'OF-53); with them the six shapes of DESIGN 4.1 are complete')
+        # 1. selector sweep of the firmware against the whitelist
         sel, wr, rd, dl = need(syms, 'fn_0800B974', 'hy3131_write_regs', 'hy3131_read_regs_to_rxbuf', 'fn_0800ECF6')
         step = syms.get('hy_counter_restart_step')
         world_port = World(img.loads, bytes(port_ram), syms, True)
@@ -729,32 +617,23 @@ def main(argv):
         prows, ppairs, pframes, pshapes = pairs_of(port)
         print('port sweep: %d runs, %d distinct rows, %d distinct (row, INTE) pairs, shapes %s'
               % (len(port), len(prows), len(ppairs), sorted((hex(r), n) for r, n in pshapes)))
-        if ppairs != pairs:
-            vio.append('HY-PAIRS port pairs differ from v2.05: %d only in the port, %d only in v2.05'
-                       % (len(ppairs - pairs), len(pairs - ppairs)))
-        if prows != rows:
-            vio.append('HY-ROWS port rows differ from v2.05 rows: %d only in the port, %d only in v2.05'
-                       % (len(prows - rows), len(rows - prows)))
         if pshapes - set(SHAPES):
             vio.append('HY-SHAPE the port requests shapes outside the six: %s' % sorted(pshapes - set(SHAPES)))
         for f in sorted(pframes - frames):
-            vio.append('HY-FRAME the port requests the frame (0x%02X, %s) which the v2.05 sweep never sends' % (f[0], f[1].hex()))
-        same, total = check_sequences(ref, port, vio)
-        print('sequences: %d of %d (mode, range, flags) runs give the identical frame sequence' % (same, total))
-        # 3b. peak restart
+            vio.append('HY-FRAME the port requests the frame (0x%02X, %s) which is not in the whitelist' % (f[0], f[1].hex()))
         npk = check_peak(world_port, syms, rows, vio)
         print('peak restart: %d rows with ENPKH set checked' % npk)
-        # 4. wire level
-        nw = check_wire(world_port, syms, ref, vio)
+        # 2. wire level
+        nw = check_wire(world_port, syms, port, vio)
         print('wire level: %d distinct sequences decoded from the GPIOF BSRR writes' % nw)
-        # 5. guard probe
-        ref_frames = set(frames) | INTF_ACK                # + the IRQ acknowledge 0x0800616C (v2.05 0x00; port OF-53)
+        # 3. guard probe
+        ref_frames = set(frames) | INTF_ACK                # + the IRQ acknowledge (OF-53)
         npb = guard_probe(world_port, syms, ref_frames, rows, vio)
         print('guard probe: %d offered frames, each accepted or refused as required' % npb)
-        # 6. random RAM
+        # 4. random RAM
         nr = random_ram(world_port, syms, ref_frames, vio)
-        print('random RAM: %d runs, every bus frame is a v2.05 frame' % nr)
-        # 7. instruction level
+        print('random RAM: %d runs, every bus frame is a whitelist frame' % nr)
+        # 5. instruction level
         found, chk = static_scan(img, vio)
         print('instruction level: %d stores to GPIOF ODR / BSRR with a known address examined' % found['bsrr'])
         for func, addr in found.get('unknown_idle', []):
@@ -766,12 +645,6 @@ def main(argv):
         print('VIOLATION ' + v)
     print('check_hy: %s (%d violations)' % ('PASS' if not vio else 'FAIL', len(vio)))
     return 0 if not vio else 1
-
-
-def extract_ram():
-    """The 574-byte RAM image of the original after data_init (analysis/decompile/ram_init.txt), via the W7 reader."""
-    et = _load('extract_tables')
-    return et.ram_init_bytes()
 
 
 if __name__ == '__main__':

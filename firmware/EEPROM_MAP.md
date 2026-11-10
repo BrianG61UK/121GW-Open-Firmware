@@ -161,7 +161,8 @@ Formats: BE = big-endian, written MSB first, one byte program at a time. "Boot" 
 | 0x02A | 1 | - | never accessed by v2.05; port (production image only): battery voltage trim, section 4.1 | calbin_save; port: set_btrim_load | calbin_load; port: set_btrim_edit via nvm_write_setting | cal.bin restore; port: SETUP battery page save | port: 50..150 kept (trim = byte - 100), else no trim | RESTORE; SETTINGS in the production image only (4.1) |
 | 0x02B | 1 | - | never accessed by v2.05; port (production image only): auto power-off time, section 4.1 | calbin_save; port: set_apot_load | calbin_load; port: set_apot_store via nvm_write_setting | cal.bin restore; port: SETUP page APO save | port: 0..3 kept, else 0 (30 min) | RESTORE; SETTINGS in the production image only (4.1) |
 | 0x02C | 1 | - | never accessed by v2.05; port (production image only): DIODE contact chirp, section 4.1 | calbin_save; port: set_chirp_load | calbin_load; port: set_chirp_edit via nvm_write_setting | cal.bin restore; port: SETUP page CHIrP save | port: 0..1 kept, else 0 (off) | RESTORE; SETTINGS in the production image only (4.1) |
-| 0x02D..0x02F | 3 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
+| 0x02D..0x02E | 2 | u16 BE | never accessed by v2.05; port (production image only): user continuity threshold, section 4.1 | calbin_save; port: set_ut_load | calbin_load; port: set_ut_edit via nvm_write_setting (width 2, 0x02D then 0x02E) | cal.bin restore; port: SETUP page th save, Bluetooth PUT of 0x02D | port: 1..500 kept, else 30 | RESTORE; SETTINGS in the production image only (4.1) |
+| 0x02F | 1 | - | never accessed by v2.05; port (production image only): user continuity hysteresis, section 4.1 | calbin_save; port: set_uh_load | calbin_load; port: set_uh_edit via nvm_write_setting | cal.bin restore; port: SETUP page HY save, Bluetooth PUT of 0x02F | port: 1..250 kept, else 50 (5.0 ohm) | RESTORE; SETTINGS in the production image only (4.1) |
 | 0x030..0x2CF | | records | calibration records, 16 bytes per mode and range, section 5 | | | | | CAL (accessed bytes), RESTORE (all) |
 | 0x2D0..0x2D7 | 8 | i32 BE, u32 BE | peak-hold record (table index 25): offset, gain | load path for modes 2/4 with peak_hold 0x200080B7 == 1 (0x08011798..0x080117AE) | cal_record_write 0x08011C4C (kind 0), 0x08011D38 (kind 1, address 0x2D4 at 0x08011CA0..0x08011CA6) | offset / gain calibration in modes 2, 4 with peak hold | none | CAL |
 | 0x2D8..0x2DF | 8 | - | never accessed | calbin_save | calbin_load | - | - | RESTORE |
@@ -216,6 +217,13 @@ reads nor writes these bytes and its `nvm_allow` table does not allow them. The 
 | 0x029 | RTD temperature view of OHM (SETUP page Pt in OHM, SET/UI, FEATURES.md 2.15) | 0 = off (the resistance, v2.05), 1 = Pt100, 2 = Pt1000 | off (a value above 2, 0xFF included, is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
 | 0x02B | auto power-off time (SETUP page APO, item 2, SET/PWR, FEATURES.md 2.23; on / off stays in 0x016) | 0 = 30 min (v2.05), 1 = 1 min, 2 = 15 min, 3 = 60 min; doubled while MIN/MAX is on | 30 min (a value above 3, 0xFF included, is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
 | 0x02C | DIODE contact chirp (SETUP page CHIrP, item 42, DIODE only, SET/MRES, FEATURES.md 2.25, IMP-51; idea: GitHub PR 22) | 0 = off: v2.05's jump chirp, 1 = on: one double beep per diode contact | off (a value above 1, 0xFF included, is replaced by 0 in RAM and the byte is left as found) | SETTINGS |
+| 0x02D..0x02E | user continuity threshold of the codes 16 DNUSr and 17 UPUSr (SETUP page th, item 45, BEEP only, SET/MRES, FEATURES.md 2.38, IMP-64) | u16 big endian (0x02D high byte), 1..500 ohm | 30 ohm (0, a value above 500 and 0xFFFF are replaced by 30 in RAM and the bytes are left as found) | SETTINGS |
+| 0x02F | user continuity hysteresis of the codes 16 and 17 (SETUP page HY, item 46, BEEP only, SET/MRES, FEATURES.md 2.38, IMP-64) | 1..250 tenths of an ohm (0.1..25.0 ohm) | 5.0 ohm (0, a value above 250 and 0xFF are replaced by 50 in RAM and the byte is left as found) | SETTINGS |
+
+The threshold is saved as two byte writes, 0x02D first (nvm_write_be): a power loss between them leaves the new high byte
+with the old low byte, a value that may read as a valid but unintended threshold. The exposure is that of the logging
+interval 0x018..0x019; both bytes share the word 0x02C..0x02F only with the chirp byte 0x02C and the hysteresis 0x02F, so no
+calibration, serial, date or marker byte can be touched.
 
 Owner decision for 0x017: approved (2026-11-02). Why this byte: the word 0x014..0x017 holds the continuity code 0x014
 and the APO flag 0x016, both SETTINGS; v2.05's own setting saves already rewrite this word (0x014 at 0x080113D6, 0x016 at
@@ -223,13 +231,13 @@ and the APO flag 0x016, both SETTINGS; v2.05's own setting saves already rewrite
 the file and `calbin_load` restores it; a v2.05 backup has 0x00 there (the supplied backup of a real meter does, see the
 paragraph above), which reads as OFF. A meter flashed back to v2.05 ignores the byte; a v2.05 calbin_load of a backup made by the
 port writes the stored value to 0x017, which v2.05 never reads. Further candidates for other port-only settings (words with SETTINGS bytes only: 0x00F, 0x011,
-0x013, 0x015; words that were entirely free then: 0x020..0x023, 0x028..0x02B, 0x02C..0x02F; all but 0x023 and 0x02D..0x02F are used
+0x013, 0x015; words that were entirely free then: 0x020..0x023, 0x028..0x02B, 0x02C..0x02F; all but 0x023 are used
 since) are listed in FEATURES.md 3; none of
 them is allowed until it appears in the table above. Owner decision (2026-11-02): the bytes 0x00F, 0x011, 0x013, 0x015,
 0x020, 0x021, 0x022 and 0x028..0x02F are approved for the features of FEATURES.md 3; each enters the table above (and
 `nvm_allow`) only with the code that uses it. The limits of FEATURES.md 2.1 are not kept over a power-off (owner, same day),
 so 0x021 holds the continuity hold time of FEATURES.md 2.13 instead; 0x028 holds the current-loop view of FEATURES.md 2.14
-(owner request 2026-11-03), 0x029 the RTD view of FEATURES.md 2.15 (owner request 2026-11-03), 0x02A the battery trim of FEATURES.md 2.16 (owner request 2026-11-03, GitHub issue 2), 0x02B the auto power-off time of FEATURES.md 2.23 (owner request 2026-11-07; its word 0x028..0x02B holds settings bytes only), 0x02C the DIODE contact chirp of FEATURES.md 2.25 (owner decision 2026-11-07), 0x02D..0x02F stay unused.
+(owner request 2026-11-03), 0x029 the RTD view of FEATURES.md 2.15 (owner request 2026-11-03), 0x02A the battery trim of FEATURES.md 2.16 (owner request 2026-11-03, GitHub issue 2), 0x02B the auto power-off time of FEATURES.md 2.23 (owner request 2026-11-07; its word 0x028..0x02B holds settings bytes only), 0x02C the DIODE contact chirp of FEATURES.md 2.25 (owner decision 2026-11-07), 0x02D..0x02F the user continuity threshold and hysteresis of FEATURES.md 2.38 (owner decision 2026-11-09).
 
 ## 5. Calibration records
 
@@ -466,7 +474,7 @@ table in flash, `nvm_allow`, generated at build time from this section (`firmwar
 
 | Class | Bytes allowed | Additional condition checked inside NVM |
 |---|---|---|
-| SETTINGS | 0x008..0x00E, 0x010, 0x014, 0x016, 0x018..0x01A, 0x01B, 0x01E, and in the production image only the port-only settings of 4.1: 0x00F, 0x011, 0x013, 0x015, 0x017, 0x020, 0x021, 0x022, 0x028, 0x029, 0x02A, 0x02B, 0x02C | none beyond the class (user actions of 7.1; for 0x02C the SETUP page CHIrP; for 0x02B the SETUP page APO; for 0x02A the SETUP battery page; for 0x029 the SETUP page Pt; for 0x028 the SETUP page LP; for 0x022 the SETUP page Ch; for 0x021 the SETUP page bH; for 0x013 the SETUP page dSP, for 0x020 the SETUP pages rEL, CL and tr, for 0x00F the SETUP page tc, for 0x011 the save of the ACV page 11, for 0x015 the SETUP page bt, for 0x017 the SETUP page bL) |
+| SETTINGS | 0x008..0x00E, 0x010, 0x014, 0x016, 0x018..0x01A, 0x01B, 0x01E, and in the production image only the port-only settings of 4.1: 0x00F, 0x011, 0x013, 0x015, 0x017, 0x020, 0x021, 0x022, 0x028, 0x029, 0x02A, 0x02B, 0x02C, 0x02D..0x02F | none beyond the class (user actions of 7.1; for 0x02D..0x02E the SETUP page th; for 0x02F the SETUP page HY; for 0x02C the SETUP page CHIrP; for 0x02B the SETUP page APO; for 0x02A the SETUP battery page; for 0x029 the SETUP page Pt; for 0x028 the SETUP page LP; for 0x022 the SETUP page Ch; for 0x021 the SETUP page bH; for 0x013 the SETUP page dSP, for 0x020 the SETUP pages rEL, CL and tr, for 0x00F the SETUP page tc, for 0x011 the save of the ACV page 11, for 0x015 the SETUP page bt, for 0x017 the SETUP page bL) |
 | IDENT | 0x001..0x002 (date code), 0x003..0x006 (serial) | exactly length 2 at 0x001, only while RAM 0x2000808B != 0 (v2.05 gate 0x08015F46..0x08015F4E); exactly length 4 at 0x003 (setup item 8 save, 0x08015F90) |
 | USERZERO | 0x4D0..0x4D4, 0x4D8..0x4DC, 0x4E0..0x4E4, 0x4E8..0x4EC, 0x4F0..0x4F4, 0x4F8..0x4FC | length 5 at a record base, first byte 0xA5 |
 | CAL | 0x01F, 0x026, 0x104..0x107, 0x178..0x17B, 0x2E0..0x2E1, and the bytes R+0..R+7 of every (mode, range) record of section 5.3, R+8..R+0xF of the AC-word records (modes 2, 4, 16, 18, 20 per ac_words_base) and of the VA records, 0x2D0..0x2D7 | RAM 0x2000808A == 1 (calibration mode), and the target matches the (kind, mode, range) rule of 7.3 recomputed inside NVM from meter_mode and meter_range, with the section 10 refusals |
@@ -498,9 +506,8 @@ Nothing outside 0x000..0x4FC is in any class.
    address is in 0x40023C10..0x40023C2F (PRGKEYR, OPTKEYR, OBR, WRPR) or 0x1FF80000..0x1FF800FF, no store to program
    flash, no base-plus-offset addressing of the FLASH block, no PRGKEY or OPTKEY value; stores to PECR only set PELOCK
    or clear FTDW; `nvm_allow` equals the table regenerated from this document.
-6. Emulator checks: every scenario of `emulator/diff/` runs with the harness EEPROM assertions
-   (`expect eeprom_unchanged`, `expect eeprom_written`) and the comparison of committed EEPROM changes against v2.05
-   (`emulator/diff/compare.py`, stream `eeprom` and `eeprom_final`); a test build with a deliberate write to 0x030
+6. Emulator checks: the emulator test scripts (`emulator/scripts/test_*.py`) compare the EEPROM before and after each
+   save and assert which bytes changed; a test build with a deliberate write to 0x030
    from the SETTINGS class must be refused (DESIGN.md section 9.4).
 
 ### 9.4 Start-up with any EEPROM content

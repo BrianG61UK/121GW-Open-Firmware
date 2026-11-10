@@ -7,16 +7,17 @@ Two emulated meters, both with the bundled synthetic EEPROM.  The reference mete
 with the keys (item poked, long SETUP = edit, REL until the page's RAM variable has the wanted value, long SETUP = save);
 for every setting the EEPROM byte and the RAM variable it ends with are recorded.  The second meter shows the page Ld
 (Bluetooth on) and takes PUT requests over the emulated USART2 (host side emulator/tools/btft.py).
-  T1 reference: the 18 pages (the four pages of EEPROM 0x020 together; the page APO for 0x016 and for the time 0x02B)
+  T1 reference: the 19 pages (the four pages of EEPROM 0x020 together; the page APO for 0x016 and for the time 0x02B)
      give the recorded EEPROM byte and RAM value.
-  T2 GET: the 19 ids in table order with the values of the synthetic EEPROM as the pages show them.
+  T2 GET: the 20 one-byte ids in table order with the values of the synthetic EEPROM as the pages show them.
   T3 round trip: every id with 2 .. 4 values (the first is the one the reference meter's page gave): status 0, the answer
      names the id and the value now in effect, the EEPROM byte and the RAM variable equal the reference's for the first
      value and the page's rules for the others (byte = value, RAM = value - bias), and no other EEPROM byte changed (the
      whole 1280-byte EEPROM is compared after every PUT).
   T4 refusals: below the minimum and above the maximum of every id, a trigger of 3 and bits 7..5 in id 0x020, ids that
      are not settings (rotary memory, identity, calibration, restore, user zero, the logging interval 0x018), a payload of
-     2 and of 4 bytes: status 0x22, nothing changed.
+     2 and of 5 bytes: status 0x22, nothing changed.  (The two-byte forms of F-1.33 and the two-byte id 0x02D are tested
+     by test_cont_user.py; here 0x02D, sent in the one-byte form, is refused as no one-byte setting.)
   T5 gate: with logging on, with calibration mode on and with another SETUP page shown a PUT gets no answer and changes
      nothing; with a setting being edited on the meter (set_edit) it is answered with status 3 and changes nothing.
   T6 the last GET equals the values written, the EEPROM differs from the start only in the ids written, and the
@@ -51,7 +52,7 @@ SPEC = [
     (0x010, 'temperature unit', 0x200080AB, 0, 0, 1, [0, 1], 0, None, 1),
     (0x011, 'dBm reference', 'set_dbm_ref', 0, 0, 3, [2, 3, 0], 11, 2, 0),
     (0x013, 'display level', 'func_dsp_level', 0, 0, 1, [1, 0], 24, None, 0),
-    (0x014, 'continuity threshold', 0x200080B6, 0, 0, 15, [7, 15, 0], 10, 10, 0),
+    (0x014, 'continuity threshold', 0x200080B6, 0, 0, 17, [7, 17, 16, 0], 10, 10, 0),   # 16, 17 user codes (F-1.33, IMP-64)
     (0x015, 'Bluetooth rate', 'ble_rate', 0, 0, 3, [3, 1, 0], 21, None, 0),
     (0x016, 'auto power-off off', 0x20008039, 0, 0, 1, [1, 0], 2, None, 0),
     (0x017, 'backlight auto-off', 'pwr_bl_setting', 0, 0, 100, [5, 100, 0], 20, None, 0),
@@ -66,6 +67,7 @@ SPEC = [
     (0x02A, 'battery trim', 'set_btrim', 100, 50, 150, [105, 50, 150, 100], 1, None, 100),
     (0x02B, 'auto power-off time', 'pwr_apo_code', 0, 0, 3, [3, 1, 0], 2, None, 0),
     (0x02C, 'DIODE contact chirp', 'set_chirp_on', 0, 0, 1, [1, 0], 42, 11, 0),
+    (0x02F, 'continuity hysteresis', 'set_uh_tenth', 0, 1, 250, [60, 250, 1, 50], 46, 10, 50),   # page HY (IMP-64)
 ]
 # EEPROM bytes a page's save writes: the page APO (item 2) saves its on / off byte 0x016 and its time 0x02B together
 SAVES = {s[0]: {s[0]} for s in SPEC}
@@ -212,7 +214,7 @@ def run_tests(image):
         if F.status_of(a) != 0x22:
             T.check('PUT 0x%03X (not a setting) refused (0x22)' % sid, False, repr(a))
     T.check('%d ids that are no settings refused with 0x22' % len(NOT_SETTINGS), bad == 0)
-    for n in (2, 4):
+    for n in (2, 5):
         a = link.send(btft.packet(btft.T_PUT, 90 + n, bytes(n)))
         T.check('PUT with a %d-byte payload: 0x22' % n, F.status_of(a) == 0x22, repr(a))
     a = link.send(btft.packet(btft.T_GET, 95, b'\x00'))
@@ -221,17 +223,23 @@ def run_tests(image):
 
     print('T5 gate')
     eeprom_gate = bytes(e.m.eeprom)
+    # IMP-65 (F-1.33): outside the page Ld the meter API answers; logging and calibration mode refuse PUT with status 3
     for name, addr in (('logging on', ADDR_LOGGING), ('calibration mode on', ADDR_CAL_MODE)):
         e.m.uc.mem_write(addr, bytes([1]))
         e.advance(0.5)
-        a = link.send(F.quiet_packet(btft.put_packet, 0x017, 9), timeout=2.0)
-        T.check('%s: no answer to PUT' % name, a is None, repr(a))
+        a = link.send(F.quiet_packet(btft.put_packet, 0x017, 9), timeout=4.0)
+        T.check('%s: PUT refused by the meter API (status 3)' % name, F.status_of(a) == 3, repr(a))
         e.m.uc.mem_write(addr, bytes([0]))
         e.advance(0.6)
+    T.check('the refusals changed nothing', bytes(e.m.eeprom) == eeprom_gate and T.rd(e, m.addr('pwr_bl_setting')) == 0)
     e.m.uc.mem_write(ADDR_ITEM, bytes([21]))
     e.advance(0.4)
-    a = link.send(F.quiet_packet(btft.put_packet, 0x017, 9), timeout=2.0)
-    T.check('another page shown: no answer to PUT', a is None, repr(a))
+    a = link.send(F.quiet_packet(btft.put_packet, 0x017, 9), timeout=4.0)
+    T.check('another page shown: PUT taken by the meter API (status 0, applied)',
+            F.status_of(a) == 0 and T.rd(e, m.addr('pwr_bl_setting')) == 9, repr(a))
+    a = link.send(F.quiet_packet(btft.put_packet, 0x017, 0), timeout=4.0)
+    T.check('  and set back (status 0)', F.status_of(a) == 0 and T.rd(e, m.addr('pwr_bl_setting')) == 0, repr(a))
+    eeprom_gate = bytes(e.m.eeprom)
     F.reopen(e)
     e.m.uc.mem_write(ADDR_EDIT, bytes([1]))
     a = f.ask(btft.put_packet, 0x017, 9)

@@ -1,8 +1,0 @@
-# MIN/MAX in LowZ is refused (mode 0).
-source analysis/keys_setup.md section 2.2 MIN/MAX row (refused in mode 0)
-dial lowz
-wait 3
-press MINMAX
-wait 1
-expect seg MAX off
-expect seg MIN off

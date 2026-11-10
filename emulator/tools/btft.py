@@ -31,6 +31,10 @@ PIECE = 2048                                        # raw bytes of one piece of 
 PIECE_PACK_MAX = 2064                               # packed bytes of one piece (bft.s BFT_ZPACK_MAX)
 READZ_MAX = 4096                                    # largest READZ
 T_UPDMODE, T_LEAVE = 0x18, 0x19                     # restart into update mode; leave the page Ld (firmware F-1.17, IMP-47)
+# the meter API (firmware F-1.33, IMP-65, ble/bfapi.s): WHERE, SHOW, and GET / PUT on every screen (payload <= 4 bytes)
+T_WHERE, T_SHOW = 0x1B, 0x1C
+API_MAXPAY = 4
+WHERE_FLAGS = ['page Ld', 'logging', 'MEM view', 'calibration mode', 'MIN/MAX', 'power-on window', 'restart due']
 FORMAT_WORD = b'FORMAT'      # the only payload FORMAT accepts (ble/bftsd.s)
 DIAG_NAMES = ['failed card sessions of the transfer', 'last card failure (step << 8 | FatFs result)',
               'failed disk_read / disk_write since power-on', 'their op | reason << 8', 'SDIO_STA', 'sd_transfer_error',
@@ -170,6 +174,16 @@ def put_packet(seq, setting_id, value):
     return packet(T_PUT, seq, struct.pack('<HB', setting_id, value))
 
 
+def get_wide_packet(seq, start=0, most=255, flags=1):
+    """GET with two-byte values (F-1.33, IMP-64): payload start(1) max(1) flags(1)."""
+    return packet(T_GET, seq, bytes([start, most, flags]))
+
+
+def put_wide_packet(seq, setting_id, value):
+    """PUT with a two-byte value (F-1.33, IMP-64): id(2) value(2), both little endian."""
+    return packet(T_PUT, seq, struct.pack('<HH', setting_id, value))
+
+
 def parse_list(a):
     """(entries, end) of a LIST answer; entries are Entry(size, fdate, ftime, attr, name, cut)."""
     count, end = a.field & 0x7FFF, bool(a.field & LIST_END)
@@ -230,6 +244,28 @@ def parse_info(a):
 def parse_get(a):
     """{setting id: value} of a GET answer."""
     return {struct.unpack_from('<H', a.data, 3 * i)[0]: a.data[3 * i + 2] for i in range(a.field)}
+
+
+def parse_get_wide(a):
+    """[(setting id, value)] of a GET answer with two-byte values, in table order (field bit 15: the end)."""
+    return [struct.unpack_from('<HH', a.data, 4 * i) for i in range((a.field & 0x7FFF))]
+
+
+def where_packet(seq):
+    """Meter API WHERE: the meter's dial position, mode, SETUP page, edit state and flags (IMP-65)."""
+    return packet(T_WHERE, seq)
+
+
+def show_packet(seq, item):
+    """Meter API SHOW: walk to the SETUP page `item` (set_item numbers, ble/bfapi.s)."""
+    return packet(T_SHOW, seq, bytes([item]))
+
+
+def parse_where(a):
+    """{'version', 'dial', 'mode', 'item', 'edit', 'flags', 'flag_names'} of a WHERE answer (status 0)."""
+    dial, mode, item, edit, flags = a.data[:5]
+    return {'version': a.field, 'dial': dial, 'mode': mode, 'item': item, 'edit': edit, 'flags': flags,
+            'flag_names': [n for i, n in enumerate(WHERE_FLAGS) if flags >> i & 1]}
 
 
 def card_diag2(field):

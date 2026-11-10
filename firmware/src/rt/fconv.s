@@ -12,8 +12,7 @@
 @ Calling convention (DESIGN.md 6, exception for RT): a float argument and a float result are in r0, a double is in
 @ r0 (low word) : r1 (high word), a 64-bit integer likewise; r2/r3/r12 and the flags are scratch; r4-r11 are preserved.
 @ Every routine is a copy of the v2.05 instruction sequence (same operations in the same order, so every register,
-@ flag and result bit is the one v2.05 produces), re-expressed with symbolic labels.  Bit-exactness against the
-@ original routines is verified by executing both under Unicorn on the same inputs (firmware/DESIGN.md 9.4 level 1).
+@ flag and result bit is the one v2.05 produces), re-expressed with symbolic labels.
 @ Context: ISR-safe, no memory access, no state.
 @ =============================================================================
 

@@ -144,7 +144,7 @@ bfx_prot_tab:
 @ Clobbers : r0-r3, r12, flags (r4, r5 saved)
 @ Note     : a refusal of the queue (full) leaves the sender to repeat the request, as with the 0x81 answers
 @ -----------------------------------------------------------------------------
-LFUNC bfx_reply
+FUNC bfx_reply                              @ global: ble/bfapi.s answers with it too (IMP-65)
     push {r4, r5, lr}
     ldr r4, =bfx_ans
     mov r5, r2                              @ r5 = length of the data
@@ -208,7 +208,7 @@ ENDFUNC bfx_fail
 @ Out      : r0 = status, r1 = 0, r2 = 0
 @ Clobbers : r1, r2
 @ -----------------------------------------------------------------------------
-LFUNC bfx_status
+FUNC bfx_status                             @ global: ble/bfapi.s (IMP-65)
     movs r1, #0
     movs r2, #0
     bx lr

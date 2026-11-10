@@ -44,6 +44,9 @@
 @ -----------------------------------------------------------------------------
 FUNC hy3131_poll
     push {r7, lr}                      @ 0x08006124
+.if HY_DIAG
+    bl hyd_step                             @ diagnostic build: one batch of the latch experiment while it runs
+.endif
     @ production: while a counter restart is pending (counter off, R20 = row & 0xFD / 0xF9) no event is serviced, so neither the
     @ INTF clear nor the peak restart (R29 writes, FUN_0800A7FC) nor a new restart can be sent between restart phase 1 and 3.
     @ v2.05 services nothing during its blocking delay(10000) (0x0800BFCE), so registers 0x20..0x33 only ever hold v2.05
@@ -114,6 +117,9 @@ ENDFUNC hy3131_poll
 @ -----------------------------------------------------------------------------
 FUNC hy3131_service_irq
     push {r4, lr}
+.if HY_DIAG
+    bl hyd_mark_intf                        @ diagnostic build: TIM7 at the start of the service (hy/hydiag.s)
+.endif
     movs r0, #0x1E
     movs r1, #2
     bl hy_read_frame                        @ mirror[0x1E..0x1F] = INTF, INTE (IMP-18: R20 is not read back, its copy
@@ -154,9 +160,15 @@ FUNC hy3131_service_irq
     ldrb r0, [r0]
     lsls r0, r0, #29                        @ mask bit 2 = AD1F
     bpl .Lps_nad1
+.if HY_DIAG
+    bl hyd_ad1_begin                        @ diagnostic build: read timing (hy/hydiag.s)
+.endif
     movs r0, #0
     movs r1, #3
     bl hy_read_frame                        @ mirror[0..2] = AD1 result
+.if HY_DIAG
+    bl hyd_ad1_end
+.endif
     bl ad1_ready_dispatch
 .Lps_nad1:
 .if MAC_RMS_SERVICE

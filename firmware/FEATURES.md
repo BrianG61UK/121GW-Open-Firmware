@@ -406,8 +406,9 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   `bH 25`, `bHOFF`.
 - What it does: v2.05 keeps the tone 100 TIM3 ticks after the last reading that passed the threshold
   (`pe7_on_with_timeout(100)`, 0x08007902 / 0x08007920), so a short contact gives an audible beep. The page sets that
-  time to 100, 50 or 25 ms, or 15 ms (`bHOFF`: the shortest hold that never chops a steady contact; the re-arms of a
-  steady contact come every 4.0 ms, 3.1 .. 10.0 ms in the emulator, so 10 ms or less would interrupt the tone). The threshold, the detection per
+  time to 100, 50 or 25 ms, or 15 ms (`bHOFF`: the shortest hold that never chops a steady contact; a steady contact
+  re-arms the tone with every result, which comes every 3.91 ms in BEEP, measured on a meter 2026-11-10; the emulator
+  with that timing keeps the tone unbroken at 15 ms, test_beep_hold.py). The threshold, the detection per
   conversion (IMP-04) and the time to the tone are unchanged.
 - Storage: one byte 0x021 (0 = 100 ms); a value above 3 reads as 0.
 
@@ -705,6 +706,50 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Test: emulator `test_packed.py` (Z1..Z5: the meter's packed bytes equal those of the reference model
   `emulator/tools/zdyn.py` in every window), bootloader `test_bootloader.py` B10..B12, companion tests; HARDWARE_TEST 51.
 
+### 2.38 Continuity with a threshold and hysteresis of your own (implemented, IMP-64, F-1.33)
+- Request (owner, 2026-11-09): a continuity option that picks the threshold, beeps on a short or on an open, with about
+  5 ohm of hysteresis; beep-on-open finds intermittent connections (it sounds when the connection breaks); a user-set
+  threshold and hysteresis.  Owner's choice (a): 1 ohm steps 1..500 ohm, a two-byte Bluetooth setting; EEPROM
+  0x02D..0x02F approved ("ok just don't break calibration").
+- Where: the threshold page (item 10 in BEEP) has two more codes, `DNUSr` (code 16, after `DN300`: tone at or below the
+  threshold, a short) and `UPUSr` (code 17, after `UP300`: tone at or above it, an open).  While one of them is chosen
+  the BEEP walk shows two pages after `bH`: `th` (item 45, the threshold, `th  1` .. `th500` ohm) and `HY` (item 46, the
+  hysteresis, `HY 0.1` .. `HY25.0` ohm, default `HY 5.0`).  REL and PEAK step by 1 ohm or 0.1 ohm and wrap around; holding
+  the key repeats faster (the key auto-repeat of every page).
+- What it does: the tone starts at the threshold T and, once on, stays on up to T + H (`DNUSr`) or down to T - H
+  (`UPUSr`, at least 0.01 ohm), the same rule as the fixed thresholds (`mres/beep.s` `fn_08007940`, `set/cu.s`
+  `set_cu_thr`).  The 16 fixed codes, the per-conversion decision (IMP-04) and the hold time `bH` are unchanged.  An
+  open input reads above 1119 ohm in BEEP (emulator, 2026-11-09), so `UPUSr` up to 500 ohm sounds on every open.
+- Storage: 0x02D..0x02E the threshold (u16 big endian; 0 or above 500 reads as 30 ohm), 0x02F the hysteresis in tenths
+  of an ohm (0 or above 250 reads as 5.0 ohm), 0x014 the code (0..17).  The word 0x02C..0x02F holds only these and the
+  chirp byte 0x02C (EEPROM_MAP.md 4.1); the NVM allow table gained exactly these three bytes.
+- Bluetooth: the status frame sends the codes as 0xBA / 0xBB with the threshold in ohm in the value bytes.  The remote
+  settings (2.11) offer 0x02F as a one-byte setting and 0x02D through new two-byte forms (GET start max flags = 1, PUT
+  id value(2)); older companions see neither the two-byte forms nor 0x02D.
+- Test: emulator `test_cont_user.py` (T1 decision of all 18 codes, T2 load and defaults, T3 pages and saves with the
+  whole EEPROM compared, T4 status frame, T5 remote settings), `test_bft_settings.py`, companion tests; HARDWARE_TEST 52.
+
+### 2.39 Meter API over Bluetooth (implemented, IMP-65, F-1.33)
+- Request (owner, 2026-11-09): "make yourself a interface in the meter that can directly choose the settings and allow
+  inputs directly"; "its like a meter api with all commands in it you can run".  Found in the continuity meter test: in
+  BEEP every SETUP page sends the threshold code in the status frame, so a script cannot tell which page is shown, and
+  every setting needed the walk to page Ld.
+- Packets: the B5 5B packets of the file transfer (2.11) with at most 4 payload bytes are taken on every screen; the key /
+  clock parser of the USART2 handler collects them (first byte 0xB5) and drops a packet cut short after 100 ms without a
+  byte.  Requests: GET 0x16 and PUT 0x17 as on page Ld; WHERE 0x1B (dial position, meter_mode, set_item, set_edit,
+  flags: page Ld, logging, MEM view, calibration mode, MIN/MAX, power-on window, restart due); SHOW 0x1C item (the same
+  steps as SETUP presses, `fn_08015410`, and on SEt what a long SETUP does for a meter-walk page; a page that does not
+  exist in the present function answers 0x22 and the meter walks back).  WHERE and SHOW also work on page Ld.
+- Refusals (status 3): calibration mode; for PUT and SHOW also logging, the MEM view, the power-on window (where short
+  SETUP does not walk either) and a page being edited.
+- The logging interval 0x018 (0..999 s) is a two-byte setting (GET flags 1, the 4-byte PUT); its save is the page's own
+  (`fn_08015AC0` action 100: EEPROM 0x018..0x019 big endian, already in the NVM allow table).
+- Host: `emulator/tools/btft.py` (`where_packet`, `show_packet`, `parse_where`), `emulator/tools/meter_api.py` (command
+  line over Bluetooth).  The companion is not changed (owner 2026-11-09).
+- Test: emulator `test_meter_api.py` (WHERE, SHOW against the keys in six functions, refusals, the parser with 0xF4 /
+  0xF8 / 0xFD / 0xFE inside a packet and a cut packet, PUT of 0x018 with the whole EEPROM compared, page Ld),
+  `test_bft_settings.py`, `test_cont_user.py`.
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
@@ -722,6 +767,8 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 | 0x02A | 2.16 battery | trim t + 100 (t = -50..+50, 0.2 % steps) | no trim | as 0x028 | approved, implemented |
 | 0x02B | 2.23 APO time | 0 30 min, 1 1 min, 2 15 min, 3 60 min | 30 min | as 0x028 | approved, implemented |
 | 0x02C | 2.25 DIODE chirp | 0 off (v2.05 jump chirp), 1 on (contact chirp) | off | none (free word 0x02C..0x02F) | approved, implemented (planned for the HI limit of 2.1, which stays RAM only) |
+| 0x02D..0x02E | 2.38 continuity | user threshold 1..500 ohm, u16 big endian | 30 ohm | 0x02C chirp, 0x02F | approved 2026-11-09, implemented |
+| 0x02F | 2.38 continuity | user hysteresis 1..250 tenths of an ohm | 5.0 ohm | 0x02C chirp, 0x02D..0x02E | approved 2026-11-09, implemented |
 
 0x023 stays unused. Every offset above is in the never-accessed list of EMAP 4. The alternative locations 0x4B0..0x4CF (32
 bytes, never accessed by any code, outside `cal.bin`) would keep the settings out of a restored backup, but EMAP 9.1 item 2
@@ -752,6 +799,8 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 42 | `CHIrP` DIODE contact chirp (after `dSP`) | DIODE mode only; name on the sub display, `on` / `oFF` on the main display | yes (implemented) |
 | 43 | `SEt` the end of the measurement walk | always; a long SETUP opens the meter walk (IMP-52) | no (implemented) |
 | 44 | `bAcK` the end of the meter walk | always; SETUP (short or long) goes to item 0 (IMP-57, F-1.26) | no (implemented) |
+| 45 | `th` user continuity threshold (after `bH`) | BEEP mode with the code `DNUSr` or `UPUSr` only (IMP-64, F-1.33) | yes (implemented) |
+| 46 | `HY` user continuity hysteresis (after `th`) | as 45 | yes (implemented) |
 | 32 | `n` count | MIN/MAX on | no |
 | 33 | `Sd` | MIN/MAX on | no |
 | 34, 35 | `tHI`, `tLo` | MIN/MAX on | no |
@@ -759,7 +808,7 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 Items 32..35 are the MIN/MAX pages. v2.05 uses 0..12 and 100; the page dispatcher falls back to item 0 for an unknown item
 (`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 25. Since
 IMP-52 (2.26) SETUP short steps two walks (`fn_08015410`).  Measurement: 0 -> 10..12 (the modes that have them) -> 22 -> 23
-(TEMP only) -> 24 -> 26 (BEEP only) / 37 (DCmA only) / 38 (OHM only) / 41 (CAP only) / 42 (DIODE only) -> 27 -> 28 -> 29 ->
+(TEMP only) -> 24 -> 26 (BEEP only; then 45 -> 46 with a user code) / 37 (DCmA only) / 38 (OHM only) / 41 (CAP only) / 42 (DIODE only) -> 27 -> 28 -> 29 ->
 36 (test on) -> 30 -> 31 (tr-Ch) -> 9 -> 32 -> 33 -> 34 -> 35 (MIN/MAX on) -> 43 -> 0.  Meter (long SETUP on 43): 1 -> ... ->
 8 -> 20 -> 21 -> 39 -> 40 (two-part bootloader only) -> 25 -> 0.  Each new page joins one of the two chains.
 
@@ -767,8 +816,7 @@ IMP-52 (2.26) SETUP short steps two walks (`fn_08015410`).  Measurement: 0 -> 10
 
 1. 2.9 (done): both images built, `cmp` of the strict image against the build made before the change, `make check` for both,
    the induced emulator test `emulator/scripts/test_backlight_timer.py` (30 s setting, restart by key and dial, OFF never, the
-   edit writes only 0x017, STOP and wake), one scenario of the differential harness for the page list
-   (`setup_navigate_dcv`, entries IMP-07 in `deviations.txt`).
+   edit writes only 0x017, STOP and wake).
 2. 2.8, 2.2, 2.3, 2.4, 2.5: independent display or host-link changes; each with a routine-level test and an induced emulator test.
 3. 2.1 and 2.6 together (the log trigger uses the verdict), then 2.7 with the RT fix of OF-51.
 4. 2.10 after a link test on a meter (throughput and transparency of the module), together with 2.11.

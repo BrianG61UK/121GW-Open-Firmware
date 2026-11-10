@@ -6,8 +6,8 @@
 # OUTDIR gets
 #   2_fast/EEVBlog.bin          production build       (make)
 #   v205_tables.json            v2.05 constant tables of the sources for the emulator (tools/gen_emu_tables.py)
-# The like-v2.05 build lives on the branch like-v2.05.  The second argument is the make target (default check-ci, the checks that need no original
-# image; `check` needs inputs/binaries/EEVBlog2_05.bin and the analysis/ files; `none` builds the image only).
+# The like-v2.05 build lives on the branch like-v2.05.  The second argument is the make target (default check-ci, the build checks of `make check`; `none` builds the
+# image only).
 # GNU binutils arm-none-eabi 2.46 must be on PATH (firmware/Makefile toolcheck); PYTHON names the python with
 # capstone and unicorn for the checks (default python3).
 set -eu

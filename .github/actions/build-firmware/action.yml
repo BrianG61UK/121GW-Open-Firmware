@@ -5,7 +5,7 @@ description: >
   build lives on the branch like-v2.05.
 inputs:
   target:
-    description: make target (check-ci = checks that need no original image; none = image only)
+    description: make target (check-ci = the build checks, the same as check; none = image only)
     default: check-ci
 runs:
   using: composite

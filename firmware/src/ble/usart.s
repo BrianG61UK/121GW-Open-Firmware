@@ -510,6 +510,30 @@ FUNC ble_usart2_isr
     bl bft_rx_byte                          @ IMP-28: the page Ld owns the link, every byte goes to its ring
     b .Lisr_done
 .Lrx_legacy:
+    @ IMP-65: a meter-API packet (first byte 0xB5) cut short is dropped after API_GAP_TICKS without a byte, so the
+    @ sender's repetition starts a fresh frame; key and clock frames are not affected
+    ldr r2, =ble_rx_idx
+    ldrb r3, [r2]
+    cmp r3, #0
+    beq 1f
+    ldr r1, =ble_rx_buf
+    ldrb r0, [r1]
+    cmp r0, #0xB5
+    bne 1f
+    ldr r0, =api_ticks
+    ldrh r0, [r0]
+    ldr r1, =api_rx_last
+    ldrh r1, [r1]
+    subs r0, r0, r1
+    uxth r0, r0                             @ 10 ms ticks since the last byte (mod 65536)
+    cmp r0, #API_GAP_TICKS
+    blo 1f
+    movs r3, #0
+    strb r3, [r2]
+1:  ldr r0, =api_ticks
+    ldrh r0, [r0]
+    ldr r1, =api_rx_last
+    strh r0, [r1]                           @ the time of this byte (this handler is api_rx_last's only writer)
     ldr r1, =ble_rx_buf
     ldr r2, =ble_rx_idx
     ldrb r3, [r2]
@@ -526,6 +550,7 @@ FUNC ble_usart2_isr
     strb r3, [r2]
     cmp r3, #1
     bne .Lrx_more                           @ not the first byte of a frame
+.Lrx_first:
     ldrb r0, [r1]                           @ first byte (v2.05 0x08024866..0x0802486A)
     cmp r0, #0xF4
     bne .Lrx_not_key
@@ -535,9 +560,16 @@ FUNC ble_usart2_isr
     b .Lisr_done
 .Lrx_not_key:
     cmp r0, #0xF8
-    bne .Lrx_resync
+    bne .Lrx_not_clock
     movs r0, #15                            @ 0xF8: set-clock frame, 15 bytes
     ldr r1, =ble_rx_expect
+    strb r0, [r1]
+    b .Lisr_done
+.Lrx_not_clock:
+    cmp r0, #0xB5
+    bne .Lrx_resync
+    movs r0, #6                             @ IMP-65: a meter-API packet; its header B5 5B type seq(2) len first, then
+    ldr r1, =ble_rx_expect                  @ 8 + len bytes in all (.Lrx_more)
     strb r0, [r1]
     b .Lisr_done
 .Lrx_resync:
@@ -558,6 +590,32 @@ FUNC ble_usart2_isr
     strb r0, [r2]
     b .Lisr_done
 .Lrx_more:
+    @ IMP-65: a meter-API packet: byte 2 must be 0x5B; at byte 6 (len) the length becomes 8 + len, len at most
+    @ API_MAXPAY so the packet fits ble_rx_buf (20 bytes, the index wraps at 20); anything else drops the frame
+    ldrb r0, [r1]                           @ r1 = ble_rx_buf, r3 = bytes received, r5 = this byte
+    cmp r0, #0xB5
+    bne .Lrx_more_len
+    cmp r3, #2
+    bne 1f
+    cmp r5, #0x5B
+    beq .Lisr_done
+    strb r5, [r1]                           @ not a packet: this byte may start a frame itself (a stray 0xB5 before a
+    movs r3, #1                             @ key frame must not cost the key frame), so it becomes byte 1 and the
+    strb r3, [r2]                           @ first-byte rules run on it
+    b .Lrx_first
+1:  cmp r3, #6
+    bne .Lrx_more_len
+    cmp r5, #API_MAXPAY
+    bhi .Lrx_drop
+    adds r0, r5, #8
+    ldr r1, =ble_rx_expect
+    strb r0, [r1]                           @ 6 bytes received, at least 8 due: not complete yet
+    b .Lisr_done
+.Lrx_drop:
+    movs r0, #0
+    strb r0, [r2]                           @ r2 = &ble_rx_idx: the next byte starts a frame
+    b .Lisr_done
+.Lrx_more_len:
     ldr r0, =ble_rx_expect
     ldrb r0, [r0]
     cmp r3, r0

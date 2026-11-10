@@ -5,11 +5,13 @@ Status: design, before implementation. No source code exists yet.
 Target: EEVblog 121GW, STM32L152ZD (Cortex-M3, 384 KB flash, 48 KB RAM, 12 KB data EEPROM; datasheet
 `inputs/docs/en.DM00034689`, device summary "48 Kbytes of RAM"). The new firmware is written by hand in Thumb-2 assembly
 (GNU as, unified syntax, arm-none-eabi binutils 2.46 in /opt/homebrew/bin) and replaces the original application v2.05.
-It is loaded by the unchanged bootloader at 0x08006000 and behaves like v2.05 except for the deviations listed in
-section 10.
+It is loaded by the unchanged bootloader at 0x08006000. It keeps the EEPROM layout and the RAM addresses of v2.05
+(calibration, serial number and options are preserved); its own behaviour is specified by `FEATURES.md` and the IMP rows
+of section 10 and tested by the emulator tests.
 
-Sources of truth and how this document cites them:
-- The original image `inputs/binaries/EEVBlog2_05.bin` (base 0x08006000) is the truth. Addresses such as 0x0800D2D0 are
+Sources and how this document cites them:
+- The original image `inputs/binaries/EEVBlog2_05.bin` (base 0x08006000) is a reference to read; no build, check or test
+  compares the firmware with it. Addresses such as 0x0800D2D0 are
   instruction or data addresses in that image; `FUN_xxxxxxxx` and names like `meter_apply_mode_range` are the function
   names of `analysis/decompile/EEVBlog2_05.c` and `analysis/verified_names.txt`.
 - Behaviour specifications derived from the image: `analysis/keys_setup.md`, `rotary.md`, `ble_packet.md`,
@@ -57,7 +59,7 @@ block may only be addressed through its own literal with offset 0: coding rule 8
 | Clock set-up never leaves the device unbootable | same clock sequence as v2.05 with bounded waits and an MSI fallback at every step; no change of BOR, option bytes or boot configuration | 3.2 |
 | Bootloader accepts the image as it accepts v2.05 | vector table at 0x08006000, initial SP 0x20001240 (passes the only check, `(SP & 0x2FFE0000) == 0x20000000` at bootloader 0x08004994), reset vector with bit 0 set, file size a multiple of 4 and at most 0x4C000 (slots of the two-part bootloader above, bootloader/DESIGN.md 6.1) | 2.1 |
 | The firmware can never damage hardware | HY3131 configuration only from a table of the v2.05 rows and sequences, checked at build time; pins driven by external devices never become outputs; power and analog-control outputs only in v2.05 combinations and order, with the listed safety improvements | 4 |
-| Behaviour identical to v2.05 except documented deviations | port routines replace v2.05 functions one by one (Appendix A); a v2.05-equivalent run mode for strict differential testing; each deviation has an ID, a module, a scenario and an allowlist entry | 3.5, 9, 10 |
+| The firmware's own behaviour is specified and tested | specified by `FEATURES.md` and the DESIGN IMP rows (section 10); tested by the emulator tests (9.4); the EEPROM and RAM-address promises above stay | 3.5, 9, 10 |
 
 ---
 
@@ -255,9 +257,8 @@ whose sources no longer contain the switch:
 | HY3131 read | full 0x34-byte burst from register 0 per event (0x08006158) | per-event read sets (6.13) |
 | Sleep | none (v2.05 never sleeps) | `wfi` at the end of each pass; wake-ups are the interrupts v2.05 already enables (TIM3 every 0.996 ms, TIM2, USART2, SDIO, DMA2); no new interrupt source |
 
-Baseline mode exists to verify every module against v2.05 with the strict differential harness (lcd, spi, uart, gpio,
-eeprom, sd streams with one-tick tolerance, `emulator/diff/compare.py`). Production mode is the shipped image; its
-differences from v2.05 are deviations OF-31 and IMP-01..IMP-06 with their own scenarios. Every module routine called from the
+Baseline mode is the like-v2.05 loop structure of its branch. Production mode is the shipped image; its
+differences from v2.05 are deviations OF-31 and IMP-01..IMP-06. Every module routine called from the
 loop is run-to-completion and returns, so both modes call the same code. ARS section 10.3: AD1 latency and beep
 response are bounded by the 1 ms TIM3 wake in production mode; the MCU current gain comes from sleeping instead of
 busy-waiting (datasheet Table 17/19 figures quoted there).
@@ -343,22 +344,20 @@ Port mechanism:
    others (OF-53, decision 12.2), where v2.05 writes 0x00: any value with bits 6:5 clear is accepted. INTF is a flag
    register, not a configuration register: a written 0 clears a flag, a written 1 has no effect ("INTF register can be
    written as 0 by SPI Interface, but not 1", DS p19 10.2 (7)); bits 6:5 carry no flag ("-", DS p19) and stay 0 as in
-   v2.05's value. `check_hy.py` (INTF_ACK) and the emulator whitelist (`emulator/diff/run.py` INTF_ACK_PAIRS) allow
+   v2.05's value. `check_hy.py` (INTF_ACK) and the emulator whitelist (`emulator/emu/hy3131_whitelist`) allow
    exactly these values; no configuration register value is added.
 5. OF-17 is fixed by refusing the second key (PEAK while the 1 kHz filter is on, or the filter while PEAK is on), so
    row and INTE always form a v2.05 pair; no combined row is created. OF-16 changes no HY3131 write.
 6. Reads are not configuration writes: the per-event read sets of production mode (6.13) change only which registers
    are read; the whitelist (writes) is unaffected. Read side effects per the datasheet (INTF cleared by reading, DS p19;
    CTBOV cleared by reading CTSTA, DS p36) are respected by the read-set rules of 6.13.
-7. Build check (`make check`): every row in `hy_rows` equals the v2.05 image bytes at its cited address; the set of
-   (row, INTE) pairs reachable through the port selector (enumerated by `firmware/tools/check_hy.py` over all modes,
-   ranges and flag values) equals the v2.05 set (47 pairs); no code outside `hy_write_frame`/`hy_read_frame` writes
+7. Build check (`make check`): every frame the port selector can request (enumerated by `firmware/tools/check_hy.py`
+   over all modes, ranges and flag values) is a frame of the whitelist data `firmware/tools/hy_reference.txt`; no code outside `hy_write_frame`/`hy_read_frame` writes
    GPIOF BSRR bit 0 (HY_CK) high, so no other code can clock a bit into the HY3131; outside HY, BSRR bits 1..2 and the
    clear of bit 0 are written only by the BRD idle-level code (board init 0x0801C196..0x0801C1A6, power-down
    `FUN_0801C8EC`, fault-safe state) (instruction-level scan).
 8. Run-time check in the emulator: `emulator/emu/safety.py` compares every HY3131 write frame with
-   `emulator/diff/hy3131_whitelist` (generated from v2.05 runs by `emulator/diff/run.py --make-whitelist`) and stops the
-   machine on any other write.
+   `emulator/emu/hy3131_whitelist` (plain data) and stops the machine on any other write.
 9. Order and timing: the v2.05 frame order (row, INTE, restart phase 1, delay, presets, read-back, phase 3) and bit
    timing (delay(10) after each byte, delay(1) around each clock edge, `FUN_0800ECF6`) are kept. The 20-byte row has no
    break-before-make step in v2.05; harm UNPROVEN; the port produces exactly the v2.05 transitions and adds none.
@@ -714,8 +713,9 @@ A module with a narrow interface, so that the faster auto-ranging (IMP-01, ARS s
   the peak restart in `FUN_0800A7FC` (as `hy_peak_restart`).
 - Mechanism: 4.1.
 - Read sets (production mode, IMP-06): v2.05 reads 0x34 bytes from register 0 on every event (0x08006158), about
-  3.26 ms at its bit timing (7.8 us per bit, ARS 5.2 P1, re-measured 2026-11-01), too long for the 640 sps rows (BEEP, ACV r3, DCmV r1, LowZ AC; period
-  1.5625 ms). The port reads per event only the registers consumed for that event, as auto-increment bursts with the
+  3.26 ms at its bit timing (7.8 us per bit, ARS 5.2 P1, re-measured 2026-11-01), too long for the fast rows (BEEP, ACV r3, DCmV r1, LowZ AC: the
+  datasheet formula gives 1.5625 ms; with AD1CHOP = 1x one result takes two conversions plus 0.79 ms, measured on a
+  meter 2026-11-10: BEEP 3.91 ms, emulator emu/hy3131.py AD1_CHOP_SETTLE_S). The port reads per event only the registers consumed for that event, as auto-increment bursts with the
   same read command format: INTF/INTE 0x1E..0x1F on every event (v2.05 computes the event mask rx[0x1E] & rx[0x1F] in
   `hy3131_service_irq` 0x0800614E; reading INTF has the side effect of clearing it, DS p19, as in v2.05's burst), AD1
   0x00..0x02 on AD1F, the counter block 0x14..0x1D on CTF (0x15..0x1D are parsed by `counter_parse_and_restart`
@@ -1090,9 +1090,7 @@ behind an MBR, FAT32 68 MiB, the emulator's 64 MiB FAT32 format) x 55 scripts (8
 filled to the last cluster, 40 random operation sequences, 10 with an injected read or write error): every output line
 and every image identical; r4-r11 and sp preserved by every call; deepest stack use 228 bytes (f_open with the mount,
 without the SD driver).  Emulator: test_sd_errors, test_sd_large_card (8, 32, 128 GiB), test_log_trigger,
-test_log_minmax_time, test_bt_upload (with a card that is full for the copy) pass; the card scenarios of the differential
-comparison with v2.05 diverge only where the R0.08a image does, plus the clock-read timing of mem_logging_sd
-(deviations.txt, IMP-29).  Verified working on a meter (2026-11-04): a log of 76 rows with the closing MAX / MIN rows
+test_log_minmax_time, test_bt_upload (with a card that is full for the copy) pass.  Verified working on a meter (2026-11-04): a log of 76 rows with the closing MAX / MIN rows
 written and complete; the production image sent over Bluetooth (172 s, 3 failed card writes repeated), checked, written
 as EEVBlog.bin and BTLOAD.TMP deleted; that image flashed and started.
 
@@ -1125,7 +1123,6 @@ and the bootloader updates the firmware from it.
 ```
 firmware/
   DESIGN.md  EEPROM_MAP.md  ORIGINAL_FIRMWARE_ISSUES.md  OPTIMIZATIONS.md (written during implementation)
-  deviations.txt                 allowlist for emulator/diff (9.5)
   Makefile
   link/121gw.ld                  linker script (2.3, 5.1, 9.2)
   src/inc/  hw.inc               peripheral register addresses and bit names (RM0038 names)
@@ -1237,11 +1234,9 @@ comment states only what is true of the code below it; a comment about v2.05 cit
   sorted path order (`LC_ALL=C`), tool versions checked and printed (binutils 2.46.0). The same sources give the same
   SHA-256.
 - `make listing`: `arm-none-eabi-objdump -d -S` of the ELF for review.
-- `make check-ci`: the checks of 9.3 that need no original image (1, 2, 4, 5, and 3 as far as it concerns `hy_rows` and
-  `brd_fe_table`), run by the GitHub workflow `.github/workflows/firmware.yml`. `tools/check_hy.py --reference-data
-  tools/hy_reference.txt` reads the v2.05 HY3131 write sequences from the committed data file instead of executing the
-  original image (`--reference --write-reference` regenerates it); the checks that compare with the image (`TABLE_V205`
-  regions, `.data_v205`, `nvm_allow`, `ram_v205.inc`) are printed as SKIPPED and run in `make check`.
+- `make check-ci`: the same checks as `make check` (all of 9.3, none needs the original image), run by the GitHub
+  workflow `.github/workflows/firmware.yml`. `tools/check_hy.py` reads the HY3131 write whitelist from the committed
+  data file `tools/hy_reference.txt`.
   `tools/build_dist.sh` builds both variants in the layout of the release archive, `tools/gen_fixes.py` writes its
   `FIXES.md` from `ORIGINAL_FIRMWARE_ISSUES.md`, `tools/gen_emu_tables.py` writes the v2.05 tables of the sources for the emulator.
 
@@ -1268,8 +1263,8 @@ start 0x20001240; `.bss_port` inside RAM_PORT.
    0x13141516, 0xFBEAD9C8, 0x24252627 as pool words or `movw`/`movt` pairs. Stores to PECR may only set PELOCK or clear
    FTDW (value analysis of the stored constant). Allowed only in the NVM objects: 0x08080000..0x08082FFF, 0x40023C04
    (PECR), 0x40023C0C (PEKEYR), 0x40023C18 (SR), 0x89ABCDEF, 0x02030405. FLASH_ACR 0x40023C00 only in the SYS clock object.
-3. Tables: every `TABLE_V205` region equals the v2.05 image bytes; `.data_v205` equals `ram_init.txt`; `hy_rows` and the
-   reachable (row, INTE) set (4.1); `nvm_allow` regenerated from EMAP 9.2 and compared; `brd_fe_table` against
+3. Tables: the HY3131 write whitelist (4.1 item 7, `tools/check_hy.py` with `tools/hy_reference.txt`); `nvm_allow`
+   regenerated from EMAP 9.2 and compared (`tools/gen_nvm_allow.py --check`); `brd_fe_table` against
    `tools/fe_levels.txt`.
 4. GPIO policy (`tools/check_gpio.py`): decodes the constant arguments of every `brd_gpio_init` call and rejects
    output or AF configuration of PF3, PE10, PE11, PD6 (except AF7), PC8/PD2 (except AF12), PH0, PH1, PA13, PA14,
@@ -1279,11 +1274,10 @@ start 0x20001240; `.bss_port` inside RAM_PORT.
 ### 9.4 Tests in the emulator
 
 The emulator (`emulator/app.py`, `emulator/emu/*`) runs the real bootloader and then the image given by `--app`, with
-the EEPROM image given by `--eeprom`. The differential harness `emulator/diff/` (`run.py`, `scenario.py`, `trace.py`,
-`compare.py`, `scenarios/`) runs v2.05 and a candidate through the same scripted scenarios (keys, dial, jacks, input
-signals, battery/thermistor voltages, SD card, BLE bytes, power cycles; fixed noise seed and calendar) and compares the
-streams lcd, gpio (with derived power), spi, uart_tx, eeprom, rtc, sd_cmd, sd_block, reset, fault, and the final EEPROM
-image, SD files and LCD frame. The safety monitor `emulator/emu/safety.py` runs in every session.
+the EEPROM image given by `--eeprom`. The test scripts `emulator/scripts/test_*.py` drive the image through scripted
+scenarios (keys, dial, jacks, input signals, battery/thermistor voltages, SD card, BLE bytes, power cycles) and check the
+specified behaviour (`FEATURES.md`, the IMP rows of section 10). The safety monitor `emulator/emu/safety.py` runs in every
+session.
 
 Without a bootloader image the emulator also starts the application directly from its vector table (SP, reset vector,
 VTOR = 0x08006000) with a synthetic EEPROM and the v2.05 tables taken from the `TABLE_V205` data of this tree
@@ -1291,18 +1285,9 @@ VTOR = 0x08006000) with a synthetic EEPROM and the v2.05 tables taken from the `
 TIM2, NVIC, clock, FLASH_PECR, GPIO and LCD state of 2.1; the list is in `emulator/API.md` 2.2. The scenario levels below use the real bootloader.
 
 Test levels:
-1. RT (W2): each port helper against the v2.05 helper in a bare CPU emulation (Unicorn), at least 20 000 random operands
-   per helper plus every edge class (zeros, subnormals, infinities, NaNs, exponent boundaries, halfway cases, divisor
-   0); pass = identical result registers, flags (compares) and errno.
-2. Routine level (every module): a v2.05 function and its port replacement executed from the same CPU and RAM state
-   (states captured from v2.05 scenario runs at the function's entry); result registers, RAM writes and peripheral
-   accesses compared; routines with a deviation compared against its expected difference. Requires the routine runner
-   of 13.1 (W10).
-3. Scenario level, baseline image (the like-v2.05 build, branch `like-v2.05`): every scenario in `emulator/diff/scenarios/`, zero divergences
-   except allowlisted deviations (OF-, NF-, HW-, NVM- entries).
-4. Scenario level, production image: the same scenarios plus the IMP scenarios (auto-range timing, boot, beep latency,
-   continuity codes); allowlist entries for IMP-01..IMP-06 with value tolerances where readings are averaged over more
-   samples (settled values identical, ARS 5.1 invariant 1).
+4. Scenario level, production image: the emulator test scripts for the IMP rows (auto-range timing, boot, beep latency,
+   continuity codes, settings, card and link); where readings are averaged over more samples the settled values are
+   expected to be the same as before the change (ARS 5.1 invariant 1).
 5. Safety: the monitor on in every run; a probe build (`make SAFETY_PROBE=1`) whose image tries, in order, a SETTINGS
    write to 0x030, an IDENT write without the item-8 path, a write to 0x500, a PEKEYR write while unlocked (expected to
    be refused by NVM before the store), a HY3131 frame with a non-whitelisted shape and a PF3 output configuration; each
@@ -1310,23 +1295,17 @@ Test levels:
    alone is exempt from check 9.3 item 4 for its own probe call sites (listed in `tools/check_gpio.py`); it is never
    released.
 6. EEPROM robustness: boot scenarios with EEPROM images all 0x00, all 0xFF, random bytes (fixed seed) and the supplied
-   calibration backup in `inputs/binaries`; pass = same behaviour as v2.05 on the same image.
+   calibration backup in `inputs/binaries`; pass = the meter starts and no calibration, serial number or option byte
+   changes except through the specified write paths (EMAP 9).
 7. STOP/wake: APO and wake by every key and every dial position (NF-05), with and without a pending buzzer repeat
    (HW-08).
 8. Stack: deepest use per scenario, limit 3072 bytes, canary intact.
 
-Order (owner rule): all modules are written first; then one build, all tests, and fixing; after a fix only the affected
-routine tests and the scenarios that cover the changed module are rerun; one full run of every level at the end.
+### 9.5 Approved safety deviations
 
-### 9.5 Deviation allowlist
-
-`firmware/deviations.txt`: one entry per expected divergence, in the format of `emulator/emu/allowlist.py` (all prefixes
-OF-, NF-, HW-, NVM-, IMP-, OPT-; several references joined by `+` for one event; condition fields `t`, `step`, `since`,
-`boot` and, for uart_tx, `pos`; the clause `build == baseline|production` restricts an entry to one build mode and is
-selected with `emulator/diff/run.py --build`; `mask:lcd:sub` / `mask:lcd:main` entries leave one display row out of the
-LCD comparison; `tolerance:<stream>` entries widen a time tolerance). The file ends with the list of deviations that no
-scenario makes observable. Candidate runs use `--no-noise` (a timing shift below 1 us changes the noise drawn for a
-conversion).
+`emulator/emu/safety_allow.txt` lists the hardware-safety steps that the monitor of `emulator/emu/safety.py` lets pass
+although they are not in its whitelist (format and streams in `emulator/emu/allowlist.py`). Today it holds HW-04 (the
+PD1 wake step).
 
 ---
 
@@ -1488,8 +1467,8 @@ a build switch, default stated; required = forced by a non-negotiable requiremen
 | IMP-61 | link-only reading rates 5..8 a second (GitHub issue 30) | the rates jump from 4 to 10 a second; the old BLE112 module carries about 150 bytes a second, so 4 used half of it and 10 overflows it | key codes 0xA1..0xA4 set the link rate codes 4..7: periods of 20, 17, 14, 12 TIM2 ticks (4.99, 5.87, 7.13, 8.32 a second; `ble/rate.s` table, build 5 ticks before the start); never saved, never on page bt.  The companion (1.2.36) starts at the rate saved for the meter, else 7 a second, steps down when a window loses readings and saves the rate after three windows in which every reading arrived.  Emulator `test_fec.py` E8 (removed with the feature) | replaced by IMP-62 (removed in F-1.31; the key codes are accepted and do nothing) | BLE |
 | IMP-62 | link 2 for the old BLE112 module (GitHub issue 30) | the module forwards the UART as ATT indications of up to 20 bytes, one at a time, each confirmed (Ghidra of its firmware); about one byte in 700 arrives damaged; the 19-byte status frame repeats data that never or rarely changes; the per-feature fixes (F3 copies, F5 frames, link-only rates) each covered one thing | key code 0xA8 (only the companion, only on MTU-23 links): everything the meter sends goes in 20-byte blocks (H type|seq, 16 payload, 3 Reed-Solomon parity bytes, GF(256)/0x11D, distance 4): STATE (settings, serial / date, period, battery; on change with a new version and every 2 s), READ (a full reading and its sub display first, then differences: 1 byte for a steady value; decodes on its own, used only with the matching STATE version), TEXT (every answer, first in line); a steady pace (key codes 0xAA..0xB2, default 20 ticks = 5 blocks a second); 0xFD, Bluetooth off / on, wake end it; on page Ld (F-1.32) the file-transfer answers go in TEXT blocks, no READ / STATE there, a STATE first when the page is left (the companion then uses the large card pieces of a new module).  Blocks built in main with their parity (`ble/link2.s`), sent by `ble_tx_pump` (a block cut by HSE use goes on where it stopped).  The companion (1.3.0) finds the blocks by their parity (ATM-style hunt / lock), corrects one damaged byte per block, lowers the pace on loss and raises it after clean time (saved per meter).  Emulator `test_link2.py` (every built frame delivered byte for byte, 20 a second with settings changes, damaged bytes repaired, pace, on / off, removed codes) | experimental, to be tested on a BLE112 meter (owner decision, 2026-11-09) | BLE |
 | IMP-63 | packed card reads and packed updates (GitHub issue 30) | the old BLE112 module carries about 100 to 150 bytes a second, so a 180 kB firmware image or a day of logging takes minutes; measured 2026-11-09: raw deflate packs the F-1.31 image in 2048-byte pieces to 63.9 % (LZ4 only to 79 %, page differences useless: 99 % of the pages change), log text with the fixed code to 13..22 % | card: request 0x1A READZ (as READ, 1..4096 bytes): the meter packs the bytes read into one deflate block (`sys/zdef.s`, owner 2026-11-09 "max compression level": zlib level-9 LZ77 with hash chains over the last 255 bytes and lazy matching, two passes (count, write), per-window dynamic Huffman codes by JPEG T.81 K.2 / K.3 (15 bits, 7 for the code length code), run-length coded code lengths, the smaller of dynamic and fixed by the exact bit count; byte for byte the reference model `emulator/tools/zdyn.py`; built at log_buf + 4096 with room n - 1, so it is shorter or not used; packed inside the card session on its 32 MHz clock), answer CRC-32 of the raw bytes, staged length, method; the companion unpacks with zlib and checks length and CRC-32.  Updates: START kind | 0x80 = DATA carries pieces (raw length u16 1..2048, packed length u16 1..2064, one final dynamic-code deflate block; or 0x8000 | raw length and the raw bytes when zlib gives anything else); every header is checked against the bytes still due before anything is unpacked; the unpacked bytes take the unchanged plain path (page Ld: stage below log_buf + 6144, card, END checks; bootloader B-1.15: bl_stage half-pages, CRC-32 of the flash at END).  One inflater (`sys/zinf.s`, 772 bytes: dynamic block only, bases by formula, strict on source and destination length, every distance checked) assembled into the firmware and the bootloader.  A damaged stream ends the transfer: firmware LdE10 / status 0x1A, bootloader LdE 7 / status 0x17 (update mode kept).  Emulator `test_packed.py` (Z1..Z5: a 28268-byte log packed by the meter to 14.2 % (23.9 % with the first, fixed-code packer), every window equal to the model's bytes, edge cases; the image in 500 packets instead of 778), bootloader B10..B12 (66.8 s instead of 100.1 s), companion tests | experimental (owner request 2026-11-09) | BLE |
-
-Each deviation gets entries in `firmware/deviations.txt` and at least one scenario showing v2.05 and port behaviour.
+| IMP-64 | continuity with a threshold and hysteresis of your own (FEATURES.md 2.38) | the 16 fixed thresholds (IMP-05) offer 1..300 ohm with fixed hysteresis; beep-on-open (an UP code) at another threshold, for intermittent connections, is not possible | codes 16 `DNUSr` and 17 `UPUSr` on the threshold page (display order after `DN300` / `UP300`, `fn_08015C20` wraps modulo 18, `set_cont_order` / `set_cont_pos` / `set_cont_text` checked by the assembler against SET_CONT_CODES); `fn_08007940` tail-calls `set_cu_thr` (`set/cu.s`) for them: start 100 T, continue 100 T + 10 H (DN) or 100 T - 10 H at least 1 (UP), in 0.01 ohm; MRES_BEEP_UP_MASK 0x2FC0A; `fn_08011394` keeps 0..17; pages `th` (item 45, 1..500 ohm) and `HY` (item 46, 0.1..25.0 ohm) after `bH` while the code is 16 or 17 (`set_cu_draw`, `set_ut_edit`, `set_uh_edit`; loads `set_ut_load` / `set_uh_load` in `set_state_reset` and the edit timeout `fn_0800D190`); EEPROM 0x02D..0x02E u16 big endian (width-2 `set_nvm_store`), 0x02F (EEPROM_MAP.md 4.1, `nvm_allow` gains exactly these bytes); status frame codes 0xBA / 0xBB with the threshold in the value bytes (`fn_0800CB44`); remote settings: record of 28 bytes with 16-bit limits, BFS_N 20 one-byte entries (0x02F added, 0x014 0..17) and BFS_NW 21 with the two-byte 0x02D, GET start max flags = 1 and the 4-byte PUT for two-byte values (`ble/bftset.s`); emulator `test_cont_user.py`, `test_bft_settings.py`; companion 1.3.1 rows th, HY, two-byte forms | done (owner request 2026-11-09) | SET, MRES, BLE |
+| IMP-65 | meter API over Bluetooth (FEATURES.md 2.39) | settings requests only on page Ld; nothing tells a script which page or function is shown (in BEEP every page sends the threshold code); every page needs SETUP presses | `ble/usart.s` key / clock parser: first byte 0xB5 expects 6 bytes, byte 2 must be 0x5B, byte 6 (len) at most API_MAXPAY 4 sets 8 + len (`ble_rx_buf` 20 bytes), a packet cut short is dropped after API_GAP_TICKS 10 (100 ms: `api_ticks`, written only by TIM2 `bft_tick`, minus `api_rx_last`, written only by the USART2 handler; halfword stores, no read-modify-write shared by the two interrupts), a byte 2 other than 0x5B is taken as the first byte of a new frame (a stray 0xB5 does not cost the key frame after it); `ble/commands.s` `fn_0800C332` hands 0xB5 to `api_packet` (`ble/bfapi.s`: CRC on the copy `ble_cmd_buf`, copy to `bft_pkt`, `fn_0800ED26`); `api_request`: GET / PUT (`bfs_get` / `bfs_put`), WHERE 0x1B (`api_where`, 5 bytes), SHOW 0x1C (`api_show`: items 0..12, 20..46; `api_walk` repeats `fn_08015410`, `set_menu_enter` on SEt for items 1..8, 20, 21, 25, 39, 40, 44; at most 64 steps, else back to the start page and 0x22; `set_redraw`); refusals as short SETUP (`key/short.s` `.Lsh_key_setup`): calibration mode, logging, MEM view, power-on window, `set_edit`, `bft_reset_due`; `bft_packet` routes 0x1B / 0x1C on page Ld; `bfx_reply` / `bfx_status` global; WHERE is answered before the restart-due refusal (it reports it, flag bit 6); `api_packet` returns at once while the page Ld owns the link (`bft_pkt` is its packet); `ble/bftset.s` BFS_NW 22 with 0x018 (u16 0..999, set `set_interval_edit`, get `set_log_interval`, save `fn_08015AC0`); no EEPROM write of its own; emulator `test_meter_api.py`, `tools/meter_api.py` | done (owner request 2026-11-09) | BLE |
 
 ---
 
@@ -1522,7 +1501,7 @@ New optimisations are added here before they are implemented; anything that chan
 | Power loss or low battery during an EEPROM byte write | BOR is off (supplied unit USER 0xF0) and the controller erases a non-zero word before writing it (RM0038 byte write, FTDW = 0); content after a loss in between is UNPROVEN; shared words put markers beside settings (0x01C..0x01F: buzzer and marker 0x1F; 0x000..0x003: date and serial MSB) | OPT-03 skips unchanged bytes (setting saves rewrite unchanged words in v2.05); NVM-2 switch (Q10); release note to save cal.bin before experiments |
 | Brick | meter unusable | no statically addressed instruction can reach program flash or option bytes and FLASH-block addressing is restricted (8.2, 9.3; a pointer computed at run time cannot be excluded statically, see Q12); PELOCK at reset; bootloader path independent of the application; bounded waits |
 | Hardware damage | destroyed parts | HY3131 table and shape checks, GPIO policy, power order, emulator safety monitor (4) |
-| Float results differ from v2.05 | readings differ by counts | RT copies v2.05 algorithms; edge-class differential tests; routine tests of every chain |
+| Float results differ from v2.05 | readings differ by counts | RT copies v2.05 algorithms; edge-class tests of the float helpers |
 | Timing differences | LCD/BLE/GPIO events shift | baseline mode with v2.05 loop structure, one-tick tolerance; same delay loop counts |
 | Emulator fidelity (Cortex-M3 best-case cycle costs and the branch flash wait state, `emulator/emu/cycles.py`; data-load wait states, bus wait states and the upper ends of the cycle ranges not modelled, so emulated times are lower bounds; ideal keys) | bug invisible in the emulator | rules that do not depend on cycle timing (bounded waits, explicit order); hardware test plan before release (Q8); ARS 12 measurements before TP profiles |
 | Unproven hardware facts (PE9 role, NJM2870 start-up, MCU rail, pin-to-net by label position, PB7 rise time) | wrong safety margin | choices safe for every reading (HW-02, HW-03, NF-04); Q3, Q4 |
@@ -1583,7 +1562,7 @@ New optimisations are added here before they are implemented; anything that chan
 - Q12: MPU guard added (switch `MPU_GUARD`). The emulator models the MPU (PM0056 4.2, `emulator/emu/scs.py`); the guard
   build boots and stray stores to program flash and the option bytes fault into `sys_fault_safe` with nothing written.
   Default 1: the STOP/wake scenario of both guard builds is identical to v2.05 with no safety violation (2026-11-01).
-- Routine-level runner (9.4 level 2): `emulator/diff/routine.py`. Check tools: `firmware/tools/check_image.py`
+- Check tools: `firmware/tools/check_image.py`
   (items 1, 2, 5, plus lint items 6 and 7, stricter than item 2: every FLASH offset outside the allowed list and the
   FLASH bit-band alias are rejected), `check_hy.py` (needs a Python with capstone and unicorn: `make PYTHON=...`),
   `check_gpio.py` with `fe_levels.txt`.
@@ -1605,20 +1584,18 @@ New optimisations are added here before they are implemented; anything that chan
 | W7 Calibration | CAL (with BOOTWIN), NVM; `ram_v205.inc`, `tools/gen_ram_symbols.py`, `gen_nvm_allow.py`, `extract_tables.py` | 7 616 (the FLASH driver ported by NVM is counted under SYS, i.e. in W1's figure) |
 | W8 Storage | LOG, SD | 26 528 |
 | W9 Settings and link | SET, RTC, BLE | 14 512 |
-| W10 Test infrastructure | `tools/check_image.py`, `check_hy.py`, `check_gpio.py`, `fe_levels.txt`; in `emulator/diff/`: the routine-level runner (9.4 level 2), the allowlist prefix extension (9.5, after Q7), the `hy3131_whitelist` generation run (`run.py --make-whitelist`; the safety monitor needs that file), scenarios for every deviation and for STOP/wake, EEPROM-robustness and probe runs | - |
+| W10 Test infrastructure | `tools/check_image.py`, `check_hy.py`, `check_gpio.py`, `fe_levels.txt`; in `emulator/emu/`: the `hy3131_whitelist` data file and `safety_allow.txt` (the safety monitor needs them); emulator test scripts for STOP/wake, EEPROM-robustness and probe runs | - |
 
 ### 13.2 Order
 
 1. Phase 0, foundations (W1, W7, W10; complete deliverables, no partial images): build files, include files,
    `ram_v205.inc`, all v2.05 constant tables extracted into module source files with `TABLE_V205` marks, `nvm_allow`
-   generator, all check tools, the routine runner and the whitelist file, `deviations.txt` entries for every deviation
-   of section 10 with its streams and conditions. Exit: every tool runs on the v2.05 image and its inputs and gives
-   the expected results (tables equal, 47 HY3131 pairs, allowed-byte table equals EMAP, v2.05 against itself gives zero
-   divergences with the routine runner).
+   generator, all check tools and the whitelist file. Exit: every tool runs on the tree and gives the expected results
+   (HY3131 write whitelist holds, allowed-byte table equals EMAP).
 2. Phase 1, all modules in parallel (W1..W9) against Appendix C and `ram_v205.inc`, written for both loop modes; each
    worker prepares the routine-test inputs for its module. A second worker reviews each module against this document
    and the v2.05 listing before Phase 2 (critique).
-3. Phase 2, integration of the baseline image: one build, `make check`, routine tests, all baseline scenarios, probe
+3. Phase 2, integration of the baseline image: one build, `make check`, the emulator test scripts, probe
    build, EEPROM robustness, STOP/wake; divergences fixed module by module, rerunning only affected tests; one final
    full run.
 4. Phase 3, production image: IMP-01..IMP-06 enabled (TP profiles stay off until ARS 12 hardware measurements),

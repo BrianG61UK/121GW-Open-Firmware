@@ -104,7 +104,8 @@ ENDFUNC fn_0800C308
 @            (bootloader update mode, bootloader version), 0x93 / 0x94 / 0x95 by ble/xdiag.s (extended link diagnosis on,
 @            off, counters frame F9; IMP-44), 0x96 by sys/msical.s (clock measurement frame FA; IMP-46), 0x97 / 0x98 careful mode on / off (each status
 @            frame twice, ble/usart.s; IMP-50).  A frame rejected for its checksum (F8) or its unequal code pairs (F4) is
-@            counted in xd_bad_frames.  Any other first byte is ignored.
+@            counted in xd_bad_frames.  0xB5: a meter-API packet (IMP-65), handed to api_packet (ble/bfapi.s) without
+@            an echo.  Any other first byte is ignored.
 @ -----------------------------------------------------------------------------
 FUNC fn_0800C332
     push {r3, r4, r5, r6, r7, r8, r9, r10, r11, lr} @ 0800C332
@@ -131,7 +132,11 @@ FUNC fn_0800C332
 .L0800C36E:  @ reached from 0800C34E bcs (r0 >=u ble_rx_len)
     ldr.w r0, =ble_cmd_buf                  @ 0800C36E
     ldrb r0, [r0, #0x0]                     @ 0800C372  r0 = ble_cmd_buf
-    cmp r0, #0xf8                           @ 0800C374  compare ble_cmd_buf with 248 (0xF8)
+    cmp r0, #0xB5
+    bne 1f
+    bl api_packet                           @ IMP-65: a meter-API packet (ble/bfapi.s); no echo
+    b .L0800C46C
+1:  cmp r0, #0xf8                           @ 0800C374  compare ble_cmd_buf with 248 (0xF8)
     bne .L0800C428                          @ 0800C376  if ble_cmd_buf != 248 (0xF8)
     movs r0, #0x1                           @ 0800C378
     bl fn_0800C470                          @ 0800C37A  two ASCII hex characters at offset r0 to a byte [r0=1]
@@ -270,6 +275,25 @@ FUNC fn_0800C332
     subs r1, r0, #BLE_RATE4_CODE
     cmp r1, #3
     bls .L0800C46C
+.if HY_DIAG
+    @ diagnostic build only (hy/hydiag.s): 0xA5 read timing on (cleared), 0xA6 frozen, 0xA7 latch experiment
+    cmp r0, #0xA5
+    bne 11f
+    bl hyd_start
+    b .L0800C46C
+11: cmp r0, #0xA6
+    bne 12f
+    bl hyd_stop
+    b .L0800C46C
+12: cmp r0, #0xA7
+    bne 13f
+    bl hyd_request
+    b .L0800C46C
+13: cmp r0, #0xA9
+    bne .Lkey_rate
+    bl hyd_q3_request                       @ Q3, the event period
+    b .L0800C46C
+.endif
 .Lkey_rate:
     subs r1, r0, #BLE_RATE0_CODE            @ r1 = rate code (a code below 0x99 wraps to a large number)
     cmp r1, #3
