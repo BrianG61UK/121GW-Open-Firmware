@@ -47,6 +47,21 @@ class EventLogFile(unittest.TestCase):
         self.assertEqual(len(got), 2000)
         self.assertTrue(all(x.endswith(' end') for x in got))
 
+    def test_two_processes_give_whole_lines(self):
+        # two copies of the program on one file (the OS lock in eventlog.py; Windows lost lines without it)
+        import subprocess
+        here = os.path.dirname(os.path.abspath(__file__))
+        code = ('import sys; sys.path.insert(0, %r); from meter121 import eventlog; '
+                'log = eventlog.EventLog(%r, sys.argv[1]); '
+                '[log.write(1700000000.0, "%%s %%d end" %% (sys.argv[1], i)) for i in range(400)]'
+                % (os.path.dirname(here), self.path))
+        procs = [subprocess.Popen([sys.executable, '-I', '-c', code, tag]) for tag in ('P', 'Q')]
+        for p in procs:
+            self.assertEqual(p.wait(timeout=120), 0)
+        got = [x for x in self.lines() if not x.startswith('--- start ')]
+        self.assertEqual(len(got), 800)
+        self.assertTrue(all(x.endswith(' end') for x in got))
+
     def test_rotation(self):
         old = eventlog.MAX_BYTES
         eventlog.MAX_BYTES = 2000

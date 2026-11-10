@@ -5,20 +5,64 @@ after a failed update attempt the log came out empty: the events lived only in m
     events.log.1   the previous file, once events.log passed MAX_BYTES (at most about 2 * MAX_BYTES on disk)
 
 One line per event in the time format of the report.  Every write opens the file, appends one line and closes it, so
-two copies of the program (the server takes the next free port) can append to one file and Windows can rename it; a
-lock keeps the threads of this process from interleaving.  Each start of the program writes a marker line; the report
+Windows can rename it.  Appends from two handles are not atomic on Windows (CI 2026-11-10: two writers lost 2 of 2000
+lines), so every append holds a lock shared by all EventLog objects of the file in this process and an OS lock on
+`events.log.lock` (Windows msvcrt.locking, elsewhere fcntl.flock), which two copies of the program (the server takes the
+next free port) both respect.  Each start of the program writes a marker line; the report
 lists the lines before this start's marker ("events before this start"), so a report saved after the program was
 reopened still shows the failed attempt.  The file is not anonymised (it never leaves the computer unless the user
 sends it); the report that is meant to be sent anonymises everything it takes from it.
 A write that fails (disk full, no permission) is noted once through `on_error`; the program never stops for the log.
 """
 import os
+import sys
 import threading
 import time
 
 MAX_BYTES = 1024 * 1024                         # rotation size of events.log
 TAIL_BYTES = 64 * 1024                          # bytes read from the end of each file for the report
 MARKER = '--- start '
+_LOCKS = {}                                     # path -> threading.Lock shared by every EventLog of that file
+_LOCKS_GUARD = threading.Lock()
+
+
+def _path_lock(path):
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(os.path.abspath(path), threading.Lock())
+
+
+class _FileLock:
+    """An exclusive OS lock on `path` (created if missing) for the time of a `with` block."""
+    def __init__(self, path):
+        self.path = path
+
+    def __enter__(self):
+        self.f = open(self.path, 'a+b')
+        try:
+            if sys.platform == 'win32':
+                import msvcrt
+                self.f.seek(0)
+                msvcrt.locking(self.f.fileno(), msvcrt.LK_LOCK, 1)   # retries for about 10 s, then OSError
+            else:
+                import fcntl
+                fcntl.flock(self.f.fileno(), fcntl.LOCK_EX)
+        except BaseException:
+            self.f.close()
+            raise
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            if sys.platform == 'win32':
+                import msvcrt
+                self.f.seek(0)
+                msvcrt.locking(self.f.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self.f.fileno(), fcntl.LOCK_UN)
+        finally:
+            self.f.close()
+        return False
 
 
 def line(t, text):
@@ -32,7 +76,7 @@ class EventLog:
         succeeds)."""
         self.path = path
         self.on_error = on_error
-        self._lock = threading.Lock()
+        self._lock = _path_lock(path)
         self._failed = False
         self.marker = '%s%s pid %d companion %s ---' % (MARKER, time.strftime('%Y-%m-%dT%H:%M:%S'), os.getpid(), version)
         self._append(self.marker)
@@ -45,9 +89,10 @@ class EventLog:
         with self._lock:
             try:
                 os.makedirs(os.path.dirname(self.path), exist_ok=True)
-                self._rotate()
-                with open(self.path, 'a', encoding='utf-8', errors='replace', newline='\n') as f:
-                    f.write(text.replace('\n', ' ') + '\n')
+                with _FileLock(self.path + '.lock'):
+                    self._rotate()
+                    with open(self.path, 'a', encoding='utf-8', errors='replace', newline='\n') as f:
+                        f.write(text.replace('\n', ' ') + '\n')
                 self._failed = False
             except OSError as e:
                 if not self._failed:
