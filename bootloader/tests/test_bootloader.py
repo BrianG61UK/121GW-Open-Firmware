@@ -5,7 +5,8 @@
   B1 valid firmware mark, no key: the firmware starts; no safety violation
   B2 no firmware mark: update mode ("-IAP-" on both displays, Bluetooth on)
   B3 firmware over Bluetooth, two packets in flight: START (erase), DATA, END; the meter restarts into the new
-     firmware; the flash holds the image, the firmware mark its length and CRC; the transfer time is printed
+     firmware; the flash holds the image, the firmware mark its length and CRC; the transfer time is printed; B-1.16
+     (DESIGN.md 6.5.2): PF15 low at least 25 ms before that restart, high again within 1 ms after the reset
   B4 a power cut in the middle of B3: the bootloader comes up in update mode (mark erased), a second transfer works
   B5 the firmware's request (key code 0x91): restart into update mode
   B6 MEM + HOLD at power-on, nothing else: update mode, the firmware starts after 30 s
@@ -246,6 +247,14 @@ def b3(ee0):
         seen.add(texts(e)[0])
         return r
     h.wait = wait
+    pf15, resets = [], []                            # B-1.16 (DESIGN.md 6.5.2): PF15 around the restart after END
+    e.gpio['F'].on_output(15, lambda pin, level, cyc: pf15.append((level, float(e.m.elapsed_s()))))
+    orig_reset = e.system_reset
+
+    def system_reset(why):
+        resets.append(float(e.m.elapsed_s()))
+        return orig_reset(why)
+    e.system_reset = system_reset
     a, secs = h.transfer(new, KIND_FW)
     T.check('END status 0', a is not None and a[1] == 0, repr(a))
     e.advance(0.3)
@@ -257,10 +266,19 @@ def b3(ee0):
                                                                h.packets))
     B3_RESULT[:] = [secs, h.packets]
     e.advance(2.0)
+    e.system_reset = orig_reset
     T.check('flash holds the new image', flash(e, 0x08006000, len(new)) == new)
     T.check('firmware mark: length and CRC', flash(e, B.FW_MARK, 20) == fw_mark(new))
     T.check('the new firmware runs', app_running(e))
     T.check('6.5.1: Bluetooth on after the update over Bluetooth (the note relayed)', ble_on(e))
+    t_r = resets[0] if resets else None
+    low = [t for lv, t in pf15 if lv == 0 and t_r is not None and t <= t_r]
+    high = [t for lv, t in pf15 if lv == 1 and t_r is not None and t > t_r]
+    off = (t_r - low[-1]) if low else None
+    on = (high[0] - t_r) if high else None
+    T.check('6.5.2: PF15 low at least 25 ms before the restart (bl_sysreset RESET_OFF_TICKS)',
+            off is not None and off >= 0.025, 'off %r s' % off)
+    T.check('6.5.2: PF15 high within 1 ms after the reset (bl_reset)', on is not None and on <= 0.001, 'on %r s' % on)
     check_ee(e, ee0)
 
 

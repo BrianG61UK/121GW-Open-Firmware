@@ -28,6 +28,9 @@
     .equ WINDOW_TICKS,      3000            @ 30 s
     .equ BLE_OFF_TICKS,     60000           @ 10 min
     .equ RESET_DELAY,       150             @ 1.5 s after the last answer: "Ld oK" stays readable
+    .equ RESET_OFF_TICKS,   4               @ BLE module off before the reset of bl_sysreset: 30..40 ms (10 ms ticks)
+    .equ AHB_GPIOE,         0x00000010      @ RCC_AHBENR bit 4: GPIOE clock (hw.inc RCC_AHBENR_GPIO_ALL: A, B, C, D, E, H, F, G)
+    .equ AHB_GPIOF,         0x00000040      @ RCC_AHBENR bit 6: GPIOF clock
     .equ NVIC_ISER1,        0xE000E104
     .equ NVIC_ICER0,        0xE000E180
     .equ IRQ45_53_BITS,     0x00202000      @ IRQ45 (SDIO) bit 13, IRQ53 (DMA2 channel 4) bit 21 of ISER1
@@ -83,6 +86,53 @@ bl_fault:
     .global bl_reset
     .thumb_func
 bl_reset:
+    @ B-1.16 (GitHub issue 23): the BLE module supply PF15 first.  A reset leaves every pin an input, and until
+    @ bl_gpio_config (after the RAM zero) PF15 was undriven 23.5 ms with B-1.15 (21.0 ms with B-1.14; emulator,
+    @ 0x91 restart): long enough for a module to drop its connection.  Driven here it is undriven only for the starter
+    @ (0.48 ms, emulator).  The power-pin steps and their order are those of bl_gpio_seq (the old bootloader's
+    @ GPIO_Config), only earlier: PE9 (PWR_CTL, U1 NJM2870 control) and then PE12 become outputs (low: ODR is 0
+    @ after the reset), PE9 high; then PF6 and PF15 (low), PF15 high; one pin per MODER store, in pin order.  PE12 and PF6 end low in bl_gpio_seq
+    @ too (its CLR lines).  These are the steps the emulator's safety model knows (emu/safety.py rule 3, the pins
+    @ PE9 / PD1 / PF15 / PF6 / PE12); PD1 is not touched (bl_gpio_seq does not touch it either).  bl_gpio_init keeps
+    @ ODR, so bl_gpio_seq later changes none of these levels.  OTYPER (push-pull) and PUPDR (none) keep their reset
+    @ values, as bl_gpio_seq sets them.  r0 and r1 only: r4 / r5 are set below.
+    ldr r0, =RCC_AHBENR
+    ldr r1, [r0]
+    orr r1, r1, #(AHB_GPIOE | AHB_GPIOF)
+    str r1, [r0]                            @ GPIOE / GPIOF clocks (sys_clock_select sets them again: read-modify-write)
+    dsb
+    ldr r0, =GPIOE_BASE
+    ldr r1, [r0, #GPIO_OSPEEDR]
+    bic r1, r1, #0x000C0000
+    bic r1, r1, #0x03000000
+    orr r1, r1, #0x00040000
+    orr r1, r1, #0x01000000
+    str r1, [r0, #GPIO_OSPEEDR]             @ pins 9, 12 speed 1 (OUT_2M of bl_gpio_seq)
+    ldr r1, [r0, #GPIO_MODER]
+    bic r1, r1, #0x000C0000
+    orr r1, r1, #0x00040000
+    str r1, [r0, #GPIO_MODER]               @ pin 9 output (low)
+    bic r1, r1, #0x03000000
+    orr r1, r1, #0x01000000
+    str r1, [r0, #GPIO_MODER]               @ pin 12 output (low): one pin per store, in pin order, as bl_gpio_init
+    mov r1, #0x0200
+    strh r1, [r0, #GPIO_BSRRL]              @ PE9 high
+    ldr r0, =GPIOF_BASE
+    ldr r1, [r0, #GPIO_OSPEEDR]
+    bic r1, r1, #0x00003000
+    bic r1, r1, #0xC0000000
+    orr r1, r1, #0x00001000
+    orr r1, r1, #0x40000000
+    str r1, [r0, #GPIO_OSPEEDR]             @ pins 6, 15 speed 1 (OUT_2M of bl_gpio_seq)
+    ldr r1, [r0, #GPIO_MODER]
+    bic r1, r1, #0x00003000
+    orr r1, r1, #0x00001000
+    str r1, [r0, #GPIO_MODER]               @ pin 6 output (low)
+    bic r1, r1, #0xC0000000
+    orr r1, r1, #0x40000000
+    str r1, [r0, #GPIO_MODER]               @ pin 15 output (low)
+    mov r1, #0x8000
+    strh r1, [r0, #GPIO_BSRRL]              @ PF15 high: the module powered
     ldr r0, =RCC_APB1ENR                    @ PWR interface clock, then RTC_BKP0R before anything resets the RTC domain
     ldr r1, [r0]
     orr r1, r1, #APB1_PWREN
@@ -319,10 +369,18 @@ bl_bt_note:
 
 @ -----------------------------------------------------------------------------
 @ bl_sysreset - system reset (PM0056 4.4.5); the starter runs, then the bootloader, then the firmware
+@ After a finished Bluetooth update the module is switched off and held off RESET_OFF_TICKS (30..40 ms) before the
+@ reset: up to B-1.15 it stayed off until bl_gpio_config (23.5 ms), and bl_reset now drives PF15 high 0.48 ms after the
+@ reset, which would leave the module only a short dip instead of the clean restart it had.
 @ -----------------------------------------------------------------------------
     .thumb_func
 bl_sysreset:
     bl bl_ble_off
+    bl bl_now                               @ SysTick runs (update mode, bl_update)
+    adds r4, r0, #RESET_OFF_TICKS
+1:  bl bl_now
+    cmp r0, r4
+    blo 1b
     dsb
     ldr r0, =SCB_AIRCR
     ldr r1, [r0]

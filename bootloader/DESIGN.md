@@ -267,6 +267,27 @@ time before the companion can connect is to be measured.  The block size of bft 
 programmed in 128-byte half-pages.  After 10 minutes in update mode without a connection, BLE is switched off and the
 meter stays in update mode, waiting for keys or a card (battery protection); a key press switches BLE on again.
 
+### 6.5.2 The module's supply at a reset (B-1.16, GitHub issue 23)
+
+A reset leaves every pin an input, so PF15 is undriven until the bootloader drives it.  Up to B-1.15 that was
+bl_gpio_config, after the RAM zeroing: measured in the emulator (0x91 restart, both tags built from git) 21.025 ms
+with B-1.14 and 23.495 ms with B-1.15, the 2.47 ms between them being the zeroing of the 1295 words the packed mode
+added.  A report on Windows (B-1.15) shows the connection dropping at the restart into update mode and the meter
+heard again only 22 s later, against the 30 s window; B-1.14 had worked there.  Whether the module browned out is
+not measured on a meter.
+
+B-1.16 drives the power pins as the first instructions of bl_reset, before the RAM zeroing: the same steps and order
+as bl_gpio_seq (the old bootloader's GPIO_Config), only earlier: PE9 output (low), PE12 output (low), PE9 high, PF6
+output (low), PF15 output (low), PF15 high, one pin per MODER store; PD1 is not touched (bl_gpio_seq does not touch
+it).  PE12 and PF6 end low in bl_gpio_seq too.  bl_gpio_init keeps ODR, so bl_gpio_seq later changes none of these
+levels.  PF15 is then undriven only during the starter: high 0.500 ms after the reset, measured in the emulator (its
+cycle model is a lower bound).
+
+bl_sysreset (the restart after a finished Bluetooth update) switches the module off and holds it off RESET_OFF_TICKS
+(4 ticks of 10 ms: 30..40 ms) before the reset, so after an update the module restarts cleanly as it did with the
+23.5 ms of B-1.15, instead of a 0.5 ms dip (test_bootloader.py B3: off 39.7 ms, high again 0.50 ms after the reset).  Installing a bootloader still leaves PF15 undriven during the starter's
+flash write.
+
 ### 6.5.1 Bluetooth on after an update over Bluetooth (B-1.14, firmware F-1.22; GitHub issue 23; owner decision 2026-11-07)
 
 A release firmware starts with Bluetooth off (config.inc BLE_AT_POWERUP 0), so after an update over Bluetooth the
