@@ -47,6 +47,9 @@ FW_FEATURES = (
     ((1, 2, 2), 'F-1.22: the two SETUP walks (the meter pages come after the page SEt), and Bluetooth on after an update '
                 'over Bluetooth with bootloader 1.1.4 (GitHub issues 24 and 23). Older firmware walks all pages in one long '
                 'walk and starts with Bluetooth off after an update: hold PEAK so the program can reconnect.'),
+    ((1, 3, 3), 'F-1.33: the continuity codes DNUSr and UPUSr with a threshold of your own (page th, 1..500 ohm) and its '
+                'hysteresis (page HY). An older firmware reads the codes 16 and 17 as DN 30 and ignores the stored '
+                'threshold and hysteresis.'),
 )
 
 # what each bootloader version added (commits of the bootloader branch)

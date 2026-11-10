@@ -47,9 +47,10 @@ TABLE = {
     24: [(1, 'mVA'), (0, 'mVA'), (3, 'VA'), (2, 'VA')],                       # annun.s:369, 497-522
 }
 
-# Sub display texts of the continuity threshold page (item 10 of BEEP, codes 0xAA + 0..15; set/setup.s:3580-3640)
-BEEP_TEXT = ['DN 30', 'UP 30', 'DN300', 'UP300', 'DN  1', 'DN  5', 'DN 10', 'DN 50',
-             'DN100', 'DN200', 'UP  1', 'UP  5', 'UP 10', 'UP 50', 'UP100', 'UP200']
+# Sub display texts of the continuity threshold (BEEP, codes 0xAA + 0..17; firmware set/setup.s set_cont_text), kept in
+# settings.py.  Codes 16 and 17 (firmware F-1.33 and newer) use the user threshold, which the frame carries in its value
+# bytes (ohm).
+from .settings import BEEP_TEXT  # noqa: E402
 
 
 def _fixed(mag, dp):
@@ -84,6 +85,11 @@ def _sub(f, mode):
     d = fl & 0x0F
     sign = '-' if fl & 0x40 else ''
     num = lambda val, dp: sign + _fixed(val, dp)
+    if mode == 10 and 0xAA <= code < 0xAA + len(BEEP_TEXT):    # continuity threshold: before the codes of other pages,
+        text = BEEP_TEXT[code - 0xAA]                           # the dB code 180 is the threshold code 10 (UP  1) here
+        if code >= 0xAA + 16:
+            text = '%s %d' % (text[:2], v)                      # DN / UP and the user threshold in ohm
+        return 'threshold', text, 'Ω' if code >= 0xAA + 16 else ''
     if code in (100, 105):                              # board temperature (item 0), tenths of a degree
         if fl & 0x80:
             return 'temp', 'OPEN', ''
@@ -123,8 +129,6 @@ def _sub(f, mode):
         return 'current', num(v, d), 'A' if (mode in (15, 24) and d == 3) else 'mA'
     if code == 11:                                      # diode source (DIODE item 10)
         return 'source', '%d' % v, 'V'
-    if 0xAA <= code <= 0xB9:                            # continuity threshold (BEEP item 10)
-        return 'threshold', BEEP_TEXT[code - 0xAA], ''
     return '', '', ''                                   # code 0: a page the frame says nothing about
 
 

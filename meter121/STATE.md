@@ -90,13 +90,17 @@ omitted = the last one), `card_cancel`.
 
 ## state.settings
 
-    { items: [{id, code, name, value, min, max, choices: [names by value] | null, text}],
+    { items: [{id, code, tag, name, value, min, max, choices: [names by value] | null, text, texts: [text of min..max] | null,
+               unit, scale}],
       locked_reason,                null, or why settings cannot be read / changed now (same reasons as the card)
       error }                       text of the last failed settings command | null
 
 `items` is empty until `settings_get`.  `code` is the SETUP page (`tc dSP bt bL rEL tr CL HUnt bH Ch LP Pt BAT r`, and
 `item 0`, `item 2`, `item 3`, `item 4`, `item 10`, `item 11` for the numbered pages of v2.05 that have no letters), `text`
-the value in words (`"30 s"`, `"+1.2 %"`, `"Pt100"`).  `value` is within `min..max`; `choices[value]` is the name.  `id`
+the value in words (`"30 s"`, `"+1.2 %"`, `"Pt100"`).  `tag` is what the page shows for the SETUP page (`code`, with
+`page N` for `item N`; GitHub issue 35).  `texts` is the text of every value min..max for the settings with at most 101
+values (the stepper shows them); `unit` and `scale` are for the others (`Ch` no unit, `th` ohm, `HY` ohm with scale 0.1:
+the page shows value x scale).  `value` is within `min..max`; `choices[value]` is the name.  `id`
 is the firmware's setting id (EEPROM offset: `tc` 0x00F, temperature unit 0x010, `r` 0x011, `dSP` 0x013, `item 10` 0x014,
 `bt` 0x015, `item 2` 0x016, `bL` 0x017 (value 0 off, 1 = 30 s, 2..100 = 1..99 min), `item 4` contrast 0x01A (10..17),
 `item 11` 0x01B, `item 3` 0x01E, `bH` 0x021, `Ch` 0x022, `LP` 0x028, `Pt` 0x029, `BAT` 0x02A (value = trim + 100,

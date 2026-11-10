@@ -18,7 +18,7 @@ import time
 import webbrowser
 from contextlib import contextmanager
 
-from . import card, clock, derived, diag, display, frames, install, keys, paths, record, releases, report, transfer
+from . import card, clock, derived, diag, display, eventlog, frames, install, keys, paths, record, releases, report, transfer
 from . import settings as meter_settings
 from .link import MeterLink
 from . import server
@@ -30,6 +30,11 @@ TITLE = '121GW Companion'
 def config_path():
     """The program's settings file (JSON) in the user's configuration folder."""
     return os.path.join(paths.config_dir(), 'settings.json')
+
+
+def event_log_path():
+    """The event log file (eventlog.py) next to the settings file (so a test that moves the settings moves it too)."""
+    return os.path.join(os.path.dirname(config_path()), 'events.log')
 
 
 def load_settings():
@@ -69,6 +74,7 @@ DAILY = 86400.0                                  # update check "daily": seconds
 HUNT_MIN_VERSION = (1, 1, 6)                     # firmware F-1.16: EEPROM 0x020 bit 4, the SETUP page HUnt (ble/bftset.s accepts 0..31)
 ADAPT_MIN_VERSION = (1, 2, 5)                    # firmware F-1.25: the reading rate for this power-on, settings in pages (IMP-55)
 QUIET_MIN_VERSION = (1, 2, 4)                    # firmware F-1.24: the buzzer's third value qUiEt (ble/bftset.s accepts 0..2)
+USER_CONT_MIN_VERSION = (1, 3, 3)                # firmware F-1.33: continuity codes 16, 17, settings 0x02D (two-byte) and 0x02F (IMP-64)
 XDIAG_MIN_VERSION = (1, 1, 5)                    # firmware F-1.15: key codes 0x93 / 0x94 / 0x95 and STATUS 40..48 (ble/xdiag.s)
 XDIAG_TRIES = 3                                  # tries of a key frame of the extended diagnosis / of the counters request
 XDIAG_WAIT = 2.0                                 # seconds to wait for the answer to each try
@@ -103,7 +109,8 @@ PREF_DEFAULTS = {'recordings_folder': None,      # None: <Documents>/121GW
                  'csv_format': 'comma',          # recordings: 'comma' = , and decimal point; 'semicolon' = ; and decimal comma
                  'theme': 'system',              # the page's colours: 'dark', 'light', or 'system' (follows the system's light/dark choice; default, owner 2026-11-07)
                  'diag_log': False,              # the COMPANION_LOG=1 diagnosis, from the next start
-                 'ext_diag': False}              # the meter counts link errors inside (F-1.15 on) and the report shows them
+                 'ext_diag': False,              # the meter counts link errors inside (F-1.15 on) and the report shows them
+                 'offline_window': True}         # the window "meter is offline" after OFFLINE_AFTER (issue 23: Josh asked for off)
 UPDATE_CHECKS = ('connect', 'daily', 'never')
 THEMES = ('dark', 'light', 'system')
 CSV_FORMATS = {'comma': (',', '.'), 'semicolon': (';', ',')}
@@ -114,6 +121,10 @@ class Companion:
         """folder: the recordings folder given on the command line (--folder); it then overrides the setting."""
         self.settings = load_settings()
         self.events = collections.deque(maxlen=EVENTS_KEEP)    # (time, text) for the diagnosis report (report.py)
+        # the same events in a file, so a closed program or a failed update leaves them behind (eventlog.py, issue 23);
+        # a failed write is noted in memory only
+        self.eventlog = eventlog.EventLog(event_log_path(), report.app_version(),
+                                          on_error=lambda text: self.events.append((time.time(), text)))
         self.folder_forced = folder is not None
         self.folder = folder if folder is not None else self._pref_folder()
         self.clock = {'server': self.settings.get('ntp_server') or clock.DEFAULT_SERVER, 'last': None, 'auto': ''}
@@ -224,8 +235,10 @@ class Companion:
                         sender.answers.put(a)
 
     def event(self, text):
-        """One line of the event log (the diagnosis report anonymises it)."""
-        self.events.append((time.time(), text))
+        """One line of the event log (the diagnosis report anonymises it), kept in memory and in the event log file."""
+        t = time.time()
+        self.events.append((t, text))
+        self.eventlog.write(t, text)
 
     def _state(self, state, detail):
         self.event('link %s%s' % (state, (': ' + detail) if detail else ''))
@@ -445,6 +458,12 @@ class Companion:
         (the key beeps silent, the measurement beeps sounding; GitHub issue 28)."""
         v = releases.version_of_meter(self.version)
         return self.fw_kind == 'fast' and v is not None and v >= QUIET_MIN_VERSION
+
+    def _user_cont_supported(self):
+        """True when the connected meter runs F-1.33 or newer: only that firmware has the continuity codes 16 DNUSr and
+        17 UPUSr with the user threshold (two-byte setting 0x02D) and hysteresis (0x02F) (IMP-64)."""
+        v = releases.version_of_meter(self.version)
+        return self.fw_kind == 'fast' and v is not None and v >= USER_CONT_MIN_VERSION
 
     def _xdiag_connect(self):
         """After the version and bootloader questions of a connection: switch the meter's counting on when the setting
@@ -942,8 +961,14 @@ class Companion:
             self.link.send(frames.UPDATE_MODE_REQUEST)
         except Exception:                               # noqa: BLE001 - the meter restarts at once: the write's
             pass                                        # confirmation can be lost with the link (bleak: disconnected)
-        self._wait_restart(lambda: self.mode == 'bootloader', 'the meter did not come back in its update mode',
-                           'into its update mode', poll=self._probe_kept_link)
+        # GitHub issue 23: the bootloader waits only 30 s for the first packet, so while the meter restarts the link
+        # searches with short pauses and without the held-by-the-system check (link.py quick_retry)
+        self.link.quick_retry = True
+        try:
+            self._wait_restart(lambda: self.mode == 'bootloader', 'the meter did not come back in its update mode',
+                               'into its update mode', poll=self._probe_kept_link)
+        finally:
+            self.link.quick_retry = False
 
     def _probe_kept_link(self):
         """While the link survives the restart into update mode (the older BLE112 module keeps its connection through
@@ -1292,7 +1317,8 @@ class Companion:
         try:
             with self._ops('settings', wait=LINK_WAIT) as (_, client):
                 items = job(meter_settings.Settings(client, hunt=self._hunt_supported(), quiet=self._quiet_supported(),
-                                                    paged=self.small_pieces() and self._link_adapt_supported()))
+                                                    paged=self.small_pieces() and self._link_adapt_supported(),
+                                                    user_cont=self._user_cont_supported()))
         except (RuntimeError, ValueError, OSError) as e:
             self.settings_st['error'] = str(e)
             raise
@@ -1486,6 +1512,7 @@ class Companion:
         p['recordings_folder'] = self.folder
         if p['theme'] not in THEMES:                       # a hand-edited settings.json: the default, as the page would show it
             p['theme'] = PREF_DEFAULTS['theme']
+        p['offline_window'] = p['offline_window'] is not False   # only an explicit false switches the window off
         p['card_sync_folder'] = self.card_st['sync']['folder'] or os.path.join(self.folder, 'card')
         p['ntp_server'] = self.clock['server']
         p.update(folder_forced=self.folder_forced, diag_log_active=TRACE_UI, file=config_path(),
@@ -1517,7 +1544,7 @@ class Companion:
             if not value or len(value) > 253 or any(ch.isspace() for ch in value):
                 raise ValueError('a time server name or address is needed')
             self.clock['server'] = value
-        elif key in ('clock_on_connect', 'diag_log', 'ext_diag'):
+        elif key in ('clock_on_connect', 'diag_log', 'ext_diag', 'offline_window'):
             if not isinstance(value, bool):
                 raise ValueError('%s: true or false' % key)
         elif key == 'update_check':

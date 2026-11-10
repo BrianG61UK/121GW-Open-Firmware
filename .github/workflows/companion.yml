@@ -51,7 +51,17 @@ jobs:
         run: echo "VER=${REF_TAG#companion-v}" >> "$GITHUB_ENV"
       - name: Build tools and libraries
         run: python -m pip install $PIP_PKGS
-      - name: Unit tests (frames, card, settings, derived values; no meter, no Bluetooth)
+      - name: Page test browser (cache)
+        uses: actions/cache@v6
+        with:
+          path: ~/Library/Caches/ms-playwright
+          key: ms-playwright-${{ runner.os }}-1.64.1
+      # GitHub issue 35: tests/test_ui_layout.py renders the page in headless Chromium on every push (it must run in CI)
+      - name: Page test browser (Playwright, Chromium)
+        run: |
+          python -m pip install playwright==1.64.1
+          python -m playwright install chromium
+      - name: Unit tests (frames, card, settings, derived values, the page's layout; no meter, no Bluetooth)
         run: python -I -m unittest discover -s tests
       - name: Icons and third-party licences
         if: env.PACKAGE == 'true'
@@ -111,7 +121,17 @@ jobs:
         run: echo "VER=${REF_TAG#companion-v}" >> "$GITHUB_ENV"
       - name: Build tools and libraries
         run: python -m pip install $PIP_PKGS
-      - name: Unit tests (frames, card, settings, derived values; no meter, no Bluetooth)
+      - name: Page test browser (cache)
+        uses: actions/cache@v6
+        with:
+          path: ~\AppData\Local\ms-playwright
+          key: ms-playwright-${{ runner.os }}-1.64.1
+      # GitHub issue 35: tests/test_ui_layout.py renders the page in headless Chromium on every push (it must run in CI)
+      - name: Page test browser (Playwright, Chromium)
+        run: |
+          python -m pip install playwright==1.64.1
+          python -m playwright install chromium
+      - name: Unit tests (frames, card, settings, derived values, the page's layout; no meter, no Bluetooth)
         run: python -I -m unittest discover -s tests
       - name: Icons and third-party licences
         if: env.PACKAGE == 'true'
@@ -178,7 +198,17 @@ jobs:
         run: echo "VER=${REF_TAG#companion-v}" >> "$GITHUB_ENV"
       - name: Build tools and libraries
         run: python -m pip install $PIP_PKGS
-      - name: Unit tests (frames, card, settings, derived values; no meter, no Bluetooth)
+      - name: Page test browser (cache)
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: ms-playwright-${{ runner.os }}-1.64.1
+      # GitHub issue 35: tests/test_ui_layout.py renders the page in headless Chromium on every push (it must run in CI)
+      - name: Page test browser (Playwright, Chromium)
+        run: |
+          python -m pip install playwright==1.64.1
+          python -m playwright install --with-deps chromium
+      - name: Unit tests (frames, card, settings, derived values, the page's layout; no meter, no Bluetooth)
         run: python -I -m unittest discover -s tests
       - name: Icons and third-party licences
         if: env.PACKAGE == 'true'

@@ -340,7 +340,7 @@ class Options(AppCase):
         self.assertEqual(self.app.state()['derived']['pt_type'], None)
 
     def test_damaged_saved_options_fall_back_to_defaults(self):
-        os.makedirs(os.path.dirname(app_mod.config_path()))
+        os.makedirs(os.path.dirname(app_mod.config_path()), exist_ok=True)   # the event log file made the folder at start
         with open(app_mod.config_path(), 'w') as f:
             json.dump({'derived': {'loop_range': 'nonsense'}}, f)
         self.assertEqual(app_mod.Companion(self.tmp).state()['derived']['loop_range'], '4-20')
@@ -472,6 +472,25 @@ class Report(AppCase):
         self.assertIn('<path>', text)
         self.assertEqual(report.anonymise('random dom', ['dom']), 'random <name>')
 
+    def test_events_of_an_earlier_start_are_in_the_report(self):
+        # GitHub issue 23: a failed update and a closed program must not leave an empty log
+        from meter121 import report
+        log = app_mod.event_log_path()
+        self.assertTrue(log.startswith(self.tmp), log)                  # never the user's own folder in a test
+        self.app.event('update stopped: no answer from the bootloader in %s' % os.path.join(os.path.expanduser('~'), 'x'))
+        again = app_mod.Companion(os.path.join(self.tmp, 'docs'))       # the program opened again
+        again.event('link connected')
+        text = report.build(again)
+        rest = text.partition('[events before this start of the program')[2]
+        before = rest.partition('[end of the events before this start]')[0]
+        self.assertIn('update stopped: no answer from the bootloader', before)
+        self.assertNotIn('link connected', before)
+        self.assertIn('<path>', before)                                 # anonymised like the rest of the report
+        self.assertNotIn(os.path.expanduser('~'), text)
+        with open(log, encoding='utf-8') as f:
+            lines = f.read().splitlines()
+        self.assertEqual(sum(1 for x in lines if x.startswith('--- start ')), 2)
+
     def test_linux_distribution(self):
         from unittest import mock
         from meter121 import report
@@ -533,6 +552,18 @@ class Prefs(AppCase):
         p = again.prefs()
         self.assertEqual((p['csv_format'], p['theme'], p['clock_on_connect'], p['ntp_server'], p['card_sync_folder']),
                          ('semicolon', 'light', True, 'time.example.org', os.path.join(self.tmp, 'sync')))
+
+    def test_offline_window_setting(self):
+        # GitHub issue 23 (Josh): the "meter is offline" window can be switched off; on by default
+        self.assertIs(self.app.prefs()['offline_window'], True)
+        self.set('offline_window', False)
+        self.assertIs(app_mod.Companion(os.path.join(self.tmp, 'docs')).prefs()['offline_window'], False)
+        with self.assertRaises(ValueError):
+            self.set('offline_window', 'no')
+        self.app.command({'prefs_reset': True})
+        self.assertIs(self.app.prefs()['offline_window'], True)
+        self.app.settings['offline_window'] = 'no'                     # a hand-edited settings.json: only false is off
+        self.assertIs(self.app.prefs()['offline_window'], True)
 
     def test_bad_values_are_refused_and_not_stored(self):
         for key, value in (('nonsense', 1), ('clock_on_connect', 'yes'), ('diag_log', 1), ('update_check', 'hourly'),

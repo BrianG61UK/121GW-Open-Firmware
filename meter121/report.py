@@ -242,7 +242,7 @@ def build(app, now=None):
     w('')
     w('[companion settings]')
     p = st.get('prefs') or {}
-    for k in ('update_check', 'clock_on_connect', 'csv_format', 'theme', 'diag_log', 'ext_diag'):
+    for k in ('update_check', 'clock_on_connect', 'csv_format', 'theme', 'diag_log', 'ext_diag', 'offline_window'):
         w('%-17s %s' % (k, p.get(k)))
     w('recordings folder %s' % ('custom' if app.settings.get('recordings_folder') or app.folder_forced else 'default'))
     w('')
@@ -251,6 +251,17 @@ def build(app, now=None):
         w('%s.%03d  %s' % (time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(t)), int((t % 1) * 1000), text))
     if not app.events:
         w('none')
+    w('')
+    # issue 23: what happened before this start of the program (a failed update, a program that was closed), from the
+    # event log file (eventlog.py); anonymised with the rest below
+    w('[events before this start of the program, from the event log file, oldest first]')
+    log = getattr(app, 'eventlog', None)
+    before = log.previous(app.events.maxlen or 300) if log else []      # as many as the in-memory list keeps
+    for text in before:
+        w(text)
+    if not before:
+        w('none')
+    w('[end of the events before this start]')
     return anonymise('\n'.join(out) + '\n')
 
 

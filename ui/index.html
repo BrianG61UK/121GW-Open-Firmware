@@ -306,17 +306,18 @@ tr.empty:hover td { background: none; }
 .hintnote { margin-top: 8px; padding: 8px 12px; border-radius: 10px; background: var(--hol-soft); border: 1px solid var(--hol-line);
             font-size: 13px; color: var(--ink); }
 /* meter settings rows */
-.srow { display: grid; grid-template-columns: 6px 44px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); min-height: 44px; }
-.srow:last-child { border-bottom: 0; }
+.setgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
+.srow { display: grid; grid-template-columns: 6px 64px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); min-height: 44px; }
 .srow .mk { width: 6px; height: 6px; border-radius: 50%; background: transparent; }
 .srow.pend .mk { background: var(--hol); }
-.srow .code { color: var(--acc); font-size: 13px; font-weight: 600; }
-.srow .name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.srow .code { color: var(--acc); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.srow .name { color: var(--ink); font-size: 13px; overflow-wrap: anywhere; }
 .srow .ctl { display: flex; align-items: center; background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
 .srow .ctl button { height: 26px; width: 26px; padding: 0; border: 0; background: none; border-radius: 7px; font-size: 15px; }
 .srow .ctl button:hover:not(:disabled) { background: var(--panel); border: 0; }
-.srow .ctl input, .srow .ctl .choice { width: 84px; height: 26px; text-align: center; border: 0; background: none; padding: 0 4px; border-radius: 0; }
-.srow .ctl .choice { font: 13px/26px var(--mono); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.srow .ctl input { width: 64px; height: 26px; text-align: center; border: 0; background: none; padding: 0 4px; border-radius: 0; }
+.srow .ctl .choice { min-width: 84px; height: 26px; text-align: center; padding: 0 6px; font: 13px/26px var(--mono); white-space: pre; }
+.srow .ctl .unit { font-size: 12.5px; color: var(--ink-3); padding-right: 4px; white-space: nowrap; }
 .srow .ctl .choice.off { opacity: .4; }
 .srow.pend .ctl { border-color: var(--hol-line); }
 .srow.pend .ctl input, .srow.pend .ctl .choice { color: var(--acc); }
@@ -354,8 +355,9 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
   <button data-v="log" title="Log (3)"><svg viewBox="0 0 24 24"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h3"/></svg>Log</button>
   <button data-v="card" title="Card (4)"><svg viewBox="0 0 24 24"><path d="M7 3h8l4 4v14H7z M10 7v3M13 7v3M16 9v1"/></svg>Card</button>
   <button data-v="meter" title="Meter (5)"><svg viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><rect x="8.5" y="5" width="7" height="4" rx=".8"/><circle cx="12" cy="15" r="2.6"/></svg>Meter</button>
+  <button data-v="msettings" title="Meter settings (6)"><svg viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Meter settings</button>
   <div class="grow"></div>
-  <button data-v="prefs" title="Settings (6)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.3 14H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9 4.6V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>Settings</button>
+  <button data-v="prefs" title="Settings (7)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3.3 14H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 9 4.6V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>Settings</button>
 </nav>
 
 <header>
@@ -545,9 +547,6 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
           <pre id="diagtext">—</pre></div></div>
     </div>
     <div class="side">
-      <div class="card"><div class="eng">Meter settings<span id="set-lock" class="warn" hidden>Locked</span><span class="sp"></span><button class="sm" id="set-read">Read</button></div>
-        <div class="body"><div class="path" id="set-reason" style="margin:0 0 8px;color:var(--ink)"></div>
-          <div id="setlist"></div></div></div>
       <div class="card"><div class="eng">Clock</div>
         <div class="body"><div class="cap" id="ntpname"></div>
           <div class="path num" id="clockres"></div>
@@ -556,7 +555,16 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
   </div>
 </section>
 
-<!-- SETTINGS: the program's own settings (the meter's SETUP settings are on the METER page) -->
+<!-- METER SETTINGS: the meter's SETUP settings over the file-transfer link (GitHub issue 35: a view of its own, full names,
+     the values in words; the meter must show the page Ld) -->
+<section class="view" id="v-msettings">
+  <div class="card"><div class="eng">Meter settings<span id="set-lock" class="warn" hidden>Locked</span><span class="sp"></span><button class="sm" id="set-read">Read</button></div>
+    <div class="body"><div class="path" id="set-reason" style="margin:0 0 8px;color:var(--ink)"></div>
+      <div class="cap" style="margin:0 0 10px">The settings of the meter's SETUP pages. Show the page Ld on the meter (Bluetooth on, logging off), then Read; change a value with − / + or by typing, then Apply.</div>
+      <div id="setlist" class="setgrid"></div></div></div>
+</section>
+
+<!-- SETTINGS: the program's own settings (the meter's SETUP settings are in the view METER SETTINGS) -->
 <section class="view" id="v-prefs">
   <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
     <div class="stack">
@@ -594,6 +602,8 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
         <div class="lbl">Extended diagnosis</div><div class="hint">The meter counts link errors inside; needs firmware F-1.15 or newer; the report shows the counts.</div>
         <span class="seg" id="p-xdiag"><button data-v="on">On</button><button data-v="off">Off</button></span>
         <div class="path" id="p-xdiag-note"></div>
+        <div class="lbl">Offline window</div><div class="hint">A window when the meter cannot be reached for a minute. Off: the program keeps searching without asking (the link lamp blinks, the button reads Stop searching).</div>
+        <span class="seg" id="p-offw"><button data-v="on">On</button><button data-v="off">Off</button></span>
       </div></div>
       <div class="card"><div class="eng">Reset</div><div class="body">
         <button id="p-reset">Reset all settings</button>
@@ -638,7 +648,7 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
   <div class="eng"><span class="warn">Offline</span> Your meter is offline</div>
   <p>The companion has not reached the meter for a minute and keeps searching. Check: is the meter switched on, is its
   Bluetooth on (hold PEAK: the Bluetooth symbol shows), is it in range? <span id="oc-hint"></span></p>
-  <div class="btns" style="margin-top:0;justify-content:flex-end"><button id="oc-stop">Stop</button><button id="oc-keep" class="pri">Keep searching</button></div>
+  <div class="btns" style="margin-top:0;justify-content:flex-end;flex-wrap:wrap"><button id="oc-never">Don't show again</button><button id="oc-stop">Stop</button><button id="oc-keep" class="pri">Keep searching</button></div>
 </div></div>
 <div class="confirm" id="fprog"><div class="box">
   <div class="eng">Formatting the SD card</div>
@@ -735,20 +745,20 @@ const connected = () => !!state && state.link && state.link.state === 'connected
 const desk = () => !!state && state.desk === true;
 
 // ---------------------------------------------------------------- views and keyboard
-const VIEWS = ['live', 'scope', 'log', 'card', 'meter', 'prefs'];
+const VIEWS = ['live', 'scope', 'log', 'card', 'meter', 'msettings', 'prefs'];
 function setView(v) {
   view = v;
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
   if (v === 'card' && desk()) { cardSig = ''; send('card_refresh').catch(fail); }
-  if (v === 'meter') readSettings();
+  if (v === 'msettings') readSettings();
   fitZoom(); render();
 }
 $('tabs').onclick = e => { const b = e.target.closest('button'); if (b) setView(b.dataset.v); };
 const typing = () => /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement && document.activeElement.tagName);
 document.addEventListener('keydown', e => {
   if (typing() || e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.key >= '1' && e.key <= '6') setView(VIEWS[+e.key - 1]);
+  if (e.key >= '1' && e.key <= '7') setView(VIEWS[+e.key - 1]);
   else if (e.key === ' ' && view === 'scope') { e.preventDefault(); toggleFreeze(); }
 });
 
@@ -1430,6 +1440,7 @@ const pending = {};
 let setSig = '';
 const setDisabled = () => !connected() || !!(state.settings && state.settings.locked_reason);
 function choicesOf(it) {
+  if (Array.isArray(it.texts)) return it.texts.map((l, i) => ({v: it.min + i, l}));   // a text for every value (issue 35)
   return (it.choices || []).map((c, i) => c !== null && typeof c === 'object' ? {v: c.value, l: String(c.label !== undefined ? c.label : c.value)}
     : typeof c === 'number' ? {v: c, l: String(c)} : {v: typeof it.value === 'string' ? c : i, l: String(c)});
 }
@@ -1443,6 +1454,8 @@ function setRow(it) {
   const idx = () => choices.findIndex(c => c.v === cur() || c.l === String(cur()));
   const row = h('div', {class: 'srow', 'data-id': it.id});
   const val = isChoice ? h('span', {class: 'choice'}) : h('input', {class: 'num', spellcheck: 'false', 'aria-label': it.name});
+  const scale = typeof it.scale === 'number' && it.scale > 0 ? it.scale : 1, dec = scale < 1 ? 1 : 0;
+  const shown = v => typeof v === 'number' ? (v * scale).toFixed(dec) : nz(v);     // HY: tenths shown as 0.1 ohm steps
   const apply = h('button', {class: 'sm'}, 'Apply');
   const change = v => { if (v === it.value) delete pending[it.id]; else pending[it.id] = v; refresh(); };
   const step = d => {
@@ -1452,24 +1465,26 @@ function setRow(it) {
   const refresh = () => {
     const c = cur(), pend = pending[it.id] !== undefined && pending[it.id] !== it.value;
     row.classList.toggle('pend', pend);
-    if (isChoice) val.textContent = idx() >= 0 ? choices[idx()].l : nz(c); else if (document.activeElement !== val) val.value = nz(c);
+    if (isChoice) val.textContent = idx() >= 0 ? choices[idx()].l : nz(c); else if (document.activeElement !== val) val.value = shown(c);
     apply.disabled = !pend || setDisabled();
     for (const b of row.querySelectorAll('.ctl button')) b.disabled = setDisabled();
     if (!isChoice) val.disabled = setDisabled(); else val.classList.toggle('off', setDisabled());
   };
   if (!isChoice) {
-    val.onchange = () => { const v = Number(val.value); if (val.value.trim() === '' || !isFinite(v)) return refresh(); change(Math.min(typeof it.max === 'number' ? it.max : v, Math.max(typeof it.min === 'number' ? it.min : v, v))); };
+    val.onchange = () => { let v = Number(val.value); if (val.value.trim() === '' || !isFinite(v)) return refresh(); v = Math.round(v / scale); change(Math.min(typeof it.max === 'number' ? it.max : v, Math.max(typeof it.min === 'number' ? it.min : v, v))); };
     val.onkeydown = e => { if (e.key === 'Enter') { val.blur(); } };
   }
   apply.onclick = async () => {
     const v = pending[it.id]; if (v === undefined) return;
     apply.disabled = true;
-    try { await send('settings_put', {id: it.id, value: v}); delete pending[it.id]; say(`${it.code} ${it.name}: ${v} written`); send('settings_get').catch(fail); }
+    const vt = isChoice && choices.find(c => c.v === v) ? choices.find(c => c.v === v).l : shown(v) + (it.unit ? ' ' + it.unit : '');
+    try { await send('settings_put', {id: it.id, value: v}); delete pending[it.id]; say(`${it.tag || it.code} ${it.name}: ${vt} written`); send('settings_get').catch(fail); }
     catch (e) { fail(e); }
     refresh();
   };
-  row.append(h('i', {class: 'mk'}), h('span', {class: 'code'}, it.code), h('span', {class: 'name', title: it.name}, it.name),
-    h('span', {class: 'ctl'}, h('button', {onclick: () => step(-1), 'aria-label': 'less'}, '−'), val, h('button', {onclick: () => step(1), 'aria-label': 'more'}, '+')), apply);
+  const unit = !isChoice && it.unit ? h('span', {class: 'unit'}, it.unit === 'ohm' ? 'Ω' : it.unit) : '';
+  row.append(h('i', {class: 'mk'}), h('span', {class: 'code', title: it.code}, it.tag || it.code), h('span', {class: 'name'}, it.name),
+    h('span', {class: 'ctl'}, h('button', {onclick: () => step(-1), 'aria-label': 'less'}, '−'), val, unit, h('button', {onclick: () => step(1), 'aria-label': 'more'}, '+')), apply);
   row.update = it2 => { it = it2; if (pending[it.id] === it.value) delete pending[it.id]; refresh(); };
   refresh();
   return row;
@@ -1480,8 +1495,8 @@ function drawSettings(S) {
   S = S || {};
   const items = S.items || [], lock = S.locked_reason;
   $('set-lock').hidden = !lock; $('set-reason').textContent = lock || S.error || '';
-  $('set-read').disabled = !!lock; $('diag-read').disabled = !!lock;
-  const sig = JSON.stringify([items.map(i => [i.id, i.code, i.name, i.min, i.max, i.choices]), !!lock, connected()]);
+  $('set-read').disabled = !!lock;
+  const sig = JSON.stringify([items.map(i => [i.id, i.code, i.tag, i.name, i.min, i.max, i.choices, i.texts, i.unit, i.scale]), !!lock, connected()]);
   const list = $('setlist');
   if (sig !== setSig) {
     setSig = sig;
@@ -1529,9 +1544,12 @@ for (const ev of ['pointerdown', 'pointerup', 'click'])
 let offDismissed = false;
 $('oc-keep').onclick = () => { offDismissed = true; $('oconfirm').classList.remove('show'); };
 $('oc-stop').onclick = () => { $('oconfirm').classList.remove('show'); api({disconnect: true}).catch(fail); };
+// GitHub issue 23 (Josh): the window can be switched off for good (SETTINGS, Offline window); closed at once, before the
+// next poll brings the new setting
+$('oc-never').onclick = () => { offDismissed = true; $('oconfirm').classList.remove('show'); setPref('offline_window', false); };
 function drawOffline() {
   if (!state.offline) offDismissed = false;
-  const show = !!state.offline && !offDismissed;
+  const show = !!state.offline && !offDismissed && !(state.prefs && state.prefs.offline_window === false);
   $('oconfirm').classList.toggle('show', show);
   if (show) setText($('oc-hint'), state.link && state.link.detail ? 'Last message: ' + state.link.detail : '');
 }
@@ -1560,6 +1578,7 @@ $('p-upd').onclick = e => { const b = e.target.closest('button'); if (b) setPref
 $('p-clock').onclick = e => { const b = e.target.closest('button'); if (b) setPref('clock_on_connect', b.dataset.v === 'on'); };
 $('p-diag').onclick = e => { const b = e.target.closest('button'); if (b) setPref('diag_log', b.dataset.v === 'on'); };
 $('p-xdiag').onclick = e => { const b = e.target.closest('button'); if (b) setPref('ext_diag', b.dataset.v === 'on'); };
+$('p-offw').onclick = e => { const b = e.target.closest('button'); if (b) setPref('offline_window', b.dataset.v === 'on'); };
 $('p-reset').onclick = () => $('pconfirm').classList.add('show');
 $('pc-cancel').onclick = () => $('pconfirm').classList.remove('show');
 $('pc-ok').onclick = () => {
@@ -1579,7 +1598,7 @@ function drawPrefs(P, C, S) {
     : rec ? 'a recording is running: stop it to change the folder' : '');
   seg($('p-theme'), themePref); seg($('p-csv'), P.csv_format); seg($('p-upd'), P.update_check);
   seg($('p-clock'), P.clock_on_connect ? 'on' : 'off'); seg($('p-diag'), P.diag_log ? 'on' : 'off');
-  seg($('p-xdiag'), P.ext_diag ? 'on' : 'off');
+  seg($('p-xdiag'), P.ext_diag ? 'on' : 'off'); seg($('p-offw'), P.offline_window === false ? 'off' : 'on');
   setText($('p-xdiag-note'), P.ext_diag_note || '');
   setText($('p-clock-note'), C && C.auto ? C.auto : '');
   setText($('p-diag-note'), P.diag_log === P.diag_log_active ? (P.diag_log_active ? 'on now' : '')
@@ -1621,7 +1640,9 @@ function render() {
   else if (view === 'scope') drawScopeView();
   else if (view === 'log') drawLog(S);
   else if (view === 'card') drawCard(state.card, state.now);
-  else if (view === 'meter') { drawMeter(L, M, U, state.clock); drawSettings(state.settings); drawDiag(state.diag); }
+  else if (view === 'meter') { drawMeter(L, M, U, state.clock); drawDiag(state.diag);
+    $('diag-read').disabled = !!(state.settings && state.settings.locked_reason); }   // the same lock as the settings
+  else if (view === 'msettings') drawSettings(state.settings);       // the meter's settings, a page of their own (issue 35)
   else if (view === 'prefs') drawPrefs(state.prefs, state.clock, S);
   const vw = $('v-' + view);                        // content grew (a key note, a longer text): fit again
   if (FIT_VIEWS.includes(vw.id) && vw.scrollHeight - vw.clientHeight > 1) fitZoom();

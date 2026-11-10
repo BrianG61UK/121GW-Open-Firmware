@@ -25,10 +25,11 @@ class Table(unittest.TestCase):
             if s.choices:
                 self.assertEqual((s.min, s.max), (0, len(s.choices) - 1), s.code)
             self.assertLessEqual((s.mask << s.shift), 0xFF, s.code)
-        # bftset.s: 19 ids; 0x020 is one id shown as four rows (ids 0x120, 0x220, 0x320, 0x420); 0x018 is not offered
+        # bftset.s: 21 ids; 0x020 is one id shown as four rows (ids 0x120, 0x220, 0x320, 0x420); 0x018 is not offered
         self.assertEqual(sorted(s.wire for s in settings.TABLE),
                          sorted([0x00F, 0x010, 0x011, 0x013, 0x014, 0x015, 0x016, 0x017, 0x01A, 0x01B, 0x01E, 0x020, 0x020,
-                                 0x020, 0x020, 0x021, 0x022, 0x028, 0x029, 0x02A, 0x02B, 0x02C]))
+                                 0x020, 0x020, 0x021, 0x022, 0x028, 0x029, 0x02A, 0x02B, 0x02C, 0x02D, 0x02F]))
+        self.assertEqual({s.wire for s in settings.TABLE if s.wide}, {0x02D})
         self.assertEqual({s.id for s in settings.TABLE if s.wire == 0x020}, {0x120, 0x220, 0x320, 0x420})
         self.assertEqual({r: (s.min, s.max) for r, s in ((s.wire, s) for s in settings.TABLE if s.wire != 0x020)},
                          {r: v for r, v in RANGES.items() if r != 0x020})
@@ -48,13 +49,63 @@ class Table(unittest.TestCase):
         for code, ok, bad in (('tc', (0, 5), (-1, 6, 255)), ('bL', (0, 1, 100), (101, -1)), ('Ch', (1, 255), (0, 256)),
                               ('BAT', (50, 100, 150), (49, 151, 0)), ('Pt', (0, 2), (3,)), ('tr', (0, 2), (3,)),
                               ('CL', (0, 1), (2,)), ('rEL', (0, 1), (2,)), ('HUnt', (0, 1), (2,)), ('item 4', (10, 17), (9, 18)),
-                              ('item 10', (0, 15), (16,))):
+                              ('item 10', (0, 17), (18,)), ('th', (1, 250, 500), (0, 501)), ('HY', (1, 250), (0, 251))):
             sid = next(s.id for s in settings.TABLE if s.code == code)
             for v in ok:
                 self.assertEqual(settings.check(sid, v)[1], v)
             for v in bad:
                 with self.assertRaises(ValueError, msg='%s %d' % (code, v)):
                     settings.check(sid, v)
+
+    def test_user_continuity_settings(self):
+        m = FakeMeter(eeprom={0x014: 0, 0x02D: 30, 0x02F: 50, 0x02C: 0})
+        s = settings.Settings(make_client(m))
+        by = {i['code']: i for i in s.get_all()}
+        self.assertEqual((by['th']['value'], by['th']['text']), (30, '30 ohm'))
+        self.assertEqual((by['HY']['value'], by['HY']['text']), (50, '5.0 ohm'))
+        by = {i['code']: i for i in s.put(0x02D, 499)}                     # the two-byte PUT
+        self.assertEqual((by['th']['value'], m.eeprom[0x02D]), (499, 499))
+        s.put(0x02F, 7)
+        s.put(0x014, 17)
+        self.assertEqual((m.eeprom[0x02F], m.eeprom[0x014], m.eeprom[0x02C]), (7, 17, 0))
+
+    def test_user_continuity_on_older_firmware(self):
+        m = FakeMeter(eeprom={0x014: 3, 0x02C: 0})
+        m.user_cont_fw = False
+        s = settings.Settings(make_client(m), user_cont=False)
+        codes = [i['code'] for i in s.get_all()]
+        self.assertNotIn('th', codes)
+        self.assertNotIn('HY', codes)
+        with self.assertRaises(ValueError):
+            s.put(0x014, 16)                                                # F-1.33 only
+        with self.assertRaises(ValueError):
+            s.put(0x02D, 100)
+        self.assertEqual(m.eeprom, {0x014: 3, 0x02C: 0})
+
+    def test_wide_setting_is_refused_in_the_one_byte_forms(self):
+        m = FakeMeter(eeprom={0x02D: 30, 0x02F: 50})
+        c = make_client(m)
+        field, data = c.ok(settings.T_GET)
+        self.assertEqual(settings.parse_get(field, data), [(0x02F, 50)])    # the old form: no two-byte setting
+        self.assertEqual(c.request(settings.T_PUT, settings.put_request(0x02D, 40))[0], card.ST_ARG)
+
+    def test_page_tags_and_value_texts(self):
+        # GitHub issue 35: no row named "item N" on the page, every value in words as the meter shows it
+        by = {s.code: s for s in settings.TABLE}
+        self.assertEqual([settings.tag(s) for s in settings.TABLE if s.code.startswith('item ')],
+                         ['page 0', 'page 10', 'page 2', 'page 4', 'page 11', 'page 3'])
+        self.assertEqual(settings.texts(by['item 10'])[:4] + settings.texts(by['item 10'])[16:], ['DN 30', 'UP 30', 'DN300', 'UP300', 'DNUSr', 'UPUSr'])
+        self.assertEqual(settings.texts(by['item 4']), ['Lcd-%d' % n for n in range(8)])     # the meter's page 4: "Lcd-n"
+        self.assertEqual(settings.texts(by['bL'])[:3] + settings.texts(by['bL'])[-1:], ['off', '30 s', '1 min', '99 min'])
+        self.assertEqual(settings.texts(by['BAT'])[0], '-10.0 %')
+        for code, unit, scale in (('Ch', '', 1), ('th', 'ohm', 1), ('HY', 'ohm', 0.1)):
+            it = settings.item(by[code], by[code].min)
+            self.assertEqual((it['texts'], it['unit'], it['scale']), (None, unit, scale), code)
+        for s in settings.TABLE:
+            t = settings.texts(s)
+            self.assertTrue(t is None or len(t) == s.max - s.min + 1, s.code)
+        old = settings.Settings(None, user_cont=False).rows()
+        self.assertEqual(len(settings.texts(next(s for s in old if s.id == 0x014))), 16)    # older firmware: 0..15
 
     def test_unknown_ids_and_types_are_refused(self):
         for sid in (0x018, 0x008, 0x003, 0x030, 0x020, 0x2E0, -1, None, 'tc', [1], 1.5, True):
@@ -88,8 +139,9 @@ class OverTheLink(unittest.TestCase):
         items = settings.Settings(make_client(m)).get_all()
         self.assertEqual([i['code'] for i in items], [s.code for s in settings.TABLE])
         tc = next(i for i in items if i['code'] == 'tc')
-        self.assertEqual(tc, {'id': 0x00F, 'code': 'tc', 'name': 'Thermocouple type (TEMP)', 'value': 0, 'min': 0, 'max': 5,
-                              'choices': ['K', 'J', 'T', 'N', 'R', 'S'], 'text': 'K'})
+        self.assertEqual(tc, {'id': 0x00F, 'code': 'tc', 'tag': 'tc', 'name': 'Thermocouple type (TEMP)', 'value': 0, 'min': 0,
+                              'max': 5, 'choices': ['K', 'J', 'T', 'N', 'R', 'S'], 'text': 'K',
+                              'texts': ['K', 'J', 'T', 'N', 'R', 'S'], 'unit': None, 'scale': 1})
         self.assertIsNone(next(i for i in items if i['code'] == 'bL')['choices'])
 
     def test_auto_power_off_time_listed_only_when_reported(self):
@@ -192,6 +244,7 @@ class OverTheLink(unittest.TestCase):
         self.addCleanup(setattr, settings, 'GET_PAGE_WAIT', old)
         m = meter()
         plain = settings.Settings(make_client(m)).get_all()
+        m.get_pages.clear()                             # the plain read was one GET start 0 max 255 flags 1 (F-1.33)
         m.adapt_fw = True
         m.damage_over = 9                               # answers above 3 entries never arrive intact
         s = settings.Settings(make_client(m), paged=True)
@@ -203,8 +256,9 @@ class OverTheLink(unittest.TestCase):
 
     def test_paged_get_refused_by_older_firmware_is_an_error_not_a_hang(self):
         m = meter()                                     # adapt_fw False: GET with a payload answers 0x22
+        m.user_cont_fw = False                          # firmware before F-1.25 has no F-1.33 forms either
         with self.assertRaises(card.CardError):
-            settings.Settings(make_client(m), paged=True).get_all()
+            settings.Settings(make_client(m), paged=True, user_cont=False).get_all()
 
     def test_a_value_above_31_in_the_shared_byte_is_not_changed(self):
         m = meter(b020=0x20)                            # bit 5 is no setting: the meter would refuse the whole value

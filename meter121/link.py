@@ -26,6 +26,9 @@ WRITE_WAIT = 5.0                        # seconds a write may take before it cou
 HELD_CHECK_AFTER = 2                    # searches without the meter before asking whether the system holds it
 STOP_NOTIFY_WAIT = 2.0                  # seconds for unsubscribing the notifications before a disconnect (issue 23)
 RETRY_SECONDS = 3.0
+QUICK_RETRY = 0.5                       # the pause instead while the program waits for the meter in its update mode: the
+                                        # bootloader waits only 30 s for the first packet (GitHub issue 23)
+STALE_RSSI = -127                       # BlueZ reports a cached device with this RSSI: not an advertisement
 L2_IDLE_FLUSH = 0.5                 # s without a notification after which the hunting link 2 decoder lets its bytes go
                                     # (the slowest block pace, 30 ticks, leaves 0.3 s between blocks)
 WINDOWS_HINT_AFTER = 2                 # searches in a row without the meter before the Windows hint (GitHub issue 23)
@@ -149,6 +152,7 @@ class MeterLink:
         self._wlock = None                 # one write at a time (_send)
         self.want = False                  # keep connected (reconnect after a loss)
         self.address = None                # meter chosen by the user; None = the first one found
+        self.quick_retry = False           # set by the program while it waits for the update mode: short pauses, no held check
         self._client = None
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._run, name='meter-link', daemon=True)
@@ -209,10 +213,6 @@ class MeterLink:
         self.want = False
         self._call(self._stop)
 
-    def scan(self):
-        """Scan once (also while connected the meter does not advertise, so it is not listed then)."""
-        return asyncio.run_coroutine_threadsafe(self._scan(), self._loop).result(SCAN_SECONDS + 5)
-
     def send(self, data, timeout=5.0):
         """Write bytes to the meter; raises RuntimeError when not connected, OSError when the write fails or is
         cancelled (the connection went away under it), TimeoutError after `timeout` seconds."""
@@ -234,12 +234,40 @@ class MeterLink:
         if self.on_state:
             self.on_state(state, detail)
 
-    async def _scan(self):
+    async def _find(self):
+        """The first meter heard (the chosen one when an address is set) as (BLEDevice, name, rssi), or None after
+        SCAN_SECONDS.  The scan stops at that advertisement (GitHub issue 23: a fixed 6 s scan made the connection come
+        about 5 s after the meter was heard, hwti's capture); every meter heard until then is listed in `found` (the
+        page's list).  Every event is filtered here (no service filter in the scanner: WinRT ignores it, and an OS filter
+        may miss a UUID that comes only in the scan response); the BLEDevice is given to BleakClient, so bleak does not
+        scan a second time (bleak 1.1.1 backends/winrt/client.py connect: find_device_by_address for an address string)."""
         from bleak import BleakScanner
-        devs = await BleakScanner.discover(timeout=SCAN_SECONDS, return_adv=True)
-        self.found = [(d.address, d.name or adv.local_name or '121GW', adv.rssi) for d, adv in devs.values()
-                      if SERVICE in [str(u).lower() for u in adv.service_uuids]]
-        return list(self.found)
+        self.found = []
+        hit = {}
+        seen = asyncio.Event()
+
+        def heard(d, adv):
+            if SERVICE not in [str(u).lower() for u in adv.service_uuids]:
+                return
+            if sys.platform.startswith('linux') and adv.rssi == STALE_RSSI:
+                return                                  # BlueZ: a cached device, not an advertisement
+            name = d.name or adv.local_name or '121GW'
+            if not any(f[0] == d.address for f in self.found):
+                self.found = self.found + [(d.address, name, adv.rssi)]
+            if not hit and (self.address is None or d.address == self.address):
+                hit.update(dev=d, name=name, rssi=adv.rssi)
+                seen.set()
+
+        async with BleakScanner(detection_callback=heard):
+            try:
+                await asyncio.wait_for(seen.wait(), SCAN_SECONDS)
+            except asyncio.TimeoutError:
+                pass
+        return (hit['dev'], hit['name'], hit['rssi']) if hit else None
+
+    async def _pause(self):
+        """The wait after a search without the meter, a failed connection or a Bluetooth error."""
+        await asyncio.sleep(QUICK_RETRY if self.quick_retry else RETRY_SECONDS)
 
     async def _start(self):
         """Start the connection task; a task that is still running (also one that is being cancelled by a Disconnect
@@ -312,16 +340,18 @@ class MeterLink:
         while self.want:
             self._set('scanning', 'looking for the meter' + (' again' if lost else ''))
             try:
-                found = await self._scan()
+                hit = await self._find()
             except Exception as e:                       # Bluetooth off, no permission, no adapter: searched again
                 self._set('lost' if lost else 'scanning', 'Bluetooth of the computer: %s (searching again)' % e)
-                await asyncio.sleep(RETRY_SECONDS)
+                await self._pause()
                 continue
-            pick = [f for f in found if self.address is None or f[0] == self.address]
-            if not pick:
+            if hit is None:
                 misses += 1
-                text = not_found_text(misses)
-                if misses == HELD_CHECK_AFTER and self.device:   # not advertising: does the system hold it? (issue 23)
+                if self.quick_retry:                     # restarting into its update mode: not held, no hint
+                    text = 'the meter is restarting into its update mode; looking for it'
+                else:
+                    text = not_found_text(misses)
+                if misses == HELD_CHECK_AFTER and self.device and not self.quick_retry:   # does the system hold it? (issue 23)
                     state = await oshold.held(self.device[0], SERVICE)
                     if state is True and await oshold.release(self.device[0]):
                         text = 'the system still held the meter; BlueZ was asked to release it (searching again)'
@@ -330,9 +360,10 @@ class MeterLink:
                         text = oshold.HINT[key]
                     self.held = {'held': state, 'released': False, 'hint': text if state else None, 'at': time.time()}
                 self._set('lost' if lost else 'scanning', text)
-                await asyncio.sleep(RETRY_SECONDS)
+                await self._pause()
                 continue
-            address, name, rssi = pick[0]
+            dev, name, rssi = hit
+            address = dev.address
             misses = 0
             self.stats.advertised(rssi)                   # the advertisement's signal strength at discovery (dBm)
             self._set('connecting', name)
@@ -345,7 +376,7 @@ class MeterLink:
             def on_notify(_h, chunk):
                 self._rx(bytes(chunk), time.time())
 
-            client = BleakClient(address, disconnected_callback=lambda _c: self._loop.call_soon_threadsafe(gone.set))
+            client = BleakClient(dev, disconnected_callback=lambda _c: self._loop.call_soon_threadsafe(gone.set))
             self._client = client                         # known from here on, so a cancel closes it (_keep's finally)
             try:
                 await client.connect()
@@ -354,7 +385,7 @@ class MeterLink:
                 await self._close(client)
                 self._client = None
                 self._set('lost' if lost else 'scanning', 'connecting failed: %s' % e)
-                await asyncio.sleep(RETRY_SECONDS)
+                await self._pause()
                 continue
             self.device = (address, name)
             try:

@@ -165,6 +165,29 @@ class RelLoopLimit(unittest.TestCase):
         self.assertEqual(d.options()['limit']['unit'], 'mV')
 
 
+class BeepThreshold(unittest.TestCase):
+    def sub(self, code, value=0, mode=10):
+        f = bytearray(frame(mode, 0, 3000))
+        f[9], f[11], f[12] = code, value >> 8, value & 0xFF
+        return display.decode(bytes(f), 0.0)
+
+    def test_every_fixed_code(self):
+        for code, text in enumerate(display.BEEP_TEXT[:16]):
+            d = self.sub(0xAA + code)
+            self.assertEqual((d['sub_label'], d['sub_text'], d['sub_unit']), ('threshold', text, ''), code)
+
+    def test_code_10_is_not_the_db_page(self):
+        # the threshold code 10 (UP  1) is sent as 0xB4 = 180, the code of the dB page of ACV
+        self.assertEqual(self.sub(0xB4)['sub_text'], 'UP  1')
+        self.assertEqual(self.sub(180, mode=2)['sub_label'], 'dB')
+
+    def test_user_codes_show_the_threshold(self):
+        d = self.sub(0xBA, 123)
+        self.assertEqual((d['sub_label'], d['sub_text'], d['sub_unit']), ('threshold', 'DN 123', 'Ω'))
+        d = self.sub(0xBB, 500)
+        self.assertEqual((d['sub_label'], d['sub_text'], d['sub_unit']), ('threshold', 'UP 500', 'Ω'))
+
+
 class Options(unittest.TestCase):
     def test_bad_options_are_refused_and_change_nothing(self):
         d = derived.Derived()

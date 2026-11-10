@@ -26,10 +26,12 @@ def fat_time(h, mi, s):
     return h << 11 | mi << 5 | s // 2
 
 
-# bftset.s bfs_tab: id -> (min, max); 0x020 is one id with the value 0..31 (F-1.16; bit 4 the anti-hunting); 0x01E 0..2 (F-1.24 qUiEt)
-RANGES = {0x00F: (0, 5), 0x010: (0, 1), 0x011: (0, 3), 0x013: (0, 1), 0x014: (0, 15), 0x015: (0, 3), 0x016: (0, 1),
+# bftset.s bfs_tab: id -> (min, max); 0x020 is one id with the value 0..31 (F-1.16; bit 4 the anti-hunting); 0x01E 0..2 (F-1.24 qUiEt);
+# 0x014 0..17, 0x02F and the two-byte 0x02D (F-1.33, IMP-64)
+RANGES = {0x00F: (0, 5), 0x010: (0, 1), 0x011: (0, 3), 0x013: (0, 1), 0x014: (0, 17), 0x015: (0, 3), 0x016: (0, 1),
           0x017: (0, 100), 0x01A: (10, 17), 0x01B: (0, 1), 0x01E: (0, 2), 0x020: (0, 31), 0x021: (0, 3), 0x022: (1, 255),
-          0x028: (0, 2), 0x029: (0, 2), 0x02A: (50, 150), 0x02B: (0, 3), 0x02C: (0, 1)}
+          0x028: (0, 2), 0x029: (0, 2), 0x02A: (50, 150), 0x02B: (0, 3), 0x02C: (0, 1), 0x02F: (1, 250), 0x02D: (1, 500)}
+WIDE = {0x02D}                                         # the two-byte settings: GET with flags 1 and the two-byte PUT only
 OK_NAME = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._ -')
 
 
@@ -76,6 +78,7 @@ class FakeMeter:
         self.damage_rate = 0.0                         # chance per answer byte to be damaged (the answer is then lost)
         self.rng = random.Random(9)                    # fixed seed: the same losses in every run
         self.adapt_fw = False                          # firmware F-1.25: key codes 0x99..0x9C (rate), GET start max (IMP-55)
+        self.user_cont_fw = True                       # firmware F-1.33: GET start max flags=1, two-byte PUT (IMP-64)
         self.rate_code = None                          # the rate code set by 0x99..0x9C (None: the saved one)
         self.l2_fw = False                             # firmware F-1.31: key codes 0xA8 (link 2 on), 0xAA..0xB2 (pace)
         self.l2_on = False
@@ -254,27 +257,36 @@ class FakeMeter:
                 return card.ST_ARG, 0, b''
             return card.ST_OK, self.sectors_per_cluster, struct.pack('<II', self.free, self.total)
         if rtype == settings.T_GET:
-            pairs = sorted(self.eeprom.items())
+            wide = len(p) == 3
+            # the one-byte settings first, the two-byte ones last and only in the answers with flags 1 (as bfs_tab)
+            pairs = sorted(kv for kv in self.eeprom.items() if kv[0] not in WIDE)
+            if wide:
+                pairs += sorted(kv for kv in self.eeprom.items() if kv[0] in WIDE)
             if not p:
                 return (card.ST_OK,) + settings.get_answer(pairs)
-            if not (self.adapt_fw and len(p) == 2 and p[1] and p[0] <= len(pairs)):   # F-1.25: start(1) max(1)
+            if wide and not (self.user_cont_fw and p[2] == 1):                    # F-1.33: start(1) max(1) flags(1)
+                return card.ST_ARG, 0, b''
+            if not ((self.adapt_fw or wide) and len(p) in (2, 3) and p[1] and p[0] <= len(pairs)):   # F-1.25: start max
                 return card.ST_ARG, 0, b''
             self.get_pages.append((p[0], p[1]))
             part = pairs[p[0]:p[0] + p[1]]
-            n, data = settings.get_answer(part)
+            n, data = settings.get_answer(part, wide=wide)
             return card.ST_OK, n | (0x8000 if p[0] + len(part) == len(pairs) else 0), data
         if rtype == settings.T_PUT:
             if self.refuse_put:
                 return self.refuse_put, 0, b''
-            if len(p) != 3:
+            wide = len(p) == 4
+            if not (len(p) == 3 or (wide and self.user_cont_fw)):
                 return card.ST_ARG, 0, b''
-            i, v = struct.unpack('<HB', p)
+            i, v = struct.unpack('<HH' if wide else '<HB', p)
             if i not in RANGES or i not in self.eeprom or not RANGES[i][0] <= v <= RANGES[i][1]:
+                return card.ST_ARG, 0, b''
+            if i in WIDE and not wide:                # a two-byte setting needs the two-byte form
                 return card.ST_ARG, 0, b''
             if i == 0x020 and (v >> 1) & 3 == 3:      # the trigger 3 is refused
                 return card.ST_ARG, 0, b''
             self.eeprom[i] = v
-            return card.ST_OK, i, bytes([v])
+            return card.ST_OK, i, struct.pack('<H', v) if wide else bytes([v])
         return card.ST_NOT_NOW, 0, b''                 # an unknown type
 
 
