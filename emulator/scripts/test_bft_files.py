@@ -7,9 +7,9 @@ A 64 MiB FAT32 card image holds 34 root files: cal.bin, EEVBlog.bin, BTLOAD.TMP,
 long file names (LFN entries written by this script; the card model of emu/sdcard.py and emu/fat32.py knows only 8.3
 names), one of 70 bytes.  Bluetooth on, SETUP page Ld (item 39).  The host side is emulator/tools/btft.py (request
 builders and the parser of the type 0x82 answers); the helpers are those of test_bt_upload.py and test_backlight_timer.py.
-  T1 gate: with logging on, with calibration mode on, and with another SETUP page shown, a request gets no answer at
-     all (the link belongs to the v2.05 parser, status frames come again); after the condition ends the request is
-     answered.  Also: a request with a wrong CRC gets the 0x81 answer (status 1), the unassigned type 0x15 status 3.
+  T1 gate: with logging on, with calibration mode on, and with another SETUP page shown, the link leaves the transfer
+     (status frames come again) and LIST is not served: the meter API (IMP-65, ble/bfapi.s) answers it with status 3,
+     as every type it does not serve; after the condition ends the request is answered.  Also: a request with a wrong CRC gets the 0x81 answer (status 1), the unassigned type 0x15 status 3.
   T2 LIST: the whole directory in pages, equal to what was written (names, sizes, dates, attributes, order), a name of
      70 bytes cut to 63 with the cut flag, start beyond the end gives an empty page with the end flag, a wrong payload
      length is refused (0x22).
@@ -230,7 +230,7 @@ def run_tests(image):
         e.advance(0.5)
         T.check('%s: status frames come again (the link left the transfer)' % name, U.status_frames(e, 1.5) > 0)
         a = link.send(quiet_packet(btft.list_packet, 0), timeout=2.0)
-        T.check('%s: no answer to LIST' % name, a is None, repr(a))
+        T.check('%s: LIST not served (meter API, status 3)' % name, status_of(a) == 3, repr(a))
         e.m.uc.mem_write(addr, bytes([0]))
         e.advance(0.6)
         T.check('%s ended: no status frames' % name, U.status_frames(e, 1.0) == 0)
@@ -243,7 +243,7 @@ def run_tests(image):
     T.check('another SETUP page shown (item %d)' % item, item != 39)
     e.advance(0.5)
     a = link.send(quiet_packet(btft.list_packet, 0), timeout=2.0)
-    T.check('other page: no answer to LIST', a is None, repr(a))
+    T.check('other page: LIST not served (meter API, status 3)', status_of(a) == 3, repr(a))
     reopen(e)
     bad = bytearray(btft.list_packet(7, 0))
     bad[-1] ^= 0xFF
