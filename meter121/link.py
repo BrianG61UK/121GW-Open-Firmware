@@ -240,7 +240,8 @@ class MeterLink:
         about 5 s after the meter was heard, hwti's capture); every meter heard until then is listed in `found` (the
         page's list).  Every event is filtered here (no service filter in the scanner: WinRT ignores it, and an OS filter
         may miss a UUID that comes only in the scan response); the BLEDevice is given to BleakClient, so bleak does not
-        scan a second time (bleak 1.1.1 backends/winrt/client.py connect: find_device_by_address for an address string)."""
+        scan a second time (bleak 3.0.2 backends/winrt/client.py:160-163: a BLEDevice gives the address, an address
+        string is searched for first)."""
         from bleak import BleakScanner
         self.found = []
         hit = {}
@@ -379,6 +380,11 @@ class MeterLink:
             client = BleakClient(dev, disconnected_callback=lambda _c: self._loop.call_soon_threadsafe(gone.set))
             self._client = client                         # known from here on, so a cancel closes it (_keep's finally)
             try:
+                # Windows answers a connection it could not make in 7 s with "Unreachable" (Microsoft Learn, GATT
+                # client); bleak 3.0.2 asks again 1 s later, up to 10 times within its 30 s connect timeout
+                # (backends/winrt/client.py:686-710; bleak 2.1.1 changelog).  GitHub issue 23: with bleak 1.1.1 one
+                # such answer ended the attempt (a report: the meter heard 22 s after its restart, the answer 7.7 s
+                # later, past the update mode's 30 s window).
                 await client.connect()
                 await client.start_notify(CHAR, on_notify)
             except Exception as e:

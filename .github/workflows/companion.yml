@@ -31,7 +31,7 @@ env:
   # packages are built only for a release tag (or a run started by hand): a branch push runs the unit tests on the three
   # systems and nothing else, its packages were never used (owner 2026-11-09: "you wasting resources and my time")
   PACKAGE: ${{ github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
-  PIP_PKGS: bleak==1.1.1 pywebview==6.1 pyinstaller==6.22.3 pillow certifi==2026.10.23
+  PIP_PKGS: bleak==3.0.2 pywebview==6.1 pyinstaller==6.22.3 pillow certifi==2026.10.23
 
 jobs:
   macos:
@@ -42,6 +42,11 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      # Developer ID signing and notarization only when the repository has the signing secrets (they are not given to
+      # pull requests from forks): MACOS_CERT_P12 (the .p12 of the Developer ID Application certificate and its key,
+      # base64), MACOS_CERT_PASSWORD, NOTARY_KEY_P8 (the App Store Connect API key .p8, base64), NOTARY_KEY_ID,
+      # NOTARY_ISSUER.  Without them the build stays unsigned as before.
+      SIGN: ${{ secrets.MACOS_CERT_P12 != '' && secrets.MACOS_CERT_PASSWORD != '' && secrets.NOTARY_KEY_P8 != '' && secrets.NOTARY_KEY_ID != '' && secrets.NOTARY_ISSUER != '' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -71,6 +76,43 @@ jobs:
       - name: Application bundle
         if: env.PACKAGE == 'true'
         run: APP_VERSION="$VER" APP_ICON="$PWD/build/icons/121gw-companion.icns" pyinstaller --noconfirm packaging/companion.spec
+      - name: A release is signed (the secrets must be there)
+        if: github.ref_type == 'tag' && env.SIGN != 'true'
+        run: |
+          echo "a release tag needs the five signing secrets (MACOS_CERT_P12, MACOS_CERT_PASSWORD, NOTARY_KEY_P8, NOTARY_KEY_ID, NOTARY_ISSUER)"
+          exit 1
+      - name: Signing keychain (temporary, deleted at the end of the job)
+        if: env.PACKAGE == 'true' && env.SIGN == 'true'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          kc="$RUNNER_TEMP/sign.keychain-db"
+          echo "SIGN_KC=$kc" >> "$GITHUB_ENV"           # first, so the cleanup step runs even if a later line fails
+          trap 'rm -f "$RUNNER_TEMP/cert.p12"' EXIT       # the private key never stays on the runner's disk
+          kp=$(openssl rand -hex 24)
+          security create-keychain -p "$kp" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kp" "$kc"
+          printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+          # Apple's Developer ID G2 intermediate, checked against its SHA-256 (taken from apple.com/certificateauthority
+          # on 2026-11-09)
+          curl -sSf -o "$RUNNER_TEMP/DeveloperIDG2CA.cer" https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer
+          fp=$(openssl x509 -inform der -in "$RUNNER_TEMP/DeveloperIDG2CA.cer" -noout -fingerprint -sha256 | cut -d= -f2)
+          [ "$fp" = "F1:6C:D3:C5:4C:7F:83:CE:A4:BF:1A:3E:6A:08:19:C8:AA:A8:E4:A1:52:8F:D1:44:71:5F:35:06:43:D2:DF:3A" ] || { echo "unexpected G2 CA: $fp"; exit 1; }
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$kc"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$kp" "$kc" > /dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          # the identity by its SHA-1 hash: exactly one Developer ID Application identity must be in the keychain
+          n=$(security find-identity -v -p codesigning "$kc" | grep -c '"Developer ID Application' || true)
+          [ "$n" = 1 ] || { echo "expected 1 Developer ID Application identity, found $n"; exit 1; }
+          id=$(security find-identity -v -p codesigning "$kc" | awk '/"Developer ID Application/ {print $2; exit}')
+          echo "SIGN_ID=$id" >> "$GITHUB_ENV"
+      - name: Sign the application (Developer ID, hardened runtime)
+        if: env.PACKAGE == 'true' && env.SIGN == 'true'
+        run: sh packaging/sign_macos.sh "dist/121GW Companion.app" "$SIGN_ID" "$SIGN_KC"
       - name: The bundle answers (page, state, protections)
         if: env.PACKAGE == 'true'
         run: |
@@ -81,7 +123,25 @@ jobs:
           kill "$pid"
       - name: Disk image
         if: env.PACKAGE == 'true'
-        run: sh packaging/make_dmg.sh "dist/121GW Companion.app" build/THIRD_PARTY_LICENSES.txt "121GW-Companion-$VER-macos-arm64.dmg"
+        run: SIGNED=$([ "$SIGN" = true ] && echo 1 || echo 0) sh packaging/make_dmg.sh "dist/121GW Companion.app" build/THIRD_PARTY_LICENSES.txt "121GW-Companion-$VER-macos-arm64.dmg"
+      - name: Sign and notarize the disk image (stapled)
+        if: env.PACKAGE == 'true' && env.SIGN == 'true'
+        env:
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+        run: |
+          set -euo pipefail
+          dmg="121GW-Companion-$VER-macos-arm64.dmg"
+          trap 'rm -f "$RUNNER_TEMP/notary.p8"' EXIT
+          codesign --force --timestamp --sign "$SIGN_ID" --keychain "$SIGN_KC" "$dmg"
+          printf '%s' "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          NOTARY_KEY="$RUNNER_TEMP/notary.p8" sh packaging/notarize_macos.sh "$dmg"
+      - name: Remove the signing keychain
+        if: always() && env.SIGN == 'true'
+        run: |
+          security delete-keychain "$SIGN_KC" || true
+          rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/cert.p12"
       - name: Checksum
         if: env.PACKAGE == 'true'
         run: python -I .github/scripts/sha256sum.py 121GW-Companion-*.dmg > "121GW-Companion-$VER-macos-arm64.dmg.sha256"

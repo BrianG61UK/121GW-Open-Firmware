@@ -68,8 +68,18 @@ service BlueZ and opens the program in the browser.
 then `packaging/make_dmg.sh` (macOS), `packaging/windows/121gw_companion.iss` (Inno Setup) or
 `packaging/linux/build_appimage.sh` / `build_deb.sh`.
 
+macOS with a Developer ID: `packaging/sign_macos.sh APP "Developer ID Application" [KEYCHAIN]` signs every binary and
+the bundle (hardened runtime, timestamp); then `SIGNED=1 packaging/make_dmg.sh ...`, `codesign --timestamp --sign
+"Developer ID Application" OUT.dmg` and `packaging/notarize_macos.sh OUT.dmg` (a notarytool keychain profile in
+`NOTARY_PROFILE`, or an App Store Connect API key in `NOTARY_KEY`, `NOTARY_KEY_ID`, `NOTARY_ISSUER`) submit it to
+Apple, wait for the verdict and staple the ticket.  A signed and notarized image opens without the "could not verify"
+question.
+
 CI (`.github/workflows/companion.yml`): every push runs the unit tests on macOS, Windows and Linux; the packages are
-built, started and checked only for a release tag `companion-vA.B.C` (or a run started by hand).
+built, started and checked only for a release tag `companion-vA.B.C` (or a run started by hand).  The macOS package is
+signed and notarized when the repository has the secrets `MACOS_CERT_P12` (the certificate and its key as .p12,
+base64), `MACOS_CERT_PASSWORD`, `NOTARY_KEY_P8` (the API key .p8, base64), `NOTARY_KEY_ID` and `NOTARY_ISSUER`; without
+them it is built unsigned as before.
 
 ## How it works
 

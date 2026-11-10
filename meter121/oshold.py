@@ -5,8 +5,8 @@ after the companion's Disconnect ("Connected (1)" in the tray), so a new Connect
 switched off and on.  What each system allows (research 2026-11-08, sources in the comments):
 
 Windows   bleak's connect sets GattSession.maintain_connection = True ("keeps the device connected until we set
-          maintain_connection = False", bleak/backends/winrt/client.py:381) and its disconnect never sets it back
-          (client.py:464-506); with it set "the system waits indefinitely for a connection" (Microsoft Learn,
+          maintain_connection = False", bleak 3.0.2 bleak/backends/winrt/client.py:366) and its disconnect never sets it
+          back (client.py:449-497); with it set "the system waits indefinitely for a connection" (Microsoft Learn,
           GattSession.MaintainConnection).  prepare_close() sets it False before the disconnect.  After the disconnect
           Windows drops the link "after a small timeout period" once no app holds a reference (Microsoft Learn, GATT
           client); BluetoothLEDevice.ConnectionStatus tells whether it still has it.  No API forces a link down that
@@ -26,6 +26,7 @@ import sys
 
 HELD_WAIT = 4.0                                   # seconds after the disconnect before the check (Windows' "small timeout")
 HELD_POLLS = 3                                    # checks, HELD_WAIT apart, before the system is said to hold the meter
+MACOS_READY_WAIT = 2.0                            # seconds for CoreBluetooth's first state update (a permission dialog: no answer)
 
 HINT = {
     'win32': 'Windows still holds the meter after the disconnect, so the meter does not advertise and Connect cannot '
@@ -62,7 +63,7 @@ async def held(address, service):
             from bleak.backends.bluezdbus.manager import get_global_bluez_manager
             return bool((await get_global_bluez_manager()).is_connected(path))
         if sys.platform == 'darwin':
-            return _held_macos(service)
+            return await _held_macos(service)
     except Exception:                             # noqa: BLE001 - cannot tell
         return None
     return None
@@ -108,10 +109,14 @@ async def _bluez_path(address):
     return None
 
 
-def _held_macos(service):
+async def _held_macos(service):
+    """bleak 3.0.2: CentralManagerDelegate is a Python class whose central manager may be used only after
+    wait_until_ready (backends/corebluetooth/CentralManagerDelegate.py:194, 220; 1.1.1 waited inside init)."""
     from CoreBluetooth import CBUUID
     from bleak.backends.corebluetooth.CentralManagerDelegate import CentralManagerDelegate
-    cm = CentralManagerDelegate.alloc().init().central_manager
+    delegate = CentralManagerDelegate()
+    await asyncio.wait_for(delegate.wait_until_ready(), MACOS_READY_WAIT)
+    cm = delegate.central_manager
     return len(cm.retrieveConnectedPeripheralsWithServices_([CBUUID.UUIDWithString_(service)]) or []) > 0
 
 

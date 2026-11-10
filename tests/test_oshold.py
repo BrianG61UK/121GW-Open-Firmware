@@ -72,12 +72,9 @@ class HeldNeverRaises(unittest.TestCase):
     def test_errors_mean_cannot_tell(self):
         old = oshold._held_macos, oshold._held_windows, oshold._bluez_path
 
-        def boom(*_a):
-            raise RuntimeError('no Bluetooth')
-
         async def aboom(*_a):
             raise RuntimeError('no Bluetooth')
-        oshold._held_macos, oshold._held_windows, oshold._bluez_path = boom, aboom, aboom
+        oshold._held_macos, oshold._held_windows, oshold._bluez_path = aboom, aboom, aboom
         try:
             self.assertIsNone(asyncio.run(oshold.held('AA:BB:CC:DD:EE:FF', 'svc')))
             self.assertIsNone(asyncio.run(oshold.release('AA:BB:CC:DD:EE:FF')))
