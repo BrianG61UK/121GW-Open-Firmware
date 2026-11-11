@@ -161,6 +161,38 @@ class PageLayout(unittest.TestCase):
                 self.assertEqual(errors, [])
                 page.close()
 
+    def test_settings_read_when_page_ld_appears(self):
+        # GitHub issue 37 (Mike4U): with the METER SETTINGS page open, page Ld shown on the meter reads the settings by
+        # itself (before: only READ did, the check looked for the old page name); opening the page reads them again
+        st = self.app.state()
+        st['link'] = dict(st['link'], state='connected')
+        st['settings'] = {'items': widest_items(), 'error': None, 'locked_reason': 'show the SETUP page Ld on the meter'}
+        st['desk'] = False
+        box = {'body': json.dumps(st, default=str)}
+        page = self.browser.new_page(viewport={'width': 1180, 'height': 732})
+        errors, posts = [], []
+        page.on('pageerror', lambda e: errors.append(str(e)))
+        page.on('request', lambda r: posts.append(r.post_data) if r.method == 'POST' else None)
+        page.route(re.compile(r'/state(\?|$)'), lambda r: r.fulfill(status=200, content_type='application/json', body=box['body']))
+        page.route(re.compile(r'/api$'), lambda r: r.fulfill(status=200, content_type='application/json', body='{"ok": true}'))
+        page.goto(self.base + '/')
+        page.wait_for_selector('#v-live.on')
+        page.click('nav button[data-v=msettings]')
+        page.wait_for_timeout(500)
+        reads = lambda: [x for x in posts if x and 'settings_get' in json.loads(x)]
+        self.assertEqual(reads(), [])                        # locked (no page Ld): nothing is asked
+        st['settings']['locked_reason'] = None
+        st['desk'] = True                                    # the meter now shows page Ld
+        box['body'] = json.dumps(st, default=str)
+        page.wait_for_timeout(800)
+        self.assertEqual(len(reads()), 1)                    # read once by itself, the list was not empty
+        page.click('nav button[data-v=live]')
+        page.click('nav button[data-v=msettings]')
+        page.wait_for_timeout(500)
+        self.assertEqual(len(reads()), 2)                    # opening the page reads again
+        self.assertEqual(errors, [])
+        page.close()
+
     def test_other_views_cut_no_text(self):
         self.items = []
         for size in SIZES:

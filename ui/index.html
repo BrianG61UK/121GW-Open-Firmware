@@ -1444,9 +1444,9 @@ function choicesOf(it) {
   return (it.choices || []).map((c, i) => c !== null && typeof c === 'object' ? {v: c.value, l: String(c.label !== undefined ? c.label : c.value)}
     : typeof c === 'number' ? {v: c, l: String(c)} : {v: typeof it.value === 'string' ? c : i, l: String(c)});
 }
-function readSettings() {                              // only when the program says the link can do it (page Ld shown)
-  const S = state && state.settings;
-  if (S && !S.locked_reason && !(S.items || []).length) send('settings_get').catch(fail);
+function readSettings() {                              // only when the program says the link can do it (page Ld shown);
+  const S = state && state.settings;                   // every time, so the page never shows the values of an earlier
+  if (S && !S.locked_reason) send('settings_get').catch(fail);   // visit (issue 37)
 }
 function setRow(it) {
   const choices = choicesOf(it), isChoice = choices.length > 0;
@@ -1663,7 +1663,7 @@ async function poll() {
   if (trend.length > 6000) trend = trend.slice(-6000);
   const dk = desk();
   if (dk && !prevDesk && view === 'card') { cardSig = ''; send('card_refresh').catch(fail); }
-  if (dk && !prevDesk && view === 'meter') readSettings();
+  if (dk && !prevDesk && view === 'msettings') readSettings();     // page Ld just shown: fresh settings (issue 37)
   prevDesk = dk;
   render();
   setTimeout(poll, 150);
