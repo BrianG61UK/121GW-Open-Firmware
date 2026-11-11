@@ -11,14 +11,15 @@ Checks on DCV (dial V), each also run on --ref (for example the previous release
      than 10 % (the 16-sample window keeps v2.05's noise; an 8-sample window would show about 1.4 x).
   T4 range change: 1 V -> 40 V (range 0 -> 1): the first value in the new range and every later one are within 0.2 % of
      40 V, and the first comes no earlier than on the reference minus 5 ms (the settle time after a range change is v2.05's).
-  T5 steep ramps (GitHub issue 3): 0.5 -> 4.5 V at 0.6 V/s and at 1.2 V/s (about 75 and 150 counts per 80 sps sample, below
-     and above MDC_DCV_STEP = about 98 counts), the input set from the emulated time every 5 ms (noise off): the display
-     never shows one value for longer than 0.3 s while the input moves, and every shown value is within 0.25 s of the slope
-     of the input (LAG_S: the 16-sample window of 0.2 s at 80 sps plus one display refresh).  The first form of the step
+  T5 steep ramps (GitHub issue 3): 0.5 -> 4.5 V at 0.3 V/s and at 0.6 V/s (about 77 and 155 counts per DCV r0 result of
+     25.75 ms, below and above MDC_DCV_STEP = about 98 counts), the input set from the emulated time every 5 ms (noise off):
+     the display never shows one value for longer than 0.3 s while the input moves, and every shown value is within 0.45 s
+     of the slope of the input (LAG_S: half the 16-sample window, the publish interval, one display refresh).  The first form of the step
      test held one value for seconds here.
-  T6 a steep sine across a range change: 0 -> 40 V (cosine, 16 s period) for 7 s, the input set every 5 ms, so the
-     change per sample alternates around MDC_DCV_STEP in the 50 V range (2 or 3 input steps per 12.5 ms sample): the main
-     display is never without a value for longer than 0.6 s (the settle time after the range change).  Without the rule
+  T6 a steep sine across a range change: 0 -> 40 V (cosine, 32 s period) for 14 s, the input set every 5 ms, so the
+     change per result stays around MDC_DCV_STEP in the 50 V range (25.75 ms results): the main display is never without
+     a value for longer than 0.6 s (the settle time after the range change: 16 discarded results, 0.41 s, and the first
+     mean of 4, 0.1 s; 0.49 s in the emulator with the chop-row rate, 2026-11-10).  Without the rule
      "no second restart before a mean was published" every few samples restarted the window, no mean was published, the
      settle count of the range change never ran out and the display stayed blank for 4.5 s.
 The helpers are those of test_backlight_timer.py.
@@ -84,8 +85,8 @@ def t2(image):
     for a, b in ((1.0, 3.0), (0.0, 9.0)):
         for k in range(18):
             e = meter(image, a)
-            e.advance(0.0025 * k)                    # every sample position of a window (the emulator's DCV rows give
-                                                     # about 400 samples per second: 2.5 ms per sample)
+            e.advance(0.02575 * k)                   # every sample position of a window (DCV r0 gives a result every
+                                                     # 25.75 ms: chop row, HARDWARE_TEST.md H5)
             volts(e, b)
             for t, v in trace(e, 1.5):
                 if v is None:
@@ -122,7 +123,8 @@ def t4(image):
     return (first or (None, None)) + (off,)
 
 
-LAG_S = 0.25          # T5 tolerance in seconds of the slope: the 16-sample window (0.2 s at 80 sps) plus one display refresh
+LAG_S = 0.45          # T5 tolerance in seconds of the slope: half the 16-sample window (0.21 s at 38.8 results/s) plus the
+                      # publish interval of 8 results (0.21 s) and one display refresh
 
 
 def t5(image, rate):
@@ -152,9 +154,9 @@ def t6(image):
     e = meter(image, 0.0)
     t0 = T.now(e)
     blank_since, longest = None, 0.0
-    while T.now(e) - t0 < 7.0:
+    while T.now(e) - t0 < 14.0:
         t = T.now(e) - t0
-        volts(e, 20.0 * (1 - math.cos(2 * math.pi * t / 16.0)))
+        volts(e, 20.0 * (1 - math.cos(2 * math.pi * t / 32.0)))
         e.advance(0.005)
         if shown(e) is None:
             blank_since = T.now(e) if blank_since is None else blank_since
@@ -178,18 +180,18 @@ def main(argv):
         res[name]['bad'] = t2(img)
         res[name]['noise'] = t3(img)
         res[name]['range'] = t4(img)
-        res[name]['ramp'] = [t5(img, 0.6), t5(img, 1.2)]
+        res[name]['ramp'] = [t5(img, 0.3), t5(img, 0.6)]
         res[name]['blank'] = t6(img)
         print('%-4s rate %.1f/s, straddled values %d %s, noise %.2f counts, range change first value %r'
               % (name, res[name]['rate'], len(res[name]['bad']), res[name]['bad'][:3], res[name]['noise'], res[name]['range']),
               flush=True)
-        print('     ramps: 0.6 V/s longest hold %.2f s, largest distance %.3f V; 1.2 V/s %.2f s, %.3f V'
+        print('     ramps: 0.3 V/s longest hold %.2f s, largest distance %.3f V; 0.6 V/s %.2f s, %.3f V'
               % (res[name]['ramp'][0] + res[name]['ramp'][1]), flush=True)
         print('     0 -> 40 V across the range change: longest blank %.2f s' % res[name]['blank'], flush=True)
     r = res['test']
     T.check('T6 0 -> 40 V across the range change: never blank longer than 0.6 s', r['blank'] <= 0.6,
             '%.2f s' % r['blank'])
-    for rate, (hold, dist) in zip((0.6, 1.2), r['ramp']):
+    for rate, (hold, dist) in zip((0.3, 0.6), r['ramp']):
         T.check('T5 ramp %.1f V/s: no value shown longer than 0.3 s' % rate, hold <= 0.3, '%.2f s' % hold)
         T.check('T5 ramp %.1f V/s: every value within %.2f V of the input' % (rate, LAG_S * rate), dist <= LAG_S * rate,
                 '%.3f V' % dist)

@@ -46,6 +46,8 @@
 @     0x020 bit field             0..31   set_relp, log_trig, set_clk12, set_hunt_on, then set_b20_store (below)
 @     0x021 continuity hold       0..3    set_bh_code        -                        set_bh_edit      (page bH)
 @     0x022 logging change thr.   1..255  log_ch_thr         -                        set_ch_edit      (page Ch)
+@     0x023 battery type          0..1    set_bat_nimh       -                        set_bat_edit     (page bAt, IMP-67;
+@                                                            0 = alkaline, 1 = NiMH)
 @     0x028 current-loop view     0..2    set_lp_code        -                        set_lp_edit      (page LP)
 @     0x029 RTD view              0..2    set_rtd_code       -                        set_rtd_edit     (page Pt)
 @     0x02A battery trim          50..150 set_btrim (= v - 100, signed)  -            set_btrim_edit   (battery page; v is the
@@ -82,8 +84,8 @@
     .include "ram_v205.inc"
     .include "config.inc"
 
-    .equ BFS_N,             20              @ one-byte entries of bfs_tab, first in the table (checked below)
-    .equ BFS_NW,            22              @ every entry, the two-byte ones last (IMP-64; 0x018 IMP-65)
+    .equ BFS_N,             21              @ one-byte entries of bfs_tab, first in the table (checked below)
+    .equ BFS_NW,            23              @ every entry, the two-byte ones last (IMP-64; 0x018 IMP-65)
     .equ BFS_REC,           28              @ bytes of one entry
     .equ BFS_ST_NOTALLOWED, 3
     .equ BFS_ST_ARG,        0x22
@@ -129,6 +131,7 @@ bfs_tab:
     BFS_ENTRY 0x020, 0,   31,  0,   0,             BFS_KIND_B20, 0,      0,                0,               0
     BFS_ENTRY 0x021, 0,   3,   0,   0,             0, set_bh_code,       set_bh_code,      0,               set_bh_edit
     BFS_ENTRY 0x022, 1,   255, 0,   0,             0, log_ch_thr,        log_ch_thr,       0,               set_ch_edit
+    BFS_ENTRY 0x023, 0,   1,   0,   0,             0, set_bat_nimh,      set_bat_nimh,     0,               set_bat_edit
     BFS_ENTRY 0x028, 0,   2,   0,   0,             0, set_lp_code,       set_lp_code,      0,               set_lp_edit
     BFS_ENTRY 0x029, 0,   2,   0,   0,             0, set_rtd_code,      set_rtd_code,     0,               set_rtd_edit
     BFS_ENTRY 0x02A, 50,  150, 100, 0,             0, set_btrim,         set_btrim,        0,               set_btrim_edit

@@ -56,7 +56,8 @@
 @ Clobbers : r0-r3, r12, flags (r4-r6 saved)
 @ Context  : main only
 @ Spec     : DESIGN.md 6.21, Appendix C.2; EEPROM_MAP.md 7.1, 9.2 (class SETTINGS: 0x008..0x00E, 0x010, 0x014, 0x016,
-@            0x018..0x01A, 0x01B, 0x01E)
+@            0x018..0x01A, 0x01B, 0x01E, and in the production image the port-only settings of 4.1, among them 0x023, the
+@            battery type of the page bAt, IMP-67)
 @ Note     : nvm_arm is called here, immediately before the writer; NVM re-checks every byte against its allowed
 @            table and refuses (status 1) anything else, so a wrong offset can never reach another EEPROM byte.
 @ -----------------------------------------------------------------------------
@@ -538,9 +539,9 @@ ENDFUNC fn_08011384
 @ Note     : The call of fn_08011394 (item 10 in BEEP) now accepts the codes 0..17 (IMP-05, IMP-64).
 @ Note     : Production image only: item 20 (bL, set_bl_load), 21 (bt, set_bt_load), 22 (rEL, set_relp_load), 23 (tc,
 @            set_tc_load), 24 (dSP, set_dsp_load), 25 (CL, set_relp_load), 26 (bH, set_bh_load), 30 (tr, set_relp_load),
-@            31 (Ch, set_ch_load), 37 (LP, set_lp_load), 38 (Pt, set_rtd_load), 41 (HUnt, set_relp_load), 42 (CHIrP, set_chirp_load), 1 (battery trim, set_btrim_load) and 11 of ACV (dBm reference, set_dbm_load)
-@            are re-read from the EEPROM in the same way (IMP-07, IMP-09, IMP-11, IMP-10, IMP-12, IMP-13, IMP-16, IMP-21,
-@            IMP-24, IMP-25, IMP-45, IMP-51, IMP-27, IMP-08).
+@            31 (Ch, set_ch_load), 37 (LP, set_lp_load), 38 (Pt, set_rtd_load), 41 (HUnt, set_relp_load), 42 (CHIrP, set_chirp_load), 1 (battery trim, set_btrim_load), 47 (bAt, set_bat_load) and 11 of ACV (dBm reference,
+@            set_dbm_load) are re-read from the EEPROM in the same way (IMP-07, IMP-09, IMP-11, IMP-10, IMP-12, IMP-13,
+@            IMP-16, IMP-21, IMP-24, IMP-25, IMP-45, IMP-51, IMP-27, IMP-67, IMP-08).
 @ -----------------------------------------------------------------------------
 FUNC fn_0800D190
     push {r7, lr}                           @ 0800D190
@@ -704,6 +705,11 @@ FUNC fn_0800D190
     bl set_btrim_load
     b .L0800D280
 .Lto_not_btrim:
+    cmp r0, #47                             @ IMP-67: the same for the battery type (item 47; byte 0x023)
+    bne .Lto_not_bat
+    bl set_bat_load
+    b .L0800D280
+.Lto_not_bat:
     cmp r0, #30                             @ IMP-21: the same for the page tr (item 30; byte 0x020)
     bne 1f
     bl set_relp_load

@@ -37,7 +37,8 @@ ui_blank_req:
 @ version shown on the sub display, 2 window open with a key combination screen on the display
 ui_bw_state:
     .space 1
-@ ui_skip_sub: 1 for the current refresh pass while the sub display shows the version (the sub-display blocks are skipped)
+@ ui_skip_sub: 1 for the current refresh pass while the sub display shows the version or, IMP-67, the battery voltage of the
+@ power-on display (the sub-display blocks are skipped)
 ui_skip_sub:
     .space 1
 @ ui_lamp_test: 1 from the moment fn_0801A89C lights every segment (RANGE key inside the power-on window, DESIGN.md 7.1) until the
@@ -1003,7 +1004,9 @@ ENDFUNC ui_value_valid
 @            the main digits and the version on the secondary display; a window key that starts a combination stops the
 @            measurement display; the all-segments test of the RANGE key (DESIGN.md 7.1, analysis/keys_setup.md 3) stays until the
 @            window closes
-@ Deviation: IMP-02
+@ Deviation: IMP-02; IMP-67: when the window has closed with the version on the sub display (not after a combination) it
+@            calls pwr_bat_arm once (low-battery beep, start of the battery display) and then, in every pass with the
+@            window closed, ui_bat_service (the display itself, which sets ui_skip_sub)
 @ -----------------------------------------------------------------------------
 LFUNC ui_bootwin_gate
     push {r4, lr}
@@ -1091,12 +1094,130 @@ LFUNC ui_bootwin_gate
     ldrb r1, [r0]
     cbz r1, .Lbg_idle                       @ window was not open
     strb r4, [r0]                           @ window just closed: state 0 (r4 = 0)
+    mov r4, r1                              @ r4 = the state at the close (1 version shown, 2 combination screen)
     bl ui_request_redraw                    @ restore the whole live display (sub display page, units, annunciators, value)
+    cmp r4, #1
+    bne .Lbg_idle                           @ a combination ended the window: no battery message or beep
+    bl pwr_bat_arm                          @ IMP-67: low-battery beep and the start of the battery voltage display
 .Lbg_idle:
+    bl ui_bat_service                       @ IMP-67: the battery voltage display, while it runs
     movs r0, #0
     pop {r4, pc}
     .ltorg
 ENDFUNC ui_bootwin_gate
+
+@ -----------------------------------------------------------------------------
+@ ui_bat_service - the battery voltage on the sub display for 2 s after the power-on window (IMP-67)
+@ Replaces : nothing (new)
+@ In       : -
+@ Out      : - (sets ui_skip_sub while the display runs, so that the refresh keeps the sub display)
+@ Clobbers : r0-r3, r12, flags
+@ Context  : main only; called at the end of ui_bootwin_gate in every pass with the window closed
+@ RAM      : reads pwr_bat_mode, pwr_bat_show, pwr_bat_dirty, meter_mode, lcd_shadow word 0; writes ui_skip_sub,
+@            pwr_bat_mode, pwr_bat_show, pwr_bat_dirty; through ui_bat_draw and ui_request_redraw: lcd_shadow, 0x2000805B,
+@            0x2000805D, 0x2000805E, 0x20008060..0x20008063
+@ Spec     : FEATURES.md 2.40.  The display is held like the version of the window: ui_skip_sub makes fn_08016D34 skip its
+@            sub-display blocks, so none of the many requests for a sub-display redraw (0x20008062) replaces it.  It ends
+@            when the time is over (pwr_bat_show), a key was pressed (pwr_bat_key), the dial changed the mode, or a state
+@            forbids it (pwr_bat_blocked); then the live display is requested as the window close does.  It is drawn again
+@            at every reading (the voltage changes) and when an apply cleared the sub decimal point (the check of the
+@            version, ui_bootwin_gate .Lbg_keepver).
+@ -----------------------------------------------------------------------------
+LFUNC ui_bat_service
+    push {r4, lr}
+    ldr r4, =pwr_bat_mode
+    ldrb r0, [r4]                           @ meter_mode + 1 at the start, 0 = no display
+    cbz r0, .Lbs_ret
+    ldr r1, =pwr_bat_show
+    ldrb r1, [r1]
+    cbz r1, .Lbs_end                        @ time over, or a key press
+    ldr r1, =meter_mode
+    ldrb r1, [r1]
+    adds r1, r1, #1
+    cmp r1, r0
+    bne .Lbs_end                            @ the dial (or a mode change) left the mode
+    bl pwr_bat_blocked
+    cbnz r0, .Lbs_end                       @ a state forbids the display
+    ldr r0, =ui_skip_sub
+    movs r1, #1
+    strb r1, [r0]                           @ keep the sub display during this pass
+    ldr r0, =pwr_bat_dirty
+    ldrb r1, [r0]
+    cbnz r1, .Lbs_draw                      @ a new reading, or the first pass
+    ldr r1, =lcd_shadow
+    ldr r1, [r1]                            @ shadow word 0: sub decimal points at bits 21, 23, 25, 27 (fn_08017FB4)
+    and r1, r1, #0x0AA00000
+    cmp r1, #0x00800000                     @ only sub point 2 ("  4.95") set: the text is intact
+    beq .Lbs_ret
+.Lbs_draw:
+    movs r1, #0
+    strb r1, [r0]                           @ pwr_bat_dirty = 0
+    bl ui_bat_draw
+    b .Lbs_ret
+.Lbs_end:
+    movs r0, #0
+    strb r0, [r4]                           @ pwr_bat_mode = 0: no display
+    ldr r1, =pwr_bat_show
+    strb r0, [r1]
+    bl ui_request_redraw                    @ the live sub display page and its units (V and the digits go with it)
+.Lbs_ret:
+    pop {r4, pc}
+    .ltorg
+ENDFUNC ui_bat_service
+
+@ -----------------------------------------------------------------------------
+@ ui_bat_draw - draw the battery voltage "  4.95" and the V annunciator on the sub display
+@ Replaces : nothing (new, IMP-67)
+@ In       : -
+@ Out      : -   (sets the commit request 0x2000805B)
+@ Clobbers : r0-r3, r12, flags
+@ Context  : main only; called by ui_bat_service
+@ RAM      : reads pwr_bat_cv; writes lcd_shadow (sub display digits, decimal point, unit group, V of word 2), 0x2000805B
+@ Spec     : FEATURES.md 2.40.  Only the trimmed voltage in 0.01 V, the two leading positions blank (owner 2026-11-10: "it
+@            does not need to say bA only the voltage it lights up the v"); the unit group is cleared first, then the V
+@            annunciator is lit as the battery page does (fn_0801A440: word 2 bit 17 for the page code 1).  The ending
+@            redraw (ui_request_redraw, 0x20008063) clears the V again.
+@ -----------------------------------------------------------------------------
+LFUNC ui_bat_draw
+    push {r4, lr}
+    sub sp, sp, #8
+    bl fn_0801A760                          @ clear the sub-display unit group and the sub minus sign
+    movs r0, #2
+    bl fn_08017FB4                          @ sub decimal point before the last two digits: "  4.95"
+    ldr r0, =pwr_bat_cv
+    ldrh r0, [r0]
+    movw r1, #999
+    cmp r0, r1
+    it hi
+    movhi r0, r1                            @ three digits (as set_btrim_draw)
+    movs r1, #' '
+    strb r1, [sp, #0]
+    strb r1, [sp, #1]                       @ two blank positions
+    movs r2, #10
+    udiv r3, r0, r2                         @ r3 = v / 10
+    mls r1, r3, r2, r0                      @ hundredths digit
+    adds r1, r1, #'0'
+    strb r1, [sp, #4]
+    udiv r0, r3, r2
+    mls r1, r0, r2, r3                      @ tenths digit
+    adds r1, r1, #'0'
+    strb r1, [sp, #3]
+    adds r0, r0, #'0'                       @ volts digit (v < 1000)
+    strb r0, [sp, #2]
+    movs r0, #1                             @ sub display
+    mov r1, sp
+    bl lcd_draw_5char
+    ldr r0, =lcd_shadow
+    ldr r1, [r0, #8]
+    orr r1, r1, #0x20000                    @ SubV, as fn_0801A440 does for the battery page
+    str r1, [r0, #8]
+    movs r0, #1
+    ldr r1, =v_2000805B
+    strb r0, [r1]                           @ LCD commit request
+    add sp, sp, #8
+    pop {r4, pc}
+    .ltorg
+ENDFUNC ui_bat_draw
 
 @ -----------------------------------------------------------------------------
 @ ui_bootwin_main_busy - does a power-on window screen own the main display

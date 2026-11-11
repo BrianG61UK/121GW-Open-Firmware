@@ -96,6 +96,7 @@
     .equ SET_ITEM_BACK, 44                  @ IMP-57: page bAcK, the end of the meter walk (GitHub issue 31)
     .equ SET_ITEM_UT, 45                    @ IMP-64: user continuity threshold page th (BEEP, codes 16 and 17 only, after bH)
     .equ SET_ITEM_UH, 46                    @ IMP-64: user continuity hysteresis page HY (after th)
+    .equ SET_ITEM_BATT, 47                  @ IMP-67: battery type page bAt (meter walk, between the battery page 1 and APO 2)
     .equ SET_CONT_CODES, 18                 @ IMP-05, IMP-64: continuity threshold codes 0..17
     .equ SET_CONT_USER, 16                  @ IMP-64: the first user code (16 DNUSr, 17 UPUSr)
     .equ SET_ITEM_IN, 9                     @ v2.05's log interval page In; IMP-52: in the measurement walk after tr / Ch
@@ -140,7 +141,8 @@ FUNC fn_08015410
     @ while the test is on; then the logging pages tr (30) and, with tr-Ch, Ch (31) (IMP-21), then In (v2.05 item 9, its
     @ edit buffer loaded as v2.05 does); then, while MIN/MAX is on, the statistics page n (item 32, IMP-14), Sd (33), the
     @ time pages tHI (34) and tLo (35) (IMP-21); then the page SEt (item 43); on SEt to item 0.  Meter walk (from SEt by a
-    @ long SETUP, key/long.s): v2.05's items 1..8 in v2.05's sequence (the ID cursor of item 8 included), on 8 to the page
+    @ long SETUP, key/long.s): v2.05's items 1..8 in v2.05's sequence (the ID cursor of item 8 included; IMP-67: the page
+    @ bAt, item 47, between 1 and 2), on 8 to the page
     @ bL (item 20, IMP-07), on bL to bt (21, IMP-09), on bt to Ld (39, IMP-28), on Ld to Fr (40, IMP-32, two-part
     @ bootloader only) or CL (25, IMP-13), on Fr to CL, on CL to the page bAcK (44, IMP-57, GitHub issue 31), on bAcK to
     @ item 0, the temperature page that starts the measurement walk.  Each step ends an edit.
@@ -150,6 +152,10 @@ FUNC fn_08015410
     beq .Lsn_to0                            @ SEt: next is item 0 (IMP-52)
     cmp r0, #SET_ITEM_BACK
     beq .Lsn_to0                            @ bAcK: back to item 0, the measurement walk (IMP-57)
+    cmp r0, #1
+    beq .Lsn_batt                           @ battery page: next is bAt (IMP-67)
+    cmp r0, #SET_ITEM_BATT
+    beq .Lsn_after_batt                     @ bAt: next is item 2, APO (IMP-67)
     cmp r0, #0
     bne 11f
     movs r0, #SET_ITEM_IN                   @ item 0: v2.05's sequence from item 9, so the next is 10 (with its entry actions)
@@ -324,6 +330,12 @@ FUNC fn_08015410
     b .Lsn_port_set
 .Lsn_to0:
     movs r0, #0x0
+    b .Lsn_port_set
+.Lsn_batt:
+    movs r0, #SET_ITEM_BATT                 @ battery page: next is bAt (IMP-67)
+    b .Lsn_port_set
+.Lsn_after_batt:
+    movs r0, #2                             @ bAt: next is item 2, APO (v2.05's sequence goes on)
     b .Lsn_port_set
 .Lsn_bl:
     movs r0, #SET_ITEM_BT                   @ bL: next is bt
@@ -1747,6 +1759,20 @@ FUNC fn_080165F4
     bl set_chirp_edit                       @ up, down or save of the chirp setting
     b .L08016800
 .Lse_not_chirp:
+    cmp r0, #SET_ITEM_BATT                  @ IMP-67: the battery type page bAt (item 47)
+    bne .Lse_not_batt
+    uxtb r4, r4
+    cmp r4, #0x0                            @ query?
+    bne .Lse_batt_act
+    movs r0, #0x1
+    movs r5, r0                             @ query result: editable
+    b .L08016800
+.Lse_batt_act:
+    movs r0, r4
+    uxtb r0, r0
+    bl set_bat_edit                         @ up, down or save of the battery type
+    b .L08016800
+.Lse_not_batt:
     sub r1, r0, #SET_ITEM_LT                @ IMP-20: the limit pages Lt, Lo, HI (27..29)
     cmp r1, #2
     bhi .Lse_not_lt
@@ -2547,6 +2573,11 @@ FUNC fn_0801797C
     bl set_chirp_draw
     b .L08017F26
 .Lsd_not_chirp:
+    cmp r0, #SET_ITEM_BATT                  @ IMP-67: the battery type page bAt (item 47)
+    bne .Lsd_not_batt
+    bl set_bat_draw
+    b .L08017F26
+.Lsd_not_batt:
     cmp r0, #SET_ITEM_SET                   @ IMP-52: the page SEt (item 43)
     bne .Lsd_not_set
     bl set_menu_draw

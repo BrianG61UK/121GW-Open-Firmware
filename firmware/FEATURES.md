@@ -63,7 +63,8 @@ verdicts and units are written as text.
 Only bytes that v2.05 never accesses (EMAP 4, the list "Every byte inside 0x000..0x4FF that no v2.05 routine other than
 calbin_save / calbin_load reads or writes") and only in 4-byte words that hold no calibration, serial, date or marker byte,
 because a byte write rewrites its whole word (EMAP 1): the words 0x00C..0x00F, 0x010..0x013 and 0x014..0x017 hold settings
-only (rotary memory, unit, DIODE flag, continuity code, APO), and 0x020..0x023, 0x028..0x02B and 0x02C..0x02F hold nothing.
+only (rotary memory, unit, DIODE flag, continuity code, APO), and 0x020..0x023, 0x028..0x02B and 0x02C..0x02F held nothing
+before the features of section 3 took their bytes (all twelve are used now).
 Rules for every byte:
 
 - all-zero is v2.05 behaviour: a blank byte, a byte restored from a v2.05 `cal.bin` (the supplied backup is 0x00 at all of
@@ -143,9 +144,10 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Meaning (owner decision, 2026-11-02: less smoothing, not shorter means): every displayed value is the thresholded mean of
   the last N means (`fn_0800B754`, `fn_08008344` and the OF-28 blocks); a step larger than the threshold restarts the
   filter at once, a smaller change takes up to N means. Level 2 uses a quarter of every depth, at least 1 (10 -> 2,
-  20 -> 5, 5 -> 1, 2 -> 1); thresholds unchanged. The mean lengths, so the update rate of the digits (DCV 200 ms, DCmV and
-  TEMP 400 ms, Ohm, AC, currents, DIODE and BEEP 100 ms in the production build), auto-ranging, the settle counts and the
-  HY3131 rows are not changed. Shorter means were not taken: auto-ranging (`ar_apply`, M = 16), the settle counts, the AC+DC
+  20 -> 5, 5 -> 1, 2 -> 1); thresholds unchanged. The mean lengths, so the update rate of the digits (since IMP-66:
+  DCV 206 ms, DCmV range 0 and TEMP 608 ms, Ohm 105..154 ms (ranges 5 and 6 about 400 ms), currents and DIODE 159 ms,
+  BEEP 102 ms, ACV and ACmV 100 ms in the production build), auto-ranging, the settle counts and the HY3131 rows are not
+  changed by the display level. Shorter means were not taken: auto-ranging (`ar_apply`, M = 16), the settle counts, the AC+DC
   and burden dwell and the Ohm range-change skip all count means.
 - Effect measured in the emulator: a 15-count step in ACV (threshold 20, depth 10) settles in 0.96 s at level 1 and 0.24 s
   at level 2. Noise: ACV 1 V, DCmV 10 mV and OHM 1 kohm stay steady at both levels; TEMP 100 degC is steady at level 1 and
@@ -561,7 +563,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Request (GitHub PR 22): in DIODE the double beep reports a jump of the reading (v2.05: more than 1000 counts against
   the last beep's reading, at most once per second), so touching a diode beeps, lifting the probes beeps, and a reading
   that settles or drifts can beep again. The idea: one beep per diode contact, nothing else.
-- What it does (page `CHIrP` on): one double beep when a diode is connected (two means in a row, about 0.2 s, between
+- What it does (page `CHIrP` on): one double beep when a diode is connected (two means in a row, about 0.3 s, between
   the short-circuit window -999..999 counts and the full scale), nothing while it stays connected (settling, drift),
   nothing with open leads or a reverse diode (overload), nothing when the probes are lifted; after two means in a row
   with open leads or a short, the next contact beeps again, so a bounce of the probe gives no second beep. The
@@ -579,7 +581,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 - Request (GitHub issue 24): the SETUP walk had about twenty pages; date and time came round every time.
 - What it does: SETUP short walks the measurement pages (item 0, the function's v2.05 pages 10..12, `rEL`, `tc`,
   `dSP`, the function page, the limit test, `tr`, `Ch`, `In`, the MIN/MAX pages) and ends on a new page `SEt`; a long
-  SETUP on `SEt` opens the meter pages (v2.05 items 1..8, `bL`, `bt`, `Ld`, `Fr`, `CL`), after whose last page SETUP
+  SETUP on `SEt` opens the meter pages (v2.05 items 1..8, with `bAt` (2.40) after the battery page, `bL`, `bt`, `Ld`, `Fr`, `CL`), after whose last page SETUP
   returns to item 0. Every page edits as before; a function or range change and switching off start again with item
   0 (or 10) as in v2.05. Holding SETUP at power-on was not used to enter the meter pages: in v2.05 it enables the
   calibration date code (a year or month save then writes EEPROM 0x001).
@@ -750,6 +752,42 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   0xF8 / 0xFD / 0xFE inside a packet and a cut packet, PUT of 0x018 with the whole EEPROM compared, page Ld),
   `test_bft_settings.py`, `test_cont_user.py`.
 
+### 2.40 Battery type, battery voltage and low-battery beep at power-on (implemented, IMP-67; GitHub issue 36)
+- Request (GitHub issue 36): a setting for the battery type (alkaline or NiMH), the battery voltage shown at power-on and a
+  low-battery warning at power-on.  Owner decisions 2026-11-10: byte 0x023 approved; the EEPROM write refusal stays at 4.1 V
+  for both types; the text and the beep also after an auto power-off wake; never in calibration mode or date-code mode; the
+  beep follows the buzzer setting; the V sign lights with the text; the page texts `bAtAL` and `bAtnH`.
+- Facts: v2.05 shows low battery by the symbol only, after about 2.3 s (11 readings of 200 ms, `pwr/battery.s`), with no
+  beep and no message.  The font has no M, so NiMH is `nH` (`lcd/font.s`).
+- Where: the page `bAt` (item 47) right after the battery page in the meter walk (1 -> 47 -> 2); the value is on the sub
+  display (`bAtAL` alkaline, default; `bAtnH` NiMH).  Long SETUP starts the edit (blinks), REL or PEAK switches, long SETUP
+  saves, SETUP short leaves without saving (the saved type acts again at the next reading), the edit timeout re-reads the
+  EEPROM.
+- Two flags: 0x200080F9 stays "below 4.1 V" for both types (it gates every EEPROM write, `nvm/nvm.s`, and the bootloader
+  update, `ble/bft.s`; a NiMH owner at 4.5 V can still change the setting back).  A new flag `pwr_bat_warn` (below 4.1 V
+  alkaline, below 4.7 V NiMH) feeds the debounce of the symbol 0x2000803B, so the symbol, the logging refusal and stop
+  (`LoBAt`) and the Bluetooth low-battery bit follow the type.  For alkaline the two flags are equal: the behaviour is that
+  of v2.05.
+- Battery text: when the power-on window closes with the version on the display (also after an auto power-off wake), the
+  sub display shows only the trimmed voltage, `  4.95`, with the V sign (owner 2026-11-10: "it does not need to say bA
+  only the voltage") for 2 s (10 readings), as long as the version before it (owner: "the same duration"), held the way
+  the version is held (`ui/refresh.s` `ui_bat_service`: the refresh skips its sub-display blocks) and drawn again at every
+  reading.  It ends at once with any key press, a change of the mode by the dial, a SETUP page, a log message or the MEM
+  view; then the live sub display and its units are redrawn.  It is shown in every function, also on the item-10 default
+  page of the AC and current functions (owner 2026-11-10: the first form left them out and was not seen on a meter whose V
+  position was ACV), but not in the VA functions (their V / A alternation draws the sub display directly), in
+  calibration mode or in date-code mode.
+- Beep: at the same moment, with the warning flag set (the mean of the readings of the window), the symbol is set at once
+  and the double beep of a measurement function sounds once (`bzb_func_double`: silent with the buzzer off, sounding with
+  `qUiEt`); never in calibration mode or date-code mode.  The combinations of the window are not disturbed: the text and the
+  beep start after it.
+- Storage: byte 0x023 (0 alkaline, 1 NiMH; any other value reads as alkaline and is left as found); it lies in the
+  `cal.bin` range, so a backup carries it (EEPROM_MAP.md 4.1).  Bluetooth: remote setting id 0x023 (0..1), SHOW 47; older
+  companions see one more unknown id.
+- Test: emulator `test_battery_type.py` (the page and its saves with the whole EEPROM compared, the display and its ends,
+  the service states, the beep and the symbol per type and voltage, the buzzer setting), `test_setup_walks.py`,
+  `test_bft_settings.py`, `test_meter_api.py`.
+
 ## 3. EEPROM bytes the features need
 
 | Offset | Feature | Meaning | Default (0x00) | Word shared with | Status |
@@ -762,6 +800,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 | 0x020 | 2.3, 2.6, 2.12, 2.19 | bit 0 REL percent, bits 2..1 log trigger, bit 3 12-hour clock, bit 4 CAP anti-hunting | v2.05 | none (free word 0x020..0x023) | approved, implemented |
 | 0x021 | 2.13 continuity | hold code 0..3 (100 / 50 / 25 ms / off = 15 ms) | 100 ms | as 0x020 | approved, implemented (the limits of 2.1 are RAM only) |
 | 0x022 | 2.6 | change threshold 1..255 | 1 | as 0x020 | approved, implemented |
+| 0x023 | 2.40 battery type | 0 alkaline (warning below 4.1 V), 1 NiMH (below 4.7 V) | alkaline | as 0x020 | approved 2026-11-10, implemented |
 | 0x028 | 2.14 loop | view code 0..2 (off / 4..20 / 0..20 mA) | off | none (free word 0x028..0x02B) | approved, implemented (planned for the LO limit of 2.1, which stays RAM only) |
 | 0x029 | 2.15 RTD | view code 0..2 (off / Pt100 / Pt1000) | off | as 0x028 | approved, implemented |
 | 0x02A | 2.16 battery | trim t + 100 (t = -50..+50, 0.2 % steps) | no trim | as 0x028 | approved, implemented |
@@ -770,7 +809,7 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
 | 0x02D..0x02E | 2.38 continuity | user threshold 1..500 ohm, u16 big endian | 30 ohm | 0x02C chirp, 0x02F | approved 2026-11-09, implemented |
 | 0x02F | 2.38 continuity | user hysteresis 1..250 tenths of an ohm | 5.0 ohm | 0x02C chirp, 0x02D..0x02E | approved 2026-11-09, implemented |
 
-0x023 stays unused. Every offset above is in the never-accessed list of EMAP 4. The alternative locations 0x4B0..0x4CF (32
+With 0x023 every byte of the three free words is used. Every offset above is in the never-accessed list of EMAP 4. The alternative locations 0x4B0..0x4CF (32
 bytes, never accessed by any code, outside `cal.bin`) would keep the settings out of a restored backup, but EMAP 9.1 item 2
 forbids writing them, so they are not proposed. Items that need no byte: 2.7, the on/off state of 2.1, the time stamps of 2.6.
 
@@ -801,6 +840,7 @@ forbids writing them, so they are not proposed. Items that need no byte: 2.7, th
 | 44 | `bAcK` the end of the meter walk | always; SETUP (short or long) goes to item 0 (IMP-57, F-1.26) | no (implemented) |
 | 45 | `th` user continuity threshold (after `bH`) | BEEP mode with the code `DNUSr` or `UPUSr` only (IMP-64, F-1.33) | yes (implemented) |
 | 46 | `HY` user continuity hysteresis (after `th`) | as 45 | yes (implemented) |
+| 47 | `bAt` battery type (after the battery page 1, meter walk) | always; sub display `bAtAL` / `bAtnH` (IMP-67) | yes (implemented) |
 | 32 | `n` count | MIN/MAX on | no |
 | 33 | `Sd` | MIN/MAX on | no |
 | 34, 35 | `tHI`, `tLo` | MIN/MAX on | no |
@@ -809,7 +849,7 @@ Items 32..35 are the MIN/MAX pages. v2.05 uses 0..12 and 100; the page dispatche
 (`fn_0801797C` end), so each new page needs its own branch before that fallback, as `.Lsd_port` does for items 20 to 25. Since
 IMP-52 (2.26) SETUP short steps two walks (`fn_08015410`).  Measurement: 0 -> 10..12 (the modes that have them) -> 22 -> 23
 (TEMP only) -> 24 -> 26 (BEEP only; then 45 -> 46 with a user code) / 37 (DCmA only) / 38 (OHM only) / 41 (CAP only) / 42 (DIODE only) -> 27 -> 28 -> 29 ->
-36 (test on) -> 30 -> 31 (tr-Ch) -> 9 -> 32 -> 33 -> 34 -> 35 (MIN/MAX on) -> 43 -> 0.  Meter (long SETUP on 43): 1 -> ... ->
+36 (test on) -> 30 -> 31 (tr-Ch) -> 9 -> 32 -> 33 -> 34 -> 35 (MIN/MAX on) -> 43 -> 0.  Meter (long SETUP on 43): 1 -> 47 -> 2 -> ... ->
 8 -> 20 -> 21 -> 39 -> 40 (two-part bootloader only) -> 25 -> 0.  Each new page joins one of the two chains.
 
 ## 5. Order of work and checks

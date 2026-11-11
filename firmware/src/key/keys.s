@@ -535,6 +535,7 @@ FUNC process_pg8_15_press_release
 @ a key is down: only one single key or the MEM + HOLD combination counts, any other combination is ignored
 @ reached from 080168F2 bne (not equal / non-zero) after cmp r0, #0
 .Lpr_keydown:
+    bl pwr_bat_key                      @ IMP-67: a key press ends the power-on battery display
     bl pwr_bl_wake                      @ IMP-07: switched off by the timer? then this press only switches it on again
     cbz r0, 1f
     movs r0, #0x33
@@ -839,6 +840,7 @@ FUNC fn_08014AE6
     movs r0, #0                         @ 08014AFA
     ldr r1, =v_2000801D                 @ 08014AFC
     strb r0, [r1]                       @ 08014AFE
+    bl pwr_bat_key                      @ IMP-67: a key press ends the power-on battery display
     bl pwr_bl_restart                   @ IMP-07: a key injected over the serial link counts as a key press
 
 @ codes 1..8 map to RANGE, HOLD, REL, PEAK, MODE, MIN/MAX, MEM, SETUP: a short press of that key

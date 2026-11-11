@@ -36,7 +36,7 @@
 @            set_key_remote_code, set_key_remote_req, v_20007FE0, v_20008065, v_20008066, v_20008072, v_20008073,
 @            v_20008087, v_200080B1, v_200080B2, v_200080C5, va_channel; the anti-hunting state and setting (ah_reset,
 @            set_relp_load: set_hunt_on; IMP-45); the DIODE chirp setting and contact state (set_chirp_load, IMP-51);
-@            strict image: v_2000807B = 0 (OF-55)
+@            the battery type (set_bat_load) and the power-on battery display timer (pwr_bat_show), IMP-67; strict image: v_2000807B = 0 (OF-55)
 @ Spec     : EEPROM_MAP.md 6 (boot reads, order of the calls); analysis/keys_setup.md 3; DESIGN.md 3.2 step 5
 @ Note     : Order as v2.05: read the NJU6350 (fn_0800FF18); markers 0x26 and 0x1F (fn_08010F10, fn_080104BC); board
 @            temperature offset (load_cal_record_from_eeprom(0xC8, 0)); interval, contrast, APO, temperature unit,
@@ -88,6 +88,7 @@ FUNC fn_08024DE0
     bl set_rtd_load                         @ IMP-25: RTD temperature view of OHM (EEPROM 0x029)
     bl set_btrim_load                       @ IMP-27: battery voltage trim (EEPROM 0x02A)
     bl set_chirp_load                       @ IMP-51: DIODE contact chirp (EEPROM 0x02C); no contact state survives a STOP wake
+    bl set_bat_load                         @ IMP-67: battery type (EEPROM 0x023), before the first battery reading
     bl fn_08010F4C                          @ 08024E1E  load the date code from EEPROM 0x001
     bl fn_08010F8C                          @ 08024E22  load the ID number from EEPROM 0x003
     bl fn_08010BE8                          @ 08024E26  logging state reset at boot
@@ -97,6 +98,11 @@ FUNC fn_08024DE0
     movs r0, #0x0                           @ 08024E2E
     ldr.w r1, =set_bat_low                  @ 08024E30
     strb r0, [r1, #0x0]                     @ 08024E32  set_bat_low = 0
+    movs r0, #0x0
+    ldr.w r1, =pwr_bat_show
+    strb r0, [r1, #0x0]                     @ IMP-67: no power-on battery display runs over a STOP wake
+    ldr.w r1, =pwr_bat_mode
+    strb r0, [r1, #0x0]                     @ ... and its mode is forgotten, so no end-of-display redraw before the window
     movs r0, #0x0                           @ 08024E34
     ldr.w r1, =meter_range                  @ 08024E36
     strb r0, [r1, #0x0]                     @ 08024E38  meter_range = 0

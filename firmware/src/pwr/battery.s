@@ -6,6 +6,13 @@
 @ and FUN_08013728 (ADC code -> battery value by the table 0x08028C9C) (v2.05).
 @ OF-52: the conversion follows the hardware divider (fn_08013728); the v2.05 table v205_tab_08028C9C (src/pwr/tables_v205.s,
 @ generated) has no reader in the port.
+@ IMP-67 (production image only, GitHub issue 36): two low-battery limits.  The hard flag 0x200080F9 (EEPROM writes refused,
+@ bootloader update gate) stays value / 10 < 41 (4.1 V) for both battery types; the warning flag pwr_bat_warn follows the
+@ battery type set_bat_nimh (set/bat.s): below 4.1 V for alkaline, below 4.7 V for NiMH.  The warning flag, not the hard
+@ flag, feeds the debounce of the symbol 0x2000803B, so the symbol, the logging refusal and stop, and the Bluetooth
+@ low-battery bit follow the type.  For alkaline the two flags are equal and the behaviour is that of v2.05.  At the end of
+@ the power-on window (ui/refresh.s ui_bootwin_gate) pwr_bat_arm sounds the low-battery double beep and starts the display
+@ of the battery voltage on the sub display for 2 s (pwr_bat_show counts the 200 ms readings, ui_bat_service draws it).
 @ =============================================================================
 
     .syntax unified
@@ -19,6 +26,9 @@
     .equ PWR_BAT_ADC_MIN,   0x03FC          @ clamp of the ADC code (v2.05 0x080134FA)
     .equ PWR_BAT_ADC_MAX,   0x0C30          @ (0x0801350C)
     .equ PWR_BAT_LOW_LIMIT, 41              @ value / 10 below this: low battery (0x0801353A cmp #0x29)
+    .equ PWR_BAT_LOW_LIMIT_NIMH, 47         @ IMP-67: value / 10 below this: low-battery warning of the battery type NiMH (4.7 V)
+    .equ PWR_BAT_SHOW,      10              @ IMP-67: readings (200 ms each) of the power-on battery display = 2 s, as long
+                                            @ as the version before it (BOOTWIN_TICKS; owner 2026-11-10 "the same duration")
     .equ PWR_BAT_DEBOUNCE,  11              @ readings needed to change the low-battery symbol (0x08013586)
     .equ PWR_HIST_LEN,      20              @ history length (0x080135BE)
     .equ PWR_BAT_NUM,       1330            @ OF-52: B+ (0.01 V) = code x 1330 / 4095 = code x 3.3 / 4095 x (1M + 330k) / 330k x 100
@@ -29,6 +39,21 @@
 @ pwr_bat_cv: the trimmed, filtered battery voltage in 0.01 V (owner PWR; read by set_btrim_draw)
     .global pwr_bat_cv
 pwr_bat_cv:     .space 2
+@ pwr_bat_warn: 1 = value / 10 is below the warning limit of the battery type (41 alkaline, 47 NiMH); written by
+@ adc_ch5_process, read by it (the debounce) and by pwr_bat_arm (owner PWR)
+    .global pwr_bat_warn
+pwr_bat_warn:   .space 1
+@ pwr_bat_show: readings left of the power-on battery display, 0 = no display or over (counted down by adc_ch5_process;
+@ cleared by a key press, pwr_bat_key, and by set_state_reset)
+    .global pwr_bat_show
+pwr_bat_show:   .space 1
+@ pwr_bat_mode: 0 = no power-on battery display on the glass, else meter_mode + 1 at its start (the display ends when
+@ the mode changes); written by pwr_bat_arm and ui_bat_service
+    .global pwr_bat_mode
+pwr_bat_mode:   .space 1
+@ pwr_bat_dirty: 1 = the display must be drawn again (set by pwr_bat_arm and every reading); cleared by ui_bat_service
+    .global pwr_bat_dirty
+pwr_bat_dirty:  .space 1
 
     .section .text.pwr.battery, "ax", %progbits
 
@@ -38,8 +63,10 @@ pwr_bat_cv:     .space 2
 @ In/Out   : - / -
 @ Clobbers : r0-r3, r12, flags
 @ Context  : main (100 ms step, every second call of fn_0801349C)
-@ RAM      : writes 0x20007FD2 (ADC code), 0x20007FBA (battery value / 10), 0x200080F9 (low battery),
-@            0x20008062, 0x20007FDC (debounce), 0x2000803B (low-battery symbol state)
+@ RAM      : writes 0x20007FD2 (ADC code), 0x20007FBA (battery value / 10), 0x200080F9 (low battery, < 4.1 V),
+@            0x20008062, 0x20007FDC (debounce), 0x2000803B (low-battery symbol state); IMP-67: reads set_bat_nimh, writes
+@            pwr_bat_warn, counts down pwr_bat_show and sets pwr_bat_dirty
+@ Note     : IMP-67: the symbol state 0x2000803B follows pwr_bat_warn (limit 41, NiMH 47), not 0x200080F9.
 @ -----------------------------------------------------------------------------
 FUNC adc_ch5_process
     push {r4, lr}
@@ -72,6 +99,18 @@ FUNC adc_ch5_process
     movlt r2, #1                            @ value / 10 < 41: low battery
     ldr r1, =v_200080F9
     strb r2, [r1]                           @ 0x08013544 / 0x0801354E
+    mov r4, r0                              @ r4 = value / 10
+    bl set_bat_type                         @ IMP-67: r0 = the battery type in effect (set/bat.s)
+    movs r3, #PWR_BAT_LOW_LIMIT             @ the warning limit of the type (the hard flag above stays at 41)
+    cmp r0, #0
+    it ne
+    movne r3, #PWR_BAT_LOW_LIMIT_NIMH       @ NiMH: 4.7 V
+    movs r2, #0
+    cmp r4, r3
+    it lt
+    movlt r2, #1                            @ value / 10 < the limit: low-battery warning
+    ldr r1, =pwr_bat_warn
+    strb r2, [r1]
     ldr r0, =v_20008037
     ldrb r0, [r0]
     cmp r0, #1
@@ -80,7 +119,7 @@ FUNC adc_ch5_process
     ldr r1, =v_20008062
     strb r0, [r1]                           @ setup page 1 shown: redraw request (0x08013560)
 .Lac5_symbol:
-    ldr r0, =v_200080F9
+    ldr r0, =pwr_bat_warn                   @ IMP-67: the warning flag (v2.05: 0x200080F9, equal to it for alkaline)
     ldrb r0, [r0]
     ldr r1, =v_2000803B
     ldrb r1, [r1]
@@ -93,7 +132,7 @@ FUNC adc_ch5_process
     uxth r0, r0
     cmp r0, #PWR_BAT_DEBOUNCE
     blt .Lac5_done
-    ldr r0, =v_200080F9
+    ldr r0, =pwr_bat_warn
     ldrb r0, [r0]
     ldr r1, =v_2000803B
     strb r0, [r1]                           @ new symbol state (0x08013594)
@@ -108,8 +147,133 @@ FUNC adc_ch5_process
     ldr r1, =v_20007FDC
     strh r0, [r1]                           @ 0x080135AC
 .Lac5_done:
-    pop {r4, pc}
+    ldr r0, =pwr_bat_show                   @ IMP-67: one reading of the power-on battery display is over
+    ldrb r1, [r0]
+    cbz r1, 1f                              @ no display running
+    subs r1, r1, #1
+    strb r1, [r0]
+    movs r1, #1
+    ldr r0, =pwr_bat_dirty
+    strb r1, [r0]                           @ the voltage may have changed: draw it again
+1:  pop {r4, pc}
 ENDFUNC adc_ch5_process
+
+@ -----------------------------------------------------------------------------
+@ pwr_bat_blocked - does a state forbid the power-on battery display
+@ Replaces : nothing in v2.05 (new, IMP-67)
+@ In       : -
+@ Out      : r0 = 1 when calibration mode (0x2000808A), date-code editing (0x2000808B), a SETUP page other than item 0
+@            and item 10 (set_item: item 10 is the default page of the AC and current modes, a live frequency or current
+@            reading, allowed; in the VA modes it is refused, their V / A alternation draws directly), a log message
+@            (0x2000801B, 0x2000801D) or the MEM view (0x20007FE4) owns the sub display, else 0
+@ Clobbers : r0, flags
+@ Context  : main only (pwr_bat_arm, ui_bat_service)
+@ -----------------------------------------------------------------------------
+FUNC pwr_bat_blocked
+    ldr r0, =v_2000808A
+    ldrb r0, [r0]
+    cbnz r0, 8f                             @ calibration mode
+    ldr r0, =v_2000808B
+    ldrb r0, [r0]
+    cbnz r0, 8f                             @ date-code editing
+    ldr r0, =v_20008037
+    ldrb r0, [r0]
+    cbz r0, 1f                              @ item 0: the mode's own sub display, held by ui_skip_sub
+    cmp r0, #10
+    bne 8f                                  @ a SETUP page
+    ldr r0, =meter_mode                     @ item 10: the default page of the AC and current modes (a live frequency or
+    ldrb r0, [r0]                           @ current), held by ui_skip_sub as item 0 is (owner 2026-11-10: in every
+    cmp r0, #13                             @ function); not the VA modes, whose V / A alternation draws directly
+    blo 1f                                  @ (fn_0800D664, fn_0800D6E0)
+    cmp r0, #15
+    bls 8f                                  @ uVA, mVA, VA
+    cmp r0, #22
+    blo 1f
+    cmp r0, #24
+    bls 8f                                  @ the other VA modes
+1:  ldr r0, =v_2000801B
+    ldrb r0, [r0]
+    cbnz r0, 8f                             @ log message code
+    ldr r0, =v_2000801D
+    ldrb r0, [r0]
+    cbnz r0, 8f                             @ log message flag
+    ldr r0, =v_20007FE4
+    ldrb r0, [r0]
+    cbnz r0, 8f                             @ MEM view
+    movs r0, #0
+    bx lr
+8:  movs r0, #1
+    bx lr
+    .ltorg
+ENDFUNC pwr_bat_blocked
+
+@ -----------------------------------------------------------------------------
+@ pwr_bat_arm - end of the power-on window: low-battery beep and start of the battery display
+@ Replaces : nothing in v2.05 (new, IMP-67)
+@ In/Out   : - / -
+@ Clobbers : r0-r3, r12, flags (AAPCS)
+@ Context  : main only (ui_bootwin_gate, once, in the pass in which the window has closed with the version on the sub
+@            display; also after an auto power-off wake, which opens the window again)
+@ RAM      : reads 0x2000808A, 0x2000808B, pwr_bat_warn, meter_mode; writes 0x2000803B and 0x20007FDC (low battery),
+@            pwr_bat_show, pwr_bat_dirty, pwr_bat_mode
+@ Spec     : FEATURES.md 2.40.  Never in calibration mode or date-code mode.  With the warning flag set (the mean of the
+@            readings of the window, about ten, is below the limit of the battery type): the symbol state 0x2000803B is
+@            set at once (the full redraw of the window close draws the symbol; the debounce count is cleared so that the
+@            debounce does not flip it back) and the double beep of a measurement function sounds (bzb_func_double: silent
+@            with the buzzer off, sounding with qUiEt).  Then, unless pwr_bat_blocked, the display of the battery voltage
+@            runs for PWR_BAT_SHOW readings (2 s) in the present meter mode.
+@ -----------------------------------------------------------------------------
+FUNC pwr_bat_arm
+    push {r4, lr}
+    ldr r0, =v_2000808A
+    ldrb r0, [r0]
+    ldr r1, =v_2000808B
+    ldrb r1, [r1]
+    orrs r0, r0, r1
+    bne .Lpa_done                           @ calibration mode or date-code mode: no beep, no text
+    ldr r0, =pwr_bat_warn
+    ldrb r0, [r0]
+    cbz r0, .Lpa_show
+    movs r0, #1
+    ldr r1, =v_2000803B
+    strb r0, [r1]                           @ low-battery symbol state (drawn by the redraw of the window close)
+    movs r0, #0
+    ldr r1, =v_20007FDC
+    strh r0, [r1]                           @ debounce count 0: the state and the flag agree
+    bl bzb_func_double                      @ double beep, as the buzzer setting allows
+.Lpa_show:
+    bl pwr_bat_blocked
+    cbnz r0, .Lpa_done
+    movs r0, #PWR_BAT_SHOW
+    ldr r1, =pwr_bat_show
+    strb r0, [r1]
+    movs r0, #1
+    ldr r1, =pwr_bat_dirty
+    strb r0, [r1]
+    ldr r0, =meter_mode
+    ldrb r0, [r0]
+    adds r0, r0, #1                         @ mode + 1: not 0
+    ldr r1, =pwr_bat_mode
+    strb r0, [r1]
+.Lpa_done:
+    pop {r4, pc}
+    .ltorg
+ENDFUNC pwr_bat_arm
+
+@ -----------------------------------------------------------------------------
+@ pwr_bat_key - a key press ends the power-on battery display
+@ Replaces : nothing in v2.05 (new, IMP-67)
+@ In/Out   : - / -
+@ Clobbers : r0, r1
+@ Context  : main only (key press detection, a key injected over the serial link)
+@ RAM      : writes pwr_bat_show = 0; ui_bat_service then ends the display and requests the full redraw
+@ -----------------------------------------------------------------------------
+FUNC pwr_bat_key
+    movs r0, #0
+    ldr r1, =pwr_bat_show
+    strb r0, [r1]
+    bx lr
+ENDFUNC pwr_bat_key
 
 @ -----------------------------------------------------------------------------
 @ fn_080135B0 - add a value to the 20-entry history and return the filtered value

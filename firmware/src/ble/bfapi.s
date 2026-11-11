@@ -20,7 +20,7 @@
 @                    5 power-on window open, 6 restart due (bootloader install done)
 @     0x1C SHOW  payload item(1): show that SETUP page.  The meter takes the same steps as short SETUP presses
 @                (fn_08015410, key/short.s .Lsh_setup_next without the beep) until set_item is the item; a page of the
-@                meter walk (items 1..8, 20, 21, 25, 39, 40, 44) is reached from the page SEt with what a long SETUP
+@                meter walk (items 1..8, 20, 21, 25, 39, 40, 44, 47) is reached from the page SEt with what a long SETUP
 @                does there (set_menu_enter).  Every page passed loads what it loads under the keys (no logic is
 @                copied).  At most API_STEPS steps; a page that does not exist in this function (or this state) is
 @                not reached: the meter walks back to the page it showed and answers 0x22.  Status 0, field = the item.
@@ -259,7 +259,7 @@ ENDFUNC api_where
 @ -----------------------------------------------------------------------------
 @ api_valid - is the item a page SHOW may look for
 @ In       : r0 = item
-@ Out      : r0 = 1 yes (0 .. 12 or 20 .. 46), 0 no (13 .. 19, 47 and above: no such page; 100 the MEM view)
+@ Out      : r0 = 1 yes (0 .. 12 or 20 .. 47), 0 no (13 .. 19, 48 and above: no such page; 100 the MEM view)
 @ Clobbers : flags
 @ -----------------------------------------------------------------------------
 LFUNC api_valid
@@ -267,7 +267,7 @@ LFUNC api_valid
     bls 1f
     cmp r0, #20
     blo 2f
-    cmp r0, #46
+    cmp r0, #47
     bhi 2f
 1:  movs r0, #1
     bx lr
@@ -278,7 +278,7 @@ ENDFUNC api_valid
 @ -----------------------------------------------------------------------------
 @ api_meter_walk - is the item a page of the meter walk (entered from the page SEt by a long SETUP, set/menu.s)
 @ In       : r0 = item
-@ Out      : r0 = 1 yes (1 .. 8, 20, 21, 25, 39, 40, 44), 0 no
+@ Out      : r0 = 1 yes (1 .. 8, 20, 21, 25, 39, 40, 44, 47), 0 no
 @ Clobbers : r1, flags
 @ -----------------------------------------------------------------------------
 LFUNC api_meter_walk
@@ -296,6 +296,8 @@ LFUNC api_meter_walk
     cmp r0, #40
     beq 1f
     cmp r0, #44
+    beq 1f
+    cmp r0, #47
     beq 1f
     movs r0, #0
     bx lr

@@ -137,7 +137,7 @@ def to_meter_walk(e):
     return rd(e, ADDR_ITEM) == 1
 
 
-METER_PAGES = {1, 2, 3, 4, 5, 6, 7, 8, 20, 21, 25, 39, 40, 44}   # the pages of the meter walk (IMP-52; bAcK 44, IMP-57)
+METER_PAGES = {1, 2, 3, 4, 5, 6, 7, 8, 20, 21, 25, 39, 40, 44, 47}   # the pages of the meter walk (IMP-52; bAcK 44, IMP-57; bAt 47, IMP-67)
 
 
 def to_item(e, want, limit=24):
@@ -221,7 +221,7 @@ def run_tests(image, a_count, a_setting):
     e.advance(3.0)
     before = bytes(e.m.eeprom)
     check('long SETUP on SEt opens the meter walk (item 1)', to_meter_walk(e))
-    for _ in range(8):                                   # items 2 .. 8, then bL 20
+    for _ in range(9):                                   # items 47 (bAt, IMP-67), 2 .. 8, then bL 20
         press(e, 'SETUP', gap=0.5)
     check('SETUP presses of the meter walk reach item 20 and show bLOFF', rd(e, ADDR_ITEM) == 20 and sub_text(e) == 'BL0FF',
           'item %d sub=%r' % (rd(e, ADDR_ITEM), sub_text(e)))

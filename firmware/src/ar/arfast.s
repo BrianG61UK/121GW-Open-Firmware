@@ -250,10 +250,12 @@ ENDFUNC ar_decision_pending
 @ Conversions to discard after the change, n (the first n conversions are refused by ar_sample, so the caller must
 @ not accumulate them into the mean):
 @   N = 2 conversions (the sinc^2 comb of AD1 needs the third conversion after a change; none for CAP, whose counter
-@       results do not pass the comb: ARS 5.3 expects one CAP conversion per change), 26 for DCV range 0 (the
-@       AD1 pre-filter R 100 kohm with C 27 nF: 10.8 tau = 321 ms, 26 conversions of 12.5 ms), 5 for the DC current
-@       modes under TP (30 ms at 6.25 ms)
-@   CP (default): v2.05 keeps discarding (count - 1) means of M samples (M = 16, OHM per range 8, 8, 32, 16, 16, 1, 8), so
+@       results do not pass the comb: ARS 5.3 expects one CAP conversion per change), 13 for DCV range 0 (the
+@       stated pre-filter settling of 321 ms (R 100 kohm with C 27 nF: 10.8 tau) in results of 25.75 ms; 26 in
+@       calibration mode), 3 for the DC current modes under TP (30 ms in results of 13.27 ms).  IMP-66: these counts
+@       use the AD1 result period of chop rows, 2 x the datasheet period + 0.79 ms (HARDWARE_TEST.md H5)
+@   CP (default): v2.05 keeps discarding (count - 1) means of M samples (M = 16, OHM per range 8, 8, 32, 16, 16, 1, 8,
+@       outside calibration mode as mdc_retune gives them), so
 @       n = max(0, N - (count - 1) * M): the discard is the larger of the two, never less than v2.05 discards
 @   TP (family switch in config.inc): the mean-based discard is dropped (count := min(count, 1)) and n = N
 @ -----------------------------------------------------------------------------
@@ -322,14 +324,18 @@ FUNC ar_apply
     bne 1f
     cmp r1, #0
     bne 1f
-    movs r5, #26                            @ DCV range 0: the AD1 pre-filter settles in 321 ms
+    movs r5, #13                            @ DCV range 0: the AD1 pre-filter settles in 321 ms: 13 results of 25.75 ms
+    ldr r6, =v_2000808A                     @ (IMP-66, the measured chop-row rate; 26 was sized for 12.5 ms)
+    ldrb r6, [r6]
+    cbz r6, 1f
+    movs r5, #26                            @ calibration mode: the count of before, the capture is not changed
 1:  ldr r3, =AR_TP_MASK
     tst r2, r3
     beq .Laa_cp                             @ family without the target profile: conservative profile
     ldr r3, =AR_DCCUR_MASK                  @ TP: DC current rows (SFT1 = 00, pre-filter) need 30 ms
     tst r2, r3
     beq 2f
-    movs r5, #5
+    movs r5, #3                             @ 3 x 13.27 ms = 40 ms (IMP-66; 5 was sized for 6.25 ms)
 2:  ldr r6, =ar_settle
     ldrb r3, [r6]
     cmp r3, #1
@@ -362,7 +368,14 @@ FUNC ar_apply
     bhi 3f
     ldr r3, =ar_ohm_mean
     ldrb r3, [r3, r1]                       @ ... OHM: per range, production values of MDC (IMP-03)
-3:  ldr r6, =ar_settle
+3:  push {r0, r1, r2, r12, lr}              @ IMP-66: M as MDC uses it outside calibration mode (mdc_retune)
+    mov r2, r1
+    mov r1, r0
+    mov r0, r3
+    bl mdc_retune
+    mov r3, r0                              @ r3 = M
+    pop {r0, r1, r2, r12, lr}
+    ldr r6, =ar_settle
     ldrb r6, [r6]                           @ r6 = v2.05 settle count
     cbz r6, .Laa_store                      @ nothing discarded by v2.05: n = N
     subs r6, r6, #1

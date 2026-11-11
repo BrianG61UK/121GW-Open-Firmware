@@ -9,7 +9,7 @@ One emulated meter with the bundled synthetic EEPROM, Bluetooth on.  Host side: 
   T2 SHOW against the keys: for the functions OHM (9), BEEP (10, fixed and user threshold), DIODE (11), CAP (12), DCmA (19)
      the pages the keys reach are recorded first (SETUP presses from item 0 until item 0 again; long SETUP on SEt, then
      SETUP presses until item 0); then SHOW to each of them from item 0 gives status 0 and that page (set_edit 0), and
-     SHOW to every other item 0..12, 20..46 gives 0x22 with item 0 kept; SHOW 13, 47 and 100 give 0x22.
+     SHOW to every other item 0..12, 20..47 gives 0x22 with item 0 kept; SHOW 13, 48 and 100 give 0x22.
   T3 refusals (status 3, nothing changed): SHOW and PUT with logging on and with the MEM view open (the power-on window
      is not induced), SHOW with a page being edited; in calibration mode GET, PUT and SHOW; WHERE is answered in each of these
      states with the matching flag bit.
@@ -45,7 +45,7 @@ ADDR_MEMVIEW = 0x20007FE4                            # key_mem_view
 ADDR_INTERVAL = 0x2000022C                           # set_log_interval (u16)
 ADDR_LOGGING = F.ADDR_LOGGING
 ADDR_CAL_MODE = F.ADDR_CAL_MODE
-VALID = list(range(0, 13)) + list(range(20, 47))
+VALID = list(range(0, 13)) + list(range(20, 48))
 FUNCS = [('OHM', 9, None), ('BEEP fixed', 10, 0), ('BEEP user', 10, 16), ('DIODE', 11, None), ('CAP', 12, None),
          ('DCmA', 19, None)]
 
@@ -134,7 +134,7 @@ def run_tests(image):
             if not ok:
                 bad.append((item, F.status_of(a), got))
         T.check('%s: the keys reach %s; SHOW reaches exactly these, 0x22 for the rest' % (name, reach), not bad, repr(bad))
-    for item in (13, 47, 100):
+    for item in (13, 48, 100):
         a = api.ask(btft.show_packet, item)
         T.check('SHOW %d (no such page): 0x22' % item, F.status_of(a) == 0x22, repr(a))
     e.m.uc.mem_write(ADDR_MODE, bytes([9]))

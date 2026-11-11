@@ -88,8 +88,14 @@ def run_tests(image, a_hold):
         if T.rd(e, a_hold) == 0:
             break
     T.check('bar count unchanged (0) while held', all(c == 0 for h, c in counts if h == 1), 'counts %r' % counts[-5:])
-    e.advance(0.5)
-    T.check('after the mean the bar shows the voltage', T.rd(e, ADDR_BAR_COUNT) > 0, 'count %d' % T.rd(e, ADDR_BAR_COUNT))
+    # the DC-state mean is 16 AD1 results of 25.75 ms (412 ms, the chop-row period of HARDWARE_TEST.md H5; 0.5 s was
+    # sized for 12.5 ms results): the bar must show the voltage within two means
+    waited = 0.0
+    while waited < 1.0 and T.rd(e, ADDR_BAR_COUNT) == 0:
+        e.advance(0.01)
+        waited += 0.01
+    T.check('after the mean the bar shows the voltage (within 1.0 s)', T.rd(e, ADDR_BAR_COUNT) > 0,
+            'count %d after %.2f s' % (T.rd(e, ADDR_BAR_COUNT), waited))
 
 
 def main(argv):

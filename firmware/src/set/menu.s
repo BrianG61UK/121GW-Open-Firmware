@@ -6,8 +6,8 @@
 @   measurement walk (SETUP short): item 0, the function's pages 10..12, rEL, tc, dSP, the function page (bH, LP, Pt,
 @     HUnt, CHIrP), the limit test Lt, Lo, HI (verdict), the logging pages tr (Ch) and In (item 9), the MIN/MAX pages
 @     n, Sd, tHI, tLo, then the page SEt (item 43) and item 0 again;
-@   meter walk: items 1..8 (battery trim, APO, buzzer, contrast, year, month and day, hour and minute, ID), bL, bt, Ld,
-@     Fr, CL, then item 0.
+@   meter walk: items 1..8 (battery trim, bAt (item 47, IMP-67), APO, buzzer, contrast, year, month and day, hour and
+@     minute, ID), bL, bt, Ld, Fr, CL, then item 0.
 @ The meter walk starts with a long SETUP on the page SEt (set_menu_enter, from key/long.s) and ends with the page bAcK
 @ (IMP-57, GitHub issue 31: a visible way back): SETUP there, short or long, goes to item 0, the temperature page that
 @ starts the measurement walk.  It is also left with a function or range change (fn_0800D718) or at power-off; no state

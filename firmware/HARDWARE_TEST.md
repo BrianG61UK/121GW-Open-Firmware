@@ -44,7 +44,7 @@ These checks confirm on hardware what the emulator cannot.
 | H2 | OHM: steps open -> 10 ohm, 1 kohm, 100 kohm, 4 Mohm, 40 Mohm with 1 m test leads, per range. Pass as in H1 | TP for OHM |
 | H3 | Currents: shunt range change r0 <-> r1 (<-> r2) at 0.4 A and 4 A, as in H1 | TP for currents |
 | H4 | ACV/ACmV/AC current: AD8436 output after range changes and steps, per conversion, to obtain its settling time | an AC discard shorter than v2.05's |
-| H5 | AD1CHOP = 1x output rate: count AD1F events per second on a DCV row | the AD1 rate with chopping on |
+| H5 | AD1CHOP = 1x output rate: count AD1F events per second on a DCV row (done 2026-11-10 on the owner's meter, diagnostic build Q3: a result takes 2 x (30 x OSR / 4.9152 MHz) + 0.79 ms with chop on: OSR 256 3.91 ms, 512 7.03, 1024 13.27, 2048 25.75, 4096 50.71; chop off follows the formula, ACV r0 6.24 ms) | the AD1 rate with chopping on (IMP-66, emulator `emu/hy3131.py`) |
 | H6 | BEEP per-sample noise at 1, 5 and 10 ohm (standard deviation in counts over 1000 samples) | hysteresis of codes 4, 5, 6, 10, 11, 12 |
 | H7 | VA channel switch: the conversions after a c4 toggle, as in H1 | a shorter VA channel dwell |
 | H8 | Range change with the delay(10000) of `hy3131_counter_restart` (0x0800BFCE) removed: counter and AD1 results after the change compared with the delay kept | t_apply of about 7 ms instead of 24 ms |

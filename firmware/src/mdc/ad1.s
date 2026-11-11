@@ -22,6 +22,8 @@
 
 
     .equ MDC_NFIRST, 4                      @ samples in the first displayed mean after a change (ARS 5.2 P5, N_first = 4)
+    .equ MDC_BEEP_N, 26                     @ IMP-66: BEEP block outside calibration mode, 26 x 3.91 ms = 102 ms
+    .equ MDC_SLOW_N, 12                     @ IMP-66: DCmV r0, TEMP, DIODE, currents outside calibration mode (was 16)
     .equ MDC_FIRST_MASK, (1<<1)|(1<<2)|(1<<3)|(1<<4)|(1<<9)|(1<<10)|(0x3F<<16)   @ modes 1, 2, 3, 4, 9, 10 and the currents 16..21
 
     .section .text.mdc.ad1, "ax", %progbits
@@ -70,7 +72,8 @@ ENDFUNC fn_080062F8
 @            writes 0x20007DD0, 0x20007DD4, 0x20008080, production: mdc_first_mean
 @ Spec     : analysis/hy3131_model.md 4.1 (N), hy3131_modes_misc.md 2; analysis/autorange_and_scheduler.md 5.2 P5, 7, 8.2
 @ Deviation: IMP-03 (OHM block size, production only), IMP-04 (BEEP block of 64, production only), IMP-01 (first mean, production only),
-@            IMP-23 (DCV outside calibration mode: mdc_dcv_accumulate, production only)
+@            IMP-23 (DCV outside calibration mode: mdc_dcv_accumulate, production only), IMP-66 (outside calibration
+@            mode N comes from mdc_retune: the counts below are sized for the datasheet rate, chop rows take twice as long)
 @ N = 16 for every mode except OHM (mode 9): v2.05 8 samples (range 5: 1 sample).  Sum and mean are signed 32-bit; the mean is
 @ sum / count with SDIV (truncation toward zero).  Production: N for OHM ranges 0..6 = 8, 8, 32, 16, 16, 1, 8 (mdc_ohm_samples).
 @ The block time is then 100 ms (r0, r1), 100 ms (r2, r3, r4) and 200 ms / 200 ms (r5, r6) at the row rates of hy3131_model.md 3.
@@ -157,6 +160,17 @@ FUNC ad1_accumulate_average
     bne .L080063B0                          @ N = 16 as v2.05
     movs r2, #64                            @ IMP-04 (ARS 8.2): BEEP displays a block of >= 100 ms, 64 samples at its 640 sps row
 .L080063B0:                              @ reached from 0x08006380 b, 0x0800638A bne, 0x0800639A b, 0x080063AA b
+    @ IMP-66: the N above (v2.05, IMP-03, IMP-04) was sized for the datasheet rate; outside calibration mode it is
+    @ replaced by the count for the measured rate of chop rows (mdc_retune; calibration mode keeps it unchanged)
+    push {r0, r1, lr}
+    mov r0, r2
+    ldr r1, =meter_mode
+    ldrb r1, [r1]
+    ldr r2, =meter_range
+    ldrb r2, [r2]
+    bl mdc_retune
+    mov r2, r0                              @ r2 = N
+    pop {r0, r1, lr}
     @ ---- accumulate: count 0x20008080 = 0 starts a new sum (first sample stored), otherwise sum += sample ----
     ldr r3, =v_20008080                @ 0x080063B0 pool 0x08006D18 = 0x20008080
     ldrb r3, [r3, #0]                  @ 0x080063B4
@@ -257,6 +271,53 @@ FUNC ad1_accumulate_average
     b .L08006412
     .ltorg
 ENDFUNC ad1_accumulate_average
+
+@ -----------------------------------------------------------------------------
+@ mdc_retune - samples per mean outside calibration mode for the measured AD1 rate of chop rows (IMP-66)
+@ With AD1 chop on (R22 bits 4:3 = 1x) a result takes 2 x (30 x OSR / 4.9152 MHz) + 0.79 ms, measured on a meter
+@ 2026-11-10 (OSR 256 3.91 ms, 512 7.03 ms, 1024 13.27 ms, 2048 25.75 ms, 4096 50.71 ms; HARDWARE_TEST.md H5), twice
+@ the datasheet period the counts of IMP-03 / IMP-04 were sized for.  New counts (owner 2026-11-10: "a good middle
+@ ground"): BEEP 26 (102 ms), OHM r0 / r1 6 (154 ms), r2 15 (105 ms), r3 / r4 8 (106 ms); DCmV r0, TEMP, DIODE and
+@ the current modes 16..21: 12 (DIODE and currents 159 ms, DCmV r0 / TEMP 608 ms).  Kept: OHM r5 (1) and r6 (8),
+@ DCV (IMP-23 window, mdc_dcv_accumulate), LowZ, ACV / ACmV / CAP (chop off or not ranged by samples), VA.
+@ Calibration mode keeps every count, so a capture averages as many samples as before.  ar/arfast.s applies the same
+@ function to its samples-per-mean M, so the discard arithmetic of the autorange profile stays consistent.
+@ In       : r0 = N of the v2.05 rules (with IMP-03 / IMP-04), r1 = mode, r2 = range
+@ Out      : r0 = N to use (1..64)
+@ Clobbers : r3, flags
+@ Context  : main (ad1_accumulate_average, ar_apply)
+@ -----------------------------------------------------------------------------
+FUNC mdc_retune
+    ldr r3, =v_2000808A
+    ldrb r3, [r3]
+    cbnz r3, 9f                             @ calibration mode: unchanged
+    cmp r1, #9
+    bne 1f
+    cmp r2, #5
+    bhs 9f                                  @ OHM r5, r6 (and any other range): unchanged
+    ldr r3, =mdc_ohm_retune
+    ldrb r0, [r3, r2]                       @ OHM r0..r4
+    bx lr
+1:  cmp r1, #10
+    bne 2f
+    movs r0, #MDC_BEEP_N                    @ BEEP
+    bx lr
+2:  cmp r1, #3
+    bne 3f
+    cbnz r2, 9f                             @ DCmV r1: an OSR 256 row (3.9 ms), 16 samples stay
+    b 8f                                    @ DCmV r0
+3:  cmp r1, #5
+    beq 8f                                  @ TEMP
+    cmp r1, #11
+    beq 8f                                  @ DIODE
+    cmp r1, #16
+    blo 9f
+    cmp r1, #21
+    bhi 9f                                  @ currents 16..21 only
+8:  movs r0, #MDC_SLOW_N
+9:  bx lr
+    .ltorg
+ENDFUNC mdc_retune
 
 @ -----------------------------------------------------------------------------
 @ fn_08006418 - mean code -> calibrated displayed value 0x20007D64
@@ -506,6 +567,10 @@ mdc_first_mean: .space 1                    @ 1 = a configuration was applied an
 
 
     .section .rodata.mdc.ad1, "a", %progbits
-@ OHM (mode 9) samples per mean in production, by range 0..6 (IMP-03, analysis/autorange_and_scheduler.md 7)
+@ OHM (mode 9) samples per mean in production, by range 0..6 (IMP-03, analysis/autorange_and_scheduler.md 7); since
+@ IMP-66 these are the calibration-mode counts, outside it mdc_retune uses mdc_ohm_retune for ranges 0..4
 mdc_ohm_samples:
     .byte 8, 8, 32, 16, 16, 1, 8
+@ IMP-66: OHM ranges 0..4 outside calibration mode (154, 154, 105, 106, 106 ms at the measured chop-row rates)
+mdc_ohm_retune:
+    .byte 6, 6, 15, 8, 8

@@ -33,7 +33,7 @@ view, Ω only) → `HUnt` (capacitance anti-hunting, CAP only) → `CHIrP` (diod
 (while MIN/MAX is on: the statistics pages `n` and `Sd` and the time pages `tHI` and `tLo`) → `SEt` → back to the
 temperature page.
 
-**Meter pages** (on `SEt` hold **SETUP**): battery → `APO` (auto power-off) → `b-On` (buzzer) → `Lcd` (contrast) →
+**Meter pages** (on `SEt` hold **SETUP**): battery → `bAt` (battery type, alkaline or NiMH) → `APO` (auto power-off) → `b-On` (buzzer) → `Lcd` (contrast) →
 year → month and day → hour and minute → ID → `bL` (backlight) → `bt` (Bluetooth speed) → `Ld` (firmware and files over
 Bluetooth) → `Fr` (format the card as exFAT, only with the new bootloader) → `CL` (12 / 24-hour clock) → `bAcK` (F-1.26,
 GitHub issue 31: SETUP there, short or long, goes straight back) → the temperature page.  Changing the function or
@@ -218,7 +218,7 @@ With the meter on the SETUP page `Ld-bt` (Bluetooth on, logging off, not in cali
 - **read and change the settings** of the SETUP pages: thermocouple type, temperature unit, dBm reference, display level,
   continuity threshold and hold, Bluetooth speed, auto power-off, backlight auto-off, contrast, VA burden, buzzer, REL
   view, logging trigger and change threshold, 12-hour clock, current-loop and RTD views, the capacitance anti-hunting
-  (`HUnt`, F-1.16 or newer), battery trim.  A change is
+  (`HUnt`, F-1.16 or newer), battery trim and battery type.  A change is
   stored exactly as the page itself stores it; calibration, serial number and the rotary memory cannot be reached.  The
   logging interval is set on the meter only.
 
@@ -300,6 +300,20 @@ The card update (HOLD + MEM at power-on, SETUP) keeps working with the two-part 
   A short SETUP leaves without saving.
 - **Why:** the battery is measured through two resistors whose tolerance varies from meter to meter by a few percent; the
   trim corrects your meter. The low-battery symbol then also comes at the right voltage.
+
+## Battery type and the battery at power-on
+
+- **Where:** SETUP page `bAt`, the page right after the battery page in the meter pages (on `SEt` hold **SETUP**).
+  `bAtAL` is alkaline (the default, as the original), `bAtnH` is NiMH. Hold SETUP to edit (the display blinks), press REL
+  or PEAK to switch, hold SETUP to save; a short SETUP leaves without saving.
+- **Low-battery warning:** the battery symbol comes below 4.1 V with alkaline cells (as the original) and below 4.7 V with
+  NiMH cells. Writing settings to the meter stays refused below 4.1 V for both types.
+- **At power-on:** when the start-up window (about 2 s with the version on the display) is over, the sub display shows the
+  battery voltage for 2 s, for example `4.95` with the V sign, in the function you switched on in. Any key press, a turn
+  of the dial or a message ends it. It is not shown in the VA functions (their small display switches between V and A),
+  nor in calibration mode or date-code mode. If the battery is below the limit of the chosen type,
+  the battery symbol is on and the double beep sounds once (silent with the buzzer off, sounding with `qUiEt`). This also
+  applies when the meter wakes up from auto power-off.
 
 ## PT100 / PT1000 temperature sensors (Ω)
 
@@ -443,8 +457,9 @@ The fast build also reacts faster, with no setting needed:
 - **Continuity beep:** about 1 to 6 ms after contact (0.75 to 5.5 ms in the emulator, whose converter timing was
   measured on a meter in 2026-11: a continuity reading every 3.9 ms).
 - **Diode short tone:** designed for about 20 ms (original: 0.38 s, measured).
-- **Readings:** DC and AC currents, diode, the continuity display and the lower AC volt ranges update every 100 ms, the
-  highest AC volt range every 25 ms, by design (original: about 221 ms, measured).
+- **Readings:** the continuity display and the lower AC volt ranges update every 100 ms, ohms every 105 to 155 ms, DC and
+  AC currents and diode every 160 ms, the highest AC volt range every 25 ms (original: about 221 ms, measured; the
+  converter's speed on each range was measured on a meter in 2026-11 and the averages sized to it).
 - **DC volts:** twice as many updates as the original, with the same steadiness (each value is still the average of the
   same 16 conversions, just shown twice as often). After a jump of the input the first value is the new level: the
   original could show a value in between once (for example 4.5 V when connecting 9 V).

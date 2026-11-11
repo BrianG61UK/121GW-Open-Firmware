@@ -58,6 +58,11 @@ SCRIPTS = {
     'test_meter_api.py': FILES + ['emulator/scripts/test_meter_api.py', 'firmware/src/set/', 'firmware/src/key/',
                                   'firmware/src/mres/'],
     'test_setup_walks.py': ['firmware/src/set/', 'firmware/src/log/', 'firmware/src/func/'],
+    # samples per mean outside and inside calibration mode (IMP-66)
+    'test_mean_count.py': ['firmware/src/mdc/', 'firmware/src/ar/', 'firmware/src/cal/', 'emulator/emu/hy3131.py'],
+    # battery type page bAt, the low-battery limits, the power-on battery display and beep (IMP-67)
+    'test_battery_type.py': ['firmware/src/pwr/', 'firmware/src/set/', 'firmware/src/ui/', 'firmware/src/bzb/',
+                             'firmware/src/ble/', 'firmware/src/cal/bootwin.s', 'emulator/scripts/test_battery_trim.py'],
     'test_buzzer_off.py': ['firmware/src/bzb/', 'firmware/src/mres/', 'firmware/src/pwr/', 'firmware/src/set/'],
     'test_heartbeat.py': CAREFUL,
     'test_power_pairs.py': ['firmware/src/cal/', 'firmware/src/pwr/', 'firmware/src/ui/'],

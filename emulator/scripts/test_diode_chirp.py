@@ -47,6 +47,10 @@ PHASES = [('start, leads open', {'kind': 'open'}),
 V205 = [0, 2, 1, 2, 1, 2, 0, 1]
 # the same with the production build v1.2.0 (before IMP-51)
 FAST = [0, 2, 2, 2, 1, 2, 1, 2]
+# the same with the emulator's chop-row AD1 rate (HARDWARE_TEST.md H5, 2026-11-10): the release F-1.33 gave
+# [0, 2, 2, 1, 1, 2, 0, 2] and the IMP-66 build [0, 2, 1, 1, 1, 2, 0, 2]; "diode again" falls to 1 in both, so the
+# change comes from the slower means (more of them inside the lockout), not from IMP-66
+CHOP = [0, 2, 1, 1, 1, 2, 0, 2]
 ON = [0, 1, 0, 1, 0, 0, 0, 1]
 
 
@@ -89,9 +93,9 @@ def run_tests(image):
     T.check('C1: DIODE', T.rd(e, ADDR_MODE) == 11, 'mode %d' % T.rd(e, ADDR_MODE))
     # the count of a phase depends on whether the lockout of the beep before it is still running (the same rule on
     # v2.05's and on this build's timing, V205 / FAST); a phase must lie between the two (CI 2026-11-07: the same commit
-    # gave 1 and 0 beeps in the phase "short" in two runs)
-    for (name, _), got, a, b in zip(PHASES, off, V205, FAST):
-        lo, hi = min(a, b), max(a, b)
+    # gave 1 and 0 beeps in the phase "short" in two runs); CHOP: the same on the chop-row AD1 rate
+    for (name, _), got, a, b, c in zip(PHASES, off, V205, FAST, CHOP):
+        lo, hi = min(a, b, c), max(a, b, c)
         T.check('C1: %s: %d..%d beep(s), v2.05\'s jump rule' % (name, lo, hi), lo <= got <= hi, 'got %d' % got)
 
     print('C2 on: one beep per contact')

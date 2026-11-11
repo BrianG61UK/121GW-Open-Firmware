@@ -52,7 +52,8 @@ def run_tests(image):
     print('P1 the page APO')
     e = boot(image)
     e.m.uc.mem_write(ADDR_ITEM, bytes([1]))
-    T.press(e, 'SETUP', gap=0.6)
+    T.press(e, 'SETUP', gap=0.6)                     # 1 -> 47 (the battery type page bAt, IMP-67)
+    T.press(e, 'SETUP', gap=0.6)                     # 47 -> 2
     T.check('P1: page 2 shown', T.rd(e, ADDR_ITEM) == 2, 'item %d' % T.rd(e, ADDR_ITEM))
     T.check('P1: APO.30 at the start', T.sub_text(e) == 'AP0.30', repr(T.sub_text(e)))
     T.long_press(e, 'SETUP')

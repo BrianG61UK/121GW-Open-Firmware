@@ -54,9 +54,15 @@ bit 4 = 0) and the model then stops all converters (model choice).
 
 Converters
 - AD1: rate = (FSYSCLK / 30) / OSR1 (DS p20 (4), DS p31 (10), (11)).  AD1CHOP = 1x makes the output rate
-  "one time slower" (DS p30 (2)); whether that means unchanged or halved is UNPROVEN (spec 8 #2), selectable with
-  chop_rate_divisor (default 1: the manual's 5 readings per second equal 80 sps / 16 samples for the DCV rows
-  only if the rate is not halved; spec 4.1 N = 16, spec 3 DCV rows OSR 2048; this is consistency, not proof).
+  "one time slower" (DS p30 (2)) without a figure; measured on a meter 2026-11-10 (the AD1 event period, DO high
+  after an INTF read, 966 periods per row, diagnostic build HY_DIAG Q3): ACV r0 (OSR 1024, chop 0) 6238 us against
+  the formula's 6250 us (the meter's timer scale 1.0019); BEEP (OSR 256, chop 2) 3908 us and DCV r0 (OSR 2048,
+  chop 2) 25748 us, scaled 3915 and 25797 us = 2 x formula + 789..797 us; later the same day OHM r2 (OSR 512)
+  7027 us, r3 / r4 and DCmA r0 (OSR 1024) 13265 us, r0 / r1 (OSR 2048) 25747 us, r6 and DCmV r0 (OSR 4096, chop 2
+  and 3) 50705..50722 us, DCmV r1 (OSR 256) 3906 us, all within 20 us of the same rule.  So with AD1CHOP = 1x one
+  result takes two conversion times plus AD1_CHOP_SETTLE_S.  The earlier model (divisor 1: 640/s in BEEP) was 2.5
+  times too fast.  Not modelled: on the meter two reads of the result 4.2 ms apart without an INTF read between them
+  gave the same bytes (98 of 98 pairs, HY_DIAG Q1); here the result bytes change at every conversion.
   Transfer (DS p31): AD1<23:0> = IG * VIN / (RG * VR) + DCOS / RG.  The datasheet gives the ratio but not the
   scale of AD1<23:0>; the register range 800000h..7FFFFFh (DS p18 (1)) makes 2^23 the natural full-scale code
   for a ratio of 1, and the calibration constants agree with it to 0.5..0.8 % for DCV r1..r3 (spec 5.5).  The
@@ -113,6 +119,7 @@ import random
 PIN_CK, PIN_CS, PIN_DI, PIN_DO = 0, 1, 2, 3
 
 F_XTAL = 4_915_200                     # SCH X1 4.9152 MHz; DS p5 "4.9152MHz operation clock source"
+AD1_CHOP_SETTLE_S = 793e-6              # AD1CHOP = 1x: time per result beyond two conversions (meter 2026-11-10: 789..797 us)
 AD1_SCALE = 1 << 23                    # full-scale code for a ratio of 1 (UNPROVEN scale, see module docstring)
 AD1_MAX, AD1_MIN = 0x7FFFFF, -0x800000 # DS p18 (1)
 
@@ -151,7 +158,8 @@ class HY3131:
                  vos_codes=0.0, zero_drift_counts_per_c=0.0, delta_t_c=0.0, f_sys=F_XTAL):
         """machine: emu.core.Machine; gpio_f: GPIOF model; frontend: provider of pin voltages (module docstring).
         seed: RNG seed (None = nondeterministic); noise: draw per-conversion noise when True.
-        chop_rate_divisor: AD1 rate divisor applied when AD1CHOP = 1x (1 or 2, UNPROVEN, see module docstring).
+        chop_rate_divisor: AD2 rate divisor applied when ENCHOPAD2 = 1 (1 or 2, UNPROVEN: AD2's chop was not
+            measured; AD1's chop uses the measured AD1_CHOP_SETTLE_S model, module docstring).
         vos_codes: AD1 offset code VOS used by AD1CHOP = 00 / 01 (DS p30 table; no datasheet value, default 0).
         zero_drift_counts_per_c, delta_t_c: AD1 zero drift in datasheet counts per degree C and the temperature
         difference from calibration; DS p12 gives min -0.03 / typ 0 / max +0.03 counts/C, so the default is the
@@ -430,8 +438,10 @@ class HY3131:
         if not (self.reg[R23] & 0x80) or not self._clock_running():
             return None
         osr = OSR1[self.reg[R22] & 0x07]
-        div = self.chop_rate_divisor if (self.reg[R22] >> 3) & 0x02 else 1
-        return osr * 30 * div / self.f_sys          # (FSYSCLK / 30) / OSR1 (DS p31 (10), (11))
+        base = osr * 30 / self.f_sys                # (FSYSCLK / 30) / OSR1 (DS p31 (10), (11))
+        if (self.reg[R22] >> 3) & 0x02:             # AD1CHOP = 1x: two conversions per result plus a settling time,
+            return 2 * base + AD1_CHOP_SETTLE_S     # measured on a meter (module docstring, Converters)
+        return base
 
     def _ad1_reconfigure(self):
         p = self._ad1_rate_period()

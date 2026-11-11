@@ -1343,6 +1343,10 @@ LFUNC bft_packet
     ldrb r0, [r4, #6]
     cmp r0, #BFT_DIAG_N
     bhs .Lpk_notallowed
+.if HY_DIAG
+    cmp r0, #0x80                           @ 0x80 answers only the bootloader's version (the companion's update-mode
+    beq .Lpk_notallowed                     @ probe, transfer.boot_version): refused here, so Q3's "left" is not read
+.endif
     ldr r1, =bft_diag_tab
     ldr r1, [r1, r0, lsl #2]                @ address of the value
     ldr r2, =bft_diag_wid
