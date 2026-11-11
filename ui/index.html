@@ -558,7 +558,7 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
 <!-- METER SETTINGS: the meter's SETUP settings over the file-transfer link (GitHub issue 35: a view of its own, full names,
      the values in words; the meter must show the page Ld) -->
 <section class="view" id="v-msettings">
-  <div class="card"><div class="eng">Meter settings<span id="set-lock" class="warn" hidden>Locked</span><span class="sp"></span><button class="sm" id="set-read">Read</button></div>
+  <div class="card"><div class="eng">Meter settings<span id="set-lock" class="warn" hidden>Locked</span><span class="sp"></span><button class="sm" id="set-read" hidden>Read again</button></div>
     <div class="body"><div class="path" id="set-reason" style="margin:0 0 8px;color:var(--ink)"></div>
       <div class="cap" style="margin:0 0 10px">The settings of the meter's SETUP pages. Show the page Ld on the meter (Bluetooth on, logging off), then Read; change a value with − / + or by typing, then Apply.</div>
       <div id="setlist" class="setgrid"></div></div></div>
@@ -1496,6 +1496,8 @@ function drawSettings(S) {
   const items = S.items || [], lock = S.locked_reason;
   $('set-lock').hidden = !lock; $('set-reason').textContent = lock || S.error || '';
   $('set-read').disabled = !!lock;
+  $('set-read').hidden = !S.error;                     // the settings are read by themselves (page Ld shown, page opened);
+                                                       // the button is only there to retry after a failed read (issue 37)
   const sig = JSON.stringify([items.map(i => [i.id, i.code, i.tag, i.name, i.min, i.max, i.choices, i.texts, i.unit, i.scale]), !!lock, connected()]);
   const list = $('setlist');
   if (sig !== setSig) {

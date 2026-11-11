@@ -190,6 +190,12 @@ class PageLayout(unittest.TestCase):
         page.click('nav button[data-v=msettings]')
         page.wait_for_timeout(500)
         self.assertEqual(len(reads()), 2)                    # opening the page reads again
+        hidden = "() => document.getElementById('set-read').hidden"
+        self.assertTrue(page.evaluate(hidden))               # no button while the reads work
+        st['settings']['error'] = 'no answer from the meter'
+        box['body'] = json.dumps(st, default=str)
+        page.wait_for_timeout(800)
+        self.assertFalse(page.evaluate(hidden))              # a failed read: "Read again" to retry
         self.assertEqual(errors, [])
         page.close()
 

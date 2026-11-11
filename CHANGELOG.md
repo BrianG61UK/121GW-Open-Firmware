@@ -2,6 +2,8 @@
 
 What each release brought, newest first. The release page of a version shows only its own paragraphs.
 
+New in 1.3.5: the METER SETTINGS page has no READ button any more in normal use (GitHub issue 37). The settings are read by themselves when the meter shows page Ld and every time the page is opened, and the meter's settings cannot change while page Ld is shown; a lit button made it look as if something needed checking. Only when a read fails does a "Read again" button appear, to retry.
+
 New in 1.3.4: updates lose less time on lost answers (GitHub issue 23). Through the two-part bootloader the wait for a missing answer follows how fast the meter has been answering, as TCP does: the average plus four times the variation, at least 1 s, at most 5 s, doubled after each missing answer. Before it was always 20 s; an update with 9 missing answers waited 180 s for them. The wait for the answer to START, which comes once the bootloader has erased the image pages, is 6 s instead of 30 s: the largest image takes 4.8 s to erase at most. The same 6 s apply to the answer to END (the bootloader's check of the written image). On page Ld the wait for an answer is 5 s instead of 20 s; every answer in the reports came within 3.5 s. The "last transfer" line now also says how long START took to be answered. The programs are built with Python 3.15 (was 3.11), bleak 3.1.0 and pywebview 6.2.1.
 
 Also in 1.3.4: the METER SETTINGS page reads the meter's settings by itself (GitHub issue 37). When the meter shows page Ld while the page is open, and every time the page is opened, the settings are read fresh; READ is still there to read them again by hand. Before, only READ did (the automatic read still looked for the page where the settings were before 1.3.1).
