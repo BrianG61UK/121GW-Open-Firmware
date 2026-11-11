@@ -100,6 +100,7 @@ TABLE = [
     _s(0x420, 'HUnt', 'Capacitance anti-hunting', 0, 1, ['off', 'on'], wire=B20, shift=4, mask=0x01),
     _s(0x021, 'bH', 'Continuity beep hold (BEEP)', 0, 3, ['100 ms', '50 ms', '25 ms', 'off (15 ms)']),
     _s(0x022, 'Ch', 'Logging change threshold', 1, 255, None),
+    _s(0x023, 'bAt', 'Battery type', 0, 1, ['alkaline (4.1 V)', 'NiMH (4.7 V)']),   # F-1.34 on (IMP-67, issue 36; older firmware does not report it, so the row is not listed)
     _s(0x028, 'LP', 'Current loop view (DC mA)', 0, 2, ['off', '4-20 mA', '0-20 mA']),
     _s(0x029, 'Pt', 'RTD temperature view (ohm)', 0, 2, ['off', 'Pt100', 'Pt1000']),
     _s(0x02A, 'BAT', 'Battery voltage trim', 50, 150, None),                # value = trim + 100, trim -50..50 = -10..+10 %

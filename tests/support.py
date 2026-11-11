@@ -29,7 +29,7 @@ def fat_time(h, mi, s):
 # bftset.s bfs_tab: id -> (min, max); 0x020 is one id with the value 0..31 (F-1.16; bit 4 the anti-hunting); 0x01E 0..2 (F-1.24 qUiEt);
 # 0x014 0..17, 0x02F and the two-byte 0x02D (F-1.33, IMP-64)
 RANGES = {0x00F: (0, 5), 0x010: (0, 1), 0x011: (0, 3), 0x013: (0, 1), 0x014: (0, 17), 0x015: (0, 3), 0x016: (0, 1),
-          0x017: (0, 100), 0x01A: (10, 17), 0x01B: (0, 1), 0x01E: (0, 2), 0x020: (0, 31), 0x021: (0, 3), 0x022: (1, 255),
+          0x017: (0, 100), 0x01A: (10, 17), 0x01B: (0, 1), 0x01E: (0, 2), 0x020: (0, 31), 0x021: (0, 3), 0x022: (1, 255), 0x023: (0, 1),
           0x028: (0, 2), 0x029: (0, 2), 0x02A: (50, 150), 0x02B: (0, 3), 0x02C: (0, 1), 0x02F: (1, 250), 0x02D: (1, 500)}
 WIDE = {0x02D}                                         # the two-byte settings: GET with flags 1 and the two-byte PUT only
 OK_NAME = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._ -')

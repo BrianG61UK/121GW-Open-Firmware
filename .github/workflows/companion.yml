@@ -35,8 +35,16 @@ env:
 
 jobs:
   macos:
-    name: macOS arm64
-    runs-on: macos-15
+    # Apple chips and, since 1.3.3, Intel Macs (owner 2026-11-10: "i now also need a intel mac companion app build it
+    # has been requested"; the emulator stays arm64-only, owner 2026-11-01)
+    name: macOS ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: macos-15, arch: arm64}
+          - {runner: macos-15-intel, arch: x86_64}
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
     env:
@@ -123,7 +131,7 @@ jobs:
           kill "$pid"
       - name: Disk image
         if: env.PACKAGE == 'true'
-        run: SIGNED=$([ "$SIGN" = true ] && echo 1 || echo 0) sh packaging/make_dmg.sh "dist/121GW Companion.app" build/THIRD_PARTY_LICENSES.txt "121GW-Companion-$VER-macos-arm64.dmg"
+        run: SIGNED=$([ "$SIGN" = true ] && echo 1 || echo 0) sh packaging/make_dmg.sh "dist/121GW Companion.app" build/THIRD_PARTY_LICENSES.txt "121GW-Companion-$VER-macos-${{ matrix.arch }}.dmg"
       - name: Sign and notarize the disk image (stapled)
         if: env.PACKAGE == 'true' && env.SIGN == 'true'
         env:
@@ -132,7 +140,7 @@ jobs:
           NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
         run: |
           set -euo pipefail
-          dmg="121GW-Companion-$VER-macos-arm64.dmg"
+          dmg="121GW-Companion-$VER-macos-${{ matrix.arch }}.dmg"
           trap 'rm -f "$RUNNER_TEMP/notary.p8"' EXIT
           codesign --force --timestamp --sign "$SIGN_ID" --keychain "$SIGN_KC" "$dmg"
           printf '%s' "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
@@ -144,11 +152,11 @@ jobs:
           rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/cert.p12"
       - name: Checksum
         if: env.PACKAGE == 'true'
-        run: python -I .github/scripts/sha256sum.py 121GW-Companion-*.dmg > "121GW-Companion-$VER-macos-arm64.dmg.sha256"
+        run: python -I .github/scripts/sha256sum.py 121GW-Companion-*.dmg > "121GW-Companion-$VER-macos-${{ matrix.arch }}.dmg.sha256"
       - uses: actions/upload-artifact@v7
         if: env.PACKAGE == 'true'
         with:
-          name: companion-macos
+          name: companion-macos-${{ matrix.arch }}
           path: 121GW-Companion-*
           if-no-files-found: error
       - name: Attach to the release

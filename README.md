@@ -76,7 +76,8 @@ Apple, wait for the verdict and staple the ticket.  A signed and notarized image
 question.
 
 CI (`.github/workflows/companion.yml`): every push runs the unit tests on macOS, Windows and Linux; the packages are
-built, started and checked only for a release tag `companion-vA.B.C` (or a run started by hand).  The macOS package is
+built, started and checked only for a release tag `companion-vA.B.C` (or a run started by hand).  macOS is built twice,
+for Apple chips (arm64, runner macos-15) and for Intel Macs (x86_64, runner macos-15-intel).  The macOS packages are
 signed and notarized when the repository has the secrets `MACOS_CERT_P12` (the certificate and its key as .p12,
 base64), `MACOS_CERT_PASSWORD`, `NOTARY_KEY_P8` (the API key .p8, base64), `NOTARY_KEY_ID` and `NOTARY_ISSUER`; without
 them it is built unsigned as before.
