@@ -40,6 +40,14 @@ until xcrun stapler staple "$dmg"; do
     n=$((n + 1))
     sleep 30
 done
-xcrun stapler validate "$dmg"
+# validate asks the same service again: the same dropped connection is retried the same way (CI 2026-11-11, arm64
+# runner: staple worked, validate then failed with -1005 / error 68)
+n=1
+until xcrun stapler validate "$dmg"; do
+    [ "$n" -lt 5 ] || { echo "notarize_macos: validation failed $n times" >&2; exit 1; }
+    echo "notarize_macos: validation failed (try $n of 5), again in 30 s"
+    n=$((n + 1))
+    sleep 30
+done
 spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
 echo "notarize_macos: $dmg notarized and stapled"
