@@ -38,6 +38,10 @@ The same companion as an iPhone app, free on the App Store (live reading, scope,
 updates over Bluetooth; no account, no ads, no data collected). Its source is in its own repository,
 [121gw-companion](https://github.com/zombu4/121gw-companion).
 
+| Live | Scope | Meter |
+|---|---|---|
+| <img src=".github/assets/iphone-1-live.jpg" alt="LIVE: the reading as the meter's seven-segment display with symbols and bargraph, statistics, trend and the meter's keys" width="260"> | <img src=".github/assets/iphone-2-scope.jpg" alt="SCOPE: the readings on a scope grid with time base, stop and cursors" width="260"> | <img src=".github/assets/iphone-3-meter.jpg" alt="METER: firmware and bootloader versions, the update check and the release list" width="260"> |
+
 | Folder | Content |
 |---|---|
 | `firmware/` | new firmware for the 121GW (STM32L152ZD) in hand-written Thumb-2 assembly, loaded at 0x08006000 by the meter's existing bootloader or by the two-part bootloader (branch `bootloader`) |
