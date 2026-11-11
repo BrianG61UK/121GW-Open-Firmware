@@ -28,8 +28,9 @@ PIECE = 2048                                     # raw bytes of one piece (bft.s
 PIECE_PACK_MAX = 2064                            # packed bytes of one piece the meter takes
 FINAL_DYNAMIC = 5                                # first 3 bits of a piece the meter unpacks: BFINAL 1, BTYPE 2 (zinf.s)
 RAW_PIECE = 0x8000                               # packed length flag: the piece is its raw bytes
-TIMEOUT_DATA = 20.0
+TIMEOUT_DATA = 5.0                               # answers came within 3.5 s in every report (2026-11-06..10)
 TIMEOUT_END = 120.0
+RTO_MIN = 1.0                                    # shortest wait for a bootloader DATA answer (TCP's floor, RFC 6298 2.4)
 RETRIES = 8
 STATUS_TEXT = {0: 'accepted', 1: 'CRC wrong', 2: 'not the expected packet', 3: 'not allowed now', 4: 'size refused',
                5: 'beyond the announced size', 0x11: 'the card could not be written', 0x12: 'length or CRC-32 wrong',
@@ -45,7 +46,8 @@ BOOT_STATUS_TEXT = {0: 'accepted', 1: 'CRC wrong', 2: 'not the expected packet',
                     0x17: 'the packed data was damaged (the meter stays in update mode; send it again)'}
 KIND_FIRMWARE, KIND_INSTALL, KIND_BOOTLOADER = 0, 1, 2
 BOOT_VERSION_INDEX = 0x80                     # STATUS index answered only by the bootloader (bl_ble.s)
-TIMEOUT_START = 30.0                          # the bootloader erases the target before it answers START
+TIMEOUT_START = 6.0                           # the bootloader erases the image pages before it answers START: 3.94 ms
+                                              # per page at most (DS8576 Table 35), 4.8 s for the largest image
 
 
 class TransferError(Exception):
@@ -87,7 +89,7 @@ def new_stats():
     seconds waited for them, answers 'CRC wrong' (the meter got a damaged packet), resynchronisations ('not the
     expected packet'), answers to an earlier packet (late or repeated), the slowest answer, the whole time."""
     return {'packets': 0, 'sends': 0, 'timeouts': 0, 'waited_s': 0.0, 'crc_wrong': 0, 'resync': 0, 'stray': 0,
-            'slowest_s': 0.0, 'seconds': 0.0}
+            'slowest_s': 0.0, 'start_s': None, 'seconds': 0.0}
 
 
 def stats_text(st, dropped=None):
@@ -105,6 +107,8 @@ def stats_text(st, dropped=None):
         parts.append('%d resynchronisations' % st['resync'])
     if st['stray']:
         parts.append('%d late answers' % st['stray'])
+    if st.get('start_s') is not None:
+        parts.append('START answered after %.1f s' % st['start_s'])
     parts.append('slowest answer %.1f s' % st['slowest_s'])
     if dropped:
         parts.append('%d received bytes damaged' % dropped)
@@ -211,7 +215,9 @@ class Sender:
             start += bytes([(kind or 0) | PACKED])
         elif kind is not None:
             start += bytes([kind])
+        t = time.monotonic()
         status, _ = self._ask(packet(T_START, 0, start), 0, TIMEOUT_DATA)
+        self.stats['start_s'] = time.monotonic() - t
         if status:
             raise TransferError('START: %s' % STATUS_TEXT.get(status, status))
         n = 0
@@ -268,10 +274,18 @@ class BootSender(Sender):
         start = struct.pack('<IIB', len(data), zlib.crc32(data) & 0xFFFFFFFF, kind)
         if version is not None:
             start += struct.pack('<I', version)
+        t = time.monotonic()
         status, _ = self._ask(packet(T_START, 0, start), 0, TIMEOUT_START)
+        st['start_s'] = time.monotonic() - t      # the erase, and any START sent again
         if status:
             raise TransferError('START: %s' % BOOT_STATUS_TEXT.get(status, status))
         acked = 0                                     # packets the meter confirmed, in order
+        # the wait for a DATA answer follows the measured answer times as TCP's does (RFC 6298): average + 4 x the
+        # variation, at least RTO_MIN, at most TIMEOUT_DATA; doubled after a missing answer.  Answers to packets sent
+        # again are not measured (they have two send times, Karn's rule): only those from packet `resent` on
+        srtt = rttvar = None
+        rto = TIMEOUT_DATA
+        resent = 0
         while acked < len(pkts):
             while not self.answers.empty():
                 self.answers.get_nowait()
@@ -285,23 +299,33 @@ class BootSender(Sender):
                     nxt_send += 1
                     inflight += 1
                 waiting = time.monotonic()
-                end = waiting + TIMEOUT_DATA
+                end = waiting + rto
                 got = None
                 while time.monotonic() < end:
                     if self.cancelled:
                         raise TransferError('cancelled')
                     try:
-                        got = self.answers.get(timeout=0.5)
+                        got = self.answers.get(timeout=min(0.5, max(0.01, end - time.monotonic())))
                         break
                     except queue.Empty:
                         continue
                 if got is None:
                     st['timeouts'] += 1
-                    st['waited_s'] += TIMEOUT_DATA
+                    st['waited_s'] += rto
+                    rto = min(TIMEOUT_DATA, 2 * rto)
+                    resent = nxt_send
                     stalled = True                    # no answer: start again from the first unconfirmed packet
                     break
-                st['slowest_s'] = max(st['slowest_s'], time.monotonic() - waiting)
+                took = time.monotonic() - waiting
+                st['slowest_s'] = max(st['slowest_s'], took)
                 seq, status, nxt = got
+                if seq >= resent:
+                    if srtt is None:
+                        srtt, rttvar = took, took / 2
+                    else:
+                        rttvar = 0.75 * rttvar + 0.25 * abs(srtt - took)
+                        srtt = 0.875 * srtt + 0.125 * took
+                    rto = min(TIMEOUT_DATA, max(min(RTO_MIN, TIMEOUT_DATA), srtt + 4 * rttvar))
                 if status == 0 and seq >= acked:
                     # the bootloader takes DATA only in order (bl_ble.s .Lp_data) and names the next packet it expects:
                     # an answer to a later packet confirms the earlier ones too (their answers were lost)

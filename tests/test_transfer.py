@@ -63,6 +63,8 @@ class Stats(unittest.TestCase):
         st = s.stats
         self.assertEqual((st['packets'], st['sends'], st['timeouts'], st['crc_wrong'], st['resync']), (self.n + 2, self.n + 2, 0, 0, 0))
         self.assertIn('none sent again', transfer.stats_text(st))
+        self.assertIn('START answered after 0.0 s', transfer.stats_text(st))
+        self.assertNotIn('START', transfer.stats_text(transfer.new_stats()))
 
     def test_lost_and_damaged_answers_are_counted(self):
         s = transfer.Sender(None)
@@ -96,6 +98,35 @@ class Stats(unittest.TestCase):
         self.assertEqual(st['timeouts'], 1)
         self.assertEqual(st['sends'], self.n + 3)
         self.assertEqual(st['stray'], 0)
+
+    def boot_timer(self, lose):
+        """A BootSender with a 0.3 s longest and a 0.05 s shortest DATA wait; the fake meter answers at once."""
+        saved = transfer.RTO_MIN
+        transfer.TIMEOUT_DATA, transfer.RTO_MIN = 0.3, 0.05
+        self.addCleanup(setattr, transfer, 'RTO_MIN', saved)
+        s = transfer.BootSender(None)
+        m = FakeReceiver(s, lose=lose)
+        s.run(self.image)
+        self.assertEqual(bytes(m.data), self.image)
+        return s.stats
+
+    def test_bootloader_wait_follows_the_answer_times(self):
+        """Answers measured at about 0 s: the wait for the lost last answer is the shortest one, not TIMEOUT_DATA."""
+        st = self.boot_timer({(transfer.T_DATA, self.n - 1): 1})
+        self.assertEqual(st['timeouts'], 1)
+        self.assertAlmostEqual(st['waited_s'], 0.05)
+
+    def test_bootloader_wait_doubles_after_a_missing_answer(self):
+        """The resent packet's answers are not measured (Karn): each further missing answer doubles the wait."""
+        st = self.boot_timer({(transfer.T_DATA, self.n - 1): 3})
+        self.assertEqual(st['timeouts'], 3)
+        self.assertAlmostEqual(st['waited_s'], 0.05 + 0.1 + 0.2)
+
+    def test_bootloader_first_wait_is_the_longest(self):
+        """Before any DATA answer was measured the wait is TIMEOUT_DATA."""
+        st = self.boot_timer({(transfer.T_DATA, 0): 1, (transfer.T_DATA, 1): 1})
+        self.assertEqual(st['timeouts'], 1)
+        self.assertAlmostEqual(st['waited_s'], 0.3)
 
 
 
