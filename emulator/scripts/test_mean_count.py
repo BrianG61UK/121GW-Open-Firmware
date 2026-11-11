@@ -2,8 +2,9 @@
 
     python -I emulator/scripts/test_mean_count.py [image]      default firmware/build/EEVBlog.bin
 
-The sample count of the mean being built (0x20008080) is read every millisecond; it counts 1, 2, ... and is cleared when
-the mean is complete, so the largest count seen plus one is N.  Outside calibration mode (IMP-66: sized for the AD1 result
+Every value the firmware writes to the sample count of the mean being built (0x20008080) is recorded: it counts 1, 2,
+... N and is cleared when the mean is complete, so the largest value written is N.  (Reading the count every millisecond
+instead saw N itself when a read fell between its store and its clear, ad1.s 0x080063DC / 0x08006404: N + 1 reported.)  Outside calibration mode (IMP-66: sized for the AD1 result
 period of chop rows, HARDWARE_TEST.md H5) and with calibration mode set in RAM (0x2000808A = 1: the counts of before
 IMP-66, so a calibration capture averages as many samples as before):
   T1 BEEP 26 (64); T2 OHM ranges 0..4 6, 6, 15, 8, 8 (8, 8, 32, 16, 16), range 6 8 (8); T3 DIODE 12 (16);
@@ -13,6 +14,8 @@ each further press steps to the next range).  The helpers are those of test_back
 """
 import os
 import sys
+
+from unicorn import UC_HOOK_MEM_WRITE
 
 sys.dont_write_bytecode = True                       # keep the tree free of __pycache__
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -26,12 +29,19 @@ ADDR_CAL = 0x2000808A                                # calibration mode (1)
 
 
 def observed_n(e, seconds):
-    """Largest count seen plus one, over `seconds` read every millisecond."""
-    top = 0
-    for _ in range(int(seconds * 1000)):
-        e.advance(0.001)
-        top = max(top, T.rd(e, ADDR_COUNT))
-    return top + 1
+    """Largest value written to the sample count over `seconds`."""
+    top = [0]
+
+    def wrote(_uc, _access, _addr, _size, value, _ud):
+        top[0] = max(top[0], value & 0xFF)
+    uc = e.m.uc
+    hook = uc.hook_add(UC_HOOK_MEM_WRITE, wrote, begin=ADDR_COUNT, end=ADDR_COUNT)
+    uc.ctl_flush_tb()                                # code translated before the hook existed takes it too
+    try:
+        e.advance(seconds)
+    finally:
+        uc.hook_del(hook)
+    return top[0]
 
 
 def meter(image, dial, patch):
