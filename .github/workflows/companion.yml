@@ -31,7 +31,7 @@ env:
   # packages are built only for a release tag (or a run started by hand): a branch push runs the unit tests on the three
   # systems and nothing else, its packages were never used (owner 2026-11-09: "you wasting resources and my time")
   PACKAGE: ${{ github.ref_type == 'tag' || github.event_name == 'workflow_dispatch' }}
-  PIP_PKGS: bleak==3.0.2 pywebview==6.1 pyinstaller==6.22.3 pillow certifi==2026.10.23
+  PIP_PKGS: bleak==3.1.0 pywebview==6.2.1 pyinstaller==6.22.3 pillow certifi==2026.10.23
 
 jobs:
   macos:
@@ -59,7 +59,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.15'
       - name: Version
         run: echo "VER=${REF_TAG#companion-v}" >> "$GITHUB_ENV"
       - name: Build tools and libraries
@@ -72,7 +72,7 @@ jobs:
       # GitHub issue 35: tests/test_ui_layout.py renders the page in headless Chromium on every push (it must run in CI)
       - name: Page test browser (Playwright, Chromium)
         run: |
-          python -m pip install playwright==1.64.1
+          python -m pip install playwright==1.65.0
           python -m playwright install chromium
       - name: Unit tests (frames, card, settings, derived values, the page's layout; no meter, no Bluetooth)
         run: python -I -m unittest discover -s tests
@@ -184,7 +184,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.15'
       - name: Version
         run: echo "VER=${REF_TAG#companion-v}" >> "$GITHUB_ENV"
       - name: Build tools and libraries
@@ -197,7 +197,7 @@ jobs:
       # GitHub issue 35: tests/test_ui_layout.py renders the page in headless Chromium on every push (it must run in CI)
       - name: Page test browser (Playwright, Chromium)
         run: |
-          python -m pip install playwright==1.64.1
+          python -m pip install playwright==1.65.0
           python -m playwright install chromium
       - name: Unit tests (frames, card, settings, derived values, the page's layout; no meter, no Bluetooth)
         run: python -I -m unittest discover -s tests
@@ -261,7 +261,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.11'
+          python-version: '3.15'
       - name: Version
         run: echo "VER=${REF_TAG#companion-v}" >> "$GITHUB_ENV"
       - name: Build tools and libraries
@@ -274,7 +274,7 @@ jobs:
       # GitHub issue 35: tests/test_ui_layout.py renders the page in headless Chromium on every push (it must run in CI)
       - name: Page test browser (Playwright, Chromium)
         run: |
-          python -m pip install playwright==1.64.1
+          python -m pip install playwright==1.65.0
           python -m playwright install --with-deps chromium
       - name: Unit tests (frames, card, settings, derived values, the page's layout; no meter, no Bluetooth)
         run: python -I -m unittest discover -s tests

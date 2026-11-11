@@ -5,7 +5,7 @@ after the companion's Disconnect ("Connected (1)" in the tray), so a new Connect
 switched off and on.  What each system allows (research 2026-11-08, sources in the comments):
 
 Windows   bleak's connect sets GattSession.maintain_connection = True ("keeps the device connected until we set
-          maintain_connection = False", bleak 3.0.2 bleak/backends/winrt/client.py:366) and its disconnect never sets it
+          maintain_connection = False", bleak 3.1.0 bleak/backends/winrt/client.py:379) and its disconnect never sets it
           back (client.py:449-497); with it set "the system waits indefinitely for a connection" (Microsoft Learn,
           GattSession.MaintainConnection).  prepare_close() sets it False before the disconnect.  After the disconnect
           Windows drops the link "after a small timeout period" once no app holds a reference (Microsoft Learn, GATT
@@ -110,7 +110,7 @@ async def _bluez_path(address):
 
 
 async def _held_macos(service):
-    """bleak 3.0.2: CentralManagerDelegate is a Python class whose central manager may be used only after
+    """bleak 3.1.0: CentralManagerDelegate is a Python class whose central manager may be used only after
     wait_until_ready (backends/corebluetooth/CentralManagerDelegate.py:194, 220; 1.1.1 waited inside init)."""
     from CoreBluetooth import CBUUID
     from bleak.backends.corebluetooth.CentralManagerDelegate import CentralManagerDelegate
