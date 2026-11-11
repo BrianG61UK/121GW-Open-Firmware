@@ -32,7 +32,7 @@ Recorded from a real 121GW with firmware F-1.07 over Bluetooth (nothing connecte
 
 ## 121GW Companion for iPhone
 
-<a href="https://apps.apple.com/app/id6833369656"><img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/en-us" alt="Download on the App Store" height="54"></a>
+<a href="https://apps.apple.com/app/id6833369656"><img src=".github/assets/app-store-badge.svg" alt="Download on the App Store" height="54"></a>
 
 The same companion as an iPhone app, free on the App Store (live reading, scope, CSV recording, the SD card, firmware
 updates over Bluetooth; no account, no ads, no data collected). Its source is in its own repository,
