@@ -30,6 +30,12 @@ A program for Windows, macOS and Linux that connects to the meter over Bluetooth
 
 Recorded from a real 121GW with firmware F-1.07 over Bluetooth (nothing connected to the inputs, so the readings are small; the keys are pressed from the computer; the meter's Bluetooth device identifier is covered).
 
+## 121GW Companion for iPhone
+
+The same companion as an iPhone app, free on the App Store: [121GW Companion](https://apps.apple.com/app/id6833369656)
+(live reading, scope, CSV recording, the SD card, firmware updates over Bluetooth; no account, no ads, no data
+collected). Its source is in its own repository, [121gw-companion](https://github.com/zombu4/121gw-companion).
+
 | Folder | Content |
 |---|---|
 | `firmware/` | new firmware for the 121GW (STM32L152ZD) in hand-written Thumb-2 assembly, loaded at 0x08006000 by the meter's existing bootloader or by the two-part bootloader (branch `bootloader`) |
