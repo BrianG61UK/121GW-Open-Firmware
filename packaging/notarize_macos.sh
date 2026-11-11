@@ -31,7 +31,15 @@ if [ "$status" != "Accepted" ]; then
     xcrun notarytool log "$id" "$@" || true
     exit 1
 fi
-xcrun stapler staple "$dmg"
+# stapling fetches the ticket from Apple's CloudKit service: a dropped connection there (CI 2026-11-11, Intel runner:
+# NSURLErrorDomain -1005 "The network connection was lost", stapler error 68) is retried, at most 5 tries 30 s apart
+n=1
+until xcrun stapler staple "$dmg"; do
+    [ "$n" -lt 5 ] || { echo "notarize_macos: stapling failed $n times" >&2; exit 1; }
+    echo "notarize_macos: stapling failed (try $n of 5), again in 30 s"
+    n=$((n + 1))
+    sleep 30
+done
 xcrun stapler validate "$dmg"
 spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
 echo "notarize_macos: $dmg notarized and stapled"
