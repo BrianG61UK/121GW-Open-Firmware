@@ -68,7 +68,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/Library/Caches/ms-playwright
-          key: ms-playwright-${{ runner.os }}-1.64.1
+          key: ms-playwright-${{ runner.os }}-${{ runner.arch }}-1.64.1   # the browser is built per processor (Intel and Apple Macs)
       # GitHub issue 35: tests/test_ui_layout.py renders the page in headless Chromium on every push (it must run in CI)
       - name: Page test browser (Playwright, Chromium)
         run: |
@@ -193,7 +193,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~\AppData\Local\ms-playwright
-          key: ms-playwright-${{ runner.os }}-1.64.1
+          key: ms-playwright-${{ runner.os }}-${{ runner.arch }}-1.64.1   # the browser is built per processor (Intel and Apple Macs)
       # GitHub issue 35: tests/test_ui_layout.py renders the page in headless Chromium on every push (it must run in CI)
       - name: Page test browser (Playwright, Chromium)
         run: |
@@ -270,7 +270,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: ms-playwright-${{ runner.os }}-1.64.1
+          key: ms-playwright-${{ runner.os }}-${{ runner.arch }}-1.64.1   # the browser is built per processor (Intel and Apple Macs)
       # GitHub issue 35: tests/test_ui_layout.py renders the page in headless Chromium on every push (it must run in CI)
       - name: Page test browser (Playwright, Chromium)
         run: |
@@ -366,7 +366,7 @@ jobs:
           mkdir companion
           gh release download "$tag" --dir companion --pattern "121GW-Companion-$ver-*"
           n=$(ls companion | wc -l)
-          test "$n" -eq 8 || { echo "expected 8 files of $tag, found $n"; exit 1; }
+          test "$n" -eq 10 || { echo "expected 10 files of $tag (5 packages and their checksums), found $n"; exit 1; }
           gh release upload "$fw" companion/* --clobber
           for a in $(gh release view "$fw" --json assets -q '.assets[].name | select(startswith("121GW-Companion-"))'); do
             case "$a" in "121GW-Companion-$ver-"*) ;; *) gh release delete-asset "$fw" "$a" -y; echo "removed $a" ;; esac
