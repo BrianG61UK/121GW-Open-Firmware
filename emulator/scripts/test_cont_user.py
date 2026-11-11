@@ -17,8 +17,8 @@ BEEP (dial Ohm/beep, EEPROM 0x0B = 10) with resistances applied at the input:
      "HY 5.0"; REL / PEAK step and wrap; long SETUP saves only 0x02D..0x02E (th) or 0x02F (HY), the chirp byte 0x02C
      and every other byte unchanged; SETUP short ends an edit without a save.
   T4 Bluetooth status frame: codes 16 / 17 are sent as 0xBA / 0xBB with the threshold in ohm in the value bytes.
-  T5 remote settings over page Ld: GET with flags 1 lists 22 entries of two-byte values (0x02D, then the logging interval
-     0x018 last, IMP-65), the one-byte GET 20
+  T5 remote settings over page Ld: GET with flags 1 lists 23 entries of two-byte values (0x02D, then the logging interval
+     0x018 last, IMP-65; 0x023 the battery type, IMP-67), the one-byte GET 21
      without 0x02D; the two-byte PUT of 0x02D writes 0x02D..0x02E only; refusals (0x22): 0 and 501, the one-byte PUT of
      0x02D, flags 2, 0x02F 0 and 251, 0x014 18; the whole EEPROM differs from the start only in 0x014 and 0x02D..0x02F.
 The helpers are those of test_backlight_timer.py, test_bft_files.py and test_bt_upload.py.
@@ -307,15 +307,15 @@ def run_tests(image, a_ut, a_uh):
     entries = btft.parse_get_wide(a) if F.status_of(a) == 0 else []
     # IMP-65: the logging interval 0x018 (two-byte, 0..999) is the last entry
     interval = T.rd(e, 0x2000022C) | T.rd(e, 0x2000022D) << 8          # set_log_interval (set/setup.s), u16
-    T.check('GET flags 1: status 0, 22 entries of 4 bytes, the end', F.status_of(a) == 0 and a.field == 0x8000 | 22
-            and len(a.data) == 88, repr(a))
+    T.check('GET flags 1: status 0, 23 entries of 4 bytes, the end', F.status_of(a) == 0 and a.field == 0x8000 | 23
+            and len(a.data) == 92, repr(a))
     T.check('  0x02F (50), 0x02D (30), then 0x018 (the interval in RAM, %d) last' % interval,
             entries[-3:] == [(0x02F, 50), (0x02D, 30), (0x018, interval)], repr(entries[-3:]))
     a = f.ask(btft.get_packet)
-    T.check('one-byte GET: 20 entries without 0x02D', F.status_of(a) == 0 and a.field == 20 and 0x02D not in btft.parse_get(a),
+    T.check('one-byte GET: 21 entries without 0x02D', F.status_of(a) == 0 and a.field == 21 and 0x02D not in btft.parse_get(a),
             repr(a))
-    a = f.ask(btft.get_wide_packet, 20, 5)
-    T.check('GET flags 1 from entry 20: 0x02D and 0x018, the end', F.status_of(a) == 0 and a.field == 0x8002
+    a = f.ask(btft.get_wide_packet, 21, 5)
+    T.check('GET flags 1 from entry 21: 0x02D and 0x018, the end', F.status_of(a) == 0 and a.field == 0x8002
             and btft.parse_get_wide(a) == [(0x02D, 30), (0x018, interval)], repr(a))
     a = f.ask(btft.get_wide_packet, 0, 255, 2)
     T.check('GET flags 2: 0x22', F.status_of(a) == 0x22, repr(a))
