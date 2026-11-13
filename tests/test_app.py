@@ -10,7 +10,7 @@ import time
 import unittest
 
 from support import FakeMeter, card, frames, sample_files
-from meter121 import app as app_mod, server
+from meter121 import app as app_mod, server, settings as meter_settings
 
 
 def wait(cond, seconds=5.0):
@@ -311,6 +311,37 @@ class SettingsCommands(AppCase):
             with self.assertRaises(ValueError):
                 self.app.command(dict(bad, settings_put=True))
         self.assertEqual(len(self.meter.sent), before)
+
+    def test_two_reads_at_once_share_one(self):
+        # GitHub issue 37 (BrianG61UK): the page reads by itself when it opens and when page Ld appears; on a slow
+        # link the second read found the first still running and failed with "the link is busy".  Now it waits for the
+        # first and answers with its result; the meter is asked once.
+        self.go_desk()
+        calls, real = [], meter_settings.Settings.get_all
+
+        def slow_get_all(m):
+            calls.append(1)
+            time.sleep(3.0)                                     # longer than LINK_WAIT, as on the old BLE112 module
+            return real(m)
+        meter_settings.Settings.get_all = slow_get_all
+        self.addCleanup(setattr, meter_settings.Settings, 'get_all', real)
+        out, errs = [], []
+
+        def read():
+            try:
+                out.append(self.app.command({'settings_get': True}))
+            except RuntimeError as e:
+                errs.append(str(e))
+        threads = [threading.Thread(target=read) for _ in range(2)]
+        for t in threads:
+            t.start()
+            time.sleep(0.2)
+        for t in threads:
+            t.join(30)
+        self.assertEqual(errs, [])
+        self.assertEqual(len(out), 2)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(out[0]['items'], out[1]['items'])
 
     def test_meter_error_lands_in_state(self):
         self.go_desk()

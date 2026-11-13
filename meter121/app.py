@@ -60,6 +60,8 @@ DESK_PROBE_TIMEOUT = 1.5                         # seconds the page Ld has to an
 KEY_ECHO_WAIT = 1.0                              # seconds to wait for the echo of a key frame
 LEAVE_CANCEL_WAIT = 3.0                          # extra seconds Leave waits for a stopped card operation to give the link back
 LINK_WAIT = 2.5                                  # seconds a command waits for the link while the desk watcher's page check has it
+SETTINGS_WAIT = 120.0                            # seconds a settings command waits for one already running (a read on the old
+                                                 # BLE112 module goes in small pieces and can take tens of seconds)
 TRACE_UI = os.environ.get('COMPANION_LOG') == '1'     # the page and the window report pointer events (diagnosis)
 UPDATE_ACTIVE = ('downloading', 'waiting_ld', 'restarting', 'sending')      # update states that own the link
 NAME_MAX = 40                                    # characters of a chosen file's name kept for the display
@@ -189,6 +191,7 @@ class Companion:
                         'sync': {'folder': self.settings.get('card_sync_folder'), 'last': None, 'copied': 0},
                         'error': None, 'result': '', 'job': 0, 'done_job': 0}
         self.settings_st = {'items': [], 'error': None}
+        self._settings_gate = threading.Lock()           # one settings command at a time (issue 37)
         self.link = MeterLink(self._frame, self._state)
         threading.Thread(target=self._ask_version, name='version', daemon=True).start()
         threading.Thread(target=self._watch_desk, name='desk', daemon=True).start()
@@ -1307,11 +1310,29 @@ class Companion:
 
     # ------------------------------------------------------------------ settings of the meter (settings.py)
     def settings_get(self):
-        return self._settings_op(lambda m: m.get_all())
+        """Read the settings.  The page asks by itself (page opened, page Ld shown, after a write), so two reads can
+        meet: a read that finds another running waits for it and answers with its result instead of failing with "the
+        link is busy" (GitHub issue 37)."""
+        if self._settings_gate.acquire(blocking=False):
+            try:
+                return self._settings_op(lambda m: m.get_all())
+            finally:
+                self._settings_gate.release()
+        if not self._settings_gate.acquire(timeout=SETTINGS_WAIT):
+            raise RuntimeError('the settings are still being read or written; try again')
+        self._settings_gate.release()
+        if self.settings_st['error']:
+            raise RuntimeError(self.settings_st['error'])
+        return {'ok': True, 'items': self.settings_st['items']}
 
     def settings_put(self, setting_id, value):
         meter_settings.check(setting_id, value)          # range check before the link is touched
-        return self._settings_op(lambda m: m.put(setting_id, value))
+        if not self._settings_gate.acquire(timeout=SETTINGS_WAIT):   # a running read or write finishes first
+            raise RuntimeError('the settings are still being read or written; try again')
+        try:
+            return self._settings_op(lambda m: m.put(setting_id, value))
+        finally:
+            self._settings_gate.release()
 
     def _settings_op(self, job):
         try:
