@@ -1115,15 +1115,11 @@ function drawScopeView() {
 }
 
 // ---------------------------------------------------------------- LOG
-function csvOfTrend() {
-  const unit = state && state.session && state.session.stats_unit || '';
-  return 'time_unix_s,value' + (unit ? '_' + unit : '') + '\n' + trend.map(p => p[0].toFixed(3) + ',' + (p[1] === null ? '' : p[1])).join('\n') + '\n';
-}
-$('export').onclick = () => {
-  if (!trend.length) return say('nothing to export yet', true);
-  const name = '121gw-trend-' + new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19) + '.csv';
-  const a = h('a', {href: URL.createObjectURL(new Blob([csvOfTrend()], {type: 'text/csv'})), download: name});
-  document.body.append(a); a.click(); a.remove(); say('exported ' + trend.length + ' points as ' + name);
+// the program writes the file into the recordings folder: the window's web view saves no downloads, a download link
+// opened the CSV in place of the page and closing it quit the program (GitHub issue 43)
+$('export').onclick = async () => {
+  try { const j = await api({export_trend: true}); say('exported ' + j.points + ' points to ' + j.path); }
+  catch (e) { fail(e); }
 };
 const recToggle = async () => {
   try { const j = await api({record: !(state && state.session.recording)}); if (j.path) say('recording to ' + j.path); }

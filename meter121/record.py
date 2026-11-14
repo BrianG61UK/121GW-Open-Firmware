@@ -204,6 +204,28 @@ class Session:
             self._file = self._writer = None
             return path
 
+    def export_trend(self, folder):
+        """Write the trend of the current mode / unit / range (the points the page shows since the last change of it)
+        as 121gw-trend-<time>.csv in `folder`; (path, points).  The program writes it itself: the web view of the
+        window does not save downloads, a download link opened the CSV in place of the page (GitHub issue 43)."""
+        with self.lock:
+            key = self.stats.key
+            pts = []
+            for t, v, k in reversed(self.trend):
+                if k != key:
+                    break
+                pts.append((t, v))
+            pts.reverse()
+        if not pts:
+            raise ValueError('nothing to export yet')
+        unit = key[1] if key else ''
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, time.strftime('121gw-trend-%Y-%m-%d-%H-%M-%S.csv'))
+        with open(path, 'w', newline='', encoding='utf-8') as f:
+            f.write('time_unix_s,value' + ('_' + unit if unit else '') + '\n')
+            f.writelines('%.3f,%s\n' % (t, '' if v is None else repr(v)) for t, v in pts)
+        return path, len(pts)
+
     def snapshot(self, since=None):
         """State for the page; `since`: only trend points newer than this time."""
         with self.lock:

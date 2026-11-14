@@ -1707,6 +1707,9 @@ class Companion:
                 sep, dec = CSV_FORMATS.get(self.settings.get('csv_format'), CSV_FORMATS['comma'])
                 return {'ok': True, 'path': self.session.start_recording(self.folder, sep, dec, self.log_rule())}
             return {'ok': True, 'path': self.session.stop_recording()}
+        if 'export_trend' in c:                         # written by the program: the web view saves no downloads (issue 43)
+            path, n = self.session.export_trend(self.folder)
+            return {'ok': True, 'path': path, 'points': n}
         if 'reset_stats' in c:
             self.session.reset_stats()
             return {'ok': True}

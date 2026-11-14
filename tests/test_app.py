@@ -105,6 +105,22 @@ class State(AppCase):
         self.app.folder, self.app._rec_cache = os.path.join(d, 'gone'), None
         self.assertEqual(self.app.state()['recordings'], [])                                 # folder missing
 
+    def test_export_trend_is_written_by_the_program(self):           # issue 43: no download in the web view
+        self.app.folder = os.path.join(self.tmp, 'rec')
+        with self.assertRaises(ValueError):
+            self.app.command({'export_trend': True})                    # no reading yet
+        t0 = time.time()
+        for i in range(3):
+            self.app._frame(frames.STATUS, status_frame(), t0 + i)
+        j = self.app.command({'export_trend': True})
+        self.assertEqual(j['points'], 3)
+        self.assertEqual(os.path.dirname(j['path']), self.app.folder)
+        with open(j['path'], encoding='utf-8') as f:
+            rows = f.read().splitlines()
+        self.assertEqual(rows[0], 'time_unix_s,value_V')
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(rows[1], '%.3f,0.0' % t0)
+
     def test_derived_follows_the_frames(self):
         self.app.derived.set_options({'limit': {'lo': 1, 'hi': 2, 'unit': 'V'}})
         self.app._frame(frames.STATUS, status_frame(), time.time())
