@@ -199,6 +199,62 @@ class PageLayout(unittest.TestCase):
         self.assertEqual(errors, [])
         page.close()
 
+    def test_log_trigger_controls(self):
+        # GitHub issue 40: the LOG view has the log trigger (mode, interval, change threshold) of the program's settings;
+        # it shows what the state holds, says what the chosen rule does, fits at every size and sends the changes
+        self.items = []
+        look = """() => ({mode: document.querySelector('#lt-mode button.on').dataset.v,
+            interval: document.getElementById('lt-int').value, change: document.getElementById('lt-chg').value,
+            interval_off: document.getElementById('lt-int').disabled, change_off: document.getElementById('lt-chg').disabled,
+            note: document.getElementById('lt-note').textContent,
+            wide: [document.getElementById('lt-mode').closest('.card')].filter(c => c.scrollWidth > c.clientWidth + 1).length})"""
+        cases = [({'log_trigger': 'all', 'log_interval': 1, 'log_change': 10}, ('all', '1', '10', True, True), 'Every reading'),
+                 ({'log_trigger': 'interval', 'log_interval': 5, 'log_change': 10}, ('interval', '5', '10', False, True), 'every 5 s'),
+                 ({'log_trigger': 'interval', 'log_interval': 0, 'log_change': 10}, ('interval', '0', '10', False, True), 'every reading'),
+                 ({'log_trigger': 'change', 'log_interval': 0, 'log_change': 20}, ('change', '0', '20', False, False), 'changed by 20 counts'),
+                 ({'log_trigger': 'limit', 'log_interval': 999, 'log_change': 255,
+                   'log_from_meter': {'interval': 999, 'change': 255}}, ('limit', '999', '255', False, True), 'No limit is set')]
+        for prefs, want, text in cases:
+            with self.subTest(prefs=prefs):
+                page, errors = self.open_page((1180, 732), 'dark', False, prefs=prefs)
+                page.click('nav button[data-v=log]')
+                page.wait_for_timeout(400)
+                got = page.evaluate(look)
+                self.assertEqual((got['mode'], got['interval'], got['change'], got['interval_off'], got['change_off']), want)
+                self.assertIn(text, got['note'])
+                self.assertEqual(errors, [])
+                page.close()
+        longest = cases[-1][0]
+        for size in SIZES:
+            for theme in THEMES:
+                with self.subTest(size=size, theme=theme):
+                    page, errors = self.open_page(size, theme, False, prefs=longest)
+                    page.click('nav button[data-v=log]')
+                    page.wait_for_timeout(300)
+                    self.assertEqual(page.evaluate(CUT_JS, '#v-log'), [])
+                    self.assertEqual(page.evaluate(look)['wide'], 0)
+                    self.assertEqual(errors, [])
+                    page.close()
+        page, errors = self.open_page((1180, 732), 'dark', False, prefs=cases[1][0])
+        posts = []
+        page.on('request', lambda r: posts.append(json.loads(r.post_data)) if r.method == 'POST' and r.post_data else None)
+        page.click('nav button[data-v=log]')
+        page.wait_for_timeout(300)
+        page.fill('#lt-int', '1000')                         # not a value of the meter's page In: nothing is sent
+        page.press('#lt-int', 'Tab')
+        page.wait_for_timeout(300)
+        self.assertTrue(page.evaluate("() => document.getElementById('msg').classList.contains('bad')"))
+        page.fill('#lt-int', '12')
+        page.press('#lt-int', 'Tab')
+        page.wait_for_timeout(300)
+        page.click('#lt-mode button[data-v=change]')
+        page.wait_for_timeout(300)
+        sent = [p for p in posts if 'prefs_set' in p]
+        self.assertEqual(sent, [{'prefs_set': {'key': 'log_interval', 'value': 12}},
+                                {'prefs_set': {'key': 'log_trigger', 'value': 'change'}}])
+        self.assertEqual(errors, [])
+        page.close()
+
     def test_other_views_cut_no_text(self):
         self.items = []
         for size in SIZES:

@@ -13,8 +13,11 @@ value out of range, or a payload that is not 3 bytes.  The meter applies a PUT a
 edited and saved (RAM variable, side effect, store to the EEPROM), so the companion never touches the EEPROM.
 
 The id is the offset of the setting's byte in the data EEPROM and the value is the value of the setup page, which is the
-stored byte for every id but 0x017 and 0x020.  Not offered by the meter: 0x018 (logging interval) and every byte of the
-rotary memory, identity, calibration, restore and user zero; the table lists exactly the 19 ids of the firmware (id 0x020 as four rows).
+stored byte for every id but 0x017 and 0x020.  Not offered by the meter: every byte of the rotary memory, identity,
+calibration, restore and user zero.  The table lists the ids the companion changes (id 0x020 as five rows).  The logging
+interval 0x018 (0..999 s, page In, firmware IMP-65) is the last entry of the two-byte GET answer; it has no row and is never
+changed here (the interval is set on the meter), but the last value read is kept in `Settings.log_interval` for the
+companion's log trigger (GitHub issue 40); None where the answer has no such entry (older firmware, one-byte GET).
 
 The id 0x020 is ONE id with a value 0..31 (0..15 before firmware F-1.16): bit 0 the REL view, bits 2..1 the logging
 trigger 0..2 (3 is refused), bit 3 the clock, bit 4 the capacitance anti-hunting (SETUP page HUnt, firmware F-1.16 and
@@ -36,6 +39,8 @@ from . import card
 # ---------------------------------------------------------------------------------------------------- byte layouts
 T_GET, T_PUT = 0x16, 0x17
 B20 = 0x020                                         # the shared bit field
+LOG_INTERVAL_ID = 0x018                             # the logging interval, two-byte, in the wide GET answer only (IMP-65)
+LOG_INTERVAL_MAX = 999
 
 
 def parse_get(field, data, wide=False):
@@ -211,6 +216,7 @@ class Settings:
         the threshold row offers the codes 0..15 only and the rows th and HY are not listed.  `clamp`: the firmware knows
         the clamp ratio in bits 7..5 of id 0x020 (F-1.35 or newer); without it the row CLP is neither listed nor changed."""
         self.c = client
+        self.log_interval = None                         # seconds, from the last wide GET answer that carried id 0x018
         self.hunt = hunt
         self.quiet = quiet
         self.paged = paged
@@ -246,6 +252,9 @@ class Settings:
             pairs = parse_get(field_ & 0x7FFF, data, wide=True)
         else:
             pairs = parse_get(*self.c.ok(T_GET))
+        for i, v in pairs:
+            if i == LOG_INTERVAL_ID and 0 <= v <= LOG_INTERVAL_MAX:
+                self.log_interval = v                    # the interval has no row; kept for the log trigger
         return {i: v for i, v in pairs if i in known}
 
     def _paged_get(self):

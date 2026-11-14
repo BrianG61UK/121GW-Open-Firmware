@@ -22,10 +22,12 @@ def wait(cond, seconds=5.0):
     return False
 
 
-def status_frame():
+def status_frame(mag=0):
+    """A DCV frame (range 0: four digits after the point) showing mag / 10000 V."""
     f = bytearray(19)
     f[0] = 0xF2
     f[5] = 1                                           # DCV
+    f[7], f[8] = mag >> 8, mag & 0xFF
     x = 0
     for b in f[:18]:
         x ^= b
@@ -311,6 +313,26 @@ class SettingsCommands(AppCase):
             with self.assertRaises(ValueError):
                 self.app.command(dict(bad, settings_put=True))
         self.assertEqual(len(self.meter.sent), before)
+
+    def test_settings_read_keeps_the_meters_log_interval_and_change(self):
+        # GitHub issue 40: the trigger fields start from the meter's In (id 0x018, only in the wide answer, no row) and Ch
+        self.go_desk()
+        self.meter.eeprom.update({0x018: 45, 0x022: 20})
+        self.app.version = 'F-1.35'
+        self.assertEqual(self.app.log_values(), (1, 10))
+        items = self.app.command({'settings_get': True})['items']
+        self.assertNotIn(0x018, [i['id'] for i in items])
+        p = self.app.prefs()
+        self.assertEqual((p['log_interval'], p['log_change'], p['log_from_meter']), (45, 20, {'interval': 45, 'change': 20}))
+        self.assertEqual(app_mod.Companion(os.path.join(self.tmp, 'docs')).log_values(), (45, 20))     # in settings.json
+        self.app.command({'prefs_set': {'key': 'log_interval', 'value': 3}})
+        self.meter.eeprom.update({0x018: 60, 0x022: 25})
+        self.app.command({'settings_get': True})
+        self.assertEqual(self.app.log_values(), (3, 25))                # the user's interval stays, Ch follows the meter
+        self.assertEqual(self.app.prefs()['log_from_meter'], {'interval': 60, 'change': 25})
+        self.app.version = 'F-1.30'                                     # the one-byte answer has no interval: the value stays
+        self.app.command({'settings_get': True})
+        self.assertEqual(self.app.prefs()['log_from_meter'], {'interval': 60, 'change': 25})
 
     def test_two_reads_at_once_share_one(self):
         # GitHub issue 37 (BrianG61UK): the page reads by itself when it opens and when page Ld appears; on a slow
@@ -643,6 +665,61 @@ class Prefs(AppCase):
         cols = row.split(';')
         self.assertTrue(cols[0].endswith(',250'), cols[0])
         self.assertEqual(cols[1:8], ['DCV', '1,500', 'V', '1,5', '0,25', 'Hz', 'DC'])
+
+    def test_log_trigger_settings(self):
+        # GitHub issue 40
+        p = self.app.prefs()
+        self.assertEqual((p['log_trigger'], p['log_interval'], p['log_change'], p['log_from_meter']),
+                         ('all', 1, 10, {'interval': None, 'change': None}))
+        for key, value in (('log_trigger', 'change'), ('log_interval', 0), ('log_change', 255)):
+            self.set(key, value)
+        again = app_mod.Companion(os.path.join(self.tmp, 'docs')).prefs()
+        self.assertEqual((again['log_trigger'], again['log_interval'], again['log_change']), ('change', 0, 255))
+        before = dict(self.app.settings)
+        for key, value in (('log_trigger', 'sometimes'), ('log_trigger', None), ('log_interval', 1000), ('log_interval', -1),
+                           ('log_interval', True), ('log_interval', '5'), ('log_interval', 1.5), ('log_change', 0),
+                           ('log_change', 256), ('log_change', True), ('log_change', None)):
+            with self.assertRaises(ValueError, msg=(key, value)):
+                self.set(key, value)
+        self.assertEqual(self.app.settings, before)
+        self.app.settings['log_interval'] = 'x'                       # a hand-edited file: no value, the next source counts
+        self.app.settings['log_from_meter'] = {'interval': 12, 'change': 'y'}
+        self.assertEqual(self.app.log_values(), (12, 255))
+        self.app.settings['log_from_meter'] = 'broken'
+        self.assertEqual(self.app.log_values(), (1, 255))
+        self.app.command({'prefs_reset': True})
+        p = self.app.prefs()
+        self.assertEqual((p['log_trigger'], p['log_interval'], p['log_change']), ('all', 1, 10))
+
+    def test_recording_follows_the_log_trigger(self):
+        # GitHub issue 40: the rows follow the trigger; the statistics and the trend still get every reading
+        t0 = 1000000.0
+        self.set('log_trigger', 'interval')
+        self.set('log_interval', 2)
+        path = self.app.command({'record': True})['path']
+        for k in (0, 1, 2, 3, 4, 5, 6):
+            self.app._frame(frames.STATUS, status_frame(15000), t0 + k * 0.5)
+        for key in ('log_trigger', 'log_interval', 'log_change'):
+            with self.assertRaises(RuntimeError, msg=key):             # fixed while recording
+                self.set(key, 5 if key != 'log_trigger' else 'all')
+        self.app.command({'record': False})
+        with open(path, encoding='utf-8') as f:
+            self.assertEqual(len(f.read().splitlines()), 1 + 2)         # header, the first reading and t0 + 2 s
+        self.assertEqual(self.app.session.stats.n, 7)
+        self.assertEqual(len(self.app.session.trend), 7)
+
+    def test_recording_on_limit_verdict_uses_the_derived_verdict(self):
+        t0 = 1000000.0
+        self.set('log_trigger', 'limit')
+        self.set('log_interval', 0)
+        self.app.derived.set_options({'limit': {'lo': 1, 'hi': 2, 'unit': 'V'}})
+        path = self.app.command({'record': True})['path']
+        for k, mag in enumerate((15000, 15000, 30000, 30000, 15000)):    # PASS PASS HI HI PASS
+            self.app._frame(frames.STATUS, status_frame(mag), t0 + k * 0.5)
+        self.app.command({'record': False})
+        with open(path, encoding='utf-8') as f:
+            rows = [r.split(',')[4] for r in f.read().splitlines()[1:]]
+        self.assertEqual(rows, ['1.5', '3.0', '1.5'])
 
     def test_update_check_never_and_daily(self):
         calls = []

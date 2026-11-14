@@ -145,6 +145,34 @@ class OverTheLink(unittest.TestCase):
                               'texts': ['K', 'J', 'T', 'N', 'R', 'S'], 'unit': None, 'scale': 1})
         self.assertIsNone(next(i for i in items if i['code'] == 'bL')['choices'])
 
+    def test_logging_interval_is_kept_but_has_no_row(self):
+        # GitHub issue 40: the wide GET answer carries id 0x018 (IMP-65, 0..999 s); the companion keeps the value for its
+        # log trigger and neither lists nor writes it
+        m = meter(x018=30)
+        s = settings.Settings(make_client(m))
+        self.assertIsNone(s.log_interval)
+        items = s.get_all()
+        self.assertEqual(s.log_interval, 30)
+        self.assertEqual([i['code'] for i in items], [t.code for t in settings.TABLE])
+        self.assertNotIn(0x018, settings.BY_ID)
+        m.eeprom[0x018] = 999
+        s.put(0x00F, 1)                                 # a PUT reads the settings again
+        self.assertEqual(s.log_interval, 999)
+        self.assertEqual(m.eeprom[0x018], 999)
+        m.eeprom[0x018] = 1000                          # not a value the page In has: ignored, the old value stays
+        s.get_all()
+        self.assertEqual(s.log_interval, 999)
+        m.eeprom[0x018] = 7
+        m.adapt_fw = True
+        paged = settings.Settings(make_client(m), paged=True)
+        paged.get_all()
+        self.assertEqual(paged.log_interval, 7)         # the paged form carries it too
+        old = meter(x018=30)
+        old.user_cont_fw = False
+        s = settings.Settings(make_client(old), user_cont=False)
+        s.get_all()
+        self.assertIsNone(s.log_interval)               # the one-byte form has only the one-byte settings
+
     def test_auto_power_off_time_listed_only_when_reported(self):
         m = meter()
         items = settings.Settings(make_client(m)).get_all()

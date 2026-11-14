@@ -475,6 +475,15 @@ footer .r { color: var(--ink-3); white-space: nowrap; }
             <span class="cap">Folder</span><span class="v num" id="recfolder">—</span></div>
           <div class="btns"><button id="rec" class="pri">Record</button><button id="export">Export trend CSV</button></div>
         </div></div>
+      <div class="card"><div class="eng">Log trigger</div>
+        <div class="body">
+          <div class="hint">Which readings are written as rows of the recording. The display, statistics and trend always get every reading.</div>
+          <span class="seg" id="lt-mode"><button data-v="all">Every reading</button><button data-v="interval">Interval</button><button data-v="change">On change</button><button data-v="limit">On limit verdict</button></span>
+          <div class="row" style="margin-top:10px">
+            <label class="cap" for="lt-int">Interval (s)</label><input id="lt-int" class="num" inputmode="numeric" spellcheck="false" style="width:74px;text-align:right" aria-label="log interval in seconds, 0 to 999">
+            <label class="cap" for="lt-chg">Change (counts)</label><input id="lt-chg" class="num" inputmode="numeric" spellcheck="false" style="width:74px;text-align:right" aria-label="log change threshold in counts, 1 to 255"></div>
+          <div class="path" id="lt-note"></div>
+        </div></div>
     </div>
   </div>
 </section>
@@ -1121,6 +1130,30 @@ const recToggle = async () => {
   catch (e) { fail(e); }
 };
 $('rec').onclick = $('rec2').onclick = recToggle;
+// the log trigger (GitHub issue 40): the program's own rule for the rows, kept in the program's settings (record.LogTrigger)
+$('lt-mode').onclick = e => { const b = e.target.closest('button'); if (b) setPref('log_trigger', b.dataset.v); };
+function logField(id, key, lo, hi) {                     // a whole number lo..hi, saved when the field is left or Enter is pressed
+  const el = $(id);
+  el.oninput = () => el.dataset.edited = '1';
+  el.onchange = () => {
+    const t = el.value.trim();
+    if (!/^\d+$/.test(t) || +t < lo || +t > hi) return say('log trigger: a whole number ' + lo + ' to ' + hi, true);
+    send('prefs_set', {key, value: +t}, true).then(() => { el.dataset.edited = ''; say('saved'); }).catch(fail);
+  };
+}
+logField('lt-int', 'log_interval', 0, 999); logField('lt-chg', 'log_change', 1, 255);
+function logNote(P, limitSet) {                          // what the chosen trigger does, in the meter's words
+  const n = P.log_interval, every = n ? ' and every ' + n + ' s' : '';
+  const from = P.log_from_meter && P.log_from_meter.interval !== null && P.log_from_meter.interval !== undefined
+    ? ' Meter: In ' + P.log_from_meter.interval + ' s' + (P.log_from_meter.change ? ', Ch ' + P.log_from_meter.change : '') + '.' : '';
+  switch (P.log_trigger) {
+    case 'interval': return (n ? 'A row every ' + n + ' s.' : 'Interval 0: every reading is a row.') + from;
+    case 'change': return 'A row when the reading changed by ' + P.log_change + ' counts or more (last digit, checked once per second)' + every + '.' + from;
+    case 'limit': return (limitSet ? 'A row when the limit verdict (PASS, HI, LO) changes' + (n ? ' and every ' + n + ' s while it is not PASS' : '') + '.'
+      : 'No limit is set (LIVE view): there is no verdict' + (n ? ', so only the first reading and a row every ' + n + ' s are written.' : ', so only the first reading is written.')) + from;
+    default: return 'Every reading is a row.' + from;
+  }
+}
 $('sreset').onclick = async () => { trend = []; since = null; try { await api({reset_stats: true}); } catch (e) { fail(e); } };
 
 // ---------------------------------------------------------------- CARD
@@ -1238,6 +1271,15 @@ function drawLog(S) {
   $('recrows2').textContent = rec ? String(S.rec_rows) : S.rec_path ? String(S.rec_rows) : '—';
   $('recpath').textContent = S.rec_path || '—'; $('recfolder').textContent = state.folder || '—';
   setText($('rec'), rec ? 'Stop' : 'Record');
+  const P = state.prefs || {}, lim = state.derived && state.derived.limit || {};
+  seg($('lt-mode'), P.log_trigger);
+  $('lt-mode').querySelectorAll('button').forEach(b => { b.disabled = rec; });
+  for (const [id, v, used] of [['lt-int', P.log_interval, P.log_trigger !== 'all'], ['lt-chg', P.log_change, P.log_trigger === 'change']]) {
+    const el = $(id), t = v === null || v === undefined ? '' : String(v);
+    if (document.activeElement !== el && !el.dataset.edited && el.value !== t) el.value = t;
+    el.disabled = rec || !used;
+  }
+  setText($('lt-note'), (rec ? 'Fixed while recording. ' : '') + logNote(P, lim.lo !== null && lim.lo !== undefined || lim.hi !== null && lim.hi !== undefined));
   const list = Array.isArray(state.recordings) ? state.recordings : S.rec_path ? [{name: S.rec_path.split(/[\\/]/).pop(), size: null, date: null}] : [];
   $('reclist').replaceChildren(...(list.length ? list.map(f => h('tr', {}, h('td', {}, f.name), h('td', {class: 'r'}, f.size === null || f.size === undefined ? '—' : grp(f.size)),
     h('td', {}, nz(f.date) + (f.time ? '  ' + f.time : '')))) : [h('tr', {class: 'empty'}, h('td', {colspan: 3}, 'no recordings yet'))]));
@@ -1585,7 +1627,7 @@ $('p-reset').onclick = () => $('pconfirm').classList.add('show');
 $('pc-cancel').onclick = () => $('pconfirm').classList.remove('show');
 $('pc-ok').onclick = () => {
   $('pconfirm').classList.remove('show');
-  ['p-folder', 'p-sync', 'p-ntp'].forEach(id => $(id).dataset.edited = '');
+  ['p-folder', 'p-sync', 'p-ntp', 'lt-int', 'lt-chg'].forEach(id => $(id).dataset.edited = '');
   send('prefs_reset').then(() => say('settings reset')).catch(fail);
 };
 function drawPrefs(P, C, S) {

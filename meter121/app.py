@@ -110,6 +110,9 @@ PREF_DEFAULTS = {'recordings_folder': None,      # None: <Documents>/121GW
                  'clock_on_connect': False,      # set the meter's clock from the time server after each connection
                  'update_check': 'connect',      # 'connect' (at each connection and every 30 min), 'daily', 'never'
                  'csv_format': 'comma',          # recordings: 'comma' = , and decimal point; 'semicolon' = ; and decimal comma
+                 'log_trigger': 'all',           # recordings: which readings become rows, one of record.LOG_MODES (issue 40)
+                 'log_interval': None,           # the interval (s) and the change threshold (counts) the user typed; None: the
+                 'log_change': None,             # meter's from the last settings read ('log_from_meter'), else 1 s and 10
                  'theme': 'system',              # the page's colours: 'dark', 'light', or 'system' (follows the system's light/dark choice; default, owner 2026-11-07)
                  'diag_log': False,              # the COMPANION_LOG=1 diagnosis, from the next start
                  'ext_diag': False,              # the meter counts link errors inside (F-1.15 on) and the report shows them
@@ -203,8 +206,8 @@ class Companion:
     def _frame(self, kind, frame, t):
         if kind == frames.STATUS:
             r = display.decode(frame, t)
-            self.session.add(r)
             self.derived.feed(r)
+            self.session.add(r, self.derived.verdict())      # the verdict of this reading is the log trigger's
             self._st_n, self._st_first, self._st_last = self._st_n + 1, (t if self._st_first is None else self._st_first), t
             if self.desk:
                 self.event('page Ld left (status frames again)')
@@ -1344,15 +1347,54 @@ class Companion:
     def _settings_op(self, job):
         try:
             with self._ops('settings', wait=LINK_WAIT) as (_, client):
-                items = job(meter_settings.Settings(client, hunt=self._hunt_supported(), clamp=self._clamp_supported(),
-                                                    quiet=self._quiet_supported(),
-                                                    paged=self.small_pieces() and self._link_adapt_supported(),
-                                                    user_cont=self._user_cont_supported()))
+                sm = meter_settings.Settings(client, hunt=self._hunt_supported(), clamp=self._clamp_supported(),
+                                             quiet=self._quiet_supported(),
+                                             paged=self.small_pieces() and self._link_adapt_supported(),
+                                             user_cont=self._user_cont_supported())
+                items = job(sm)
         except (RuntimeError, ValueError, OSError) as e:
             self.settings_st['error'] = str(e)
             raise
         self.settings_st.update(items=items, error=None)
+        self._remember_log(sm.log_interval, next((i['value'] for i in items if i['code'] == 'Ch'), None))
         return {'ok': True, 'items': items}
+
+    def _remember_log(self, interval, change):
+        """Keep the meter's logging interval In and change threshold Ch (None: not in the answer, the old value stays) in
+        settings.json: they are the start values of the trigger fields on the LOG view (GitHub issue 40)."""
+        mem = self._log_mem()
+        for k, v in (('interval', interval), ('change', change)):
+            if v is not None:
+                mem[k] = v
+        if mem != self._log_mem():
+            self.settings['log_from_meter'] = mem
+            save_settings(self.settings)
+
+    def _log_mem(self):
+        """{'interval', 'change'}: the meter's values of the last settings read (None: never read), as a copy."""
+        mem = self.settings.get('log_from_meter')
+        mem = mem if isinstance(mem, dict) else {}
+        return {k: mem.get(k) for k in ('interval', 'change')}
+
+    @staticmethod
+    def _log_int(v, lo, hi):
+        return v if isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi else None
+
+    def log_values(self):
+        """(interval, change) of the log trigger fields: the user's value, else the meter's from the last settings read,
+        else 1 s and 10 (a hand-edited file with another kind of value counts as no value)."""
+        mem = self._log_mem()
+        out = []
+        for user, key, lo, hi, default in (('log_interval', 'interval', 0, record.LOG_INTERVAL_MAX, 1),
+                                           ('log_change', 'change', 1, record.LOG_CHANGE_MAX, 10)):
+            vals = (self._log_int(self.settings.get(user), lo, hi), self._log_int(mem.get(key), lo, hi))
+            out.append(next((v for v in vals if v is not None), default))
+        return tuple(out)
+
+    def log_rule(self):
+        """(mode, interval, change) for Session.start_recording."""
+        mode = self.settings.get('log_trigger')
+        return (mode if mode in record.LOG_MODES else PREF_DEFAULTS['log_trigger'],) + self.log_values()
 
     # ------------------------------------------------------------------ SD card (card.py); one operation at a time, in a thread
     def _card_start(self, op, job, check=None):
@@ -1542,6 +1584,9 @@ class Companion:
         if p['theme'] not in THEMES:                       # a hand-edited settings.json: the default, as the page would show it
             p['theme'] = PREF_DEFAULTS['theme']
         p['offline_window'] = p['offline_window'] is not False   # only an explicit false switches the window off
+        p['log_trigger'] = self.log_rule()[0]
+        p['log_interval'], p['log_change'] = self.log_values()
+        p['log_from_meter'] = {k: self._log_int(v, 0, 999) for k, v in self._log_mem().items()}
         p['card_sync_folder'] = self.card_st['sync']['folder'] or os.path.join(self.folder, 'card')
         p['ntp_server'] = self.clock['server']
         p.update(folder_forced=self.folder_forced, diag_log_active=TRACE_UI, file=config_path(),
@@ -1582,6 +1627,16 @@ class Companion:
         elif key == 'csv_format':
             if value not in CSV_FORMATS:
                 raise ValueError('csv_format: one of %s' % ', '.join(CSV_FORMATS))
+        elif key in ('log_trigger', 'log_interval', 'log_change'):
+            if self.session.snapshot()['recording']:
+                raise RuntimeError('a recording is running: stop it first')
+            if key == 'log_trigger':
+                if value not in record.LOG_MODES:
+                    raise ValueError('log_trigger: one of %s' % ', '.join(record.LOG_MODES))
+            else:
+                lo, hi = (0, record.LOG_INTERVAL_MAX) if key == 'log_interval' else (1, record.LOG_CHANGE_MAX)
+                if self._log_int(value, lo, hi) is None:
+                    raise ValueError('%s: a whole number %d..%d' % (key, lo, hi))
         elif key == 'theme':
             if value not in THEMES:
                 raise ValueError('theme: one of %s' % ', '.join(THEMES))
@@ -1650,7 +1705,7 @@ class Companion:
         if 'record' in c:
             if c['record']:
                 sep, dec = CSV_FORMATS.get(self.settings.get('csv_format'), CSV_FORMATS['comma'])
-                return {'ok': True, 'path': self.session.start_recording(self.folder, sep, dec)}
+                return {'ok': True, 'path': self.session.start_recording(self.folder, sep, dec, self.log_rule())}
             return {'ok': True, 'path': self.session.stop_recording()}
         if 'reset_stats' in c:
             self.session.reset_stats()

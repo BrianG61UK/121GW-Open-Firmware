@@ -196,7 +196,7 @@ class Derived:
                 out['limit'].update(lo=lim['lo'], hi=lim['hi'], unit=lim['unit'])
             if base is None:
                 return out
-            mode, quantity, v, _ = base
+            mode, _, v, _ = base
             if rel and self._ref is not None and self._ref[2] != 0.0:
                 out['rel_pct'] = v / self._ref[2] * 100.0
             if mode in DC_CURRENT_MODES and not rel:
@@ -204,14 +204,28 @@ class Derived:
                 out['loop_pct'] = (v * 1000.0 - lo) / (hi - lo) * 100.0
             if mode == MODE_OHM and opt['pt_type']:
                 out['pt_c'] = pt_temperature(v, PT_TYPES[opt['pt_type']])
-            if lim and not rel:
-                lq, lf = unit_scale(lim['unit'])
-                if lq == quantity:
-                    # a relative tolerance of 1e-9 keeps a reading exactly on a limit PASS across unit conversions
-                    if lim['lo'] is not None and v < lim['lo'] * lf * (1 - 1e-9 * _sign(lim['lo'])):
-                        out['limit']['verdict'] = 'LO'
-                    elif lim['hi'] is not None and v > lim['hi'] * lf * (1 + 1e-9 * _sign(lim['hi'])):
-                        out['limit']['verdict'] = 'HI'
-                    else:
-                        out['limit']['verdict'] = 'PASS'
+            out['limit']['verdict'] = self._verdict(lim, base, rel)
             return out
+
+    @staticmethod
+    def _verdict(lim, base, rel):
+        """'PASS' / 'LO' / 'HI' of the numeric reading `base` against the limit option `lim`; None without a limit, with
+        REL on, or for another quantity than the limit's."""
+        if not lim or rel or base is None:
+            return None
+        lq, lf = unit_scale(lim['unit'])
+        if lq != base[1]:
+            return None
+        v = base[2]
+        # a relative tolerance of 1e-9 keeps a reading exactly on a limit PASS across unit conversions
+        if lim['lo'] is not None and v < lim['lo'] * lf * (1 - 1e-9 * _sign(lim['lo'])):
+            return 'LO'
+        if lim['hi'] is not None and v > lim['hi'] * lf * (1 + 1e-9 * _sign(lim['hi'])):
+            return 'HI'
+        return 'PASS'
+
+    def verdict(self):
+        """The limit verdict of the last reading fed (None where the snapshot has none); for the log trigger."""
+        with self._lock:
+            r = self.last
+            return self._verdict(self.opt['limit'], self._base(r) if r else None, bool(r) and 'REL' in r.get('symbols', []))
