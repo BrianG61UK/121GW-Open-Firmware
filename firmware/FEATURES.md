@@ -325,8 +325,10 @@ changed, ARS 7: "r5/r6 are row-bound ... those rows may not change").
   Every package bundles everything it needs (Python, the Bluetooth library, the UI): nothing to install.  What the
   operating system provides is used as it is: the macOS Bluetooth permission prompt, BlueZ on Linux.
 - Link (facts, `emulator/tools/bt_upload.py`, working on a meter 2026-11-04): Bluetooth LE service
-  0bd51666-e7cb-469b-8e4d-2742f1ba77cc, characteristic e7add780-b042-4876-aae1-112855353cc1 (notify: the meter's
-  USART2 bytes; write: bytes to the meter).  The status frame is the 19-byte frame of `analysis/ble_packet.md` 3
+  0bd51666-e7cb-469b-8e4d-2742f1ba77cc, characteristic e7add780-b042-4876-aae1-112855353cc1 (indications: the
+  meter's USART2 bytes; write with response: bytes to the meter; on the BLE112 module its properties are WRITE|INDICATE,
+  0x28, no notify, read by the Android app 1.2.1 on a meter, GitHub issue 44: a client must switch on indications, which
+  iOS and the desktop's Bluetooth library do by themselves).  The status frame is the 19-byte frame of `analysis/ble_packet.md` 3
   (start 0xF2, XOR checksum); it carries mode, range, value, sub display, bargraph and symbols, no firmware version.
 - Stages:
   1. Live view: scan, connect, decode the status frame into the reading as the meter shows it (decimal point and unit
