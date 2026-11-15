@@ -6,6 +6,9 @@ This is the branch `companion` of [121GW-Open-Firmware](https://github.com/zombu
 program lives here.  The firmware and the emulator are on `main`, the build that behaves like v2.05 on `like-v2.05`.
 What each version brought: [CHANGELOG.md](CHANGELOG.md).
 
+Older Intel Macs where the signed Intel build does not start (for example a Mac Pro 2013 on macOS 12 Monterey, GitHub
+issue 45): use the unsigned build from [121gw-companion-old-intel-mac](https://github.com/zombu4/121gw-companion-old-intel-mac).
+
 <p align="center"><img src="docs/companion_live.gif" alt="LIVE page: the meter's reading on its seven-segment display with the symbols and bargraph, statistics and trend; HOLD pressed from the computer" width="760"></p>
 
 | **Scope view** | **Recording** |

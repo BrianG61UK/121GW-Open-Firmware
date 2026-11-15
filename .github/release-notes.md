@@ -6,7 +6,7 @@ The 121GW Companion: the computer app for the EEVblog 121GW over Bluetooth (live
 |---|---|
 | `121GW-Companion-<tag>-windows-x64.exe` | Windows 10 / 11 (installer) |
 | `121GW-Companion-<tag>-macos-arm64.dmg` | macOS on Apple chips (M1 and newer) |
-| `121GW-Companion-<tag>-macos-x86_64.dmg` | macOS on Intel processors |
+| `121GW-Companion-<tag>-macos-x86_64.dmg` | macOS on Intel processors (if it does not start on an older Intel Mac: the [unsigned build](https://github.com/zombu4/121gw-companion-old-intel-mac/releases)) |
 | `121GW-Companion-<tag>-linux-amd64.deb` | Ubuntu, Debian, Mint (`sudo apt install ./<file>`) |
 | `121GW-Companion-<tag>-linux-x86_64.AppImage` | any other 64-bit Linux |
 
