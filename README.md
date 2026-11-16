@@ -43,7 +43,7 @@ updates over Bluetooth; no account, no ads, no data collected). Its source is in
 </p>
 
 <p align="center">
-  <img src=".github/assets/ipad-1-live.jpg" alt="iPad LIVE: a large seven-segment display, statistics and derived values, a tall trend and the meter's keys (iPad Pro 13-inch simulator, demo readings)" width="420">
+  <img src=".github/assets/ipad-dark-1-live.jpg" alt="iPad LIVE: a large seven-segment display, statistics and derived values, a tall trend and the meter's keys (iPad Pro 13-inch simulator, demo readings)" width="420">
 </p>
 
 <p align="center"><a href="https://apps.apple.com/app/id6833369656"><img src=".github/assets/app-store-badge.svg" alt="Download on the App Store" height="54"></a></p>
