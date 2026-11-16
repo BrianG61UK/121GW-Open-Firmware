@@ -30,9 +30,9 @@ A program for Windows, macOS and Linux that connects to the meter over Bluetooth
 
 Recorded from a real 121GW with firmware F-1.07 over Bluetooth (nothing connected to the inputs, so the readings are small; the keys are pressed from the computer; the meter's Bluetooth device identifier is covered).
 
-## 121GW Companion for iPhone
+## 121GW Companion for iPhone and iPad
 
-The same companion as an iPhone app, free on the App Store (live reading, scope, CSV recording, the SD card, firmware
+The same companion as an app for iPhone and iPad (on iPad full screen with its own layout, from 1.3), free on the App Store (live reading, scope, CSV recording, the SD card, firmware
 updates over Bluetooth; no account, no ads, no data collected). Its source is in its own repository,
 [121gw-companion](https://github.com/zombu4/121gw-companion).
 
@@ -40,6 +40,10 @@ updates over Bluetooth; no account, no ads, no data collected). Its source is in
   <img src=".github/assets/iphone-1-live.jpg" alt="LIVE: the reading as the meter's seven-segment display with symbols and bargraph, statistics, trend and the meter's keys" width="250">
   <img src=".github/assets/iphone-2-scope.jpg" alt="SCOPE: the readings on a scope grid with time base, stop and cursors" width="250">
   <img src=".github/assets/iphone-3-meter.jpg" alt="METER: firmware and bootloader versions, the update check and the release list" width="250">
+</p>
+
+<p align="center">
+  <img src=".github/assets/ipad-1-live.jpg" alt="iPad LIVE: a large seven-segment display, statistics and derived values, a tall trend and the meter's keys (iPad Pro 13-inch simulator, demo readings)" width="420">
 </p>
 
 <p align="center"><a href="https://apps.apple.com/app/id6833369656"><img src=".github/assets/app-store-badge.svg" alt="Download on the App Store" height="54"></a></p>
