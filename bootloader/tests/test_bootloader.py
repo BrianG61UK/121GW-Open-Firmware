@@ -3,7 +3,7 @@
     python3 -I bootloader/tests/test_bootloader.py        (after `make` in firmware/ and in bootloader/)
 
   B1 valid firmware mark, no key: the firmware starts; no safety violation
-  B2 no firmware mark: update mode ("-IAP-" on both displays, Bluetooth on)
+  B2 no firmware mark: update mode ("-IAP-" on both displays, Bluetooth on, backlight off: B-1.17, issue 47)
   B3 firmware over Bluetooth, two packets in flight: START (erase), DATA, END; the meter restarts into the new
      firmware; the flash holds the image, the firmware mark its length and CRC; the transfer time is printed; B-1.16
      (DESIGN.md 6.5.2): PF15 low at least 25 ms before that restart, high again within 1 ms after the reset
@@ -230,6 +230,7 @@ def b2(ee0):
     e = meter(flash_image(mark=False))
     e.advance(2.0)
     T.check('update mode: "-IAP-" on both displays', texts(e) == ('-1AP-', '-1AP-'), repr(texts(e)))
+    T.check('update mode: backlight off (B-1.17, GitHub issue 47)', not e.snapshot()['backlight'])
 
 
 

@@ -480,7 +480,8 @@ bl_gpio_seq:
     .word GPIOG_BASE, 0xFFFF, IN_UP_40M                     @ keys and dial contacts
     .word GPIOE_BASE, 0x33F0, OUT_2M                        @ PE4..9, PE12, PE13
     .word GPIOE_BASE, 0x80000200, SET                       @ PE9 high
-    .word GPIOE_BASE, 0x80000100, SET                       @ PE8 high
+    .word GPIOE_BASE, 0x80000100, CLR                       @ PE8 low: backlight off (B-1.17, GitHub issue 47; the old
+                                                            @ bootloader sets it high, and update mode kept it lit)
     .word GPIOE_BASE, 0x80000080, CLR                       @ PE7 low
     .word GPIOE_BASE, 0x80001000, CLR                       @ PE12 low
     .word GPIOE_BASE, 0x80002000, CLR                       @ PE13 low
