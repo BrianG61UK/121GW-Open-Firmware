@@ -668,8 +668,9 @@ ENDFUNC log_write_func_name
 @             0x43 "mVA", 0x44 "VA", 0x45 "uA", 0x46 "mA", 0x47 "A".
 @             By mode: 0 -> 0x33 or 0x34; 1, 2 and 11 -> V; 3, 4 and 25 -> mV; 5 -> 'C or 'F (flag 5); 6 -> Hz, KHz from range 2;
 @             7 -> mSec; 8 -> %; 9 -> ohm (range 0, 1), Kohm (2..4), Mohm (5, 6); 10 -> ohm; 12 -> nF (range 0, 1) or uF;
-@             13 -> uVA; 14 -> mVA; 15 -> mVA at range 0, else VA; 16 and 17 -> uA; 18 and 19 -> mA; 20 and 21 -> A; 22 -> uVA;
-@             23 -> mVA; 24 -> mVA at range 0, else VA.  Other modes write nothing and report success.
+@             13 -> uVA; 14 -> mVA; 15 -> mVA at range 0 and 1, else VA; 16 and 17 -> uA; 18 and 19 -> mA; 20 and 21 -> A;
+@             22 -> uVA; 23 -> mVA; 24 -> mVA at range 0 and 1, else VA (OF-78: the display's unit; v2.05 wrote VA from
+@             range 1, where the display shows mVA).  Other modes write nothing and report success.
 @             The compiled code is a binary search over the mode (0x0801E084..0x0801E0F6), then one block per unit.
 @ -----------------------------------------------------------------------------
 FUNC log_write_unit
@@ -950,11 +951,11 @@ FUNC log_write_unit
     b       .Llog_write_unit_E32A           @ 0801E290 goto 0x801E32A
 .Llog_write_unit_E292:                  @ v2.05 0x0801E292, reached from 0x0801E28C
     b       .Llog_write_unit_E326           @ 0801E292 goto 0x801E326
-    @ mode 15 and 24: VA from range 1, else mVA
+    @ mode 15 and 24: mVA at range 0 and 1, VA from range 2, as the display (OF-78, GitHub issue 46; v2.05: VA from range 1)
 .Llog_write_unit_E294:                  @ v2.05 0x0801E294, reached from 0x0801E0C4, 0x0801E0E8
     uxtb    r5, r5                          @ 0801E294 r5 = u8(r5)
-    cmp     r5, #0                          @ 0801E296 compare r5 with 0
-    bne     .Llog_write_unit_E2AC           @ 0801E298 if (r5 != 0) goto 0x801E2AC
+    cmp     r5, #1                          @ OF-78: range 0 or 1 (v2.05 0801E296 cmp r5, #0)
+    bhi     .Llog_write_unit_E2AC           @ OF-78: range 2, 3: VA (v2.05 0801E298 bne)
     movs    r2, #0                          @ 0801E29A r2 = 0
     movs    r1, #0                          @ 0801E29C r1 = 0
     movs    r0, #0x43                       @ 0801E29E r0 = 0x43

@@ -131,6 +131,13 @@ the cal.bin restore.  Port (F-1.27, IMP-58): each path needs two keys held toget
 0.5 s long (MODE + REL, MODE + SETUP, MEM + PEAK, RANGE + MIN/MAX); single keys start nothing, keys held at power-on give
 no short or long press, and after a wake there is no service path (owner decision 2026-11-08).
 
+### OF-78 — VA and DCVA, range 1: the log writes the unit VA where the display shows mVA
+`FUN_0801E076` (the unit of a log row) writes "mVA" in the modes 15 (VA) and 24 (DCVA) only at range 0 and "VA" from
+range 1 (0x0801E296 `cmp r5, #0`, 0x0801E298 `bne`); the display shows "mVA" at ranges 0 and 1 and "VA" at 2 and 3
+(emulator, F-1.36, A jack, 3.0 V and 0.1 A: the "m" segment lit at ranges 0 and 1).  The value of the row is that of
+the display, so at range 1 the row has the number of mVA with the unit VA (GitHub issue 46, a meter on F-1.36).  Port
+(F-1.37): "mVA" at ranges 0 and 1 (`cmp r5, #1`, `bhi`).  Emulator `test_log_va.py` V3.
+
 
 ### OF-01 — stale index when a table search fails
 `FUN_08007D1E`: the index register r7 is only set when the search hits (`0x08007D5E movs r7,r6`).
