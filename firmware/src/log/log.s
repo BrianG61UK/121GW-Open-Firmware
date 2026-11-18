@@ -621,16 +621,20 @@ ENDFUNC log_compose_mode_range
 @ Out      : -
 @ Clobbers : r0-r3, r12, flags (AAPCS; v2.05 changed r0 and r1 only, 0x08010908..0x080109E9)
 @ Context  : main only
-@ RAM      : reads disp_overflow 0x20008049, disp_overflow_neg 0x20008045, display_reading 0x20007D64;
-@            read-modify-writes log_rec_flags1 0x20007FEF; writes log_rec_value1 0x20007D28
+@ RAM      : reads meter_mode 0x2000803C, disp_overflow 0x20008049, disp_overflow_neg 0x20008045, display_reading
+@            0x20007D64, sample_reading 0x20007D68; read-modify-writes log_rec_flags1 0x20007FEF; writes log_rec_value1
+@            0x20007D28
 @ Result   : overflow (disp_overflow != 0): flags |= 0x80, value = 0x7FFFFFFF, and flags |= 0x40 when
-@            disp_overflow_neg != 0 ("-Overflow" row).  Otherwise value = display_reading; a negative reading sets
-@            flags |= 0x40 and is stored as its bitwise complement ~x = -x - 1 (v2.05 0x0801099A, 0x080109D2)
+@            disp_overflow_neg != 0 ("-Overflow" row).  Otherwise value = the displayed reading (see Deviation); a
+@            negative reading sets flags |= 0x40 and is stored as its bitwise complement ~x = -x - 1 (v2.05 0x0801099A,
+@            0x080109D2)
 @ Spec     : v2.05 listing 0x08010908..0x080109E9; ORIGINAL_FIRMWARE_ISSUES.md OF-35
 @ Deviation: OF-35.  v2.05 copies the per-sample value 0x20007D68 (sample_reading) into the record in every mode
 @            except 5, 6, 7, 8, 9 and 12 (0x08010948..0x08010978 choose the source from meter_mode, 0x080109B2..0x080109E6
-@            copy 0x20007D68), which use the displayed mean 0x20007D64.  The port copies the displayed mean in every mode,
-@            so a log row shows what the display showed.
+@            copy 0x20007D68), which use the displayed mean 0x20007D64.  The port logs what the display shows: the mean
+@            0x20007D64 in every mode except the VA modes 13, 14, 15, 22, 23 and 24, where 0x20007D64 also takes every
+@            intermediate voltage and current mean between two power results (mva/va.s fn_080084E0, fn_08008B8C) and the
+@            displayed power is the copy in 0x20007D68, written only when a power is published (GitHub issue 46).
 @ -----------------------------------------------------------------------------
 FUNC log_store_value
     ldr     r1, =log_rec_flags1             @ r1 = &flags byte of the main reading
@@ -649,8 +653,9 @@ FUNC log_store_value
     orr     r3, r3, #0x40                   @ flags bit 6 = negative (-Overflow, 0x0801093C)
     b       .Llsv_store
 .Llsv_normal:
-    ldr     r0, =display_reading
-    ldr     r0, [r0]                        @ OF-35: the displayed mean in every mode
+    push    {r1, lr}                        @ r1 = &flags kept (log_shown clobbers r1)
+    bl      log_shown                       @ r0 = the displayed reading (OF-35, issue 46)
+    pop     {r1, lr}
     cmp     r0, #0
     bpl     .Llsv_store                     @ non-negative: stored as it is
     orr     r3, r3, #0x40                   @ flags bit 6 = negative
@@ -661,6 +666,37 @@ FUNC log_store_value
     bx      lr
     .ltorg
 ENDFUNC log_store_value
+
+@ -----------------------------------------------------------------------------
+@ log_shown - the reading the main display shows, for the record (log_store_value) and the change test (log_level)
+@ In       : -
+@ Out      : r0 = sample_reading 0x20007D68 in the VA modes 13, 14, 15, 22, 23, 24, else display_reading 0x20007D64
+@ Clobbers : r1, flags
+@ Context  : main only
+@ RAM      : reads meter_mode 0x2000803C, display_reading 0x20007D64, sample_reading 0x20007D68
+@ Spec     : ORIGINAL_FIRMWARE_ISSUES.md OF-35; GitHub issue 46.  In the VA modes the measurement writes every voltage and
+@            current mean into 0x20007D64 (mva/va.s fn_080084E0, fn_08008B8C: 3 + 1 voltage means, 6 + 1 current means a
+@            cycle) and the power only at the end of a cycle; the display is drawn only then, and the published power is
+@            copied to 0x20007D68 at that moment (fn_080084E0 0x080087A4..0x080087B8, fn_08008B8C 0x08008E40..0x08008E54).
+@            0x20007D68 is 0 from a mode or range change (fn_080192FC) until the first power.
+@ -----------------------------------------------------------------------------
+FUNC log_shown
+    ldr     r1, =meter_mode
+    ldrb    r1, [r1]                        @ r1 = mode
+    subs    r1, r1, #13
+    cmp     r1, #2
+    bls     1f                              @ modes 13, 14, 15 (AC uVA, mVA, VA)
+    subs    r1, r1, #9                      @ r1 = mode - 22
+    cmp     r1, #2
+    bls     1f                              @ modes 22, 23, 24 (DC uVA, mVA, VA)
+    ldr     r0, =display_reading
+    ldr     r0, [r0]                        @ OF-35: the displayed mean
+    bx      lr
+1:  ldr     r0, =sample_reading
+    ldr     r0, [r0]                        @ the last published power
+    bx      lr
+    .ltorg
+ENDFUNC log_shown
 
 @ -----------------------------------------------------------------------------
 @ log_start - start logging (long MEM, first press)

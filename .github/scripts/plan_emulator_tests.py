@@ -69,7 +69,11 @@ SCRIPTS = {
     # two jobs of its case groups (all in one job ran past the 2280 s limit on a hosted runner)
     'test_clamp.py --cases matrix,hold_rel,other_modes,csv': CLAMP,
     'test_clamp.py --cases page,rel_beyond,byte13_gates,lamp_test,hold_beyond': CLAMP,
-    'test_buzzer_off.py': ['firmware/src/bzb/', 'firmware/src/mres/', 'firmware/src/pwr/', 'firmware/src/set/'],
+    # the logged power of the VA functions and the tr-Ch test on it (issue 46); its helpers import the log trigger and
+    # min / max scripts
+    'test_log_va.py': CARD + ['firmware/src/mva/', 'firmware/src/mode/', 'emulator/scripts/test_log_trigger.py',
+                              'emulator/scripts/test_log_minmax_time.py'],
+    'test_buzzer_off.py':['firmware/src/bzb/', 'firmware/src/mres/', 'firmware/src/pwr/', 'firmware/src/set/'],
     'test_heartbeat.py': CAREFUL,
     'test_power_pairs.py': ['firmware/src/cal/', 'firmware/src/pwr/', 'firmware/src/ui/'],
     'test_link2.py': CAREFUL,

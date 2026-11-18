@@ -569,7 +569,13 @@ intended; it is recorded because the log does not say so. Range changes do not o
 a log saves and forces range_manual (0x20008043 = 0x20008042, 0x20008042 = 1 at `0x08010A1A`..`0x08010A2C`, skipped
 only with auto-hold stage 2 set); execution confirmed "auto" goes off and a 40 V step in DCV range 0 is logged as OL
 (0x7FFFFFFF, flags 0xA0).
-Port: log the displayed (averaged) value.
+Port: log the displayed (averaged) value.  In the VA modes 13, 14, 15, 22, 23 and 24 that is 0x20007D68, not 0x20007D64
+(F-1.36, GitHub issue 46): there 0x20007D64 also takes each voltage and current mean between two power results
+(`FUN_080084E0`, `FUN_08008B8C`), and the published power is copied to 0x20007D68 when the display is updated
+(`0x080087A4`..`0x080087B8`, `0x08008E40`..`0x08008E54`); the per-sample path `0x080064D6` skips these modes, so v2.05
+already logged the power there.  The port up to F-1.35 logged 0x20007D64 in every mode, so a DCmVA row could hold a voltage or a current
+mean in the place of the power (issue 46: 34.098 mVA logged at 3.0535 V and 2.5844 mA).  The tr-Ch change test uses the
+same value (`log_shown`).
 
 ### OF-36 — calibration capture completes in the mode/range that is active at its end
 `FUN_08015768` sets 0x2000808C (offset) or 0x2000808E (gain) and the countdown 0x20008095; a mode or range change

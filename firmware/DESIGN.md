@@ -866,9 +866,10 @@ A module with a narrow interface, so that the faster auto-ranging (IMP-01, ARS s
 - Byte for byte as v2.05: file names YYMMDDnn.csv, CSV tokens and header lines, record format, write and verify
   sequence (the harness compares SD commands, blocks and final files).
 - RAM: Appendix B LOG.
-- Deviations: OF-35 (`FUN_08010908` stores the displayed averaged value 0x20007D64 in every mode instead of the
-  per-sample value 0x20007D68; v2.05 already does so in modes 5..9 and 12, 0x0801097A..0x080109A4), IMP-06 (state
-  machines).
+- Deviations: OF-35 (`FUN_08010908` stores the displayed averaged value 0x20007D64 instead of the per-sample value
+  0x20007D68; v2.05 already does so in modes 5..9 and 12, 0x0801097A..0x080109A4; in the VA modes 13..15 and 22..24
+  the displayed power is 0x20007D68, which stays, since 0x20007D64 also takes the voltage and current means between two
+  power results: `log_shown`, F-1.36, GitHub issue 46), IMP-06 (state machines).
 
 ### 6.23 SD: SDIO driver and FAT file system (W8)
 

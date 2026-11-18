@@ -10,7 +10,7 @@
 @             interval while the verdict is not PASS (or the test is off)
 @ With tr-Ch and tr-Lt the 5-per-second path of interval 0 is off: interval 0 means "the trigger only".  Every request goes
 @ through the v2.05 flag, so the record content, the ring and the file format are v2.05's.  "The reading" is the displayed
-@ value 0x20007D64 that the record stores (OF-35); an overload counts as +1 000 000 or -1 000 000 by its sign, so entering
+@ value that the record stores (log_shown: 0x20007D64, OF-35; in the VA modes the power 0x20007D68, issue 46); an overload counts as +1 000 000 or -1 000 000 by its sign, so entering
 @ and leaving an overload are changes.  The value of the last record is taken in log_take_record.
 @
 @ Context: main only, except log_trig_fast_ok (TIM2 interrupt; reads one byte).
@@ -41,7 +41,8 @@ log_last_valid: .space 1                    @ 1 = log_last holds the level of a 
 
 @ -----------------------------------------------------------------------------
 @ log_level - the displayed value as a level for the change test
-@ Out      : r0 = 0x20007D64, or +-LOG_OL_LEVEL while an overload is shown
+@ Out      : r0 = the displayed reading (log_shown: 0x20007D64, the power 0x20007D68 in the VA modes), or +-LOG_OL_LEVEL
+@            while an overload is shown
 @ Clobbers : r1, flags
 @ -----------------------------------------------------------------------------
 LFUNC log_level
@@ -56,9 +57,7 @@ LFUNC log_level
     moveq r0, r1
     rsbne r0, r1, #0
     bx lr
-1:  ldr r0, =v_20007D64
-    ldr r0, [r0]
-    bx lr
+1:  b log_shown                             @ the displayed reading (log/log.s; VA modes: the power, issue 46)
 ENDFUNC log_level
 
 @ -----------------------------------------------------------------------------
