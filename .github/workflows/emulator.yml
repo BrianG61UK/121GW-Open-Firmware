@@ -344,6 +344,8 @@ jobs:
           set -euo pipefail
           deb="121GW-Open-Firmware-Emulator-$RELEASE_TAG-linux-amd64.deb"
           sh emulator/packaging/linux/build_deb.sh emulator/dist/121gw-emulator "$RELEASE_TAG" "$deb" build/icons/121gw-emulator.png
+          # the runner image's package lists go stale: refresh them, or a dependency superseded on the mirror is a 404
+          sudo apt-get update
           sudo apt-get install -y "./$deb"
           121gw-emulator --no-open --port 8133 --app "$PWD/dist/2_fast/EEVBlog.bin" > deb.log 2>&1 &
           python -I emulator/tools/smoke.py --url http://127.0.0.1:8133 --expect-direct --expect-synthetic || { cat deb.log; exit 1; }
